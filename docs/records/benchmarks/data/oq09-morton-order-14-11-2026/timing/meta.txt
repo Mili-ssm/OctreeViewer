@@ -1,0 +1,22 @@
+start 19:39:56 load 0.41 1.43 2.46
+conv morton 1 load 0.41 1.43 2.46
+conv source 1 load 3.56 2.14 2.65
+conv morton 2 load 4.33 2.56 2.77
+conv source 2 load 4.33 2.56 2.77
+conv morton 3 load 4.33 2.56 2.77
+conv source 3 load 4.33 2.56 2.77
+conv morton 4 load 4.33 2.56 2.77
+conv source 4 load 4.33 2.56 2.77
+decode mor 1 load 4.33 2.56 2.77
+decode src 1 load 2.87 2.40 2.70
+decode mor 2 load 1.96 2.22 2.63
+decode src 2 load 1.61 2.10 2.57
+end 19:44:14
+conv2 source 1 load 1.02 1.85 2.45
+conv2 morton 1 load 4.23 2.62 2.68
+conv2 source 2 load 6.70 3.59 3.01
+conv2 morton 2 load 7.17 4.17 3.24
+conv2 source 3 load 7.42 4.75 3.49
+conv2 morton 3 load 6.89 4.99 3.63
+conv2 source 4 load 7.58 5.57 3.91
+conv2 morton 4 load 7.10 5.77 4.06

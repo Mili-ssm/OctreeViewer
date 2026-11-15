@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "probe": "probe-cells-colour",
+  "startedAt": "2026-11-14T02:07:29.281Z",
+  "input": "target/render-data/majadas-v75.oct",
+  "targetPixels": 4,
+  "timeoutMs": 120000,
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ],
+  "responseErrors": [],
+  "modes": [
+    {
+      "mode": "rgb",
+      "index": 0,
+      "settled": true,
+      "settleMs": 111,
+      "samples": 2,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 0,
+      "builtNodesLast": 2,
+      "rebuiltTotalDelta": 0,
+      "cutDigestAtRest": "17c0761cfc9ac208",
+      "canvasSha256": "8d433ebb731675234251b01eab0610f73e3b1c2a507eba0bc00a76a3e87103e3",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/majadas-v75-0-rgb.png"
+    },
+    {
+      "mode": "intensity",
+      "index": 1,
+      "settled": true,
+      "settleMs": 1697,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 0,
+      "builtNodesLast": 0,
+      "rebuiltTotalDelta": 0,
+      "cutDigestAtRest": "17c0761cfc9ac208",
+      "canvasSha256": "525635e4f397f8ef3930989e4460288facf06f2b1cdf7d2dfbb8f6208ad74dce",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/majadas-v75-1-intensity.png"
+    },
+    {
+      "mode": "elevation",
+      "index": 2,
+      "settled": true,
+      "settleMs": 1694,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 0,
+      "builtNodesLast": 0,
+      "rebuiltTotalDelta": 0,
+      "cutDigestAtRest": "17c0761cfc9ac208",
+      "canvasSha256": "965bea454b183a0dddaad00b7cb281d17bb72a74730b2f82ef142f7c8189e97a",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/majadas-v75-2-elevation.png"
+    },
+    {
+      "mode": "classification",
+      "index": 3,
+      "settled": true,
+      "settleMs": 1704,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 0,
+      "builtNodesLast": 0,
+      "rebuiltTotalDelta": 0,
+      "cutDigestAtRest": "17c0761cfc9ac208",
+      "canvasSha256": "8d433ebb731675234251b01eab0610f73e3b1c2a507eba0bc00a76a3e87103e3",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/majadas-v75-3-classification.png"
+    },
+    {
+      "mode": "attribute:0:0",
+      "index": 4,
+      "settled": true,
+      "settleMs": 1708,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 13,
+      "builtNodesLast": 2,
+      "rebuiltTotalDelta": 13,
+      "cutDigestAtRest": "17c0761cfc9ac208",
+      "canvasSha256": "88e729421cc20eb01a4cf240348ced8c1def9ea60d6f3e2881b08cc917e9d2b5",
+      "attributeRange": [
+        0,
+        0
+      ],
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/majadas-v75-4-attribute_0_0.png"
+    },
+    {
+      "mode": "rgb",
+      "index": 5,
+      "settled": true,
+      "settleMs": 1664,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 13,
+      "builtNodesLast": 1,
+      "rebuiltTotalDelta": 13,
+      "cutDigestAtRest": "17c0761cfc9ac208",
+      "canvasSha256": "8d433ebb731675234251b01eab0610f73e3b1c2a507eba0bc00a76a3e87103e3",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/majadas-v75-5-rgb.png"
+    }
+  ],
+  "failures": [
+    "1 console messages"
+  ],
+  "url": "http://127.0.0.1:8767/examples/web-host/index.html?cells=1&buildWorker=1",
+  "attributesFile": "target/render-data/majadas-v75.octattrs",
+  "attributeSchema": [
+    {
+      "name": "intensity",
+      "dataType": "u16",
+      "componentCount": 1
+    },
+    {
+      "name": "classification",
+      "dataType": "u8",
+      "componentCount": 1
+    },
+    {
+      "name": "return_number",
+      "dataType": "u8",
+      "componentCount": 1
+    },
+    {
+      "name": "number_of_returns",
+      "dataType": "u8",
+      "componentCount": 1
+    },
+    {
+      "name": "scan_angle_degrees",
+      "dataType": "f32",
+      "componentCount": 1
+    },
+    {
+      "name": "user_data",
+      "dataType": "u8",
+      "componentCount": 1
+    },
+    {
+      "name": "point_source_id",
+      "dataType": "u16",
+      "componentCount": 1
+    },
+    {
+      "name": "rgb",
+      "dataType": "u16",
+      "componentCount": 3
+    },
+    {
+      "name": "las_flags",
+      "dataType": "u8",
+      "componentCount": 1
+    }
+  ],
+  "availableModes": [
+    "rgb",
+    "intensity",
+    "elevation",
+    "classification",
+    "attribute:0:0",
+    "attribute:1:0",
+    "attribute:2:0",
+    "attribute:3:0",
+    "attribute:4:0",
+    "attribute:5:0",
+    "attribute:6:0",
+    "attribute:7:0",
+    "attribute:7:1",
+    "attribute:7:2",
+    "attribute:8:0"
+  ],
+  "sequence": [
+    "rgb",
+    "intensity",
+    "elevation",
+    "classification",
+    "attribute:0:0",
+    "rgb"
+  ],
+  "backToRgb": {
+    "cutDigestAtRest": true,
+    "canvasSha256": true
+  }
+}

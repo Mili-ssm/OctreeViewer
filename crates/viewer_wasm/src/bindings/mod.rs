@@ -7,6 +7,7 @@ use web_sys::HtmlCanvasElement;
 use crate::{
     LodViewStats, ViewerConfig, ViewerController,
     browser_io::{BrowserBlobReader, BrowserReadStats},
+    cells_glue::{Continuity, DEFAULT_NODE_BYTES_PER_FRAME, InProcessCells, ViewerCells},
     lod_driver::AttributeAvailability,
     lod_session::LodSession,
 };
@@ -18,10 +19,14 @@ use viewer_render_wgpu::{RendererConfig, SurfaceRenderer, VoxelBuildLimits};
 
 mod builder;
 mod camera;
+mod cells;
 mod js_marshal;
 mod js_stats;
 mod lod;
 mod points;
+#[cfg(feature = "test-reference-spacing")]
+#[path = "../../tests/support/reference_spacing_probe.rs"]
+mod reference_spacing_probe;
 mod render;
 
 #[wasm_bindgen]
@@ -41,12 +46,30 @@ pub struct WasmVoxelViewer {
     lod_stage_pixels: Option<f64>,
     lod_dirty: bool,
     last_lod_stats: Option<(LodViewStats, BrowserReadStats)>,
+    /// Plan stats and target of the last in-process cells update, for `lodStats` (that path has no
+    /// `LodViewStats`).
+    last_cells_plan: Option<(crate::CellPlanStats, f64)>,
     /// Digest of the last scene uploaded to the renderer, exposed as `lodStats().sceneDigest`.
     last_scene_digest: Option<u64>,
     last_lod_error: Option<String>,
     /// Root bounds and origin of a dataset whose hierarchy lives in a build worker, so `fitScene`
     /// can frame it without a local `LodDataset`.
     remote_dataset_frame: Option<RemoteDatasetFrame>,
+    /// The host opted in to the cells path (`enableCells`); the dataset may still not support it.
+    cells_requested: bool,
+    /// `"off"`, `"enabled"` or `"CellPathUnsupported"` for the open dataset.
+    cell_path: &'static str,
+    /// Cells with the dataset in this worker: the three steps run back to back.
+    cells_local: Option<InProcessCells>,
+    /// Cells whose dataset lives in a build worker: messages arrive through `addCellNode` and
+    /// `setCellCut`.
+    cells_remote: Option<ViewerCells>,
+    cell_node_cap: usize,
+    /// RF-05 continuity of the open cloud (off by default); `setContinuity`.
+    continuity: Continuity,
+    /// Counts camera moves and resizes (`viewEpoch`): the builder echoes the epoch of the view it
+    /// planned for, so the cut at rest is the one of the latest view.
+    view_epoch: u64,
 }
 
 struct RemoteDatasetFrame {
@@ -121,9 +144,17 @@ impl WasmVoxelViewer {
             lod_stage_pixels: None,
             lod_dirty: false,
             last_lod_stats: None,
+            last_cells_plan: None,
             last_scene_digest: None,
             last_lod_error: None,
             remote_dataset_frame: None,
+            cells_requested: false,
+            cell_path: cells::PATH_OFF,
+            cells_local: None,
+            cells_remote: None,
+            cell_node_cap: DEFAULT_NODE_BYTES_PER_FRAME,
+            continuity: Continuity::default(),
+            view_epoch: 0,
         })
     }
 
@@ -190,6 +221,7 @@ impl WasmVoxelViewer {
         if let Some(renderer) = &mut self.gpu_renderer {
             renderer.resize(width, height);
         }
+        self.camera_changed(true);
         self.lod_dirty = self.lod_session.is_some();
     }
 

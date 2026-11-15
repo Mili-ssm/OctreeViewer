@@ -1,5 +1,9 @@
 use thiserror::Error;
 
+use crate::global_frame::{
+    CellBox, UNITS_PER_QUANTUM, block_cell_origin, local_position_units, quantize_coordinate,
+};
+
 const MAX_QUANTIZED_COORDINATE: u32 = u32::MAX;
 
 /// Per-axis affine transform from local `f64` coordinates to `u32` values.
@@ -161,22 +165,7 @@ pub fn quantize_local_positions(
             decoded_position[axis] = decoded;
             decoded_f32_position[axis] = f64::from(decoded_f32);
         }
-        // `norm3` is within a few ulp of the exact norm, far below `arithmetic_margin`
-        // (8 * EPSILON * (|p| + |d| + 1) per axis), so the bound holds; `f64::hypot` is avoided
-        // because libm differs by an ulp between platforms and the result is stored in the file.
-        let measured_error =
-            norm3([0, 1, 2].map(|axis| (position[axis] - decoded_f32_position[axis]).abs()));
-        let arithmetic_margin = if measured_error == 0.0 {
-            0.0
-        } else {
-            norm3([0, 1, 2].map(|axis| {
-                f64::EPSILON * (position[axis].abs() + decoded_position[axis].abs() + 1.0) * 8.0
-            }))
-        };
-        let error_bound = measured_error + arithmetic_margin;
-        if !error_bound.is_finite() {
-            return Err(QuantizationError::ErrorBoundOutOfRange);
-        }
+        let error_bound = error_bound(*position, decoded_position, decoded_f32_position)?;
         max_error = max_error.max(error_bound);
         coordinates.push(quantized);
     }
@@ -193,6 +182,102 @@ pub fn quantize_local_positions(
         coordinates,
         max_error,
     })
+}
+
+/// Conservative bound on the distance from `position` to the decoded `f32` position.
+///
+/// `norm3` is within a few ulp of the exact norm, far below `arithmetic_margin`
+/// (8 * EPSILON * (|p| + |d| + 1) per axis), so the bound holds; `f64::hypot` is avoided
+/// because libm differs by an ulp between platforms and the result is stored in the file.
+fn error_bound(
+    position: [f64; 3],
+    decoded_position: [f64; 3],
+    decoded_f32_position: [f64; 3],
+) -> Result<f64, QuantizationError> {
+    let measured_error =
+        norm3([0, 1, 2].map(|axis| (position[axis] - decoded_f32_position[axis]).abs()));
+    let arithmetic_margin = if measured_error == 0.0 {
+        0.0
+    } else {
+        norm3([0, 1, 2].map(|axis| {
+            f64::EPSILON * (position[axis].abs() + decoded_position[axis].abs() + 1.0) * 8.0
+        }))
+    };
+    let error_bound = measured_error + arithmetic_margin;
+    if error_bound.is_finite() {
+        Ok(error_bound)
+    } else {
+        Err(QuantizationError::ErrorBoundOutOfRange)
+    }
+}
+
+/// Quantizes one block of frame-local positions onto the global `v7.4-pre` grid.
+///
+/// Each source coordinate is `frame_origin + local` in `f64`, rounded to `i64` quanta of 2^-15
+/// and stored as a `u32` offset from the block origin (the node origin, or the 2^32-quanta cell
+/// of a split node). The error bound is measured against the exact `f32` the reader returns.
+/// The returned origin is in quanta; the transform inside the result is informative only.
+pub(crate) fn quantize_global_positions(
+    positions: &[[f64; 3]],
+    frame_origin: [f64; 3],
+    frame_origin_quanta: [i64; 3],
+    node: CellBox,
+    max_allowed_error: f64,
+) -> Result<(QuantizedCoordinates, [i64; 3]), QuantizationError> {
+    if !max_allowed_error.is_finite() || max_allowed_error < 0.0 {
+        return Err(QuantizationError::InvalidErrorLimit(max_allowed_error));
+    }
+    if positions.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(QuantizationError::InvalidPosition);
+    }
+    let mut block_origin = node.origin;
+    let mut coordinates = Vec::with_capacity(positions.len());
+    let mut max_error: f64 = 0.0;
+    for (index, position) in positions.iter().enumerate() {
+        let mut quanta = [0_i64; 3];
+        for axis in 0..3 {
+            let world = frame_origin[axis] + position[axis];
+            quanta[axis] = quantize_coordinate(world)
+                .ok_or(QuantizationError::CoordinateOutOfRange { axis, value: world })?;
+        }
+        if !node.contains(quanta.map(i128::from)) {
+            return Err(QuantizationError::PointOutsideNode);
+        }
+        let cell_origin = block_cell_origin(node, quanta);
+        if index == 0 {
+            block_origin = cell_origin;
+        } else if cell_origin != block_origin {
+            return Err(QuantizationError::BlockSpansCells);
+        }
+        let offset = std::array::from_fn(|axis| {
+            u32::try_from(i128::from(quanta[axis]) - i128::from(block_origin[axis]))
+                .expect("the point lies inside the 2^32-quanta cell of its block origin")
+        });
+        let decoded = local_position_units(quanta.map(i128::from), frame_origin_quanta);
+        let decoded_f32 = decoded.map(|value| value as f32);
+        if decoded.iter().any(|value| !value.is_finite())
+            || decoded_f32.iter().any(|value| !value.is_finite())
+        {
+            return Err(QuantizationError::DecodedPositionOutOfRange(decoded));
+        }
+        let bound = error_bound(*position, decoded, decoded_f32.map(f64::from))?;
+        max_error = max_error.max(bound);
+        coordinates.push(offset);
+    }
+    if max_error > max_allowed_error {
+        return Err(QuantizationError::ErrorLimitExceeded {
+            required: max_error,
+            allowed: max_allowed_error,
+        });
+    }
+    let transform = QuantizationTransform {
+        origin: [0.0; 3],
+        scale: [UNITS_PER_QUANTUM; 3],
+    };
+    Ok((
+        QuantizedCoordinates::from_parts(transform, coordinates, max_error),
+        block_origin,
+    ))
 }
 
 /// Euclidean norm from IEEE-754 correctly rounded operations only (`+ * /` and `sqrt`), so it is
@@ -220,6 +305,10 @@ pub enum QuantizationError {
     DecodedPositionOutOfRange([f64; 3]),
     #[error("quantization error bound cannot be represented")]
     ErrorBoundOutOfRange,
+    #[error("point lies outside the node that owns its block")]
+    PointOutsideNode,
+    #[error("points of one block fall in different 2^32-quanta cells of a split node")]
+    BlockSpansCells,
     #[error("quantization needs error bound {required}, exceeding allowed {allowed}")]
     ErrorLimitExceeded { required: f64, allowed: f64 },
 }

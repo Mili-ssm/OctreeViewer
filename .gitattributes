@@ -1,0 +1,9 @@
+# Preserve captured evidence bytes, including unified-diff context markers.
+docs/records/benchmarks/data/r3-t0-04-11-2026/environment.txt -text -whitespace
+docs/records/benchmarks/data/r3-t0-04-11-2026/source-code-after-fixtures.patch -text -whitespace
+docs/records/benchmarks/data/r3-t0-independent-04-11-2026/environment.txt -text -whitespace
+docs/records/benchmarks/data/r3-t0-independent-04-11-2026/source.patch -text -whitespace
+docs/records/benchmarks/data/r3-leaf-span-04-11-2026/source-snapshot.patch -text -whitespace
+docs/records/benchmarks/data/r3-region-layout-05-11-2026/base-codex-crates.patch -text -whitespace
+docs/records/benchmarks/data/r3-region-layout-05-11-2026/spike-source.patch -text -whitespace
+docs/records/benchmarks/data/r3-t1-accept-05-11-2026/source.patch -text -whitespace

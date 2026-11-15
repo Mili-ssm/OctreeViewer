@@ -1,0 +1,13 @@
+failures [] consoleErrors 0
+majadas-inside-leaf-1px      w10-ranges         med   95.142  rounds 94.410, 95.992, 95.311  A/A   1.7%  draws 828
+majadas-inside-leaf-1px      w10-single         med   97.435  rounds 97.742, 97.322, 97.504  A/A   0.4%  draws 1
+majadas-inside-leaf-1px      w16-ranges         med   62.193  rounds 61.587, 62.183, 62.297  A/A   1.1%  draws 828
+majadas-inside-leaf-1px      w16-single         med   64.191  rounds 64.111, 64.221, 64.357  A/A   0.4%  draws 1
+majadas-inside-leaf-1px      i40-single         med   42.109  rounds 42.097, 42.106, 42.127  A/A   0.1%  draws 1
+majadas-inside-leaf-1px      w10-ranges-moving  med   95.380  rounds 95.691, 95.187, 95.336  A/A   0.5%  draws 828
+belvedere-inside-leaf-4px    w10-ranges         med    7.664  rounds 7.665, 7.657, 7.672  A/A   0.2%  draws 83
+belvedere-inside-leaf-4px    w10-single         med    8.484  rounds 8.483, 8.489, 8.479  A/A   0.1%  draws 1
+belvedere-inside-leaf-4px    w16-ranges         med    7.744  rounds 7.740, 7.737, 13.773  A/A  78.0%  draws 83
+belvedere-inside-leaf-4px    w16-single         med    8.608  rounds 8.602, 8.606, 9.373  A/A   9.0%  draws 1
+belvedere-inside-leaf-4px    i40-single         med    5.691  rounds 6.235, 5.690, 5.688  A/A   9.6%  draws 1
+belvedere-inside-leaf-4px    w10-ranges-moving  med    7.659  rounds 7.657, 7.659, 7.663  A/A   0.1%  draws 83

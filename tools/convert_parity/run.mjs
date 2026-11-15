@@ -32,19 +32,79 @@ function findAutzen() {
   return null;
 }
 
+// LAS 1.2, point format 1 with 4 Extra Bytes (u16 + u8 + i8, described by an Extra Bytes VLR) and
+// every flag bit set somewhere: exercises the RF-24 columns of `v7.5-pre`. Fully deterministic.
+function writeFlagsExtraLas(path) {
+  const points = 6000;
+  const recordLength = 32;
+  const descriptor = (dataType, name) => {
+    const d = Buffer.alloc(192);
+    d.writeUInt8(dataType, 2);
+    d.write(name, 4, "latin1");
+    return d;
+  };
+  const vlrData = Buffer.concat([descriptor(3, "amplitude"), descriptor(1, "small"), descriptor(2, "signed")]);
+  const vlr = Buffer.alloc(54);
+  vlr.write("LASF_Spec", 2, "latin1");
+  vlr.writeUInt16LE(4, 18);
+  vlr.writeUInt16LE(vlrData.length, 20);
+  const offsetToPoints = 227 + vlr.length + vlrData.length;
+  const header = Buffer.alloc(227);
+  header.write("LASF", 0, "latin1");
+  header.writeUInt8(1, 24);
+  header.writeUInt8(2, 25);
+  header.writeUInt16LE(227, 94);
+  header.writeUInt32LE(offsetToPoints, 96);
+  header.writeUInt32LE(1, 100);
+  header.writeUInt8(1, 104);
+  header.writeUInt16LE(recordLength, 105);
+  header.writeUInt32LE(points, 107);
+  header.writeUInt32LE(points, 111);
+  for (const [i, v] of [0.01, 0.01, 0.01, 0, 0, 0, 1000, 0, 1000, 0, 100, 0].entries()) {
+    header.writeDoubleLE(v, 131 + 8 * i);
+  }
+  const body = Buffer.alloc(points * recordLength);
+  for (let i = 0; i < points; i += 1) {
+    const o = i * recordLength;
+    body.writeInt32LE((i * 7919) % 100000, o);
+    body.writeInt32LE((i * 104729) % 100000, o + 4);
+    body.writeInt32LE((i * 31) % 10000, o + 8);
+    body.writeUInt16LE((i * 17) % 65536, o + 12);
+    body.writeUInt8(1 | (1 << 3) | ((i % 2) << 6) | ((i % 3 === 0 ? 1 : 0) << 7), o + 14);
+    body.writeUInt8((i % 19) | ((i % 4 === 0 ? 1 : 0) << 5) | ((i % 5 === 0 ? 1 : 0) << 6) | ((i % 7 === 0 ? 1 : 0) << 7), o + 15);
+    body.writeUInt16LE(i % 11, o + 18);
+    body.writeDoubleLE(i * 0.5, o + 20);
+    body.writeUInt16LE((i * 257) % 65536, o + 28);
+    body.writeUInt8(i % 256, o + 30);
+    body.writeInt8((i % 200) - 100, o + 31);
+  }
+  writeFileSync(path, Buffer.concat([header, vlr, vlrData, body]));
+}
+const flagsExtra = join(workDir, "flags-extra-input.las");
+writeFlagsExtraLas(flagsExtra);
+
 const small = join(root, "data/samples/fs_e430_n4008_18.las");
 const synthetic = join(root, "tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
 const autzen = findAutzen();
 // `multi`: the case must produce more than one block, else it would not exercise the planner.
 const cases = [
-  { name: "small-default", input: small, ppb: 262144, divisions: 2, multi: false },
-  { name: "small-4096-d2", input: small, ppb: 4096, divisions: 2, multi: true },
-  { name: "small-4096-d8", input: small, ppb: 4096, divisions: 8, multi: true },
-  { name: "synthetic-4096-d2", input: synthetic, ppb: 4096, divisions: 2, multi: true },
-  { name: "synthetic-4096-d8", input: synthetic, ppb: 4096, divisions: 8, multi: true },
+  { name: "small-default", input: small, ppb: 262144, divisions: 2, multi: false, format: "v5" },
+  // Intentionally no `format`: follows DEFAULT_OUTPUT on both sides.
+  { name: "small-follows-default", input: small, ppb: 262144, divisions: 2, multi: false },
+  { name: "small-4096-d2", input: small, ppb: 4096, divisions: 2, multi: true, format: "v5" },
+  { name: "small-4096-d8", input: small, ppb: 4096, divisions: 8, multi: true, format: "v5" },
+  { name: "synthetic-4096-d2", input: synthetic, ppb: 4096, divisions: 2, multi: true, format: "v5" },
+  { name: "synthetic-4096-d8", input: synthetic, ppb: 4096, divisions: 8, multi: true, format: "v5" },
+  { name: "small-v74", input: small, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
+  { name: "small-v75", input: small, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
+  { name: "flags-extra-v75", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
+  { name: "synthetic-v75", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
+  { name: "synthetic-v75-hybrid", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre", rowOrder: "hybrid", sourceTwin: "synthetic-v75" },
+  { name: "synthetic-v74", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
+  { name: "synthetic-v7", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7" },
 ];
 if (autzen) {
-  cases.push({ name: "autzen-copc-4096-d2", input: autzen, ppb: 4096, divisions: 2, multi: false });
+  cases.push({ name: "autzen-copc-4096-d2", input: autzen, ppb: 4096, divisions: 2, multi: false, format: "v5" });
 } else {
   console.log("skip autzen-copc: las-0.11 test data not found in the cargo registry");
 }
@@ -64,11 +124,14 @@ const x = (await WebAssembly.instantiate(module, imports)).exports;
 
 const dumpDir = process.env.CONVERT_PARITY_DUMP;
 
-function wasmConvert(name, bytes, ppb, divisions) {
+// `convert_parity_run` format argument.
+const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2, v5: 3, v7: 4 };
+
+function wasmConvert(name, bytes, ppb, divisions, format, rowOrder) {
   const ptr = x.convert_parity_alloc(bytes.length);
   // Viewed after the allocation: growing memory detaches earlier buffers.
   new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
-  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0);
+  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, FORMAT_CODES[format ?? ""], rowOrder === "hybrid" ? 1 : rowOrder === "source" ? 2 : 0);
   const view = (p, l) => new Uint8Array(x.memory.buffer, p, l);
   if (!ok) {
     const message = new TextDecoder().decode(
@@ -91,12 +154,12 @@ function wasmConvert(name, bytes, ppb, divisions) {
   };
 }
 
-function nativeConvert(name, input, ppb, divisions) {
+function nativeConvert(name, input, ppb, divisions, format, rowOrder) {
   const output = join(workDir, `${name}.oct`);
   // The converter refuses to overwrite an existing output.
   rmSync(output, { force: true });
   rmSync(`${output}attrs`, { force: true });
-  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions)], {
+  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...(format ? [format] : []), ...(rowOrder ? [rowOrder] : [])], {
     encoding: "utf8",
   });
   if (run.status !== 0) throw new Error(`native conversion failed: ${run.stderr}`);
@@ -108,10 +171,14 @@ function nativeConvert(name, input, ppb, divisions) {
 }
 
 let failed = false;
-for (const { name, input, ppb, divisions, multi } of cases) {
-  const native = nativeConvert(name, input, ppb, divisions);
-  const wasm = wasmConvert(name, readFileSync(input), ppb, divisions);
+const results = new Map();
+for (const { name, input, ppb, divisions, multi, format, rowOrder, sourceTwin } of cases) {
+  const native = nativeConvert(name, input, ppb, divisions, format, rowOrder);
+  const wasm = wasmConvert(name, readFileSync(input), ppb, divisions, format, rowOrder);
+  results.set(name, native);
   const problems = [];
+  // The option must reach both sides: the hybrid pair differs from its source-order twin.
+  if (sourceTwin && results.get(sourceTwin).oct === native.oct) problems.push("hybrid equals source order");
   if (native.oct !== wasm.oct) problems.push("oct differs");
   if (native.attrs !== wasm.attrs) problems.push("octattrs differs");
   if (native.blocks !== wasm.blocks) problems.push("block count differs");
@@ -125,8 +192,8 @@ for (const { name, input, ppb, divisions, multi } of cases) {
 // The native 4x harness (`native_hybrid`, file spill zones, one worker) must write the same pair as
 // the CLI whether the budget forces spilling (64 KiB) or not (2 GiB).
 const hybridCases = cases.filter(({ name }) => name === "small-default" || name === "synthetic-4096-d8");
-for (const { name, input, ppb, divisions } of hybridCases) {
-  const native = nativeConvert(name, input, ppb, divisions);
+for (const { name, input, ppb, divisions, format } of hybridCases) {
+  const native = nativeConvert(name, input, ppb, divisions, format);
   for (const [label, budget, spills] of [["64k", 65536, true], ["2g", 2 ** 31, false]]) {
     const output = join(workDir, `${name}-hybrid-${label}.oct`);
     const zones = join(workDir, `${name}-zones-${label}`);

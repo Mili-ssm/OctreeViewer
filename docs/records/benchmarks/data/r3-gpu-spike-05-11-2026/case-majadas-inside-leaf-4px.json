@@ -1,0 +1,15 @@
+{
+  "dataset": "majadas", "pose": "inside-leaf", "target_px": 4,
+  "viewport": [1280, 720],
+  "view_proj": [0.00000000000000024945965, 0, 1.00001, 1, -1.3579952, 0, 0.00000000000000018369885, 0.00000000000000018369701, 0, 2.4142137, 0, 0, -0.0000000000000025170077, 0, -0.0031136912, 0.0000000012697328],
+  "eye": [621, 619, 155],
+  "visual_scale": 0.07882686703405224,
+  "nodes": 232, "levels": 267,
+  "variants": {
+    "w10": { "slots_per_page": 682, "pages": 16751, "slots_used": 11424182, "empty_slots": 3072950 },
+    "w16": { "slots_per_page": 512, "pages": 16485, "slots_used": 8440320, "empty_slots": 89088 }
+  },
+  "drawn_cells": 6793731, "resident_cells": 8351232,
+  "ranges_w10": 276, "ranges_w16": 276,
+  "f32_max_error_px": 0.00008603241204417786
+}

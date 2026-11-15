@@ -8,7 +8,8 @@ use viewer_core::{
     CoordinateFrame, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 use viewer_format::{
-    FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions, SourcePointBlock,
+    CrsRecord, FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions, GlobalFrame,
+    NodeCell, SourcePointBlock, SourceScaleOffset,
 };
 
 pub const BLOCK_ID: BlockId = BlockId::new(17);
@@ -146,4 +147,54 @@ pub fn repair_index_and_footer(bytes: &mut [u8]) {
     bytes[footer + 32..footer + 36].copy_from_slice(&crc.to_le_bytes());
     let crc = viewer_format::crc32(&bytes[footer..footer + 36]);
     bytes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
+}
+
+/// Root corner in quanta, the simplest valid frame origin.
+pub fn root_origin(level: u32, prefix: [u64; 3]) -> [i64; 3] {
+    prefix.map(|p| viewer_format::cell_origin_quanta(level, p))
+}
+
+/// Prefix of the node at absolute `level` that contains `coordinate` (CRS units), per axis.
+pub fn prefix_of(coordinate: f64, level: u32) -> u64 {
+    let quanta = viewer_format::quantize_coordinate(coordinate).unwrap();
+    let u = (quanta as u64) ^ (1 << 63);
+    u.checked_shr(64 - level).unwrap_or(0)
+}
+
+/// Single-node `v7.4-pre` metadata: the root at (`level`, `prefix`) owns every block.
+pub fn global_metadata(
+    level: u32,
+    prefix: [u64; 3],
+    blocks: Vec<BlockId>,
+    point_count: u64,
+    schema: Vec<AttributeDescriptor>,
+    crs: CrsRecord,
+    source: Option<SourceScaleOffset>,
+) -> FormatMetadata {
+    let spacing = 2.0_f64.powi(-5);
+    let frame = GlobalFrame::new(
+        level,
+        prefix,
+        root_origin(level, prefix),
+        root_origin(level, prefix),
+        crs,
+        source,
+        vec![(NodeId::new(0), NodeCell::new(prefix, spacing))],
+    )
+    .unwrap();
+    let bounds = frame.node_bounds(0, prefix).unwrap();
+    let node = SpatialNode::new(NodeId::new(0), None, 0, bounds, point_count, 0.0, blocks).unwrap();
+    let hierarchy = SpatialHierarchy::new(vec![node], schema, Some(point_count)).unwrap();
+    FormatMetadata::new(
+        DatasetMetadata::new(
+            CoordinateFrame::new(frame.frame_origin()).unwrap(),
+            hierarchy,
+        ),
+        None,
+        Some("sample-grid:256;leaf:64000".to_owned()),
+        Vec::new(),
+    )
+    .unwrap()
+    .with_global_frame(frame)
+    .unwrap()
 }

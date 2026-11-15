@@ -71,6 +71,43 @@ y la generación/sintaxis del runtime y ambos workers autocontenidos. No sustitu
 de renderizado WebGPU en Chrome/Firefox: abrir el paquete generado con doble clic, cargar la
 muestra y comprobar la consola; comprobar también el arranque desde localhost.
 
+## Open a file over HTTP Range
+
+`index.html?url=FILE.oct[&attrs=FILE.octattrs|none][&px=4]` opens a file from a server that answers
+`Range` (single range, `206`) and sends CORS headers (`Access-Control-Allow-Headers: Range, If-Range`,
+`Access-Control-Expose-Headers: Content-Range, ETag`). The workers read it with
+`http-range-source.mjs`: one suffix request opens a `v7.5-pre` file, later reads are single ranges
+pinned by `If-Range`, and a server that ignores `Range` (answers `200`) is an error.
+
+Failures are handled per request: network errors, `429` and `5xx` are retried three times with
+exponential backoff and jitter (about 200 ms, 800 ms and 2.4 s; `Retry-After` is honoured up to 10 s),
+and every attempt has a 15 s timeout (`timeoutMs`) that counts as a retryable failure. Other `4xx`,
+a changed file (ETag or `200` for a Range request) and aborts are never retried. The counters
+`requests`, `retries`, `timeouts`, `aborted` and `abortedBytes` appear as `remote` in the worker
+metrics (`workerMetrics.remote`, and `remote` in the build worker's metrics).
+
+A ticket the scheduler drops is cancelled for real: each LOD read request gets a view of the source
+(`HttpRangeSource.withSignal`, installed with `WasmAsyncLodReadRequest.setSource`) tied to an
+`AbortController`. Aborting rejects that ticket's reads with an `AbortError` (a cancellation: not
+reported, not retried, not a failed block) and cancels an HTTP request only when every read merged into
+it is aborted, so a block still wanted by another ticket keeps its download.
+
+Two tuning options travel with the remote source descriptor (`{ url, maxGap?, remoteReads? }`) and
+the demo URL: `&maxGap=BYTES` merges reads of the same tick separated by up to that many bytes into
+one request (default `0`: only touching ranges; the over-read is counted as `gapBytes` in `remote`),
+and `&remoteReads=N` sets the concurrent LOD reads for that source: up to N block reads plus up to N
+hierarchy page reads, each counted apart (default `8`; values below 1 or not a finite number use the
+default, values above 64 are capped; local `Blob`s always use `4`). D2 measurements on RED-REF
+(Majadas and Belvedere v7.5, CPU path): 8 reads cut the median time to reached by 15-30 % against 4
+with no frame regression, 16 gives no further gain (and more bytes on Belvedere), and gap merging
+(16-256 KiB) saved at most 3 of 31 requests for up to 6 % more bytes without changing the time, so
+`maxGap` stays `0` (record `docs/records/benchmarks/D2_GAP_CONCURRENCY_14-11-2026.md`).
+`probe-orbit-load.mjs --remote` takes `--max-gap=` and `--remote-reads=`.
+
+To measure with the RED-REF network (100 Mbit/s, 50 ms RTT), serve the repository root (for example
+`python3 -m http.server 8767`) and run `node examples/web-host/probe-remote-open.mjs DATA_DIR NAME.oct OUT.json`;
+`red-ref-server.mjs` can also be started alone (`--ignore-range` simulates a server without Range).
+
 ## Export a local single-file viewer
 
 To create a package that works offline and can be opened directly from `file://` without starting a
@@ -178,14 +215,27 @@ the file does not provide one. The canvas is transferred to a worker and cannot 
 `dispose()`; create a replacement canvas before creating another viewer in its place.
 Fatal frame errors, worker errors and message decoding failures reject outstanding API requests and
 terminate the worker immediately so the browser can release its dataset and GPU resources. To retry,
-replace the transferred canvas and create a new viewer; automatic device recreation is not available.
+replace the transferred canvas and create a new viewer.
+
+GPU device loss is recovered automatically (R3-Q26, R3-Q34), except after an explicit `destroy()`
+(reason `destroyed`). The worker emits `deviceLost` (`{ reason, message, canvasReplaced }`), then
+`deviceRecovery` (`{ state: "started" | "recovered", attempt }`, up to 3 attempts with backoff). It
+recreates the renderer on a new adapter and device, keeps the camera and settings, and reattaches
+the open dataset without reading the file again. After the last failed attempt one `error` event with
+`operation: "deviceLost"` follows. `getStats().gpu.deviceLost` reports the loss (`null` when healthy).
+After a GPU-process crash the old canvas stays blank, so the API **replaces the canvas element** with a
+clone (same id, classes, attributes, inline style and size) and dispatches `voxelviewer:canvasReplaced`
+on the new element (`detail.canvas`). A host holding the old element must switch to `event.detail.canvas`;
+listeners the host added with `addEventListener` are not cloned and must be re-bound in that event.
+Focus moves to the clone if the old element had it. A canvas outside the document is not replaced
+(`canvasReplaced: false`): recovery then runs on the old one and may stay blank after a GPU crash.
+Verified with `probe-device-loss.mjs` (Chrome `Browser.crashGpuProcess`).
 The small direct-WASM pick/recenter path passes in Chrome and Firefox via the presentation
-diagnostic above. Browser pick latency, CSS/API interaction and the host device-loss path still
-need validation.
-Chrome 155 is now available and the small software-WebGPU flows pass, but pick/device loss remain
+diagnostic above. Browser pick latency and CSS/API interaction still need validation.
+Chrome 155 is now available and the small software-WebGPU flows pass, but pick remains
 unverified. Firefox 157.0.1 headless can present with WebGPU enabled
 in a temporary profile outside the command sandbox; the first small-file benchmark is recorded
-in [web performance](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). This does not validate pick or device loss.
+in [web performance](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). This does not validate pick.
 
 **`buildWorker` (render plan R2).** On by default (`createViewer` passes `buildWorker: { url, type }` in
 the worker `init` message unless called with `buildWorker: false`; `buildWorkerUrl` overrides the URL).
@@ -198,6 +248,28 @@ since `feat/web-converter-stage4`
 unavailable (a Blob worker inside a Blob worker on `file://` in Chrome), the option disables itself,
 the worker posts `buildWorkerUnavailable` and scenes are built in the render worker. Color modes by
 attribute are not covered in this mode yet.
+
+**`cells` (render plan R3, default).** The dataset is drawn as GPU cells instead of CPU-built voxel
+scenes (R3-Q35). To use the CPU path instead, pass `?cells=0` in the demo or `createViewer({ cells: false })`.
+Both workers receive the flag (`init.cells` for the render worker, `open.cells` for the build worker). With a build worker the
+builder sends `nodeCells` (transferred, ordered, never coalesced), `cellCut` and `cellLod`, and the
+render worker answers with `poolAck`, `evict`, `poolReset` and `driverReplaced`; the protocol is
+documented at the top of `build-worker.js`. Cells need the build worker (R3-Q24): without one (`buildWorker=0`, or nested workers unavailable,
+e.g. on `file://`), the viewer uses the CPU path and the LOD stats report `cellPath: "needsBuildWorker"`.
+Limits:
+- Needs a format with a global frame and replacement semantics, and a device that supports cells;
+  otherwise the dataset opens on the CPU path (`cellPath: "CellPathUnsupported"`).
+- Frames keep running while `cellsBusy` is true, for at most 600 frames in a row without progress
+  (cut applied, queue, upload): then the render worker reports `cellsBusy: false` and `cellsStuck: true`
+  (`cellsStuckFrames` counts them) so a driver that never settles cannot keep the host rendering.
+  Waiting for missing nodes or a camera move does not count as progress. `cellsBusy: false` is not
+  a "settled" signal: wait for a non-null `cutDigestAtRest`, which the cells path only publishes when
+  the cut for the current view is applied, nothing is queued or missing and the digest repeats.
+  `cutDigestAtRest` (LOD stats, worker metrics and `window.__renderBench.cutDigestAtRest()`) is the
+  digest of the applied cut once everything is at rest.
+- A scene received in cells mode is a bug: it is not applied, and it is counted in
+  `cellCounters.strayScenes` of the worker metrics.
+- Not measured in a browser yet.
 
 The converter is separately embeddable from `converter-api.mjs`. It accepts a local `.las` or `.laz`
 `File`, runs the core converter (the same pipeline as the CLI) in another worker, and resolves to
@@ -217,7 +289,7 @@ converter.dispose();
 
 | Item | Behaviour |
 | --- | --- |
-| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `formatVersion`, `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS) |
+| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `formatVersion` (default `"v7"`, the final global-frame format), `rowOrder` (`"source"` or `"hybrid"`; the default depends on the format: v7 fixes hybrid, v7.N-pre defaults to source, and hybrid is rejected for non-v7 formats; V7 is frozen by ADR 0044), `pointsPerBlock` and `spatialDivisions` (global-frame formats `v7`, `v7.4-pre` and `v7.5-pre` fix them at 64000 and 2, so omit them; values other than the fixed ones, except the legacy default 262144 points per block, which is treated as unset, are errors), `maxError`, `maxMemoryMiB`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS) |
 | `ready` | Promise that settles once stale partial files are deleted; `convert()` waits for it on its own, so awaiting it is optional |
 | Events | `on("progress" \| "status" \| "warning" \| "complete" \| "cancelled" \| "error", callback)` returns an unsubscribe function |
 | `warning` | Emitted when OPFS is unavailable (Chrome `file://`): the conversion runs RAM-only and is limited by `ramBudget`; serve the page over `http://localhost` for large files |
@@ -298,7 +370,7 @@ Rust and avoids materializing the full file in JS.
 Run the host-side tests with `node --test examples/web-host/tests/*.test.mjs` and
 `python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'`. They cover request/resource
 caps, worker failure cleanup, benchmark-window metrics and filtering/aggregation of exported runs.
-Browser interaction, real GPU timing, device loss and cancellation during a local file read still need
+Browser interaction, real GPU timing and cancellation during a local file read still need
 a real browser check; no native or mocked timing should be reported as browser FPS.
 
 Benchmark exports retain initial RGB open times under `load` (including its initial detail), and
@@ -569,12 +641,12 @@ LOD publication and navigation measurements remain pending in the [V7 plan](../.
 
 ### Opt-in conversion revisions
 
-Normal conversion stays on final v5. Programmatic callers may select a revision with the converter
+The converter writes final v7 by default. Callers may select another revision with the converter
 option `formatVersion`, for example `converter.convert(file, { options: { formatVersion: "v7.3-pre" } })`.
-Opening a Blob automatically selects final v5 or an implemented experimental identity: `v6.1-pre`–`v6.4-pre`
+Opening a Blob automatically selects final v5, final v7 or an implemented experimental identity: `v6.1-pre`–`v6.4-pre`
 and `v7.1-pre`–`v7.3-pre`. The option accepts these exact strings;
-paired files must have the exact same identity. Final `v6`, final `v7` and later revisions remain unsupported.
-The demo defaults to v5; this programmatic selection does not add a format selector to its UI.
+paired files must have the exact same identity. Final `v6` and revisions after final `v7` remain unsupported; final `v7` is supported and the default.
+The demo converter panel defaults to `v7` and lists the other writable revisions in its format selector; for global-frame formats (`v7`, `v7.4-pre`, `v7.5-pre`) it disables **Points per block** and **Spatial divisions** (fixed by the format) and does not send them.
 
 For the storage probe, pass `expectedVersion: "v7.3-pre"` with the converted Blobs and check the
 returned `formatVersion`. Use fresh bindings and reload worker scripts after rebuilding (a cache

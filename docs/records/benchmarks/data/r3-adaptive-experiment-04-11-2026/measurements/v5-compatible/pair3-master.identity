@@ -1,0 +1,15 @@
+started_utc=2026-11-04T21:46:05Z
+hostname=pc-tatil
+worktree=/home/mili/.cache/codex-worktrees/octree-r3-adaptive
+git_head=3eb78f70f2a90d5a8b7b68d39efc5fd406d2983d
+binary=/tmp/r3-adaptive-benchmark/master-voxel
+binary_sha256=3c3fe651907de4ab73d59c85b40ca5b80ba8d1c4deb20068c19935a08b8ec824
+dataset=/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/majadas-current-v5/run-1/output.oct
+dataset_sha256=742262867c844bb4e876cd4280a648e45ee677624a3cebd1a8d71bbbf6ff6f04
+attrs=/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/majadas-current-v5/run-1/output.octattrs
+attrs_sha256=d45cd5fd70816d24ea29137faaf4ec1ca6cc2a4fcdc8be2dabbefc20f9a543f1
+argv=/tmp/r3-adaptive-benchmark/master-voxel /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/majadas-current-v5/run-1/output.oct 3
+loadavg=0.93 1.00 1.29 1/1310 122444
+finished_utc=2026-11-04T21:46:11Z
+loadavg=0.93 1.00 1.29 1/1310 122448
+other_build_or_check_processes:

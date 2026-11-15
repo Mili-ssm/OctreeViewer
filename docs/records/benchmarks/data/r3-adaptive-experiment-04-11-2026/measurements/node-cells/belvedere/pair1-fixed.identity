@@ -1,0 +1,12 @@
+started_utc=2026-11-04T21:44:28Z
+hostname=pc-tatil
+git_head=3eb78f70f2a90d5a8b7b68d39efc5fd406d2983d
+binary=/tmp/r3-adaptive-benchmark/fixed-node-cells
+binary_sha256=2dcf77b1a212d617b76a0ea30b535ce67be93a194e7e6efe0192895a089b018b
+dataset=/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v75.oct
+dataset_sha256=101464e9152145270f525f3be6818e702aca5c8bd9456e133641d339c26ed148
+argv=/tmp/r3-adaptive-benchmark/fixed-node-cells /home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v75.oct
+loadavg=0.65 1.02 1.33 1/1304 121842
+finished_utc=2026-11-04T21:44:44Z
+loadavg=0.81 1.03 1.33 1/1311 121897
+other_build_or_check_processes:

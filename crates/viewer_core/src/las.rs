@@ -4,6 +4,12 @@ use std::io::{Read, Seek, SeekFrom};
 
 use crate::{AttributeDataType, AttributeDescriptor, SpatialBounds};
 
+pub mod extra;
+pub use extra::{
+    LasExtraByte, LasExtraByteFields, LasExtraBytesError, LasSchemaSpec, las_attribute_schema_for,
+    las_flags_of_record, parse_extra_byte_descriptors, validate_extra_bytes,
+};
+
 /// Longest bounds axis is scaled to this many render units.
 pub const TARGET_RENDER_EXTENT: f64 = 100.0;
 

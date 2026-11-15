@@ -1,0 +1,15 @@
+{
+  "dataset": "belvedere", "pose": "grazing", "target_px": 4,
+  "viewport": [1280, 720],
+  "view_proj": [-1.3579952, 0, 0, 0, 0, -0.21041258, -1.2608229, -0.9961947, 0, 2.4050267, -0.110307716, -0.087155744, 0, -0.000003497465, -251.75383, -0.00001467348],
+  "eye": [3900.4899902343745, 29566.848353301983, 9256.166866388745],
+  "visual_scale": 0.01649201621495024,
+  "nodes": 1, "levels": 2,
+  "variants": {
+    "w10": { "slots_per_page": 682, "pages": 22, "slots_used": 15004, "empty_slots": 534 },
+    "w16": { "slots_per_page": 512, "pages": 29, "slots_used": 14848, "empty_slots": 378 }
+  },
+  "drawn_cells": 10636, "resident_cells": 14470,
+  "ranges_w10": 4, "ranges_w16": 4,
+  "f32_max_error_px": 0.00003712908482467599
+}

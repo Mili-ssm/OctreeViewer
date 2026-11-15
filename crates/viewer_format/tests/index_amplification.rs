@@ -109,7 +109,7 @@ fn worst_case_file(nodes: u64) -> Vec<u8> {
         ranges,
     )
     .unwrap();
-    let version = FormatVersion::DEFAULT_OUTPUT;
+    let version = FormatVersion::V5;
     let mut writer =
         FormatWriter::new_for_version(version, Cursor::new(Vec::new()), meta, common::options())
             .unwrap();

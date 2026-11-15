@@ -1,3 +1,4 @@
+import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 
 const DEFAULT_CACHE_BYTES = 256 * 1024 * 1024;
@@ -5,7 +6,8 @@ const MAX_CACHE_BYTES = 1024 * 1024 * 1024;
 const MAX_PENDING_REQUESTS = 32;
 
 /** Creates an embeddable viewer on a host-owned canvas. The canvas is transferred to its worker. */
-export function createViewer(canvas, options = {}) {
+export function createViewer(hostCanvas, options = {}) {
+    let canvas = hostCanvas;
     if (!(canvas instanceof HTMLCanvasElement)) throw new TypeError("canvas must be an HTMLCanvasElement");
     let mode = options.mode ?? "observer";
     if (mode !== "observer" && mode !== "bird") throw new TypeError("mode must be 'observer' or 'bird'");
@@ -129,8 +131,9 @@ export function createViewer(canvas, options = {}) {
             emit("stats", data);
             if (loading) ensureFrame();
         } else if (data.type === "lodProgress") {
-            loading = Boolean(data.lod && !data.lod.lodError
-                && (data.lod.pendingBlockIds.length || data.lod.lodStagePixels > data.lod.targetVoxelPixels));
+            loading = Boolean(data.lod && !data.lod.lodError && !data.lod.pageBudgetExhausted
+                && (data.lod.pendingBlockIds.length || data.lod.pendingPageAnchors?.length
+                    || data.lod.lodStagePixels > data.lod.targetVoxelPixels));
             emit("progress", data);
             if (loading) ensureFrame();
         } else if (data.type === "dataset") {
@@ -139,6 +142,16 @@ export function createViewer(canvas, options = {}) {
             ensureFrame();
         } else if (data.type === "status") {
             emit("status", data.message);
+        } else if (data.type === "deviceLost") {
+            const canvasReplaced = data.reason !== "destroyed" && replaceCanvas();
+            emit("deviceLost", { ...data, canvasReplaced });
+        } else if (data.type === "deviceRecovery") {
+            emit("deviceRecovery", data);
+            if (data.state === "recovered") {
+                loading = true;
+                framePending = false;
+                ensureFrame();
+            }
         }
     };
     const onWorkerError = (event) => {
@@ -168,6 +181,9 @@ export function createViewer(canvas, options = {}) {
         worker.postMessage({
             type: "init", canvas: offscreen, width, height,
             colorMode: options.colorMode ?? "rgb", depthShading: options.depthShading ?? true,
+            cells: options.cells !== false,
+            canvasReplacement: true,
+            cellNodeBytesPerFrame: options.cellNodeBytesPerFrame,
             buildWorker: options.buildWorker !== false ? {
                 url: String(options.buildWorkerUrl ?? new URL("./build-worker.js", import.meta.url)),
                 type: "module",
@@ -267,14 +283,32 @@ export function createViewer(canvas, options = {}) {
         event.preventDefault();
         ensureFrame();
     }
-    canvas.addEventListener("pointerdown", pointerDown);
-    canvas.addEventListener("pointermove", pointerMove);
-    canvas.addEventListener("pointerup", pointerEnd);
-    canvas.addEventListener("pointercancel", pointerEnd);
-    canvas.addEventListener("lostpointercapture", pointerEnd);
-    canvas.addEventListener("wheel", wheel, { passive: false });
-    canvas.addEventListener("contextmenu", contextMenu);
-    canvas.addEventListener("keydown", keyDown);
+    const bindings = [
+        ["pointerdown", pointerDown], ["pointermove", pointerMove], ["pointerup", pointerEnd],
+        ["pointercancel", pointerEnd], ["lostpointercapture", pointerEnd],
+        ["wheel", wheel, { passive: false }], ["contextmenu", contextMenu], ["keydown", keyDown],
+    ];
+    const bindCanvas = () => { for (const [type, handler, flags] of bindings) canvas.addEventListener(type, handler, flags); };
+    const unbindCanvas = () => { for (const [type, handler] of bindings) canvas.removeEventListener(type, handler); };
+    bindCanvas();
+
+    // R3-Q34: swaps the host's canvas element for a clone and gives the worker its OffscreenCanvas.
+    // Returns whether it did; without a DOM element the worker recovers on its current canvas.
+    function replaceCanvas() {
+        const replaced = replaceCanvasElement(canvas);
+        if (!replaced) {
+            worker.postMessage({ type: "replaceCanvas", canvas: null });
+            return false;
+        }
+        resizeObserver.unobserve(canvas);
+        unbindCanvas();
+        canvas = replaced.canvas;
+        bindCanvas();
+        resizeObserver.observe(canvas);
+        worker.postMessage({ type: "replaceCanvas", canvas: replaced.offscreen }, [replaced.offscreen]);
+        canvas.dispatchEvent(new CustomEvent("voxelviewer:canvasReplaced", { detail: { canvas } }));
+        return true;
+    }
 
     const api = {
         ready: readyPromise,
@@ -330,6 +364,14 @@ export function createViewer(canvas, options = {}) {
         },
         getMetadata: () => request("getMetadata"),
         getStats: () => request("getStats"),
+        // RF-06/RF-07: "fixed" keeps the load's voxelPixels, "dynamic" lets the worker pick 1, 2, 4 or 8 px
+        // from frame cost. Resolves with the px stats ({ mode, targetPx, signalMs, signalSource }).
+        setPxMode(pxMode) {
+            if (pxMode !== "fixed" && pxMode !== "dynamic") {
+                return Promise.reject(new TypeError("pxMode must be 'fixed' or 'dynamic'"));
+            }
+            return request("setPxMode", { mode: pxMode });
+        },
         pick(cssX, cssY) {
             if (!Number.isFinite(cssX) || !Number.isFinite(cssY)) {
                 return Promise.reject(new TypeError("pick coordinates must be finite CSS pixels"));
@@ -359,14 +401,7 @@ export function createViewer(canvas, options = {}) {
             if (raf) cancelAnimationFrame(raf);
             resizeObserver.disconnect();
             window.removeEventListener("resize", resize);
-            canvas.removeEventListener("pointerdown", pointerDown);
-            canvas.removeEventListener("pointermove", pointerMove);
-            canvas.removeEventListener("pointerup", pointerEnd);
-            canvas.removeEventListener("pointercancel", pointerEnd);
-            canvas.removeEventListener("lostpointercapture", pointerEnd);
-            canvas.removeEventListener("wheel", wheel);
-            canvas.removeEventListener("contextmenu", contextMenu);
-            canvas.removeEventListener("keydown", keyDown);
+            unbindCanvas();
             worker.removeEventListener("message", onMessage);
             worker.removeEventListener("error", onWorkerError);
             worker.removeEventListener("messageerror", onWorkerError);

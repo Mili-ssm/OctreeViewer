@@ -249,6 +249,7 @@ fn estimate_json(estimate: &SpoolEstimate) -> String {
 
 fn run(args: &Args) -> Result<String, Box<dyn std::error::Error>> {
     let options = ConvertOptions::new(args.points_per_block, 0.01)?
+        .with_format_version("v5".parse()?)?
         .with_spatial_divisions(args.divisions)?
         .with_spatial_workers(1)?;
     let factory = LasFactory::new(FileBytes {

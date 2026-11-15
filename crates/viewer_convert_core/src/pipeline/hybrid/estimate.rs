@@ -44,6 +44,7 @@ pub fn estimate_spools(
     options: ConvertOptions,
     config: HybridConfig,
 ) -> Result<SpoolEstimate, ConvertError> {
+    let options = options.validate()?;
     let points = u128::from(source.point_count);
     let record = SpoolLayout::source(source).record_bytes() as u128;
     let divisions = u128::from(options.spatial_divisions()).max(1);
@@ -96,11 +97,18 @@ mod tests {
             point_format: las::point::Format::new(format).unwrap(),
             transforms: las::Vector::default(),
             has_crs: false,
+            crs: viewer_format::CrsRecord::local(),
+            scale_offset: None,
+            global: None,
+            extra_byte_vlrs: Vec::new(),
+            las_extra_bytes: None,
         }
     }
 
     fn estimate(points: u64, format: u8, divisions: u8, budget: u64) -> SpoolEstimate {
         let options = ConvertOptions::default()
+            .with_format_version(viewer_format::FormatVersion::V5)
+            .unwrap()
             .with_spatial_divisions(divisions)
             .unwrap();
         estimate_spools(&info(points, format), options, HybridConfig::web(budget)).unwrap()

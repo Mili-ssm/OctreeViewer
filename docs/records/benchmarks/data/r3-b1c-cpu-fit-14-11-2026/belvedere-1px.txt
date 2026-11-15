@@ -1,0 +1,5 @@
+dataset belvedere-v75.oct px 1
+fitted: reached true, settled true in 3129 ms, retained 0 streaks (0 ms, longest 0 ms), forgotten at rest 0, frame p95 arrival 18.400146484375 / rest 17.300048828125 ms, render-call p95 2.2999999821186066 / 0.5 ms, GTT +395 MiB
+orbit: reached true, settled true in 753 ms, retained 0 streaks (0 ms, longest 0 ms), forgotten at rest 0, frame p95 arrival 20.39990234375 / rest 17.2001953125 ms, render-call p95 2.5999999940395355 / 0.4000000059604645 ms, GTT +395 MiB
+jump: reached false, settled false, retained 1 streaks (282085 ms, longest 282085 ms), forgotten at rest n/a, frame p95 arrival 17.699951171875 / rest n/a ms, render-call p95 3.9000000059604645 / n/a ms, GTT +390 MiB
+GTT baseline 40 MiB, peak +459 MiB; console messages 1

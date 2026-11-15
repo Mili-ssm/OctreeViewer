@@ -6,6 +6,7 @@ use std::path::Path;
 
 use las_source::convert_file_inner;
 
+mod allocator;
 mod blocks;
 mod checkpoint;
 mod diagnostic_timer;
@@ -24,9 +25,13 @@ mod publish;
 mod report;
 mod source;
 mod spatial;
+#[cfg(test)]
+mod test_options;
+mod verify;
 mod workspace;
 
 pub use checkpoint::CheckpointMode;
+pub use verify::{VerifyReport, verify_file};
 pub use viewer_convert_core::{
     CheckpointError, ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage,
     ConversionWorkerStats, ConvertError, ConvertOptions, DiagnosticWindow, SpatialPhaseDiagnostics,
@@ -129,3 +134,16 @@ where
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "las_extra_tests.rs"]
+mod las_extra_tests;
+#[cfg(test)]
+#[path = "v7_4_tests.rs"]
+mod v7_4_tests;
+#[cfg(test)]
+#[path = "v7_4_viewer_tests.rs"]
+mod v7_4_viewer_tests;
+#[cfg(test)]
+#[path = "v7_5_tests.rs"]
+mod v7_5_tests;

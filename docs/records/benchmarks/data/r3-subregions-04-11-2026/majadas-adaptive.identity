@@ -1,0 +1,16 @@
+started_utc=2026-11-04T22:24:34Z
+hostname=pc-tatil
+kernel=Linux 7.2.15-300.fc45.x86_64
+git_head=3eb78f70f2a90d5a8b7b68d39efc5fd406d2983d
+87ef9c914aab670211c76b1a600d2f24b64d57e0430e15446d5c46ab635cf6e1  /tmp/r3-adaptive-benchmark/adaptive-node-cells
+269d5df1e6da8485a0fd5ded3798a0f79bdde61ff298f624e5497dba6b29f1b1  /home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v75.oct
+cc253c28ff90b1d5361f5cdb781217f5d1d78b809b1736298066f16c7149b3fd  /home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v75.octattrs
+argv=/tmp/r3-adaptive-benchmark/adaptive-node-cells /home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v75.oct
+LANG=C.UTF-8
+LC_ALL=<unset>
+RUSTUP_TOOLCHAIN=<unset>
+RUSTC=<unset>
+CARGO_PROFILE=<unset>
+RUSTFLAGS=<unset>
+run_exit_status=0
+finished_utc=2026-11-04T22:29:46Z

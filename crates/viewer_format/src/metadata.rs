@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use viewer_core::{AttributeDataType, AttributeValues, DatasetMetadata, NodeId};
+use viewer_core::{AttributeDataType, AttributeValues, DatasetMetadata, NodeId, las::LasExtraByte};
 
-use crate::FormatError;
+use crate::{FormatError, GlobalFrame};
 
 /// Extra file-level metadata not interpreted by spatial queries.
 #[derive(Debug, Clone, PartialEq)]
@@ -13,6 +13,8 @@ pub struct FormatMetadata {
     sampling_policy: Option<String>,
     visual_scale: f64,
     node_attribute_ranges: BTreeMap<NodeId, Vec<NodeAttributeRange>>,
+    global_frame: Option<GlobalFrame>,
+    las_extra_bytes: Vec<LasExtraByte>,
 }
 
 impl FormatMetadata {
@@ -34,7 +36,40 @@ impl FormatMetadata {
             sampling_policy,
             visual_scale: 1.0,
             node_attribute_ranges: ranges,
+            global_frame: None,
+            las_extra_bytes: Vec::new(),
         })
+    }
+
+    /// Attaches the `v7.4-pre` global frame: root, CRS record, source scale/offset and per-node
+    /// prefix and spacing. The dataset's frame origin and node bounds must be the derived ones
+    /// (checked when the file is written or read). `crs()` then reports the CRS identity.
+    pub fn with_global_frame(mut self, mut frame: GlobalFrame) -> Result<Self, MetadataError> {
+        let hierarchy = self.dataset.hierarchy();
+        let root = hierarchy
+            .node(hierarchy.root_id())
+            .ok_or(MetadataError::InvalidGlobalFrame("root node is missing"))?;
+        let nodes: Vec<_> = hierarchy.query(root.bounds()).collect();
+        frame.bind_blocks(&nodes)?;
+        self.crs = frame.crs().identity_label();
+        self.global_frame = Some(frame);
+        Ok(self)
+    }
+
+    /// Attaches the LAS Extra Bytes descriptors (`v7.5-pre` only; other versions do not store
+    /// them). The last `descriptors.len()` schema columns are their columns, in order.
+    pub fn with_las_extra_bytes(mut self, descriptors: Vec<LasExtraByte>) -> Self {
+        self.las_extra_bytes = descriptors;
+        self
+    }
+
+    pub fn las_extra_bytes(&self) -> &[LasExtraByte] {
+        &self.las_extra_bytes
+    }
+
+    /// Present exactly in `v7.4-pre` files.
+    pub fn global_frame(&self) -> Option<&GlobalFrame> {
+        self.global_frame.as_ref()
     }
 
     pub fn dataset(&self) -> &DatasetMetadata {
@@ -43,6 +78,61 @@ impl FormatMetadata {
 
     pub fn shared_dataset(&self) -> Arc<DatasetMetadata> {
         Arc::clone(&self.dataset)
+    }
+
+    /// The dataset as the viewer consumes it: node bounds in the same space as the coordinate
+    /// origin (world), plus each node's stored representative spacing.
+    ///
+    /// `v7.4-pre` stores bounds relative to the frame origin and a spacing per node, so they are
+    /// shifted back by the origin (exact: the origin and bounds are multiples of 2^-15 below 2^35),
+    /// the spacing is attached and `stats().data_bounds` is the tight data extent of the frame. Other versions return `shared_dataset()` unchanged.
+    pub fn viewer_dataset(&self) -> Result<Arc<DatasetMetadata>, MetadataError> {
+        let Some(frame) = &self.global_frame else {
+            return Ok(self.shared_dataset());
+        };
+        let origin = self.dataset.coordinate_frame().origin();
+        let hierarchy = self.dataset.hierarchy();
+        let invalid = |_| MetadataError::InvalidGlobalFrame("viewer dataset");
+        let mut nodes = Vec::new();
+        let mut pending = vec![hierarchy.root_id()];
+        while let Some(id) = pending.pop() {
+            let node = hierarchy
+                .node(id)
+                .ok_or(MetadataError::InvalidGlobalFrame("missing node"))?;
+            let bounds = viewer_core::SpatialBounds::new(
+                std::array::from_fn(|axis| node.bounds().min()[axis] + origin[axis]),
+                std::array::from_fn(|axis| node.bounds().max()[axis] + origin[axis]),
+            )
+            .map_err(invalid)?;
+            let mut shifted = viewer_core::SpatialNode::new(
+                id,
+                node.parent(),
+                node.level(),
+                bounds,
+                node.point_count(),
+                node.geometric_error(),
+                node.blocks().to_vec(),
+            )
+            .map_err(invalid)?;
+            if let Some(cell) = frame.node_cell(id) {
+                shifted = shifted.with_spacing(cell.spacing()).map_err(invalid)?;
+            }
+            nodes.push(shifted);
+            pending.extend(hierarchy.child_ids(id).iter().rev().copied());
+        }
+        let rebuilt = viewer_core::SpatialHierarchy::new_with_semantics(
+            nodes,
+            hierarchy.attributes().to_vec(),
+            hierarchy.stats().source_point_count,
+            hierarchy.semantics(),
+        )
+        .map_err(invalid)?
+        .with_data_bounds(frame.data_bounds().map_err(invalid)?)
+        .map_err(invalid)?;
+        Ok(Arc::new(DatasetMetadata::new(
+            self.dataset.coordinate_frame(),
+            rebuilt,
+        )))
     }
 
     pub fn crs(&self) -> Option<&str> {
@@ -91,6 +181,8 @@ impl FormatMetadata {
             sampling_policy: self.sampling_policy.clone(),
             visual_scale: self.visual_scale,
             node_attribute_ranges: ranges,
+            global_frame: self.global_frame.clone(),
+            las_extra_bytes: self.las_extra_bytes.clone(),
         }
     }
 }
@@ -177,6 +269,10 @@ pub enum MetadataError {
     DuplicateNodeRanges(NodeId),
     #[error("visual scale must be finite and greater than zero")]
     InvalidVisualScale,
+    #[error("invalid CRS record: {0}")]
+    InvalidCrs(&'static str),
+    #[error("invalid global frame: {0}")]
+    InvalidGlobalFrame(&'static str),
 }
 
 pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
@@ -192,6 +288,22 @@ pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatE
         }
     }
     let hierarchy = metadata.dataset().hierarchy();
+    let extras = metadata.las_extra_bytes();
+    let tail = hierarchy
+        .attributes()
+        .len()
+        .checked_sub(extras.len())
+        .ok_or(FormatError::InvalidMetadata(
+            "more Extra Bytes descriptors than schema attributes",
+        ))?;
+    for (extra, column) in extras.iter().zip(&hierarchy.attributes()[tail..]) {
+        if extra.data_type() != column.data_type() || extra.components() != column.component_count()
+        {
+            return Err(FormatError::InvalidMetadata(
+                "Extra Bytes descriptor does not match its schema column",
+            ));
+        }
+    }
     if hierarchy.attributes().len() > u32::MAX as usize {
         return Err(FormatError::SchemaTooLarge);
     }
@@ -203,10 +315,16 @@ pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatE
     let root = hierarchy
         .node(hierarchy.root_id())
         .ok_or(FormatError::InvalidMetadata("root node is missing"))?;
-    let node_ids: BTreeSet<_> = hierarchy
-        .query(root.bounds())
-        .map(|node| node.id())
-        .collect();
+    let all_nodes: Vec<_> = hierarchy.query(root.bounds()).collect();
+    let node_ids: BTreeSet<_> = all_nodes.iter().map(|node| node.id()).collect();
+    if let Some(frame) = metadata.global_frame() {
+        crate::global_frame::validate_nodes(
+            frame,
+            metadata.dataset().coordinate_frame().origin(),
+            &all_nodes,
+        )
+        .map_err(FormatError::InvalidMetadata)?;
+    }
     let schema = hierarchy.attributes();
     for (node_id, ranges) in metadata.node_range_entries() {
         if !node_ids.contains(&node_id) {

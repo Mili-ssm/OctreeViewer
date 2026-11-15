@@ -91,8 +91,41 @@ self.onmessage = async () => {
             && reopened.cacheActivity.rejectedProtected === "0", "reopen retained cache activity");
         assert(reopened.refinementWork.rangeReadCalls === 0
             && reopened.refinementWork.rangeReadBytes === "0", "reopen retained range accounting");
+        // Reach a fine stage while the second branch is outside the frustum, then reveal its
+        // absent block. Each actual camera binding must preserve that published stage.
+        viewer.openLodDataset({
+            coordinateOrigin: [0, 0, 0], semantics: "replacement", cacheBytes: 1024 * 1024,
+            sourcePointCount: "2", nodes: [
+                { id: "0", parent: null, level: 0, min: [0, 0, 0], max: [100, 10, 10], pointCount: "0", geometricError: 100, blocks: [] },
+                { id: "1", parent: "0", level: 1, min: [0, 0, 0], max: [10, 10, 10], pointCount: "1", geometricError: 0, blocks: ["1"] },
+                { id: "2", parent: "0", level: 1, min: [90, 0, 0], max: [100, 10, 10], pointCount: "1", geometricError: 0, blocks: ["2"] },
+            ],
+        });
+        viewer.insertLodBlock("1", new Float32Array([5, 5, 5]), new Uint8Array([20, 30, 40]));
+        viewer.fitScene();
+        viewer.setCameraPose(new Float64Array([5, -20, 5]), new Float64Array([5, 5, 5]));
+        const initial = finish(4);
+        assert(initial.lodStagePixels <= 8, "fixture did not reach a fine stage");
+        viewer.setCameraPose(new Float64Array([50, -150, 5]), new Float64Array([50, 5, 5]));
+        let stage = initial.lodStagePixels;
+        for (const [name, move] of [
+            ["pose", () => true],
+            ["orbit", () => viewer.orbit(0.001, 0)],
+            ["pan", () => viewer.pan(0.001, 0)],
+            ["zoom", () => viewer.zoom(0.001)],
+            ["resize", () => { viewer.resize(642, 480); return true; }],
+        ]) {
+            assert(move(), `${name} did not change the view`);
+            const stats = viewer.updateLod(4);
+            assert(stats.pendingBlockIds.includes("2"), `${name} lost the nonresident target`);
+            assert(stats.lodStagePixels <= stage, `${name} raised stage ${stage} to ${stats.lodStagePixels}`);
+            stage = stats.lodStagePixels;
+        }
+        const reset = viewer.updateLod(2);
+        assert(reset.pendingBlockIds.includes("2") && reset.lodStagePixels === 16,
+            "changing target did not restart the nonresident stage");
         self.postMessage({ type: "probeResult", passed: true,
-            checks: ["identical view", "camera", "viewport", "stage", "payload", "attributes", "reopen"] });
+            checks: ["identical view", "camera", "viewport", "stage", "payload", "attributes", "reopen", "pending camera stage"] });
     } catch (error) {
         self.postMessage({ type: "probeResult", passed: false, error: String(error) });
     } finally {

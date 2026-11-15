@@ -1,7 +1,7 @@
 # Native `.oct` format, v7.3-pre
 
-Development identity: major **7**, revision **3**, opt-in. V5 remains the default; final V7 and
-later unimplemented revisions remain rejected. V7.1-pre and V7.2-pre retain their exact bytes.
+Development identity: major **7**, revision **3**, opt-in. The final [v7](FORMAT_V7.md) is the default output
+([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md)); later unimplemented revisions remain rejected. V7.1-pre and V7.2-pre retain their exact bytes.
 
 ## Binary contract
 
@@ -17,7 +17,7 @@ candidates where valid.
 
 ## Status
 
-This is an experimental opt-in identity, not a promoted default. V5 remains the default output.
+This is an experimental opt-in identity, not a promoted default; the default output is the final [v7](FORMAT_V7.md) ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md)).
 
 
 The native/async readers, exact checkpoint recovery and Blob/OPFS WASM paths were exercised with

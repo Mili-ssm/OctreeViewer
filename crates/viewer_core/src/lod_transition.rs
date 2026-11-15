@@ -78,6 +78,12 @@ impl LodTransitionPlanner {
         Self::default()
     }
 
+    /// The retained (last complete) cut. Hierarchy pages containing any of these nodes must not
+    /// be evicted: the planner walks their ancestors.
+    pub fn retained_nodes(&self) -> &[NodeId] {
+        &self.retained_nodes
+    }
+
     /// Resolves target nodes against cache residency without changing the active cut
     /// or cache protection. Call [`Self::commit`] after downstream consumers accept it.
     pub fn prepare<S: ResidentBlockSource + ?Sized>(
@@ -147,10 +153,10 @@ impl LodTransitionPlanner {
                 })
                 .collect::<Vec<_>>();
             let added_points = new_blocks.iter().fold(0_u64, |sum, block_id| {
-                let block = cache
-                    .peek(*block_id)
+                let points = cache
+                    .budget_points(*block_id)
                     .expect("resolved cut blocks are resident");
-                sum.saturating_add(u64::try_from(block.points().len()).unwrap_or(u64::MAX))
+                sum.saturating_add(points)
             });
             let Some(candidate_count) = point_count.checked_add(added_points) else {
                 budget_omitted_nodes.push(node_id);
@@ -248,6 +254,13 @@ impl LodTransitionPlanner {
             self.retained_nodes.clone_from(&plan.node_ids);
         }
         cache.set_protected_blocks(plan.protected_block_ids.iter().copied());
+    }
+
+    /// Activates a prepared cut whose nodes are resident without their decoded blocks (cells
+    /// mode, ADR 0038): the cache protects nothing, because blocks are only needed to build cells.
+    pub fn commit_unprotected(&mut self, plan: &LodTransitionPlan, cache: &mut DecodedBlockCache) {
+        self.commit(plan, cache);
+        cache.set_protected_blocks([]);
     }
 
     /// Resolves and immediately activates a cut. Prefer [`Self::prepare`] and
@@ -420,11 +433,12 @@ fn aligned_direct_child(
     if !side.is_finite() || side <= 0.0 {
         return false;
     }
-    // The voxel builder rejects mixed cuts finer than the parent's native 8^3 representatives.
-    let parent_side = (0..3)
-        .map(|axis| parent.bounds().max()[axis] - parent.bounds().min()[axis])
-        .fold(0.0, f64::max);
-    let representative_depth = (side / (parent_side / 8.0)).log2().floor().clamp(0.0, 24.0) as u32;
+    // The voxel builder rejects mixed cuts finer than the parent's native representatives
+    // (8 per axis, or the stored spacing of `v7.4-pre`).
+    let representative_depth = (side / parent.representative_spacing())
+        .log2()
+        .floor()
+        .clamp(0.0, 24.0) as u32;
     if child.level() > representative_depth {
         return false;
     }

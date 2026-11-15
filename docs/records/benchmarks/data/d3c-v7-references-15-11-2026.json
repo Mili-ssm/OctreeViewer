@@ -1,0 +1,81 @@
+{
+  "commit": "21e04fe",
+  "profile": "release",
+  "options": "CLI defaults (format v7)",
+  "r1_cases": {
+    "small LAS": {
+      "oct": "1b5f4992ede680d18d99bea07e991ca1c337e6ef075d4ba8fea256071335e31b",
+      "octattrs": "d8586a382976411402f55c58d623fec2fbfbcb109a6ed27483e05d54025acb1d"
+    },
+    "autzen COPC": {
+      "oct": "40861e07abdd6ef49ca8251b3953288e548cfa9b277eaeda324902473a2ad936",
+      "octattrs": "88c453e6c19930f042c53ddee7a36707c80e14367d856e269df2de7a370042fc"
+    },
+    "synthetic": {
+      "oct": "334cb274e0fb3e00ef94790ce57de000fb87ccdbebd9422a2313cffc84c58ecd",
+      "octattrs": "5d795d63c0c2a7907dc75da4878e7168bffd38d0a2541ea98b1d0e14f22ee1f2"
+    },
+    "belvedere default": {
+      "oct": "da206a659ea0bfdfbfb3d8141592387cb2dde7133e6a5e44ed9a7a5db3c9f0c4",
+      "octattrs": "e2f587ab136906d8fc43f2f34c46be0f23a566f3954a8288056b95dae9802323"
+    },
+    "majadas default": {
+      "oct": "a213eb2391cac51c37e2b2e213e30d8ab54141a5e0bf55ebcd6a0a031d480783",
+      "octattrs": "0cffd5279cf3bd578d30a90ce0c756d57cebe5238408e08fd06042463563a36c"
+    }
+  },
+  "datasets": {
+    "belvedere": {
+      "oct": {
+        "sha256": "da206a659ea0bfdfbfb3d8141592387cb2dde7133e6a5e44ed9a7a5db3c9f0c4",
+        "bytes": 530962031
+      },
+      "octattrs": {
+        "sha256": "e2f587ab136906d8fc43f2f34c46be0f23a566f3954a8288056b95dae9802323",
+        "bytes": 889640140
+      }
+    },
+    "majadas": {
+      "oct": {
+        "sha256": "a213eb2391cac51c37e2b2e213e30d8ab54141a5e0bf55ebcd6a0a031d480783",
+        "bytes": 2120782616
+      },
+      "octattrs": {
+        "sha256": "0cffd5279cf3bd578d30a90ce0c756d57cebe5238408e08fd06042463563a36c",
+        "bytes": 5567762310
+      }
+    }
+  },
+  "fuzz_format_reader_seeds": {
+    "seed-sample": "062315d178b7bccc96451a3677a4239e6b7d47402b3b975e5104a81d2de32a9f",
+    "seed-sample-paged-chain-k1": "761b2a42decce0d1396dc562efe4ae94882d89b58765588fa2727fc3101364b2",
+    "seed-sample-paged-chain-k1-split": "8dd064be467d03d1104b8c983154b879ef30d92861682b3a23e61ae6678ba550",
+    "seed-sample-paged-chain-k5": "e8ca5c301f1623f427eefa69b16461c318ee5fc77854876a35e71a703bc6a046",
+    "seed-sample-paged-chain-k5-split": "1a1171d27b41e1daffa701ea38e99943976a12c2d21ddbb3cffc2fdb3eb4448b",
+    "seed-sample-rev0": "1dc96c067970db947d573365760a755e0c960baba955964576b1fd41723f7c52",
+    "seed-sample-rev0-split": "72e9503c7e5e8cd1abcac15f8545bca417b97bf3471b43c9563e7729938aa315",
+    "seed-sample-rev1": "b423d3a6de34543b09c62ecc2b929ac059eab3d02adde9549f2b9bf2d135088d",
+    "seed-sample-rev1-split": "99c6a3a04478db0c676ecc1d7c08a292aff126a1a12873809966fb73496c5f9e",
+    "seed-sample-rev10": "c9595b3c0e5f97637dd59d6c1e38553d113627df3fbbe9ec9dfcb40ad6dc7061",
+    "seed-sample-rev10-split": "4e91fe44de1511a7e3d32ff954324d04d8845ae8033dcb745b3ab828aba4c40f",
+    "seed-sample-rev2": "0e9f63775a8599a7591bdb71fb289f0c0dff8fb89f497b510b1981604a98e92c",
+    "seed-sample-rev2-split": "6944c763db657ddb6b27fcfd91766e745b7a972c3fccb587bdd143532cc9aafb",
+    "seed-sample-rev3": "87d64632eb806c1af1c8151fb2b9ee14473805081b4a49e4af00ed02bd8d365d",
+    "seed-sample-rev3-split": "c8c5bb72b5b6af87acff50c9e4a74ec334adbb884f7a0895bba20f0fc3571cf8",
+    "seed-sample-rev4": "5a0da51f46d01a28deaf04a9d173d068bbe892fc49653ed9ece5f65ed4bd14e3",
+    "seed-sample-rev4-split": "878da461e2931b228cc52fb6e2ea8f6c6269489ca3b84c9e8566529ceaf1f002",
+    "seed-sample-rev5": "b95f5bd74487acc02c7aa7173ff1d865a367b507ecf50cf560e305e22c9a4048",
+    "seed-sample-rev5-split": "99597a138d6c9352651e88314da4055a3af21ffaf5830c9d058972f3992946a5",
+    "seed-sample-rev6": "47228524a6e818dbff121afaa010be4e23962d60c5e4d49dc955bf6b8f441a67",
+    "seed-sample-rev6-split": "c6d6a032c411d15ef1cd7b3e597358f106e33bfc41c188cca1cd0033158a40df",
+    "seed-sample-rev7": "9f30882d95c9e32d1e9ae1bb3c6902fcab67dd30eee8ba63839d951ec0a7df83",
+    "seed-sample-rev7-split": "08afa4858689865767b3b62b92d94bbd040dc636fa7fdbee0fd39cc39a77d86a",
+    "seed-sample-rev8": "6a8119403a9a9f2b8d467b810611fdb66fc6603c6247067cc582d1cf90e3e05c",
+    "seed-sample-rev8-split": "975aa8bc3a06ee01dd9882beefc8722f2e5636e248381706884911022feeaef6",
+    "seed-sample-rev9": "75250c0a4f712159595ce56506527e48b8e4960d791c4f70bacb29bae8ded0e2",
+    "seed-sample-rev9-split": "984f6c86cd1cdcdfa563f59e3766eb21a506273c6258e380cb42a40fbc733ea9",
+    "seed-sample-split": "1f9803c4bb72a45a233984871be755a46fe899146f3e22057cb5d1d629e98126",
+    "seed-sample-v7": "6792aa4eabb5c852147b9ac0c26fb65d1b3e44ca7987e6f44b6ddd1e78444cc8",
+    "seed-sample-v7-split": "c43705ccabd325fb66e528ffd79258c52a3ed82e444d9f43cf6eb9d144fa5a55"
+  }
+}

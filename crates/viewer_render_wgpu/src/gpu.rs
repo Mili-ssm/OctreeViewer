@@ -1,16 +1,27 @@
 use std::num::NonZeroU64;
-use std::{collections::HashMap, mem::size_of, sync::mpsc};
+use std::{
+    collections::HashMap,
+    mem::size_of,
+    sync::{Arc, Mutex, mpsc},
+};
 
 use bytemuck::{Pod, Zeroable};
 use viewer_core::{BlockId, ResidentBlockSource};
 use wgpu::util::DeviceExt;
 
 use crate::{
-    CameraFrame, ColorMode, GpuBudget, InstanceRaw, OrbitCamera, RenderScene, RendererConfig,
-    SceneBounds, VOXEL_SHADER_WGSL, VoxelBuildLimits,
+    CameraFrame, CellColorRanges, CellPoolError, ColorMode, GpuBudget, InstanceRaw, OrbitCamera,
+    RenderScene, RendererConfig, SceneBounds, VOXEL_SHADER_WGSL, VoxelBuildLimits,
     block_sync::ResidentBlockInfo,
     block_sync::plan_block_sync,
     budget::{buffer_capacity, check_peak_bytes, check_visible_instances},
+    cell_driver::CellTarget,
+    cell_pages::{PackedLevel, PageEntry, PageFrame},
+    cell_pick::{PoolPick, prepare_pool_pick},
+    cell_render::{
+        CellColor, CellFrame, CellRenderer, MASK_WORDS, PageFrameStamp, cell_pool_pages,
+        plan_device_limits, pool_resource_bytes,
+    },
     instance_buffer_layout,
 };
 
@@ -44,6 +55,9 @@ pub enum GpuRendererError {
     MissingBlockPayload(BlockId),
     PipelineValidation(String),
     SurfaceAcquisition(String),
+    CellPool(CellPoolError),
+    /// The `PageFrame` of the page entries uses another coordinate origin or visual scale.
+    PageFrameMismatch,
 }
 
 impl std::fmt::Display for GpuRendererError {
@@ -95,6 +109,10 @@ impl std::fmt::Display for GpuRendererError {
             }
             Self::PipelineValidation(error) => write!(f, "GPU pipeline is invalid: {error}"),
             Self::SurfaceAcquisition(error) => write!(f, "GPU surface acquisition failed: {error}"),
+            Self::CellPool(error) => write!(f, "cell pool: {error}"),
+            Self::PageFrameMismatch => f.write_str(
+                "page frame does not match the renderer's coordinate origin and visual scale",
+            ),
         }
     }
 }
@@ -135,41 +153,55 @@ struct GpuInstanceBuffer {
 }
 
 const PICK_CHUNK_INSTANCES: usize = 256;
-const PICK_MAX_CANDIDATE_INSTANCES: usize = 65_536;
+pub(crate) const PICK_MAX_CANDIDATE_INSTANCES: usize = 65_536;
 const MAX_FRAMEBUFFER_PIXELS: u64 = 4_194_304;
 const MAX_FRAMEBUFFER_DIMENSION: u32 = 4_096;
 
 #[derive(Debug, Clone, Copy)]
-struct PickChunk {
-    first_instance: usize,
-    instance_count: usize,
-    bounds: SceneBounds,
+pub(crate) struct PickChunk {
+    pub(crate) first_instance: usize,
+    pub(crate) instance_count: usize,
+    pub(crate) bounds: SceneBounds,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct PickCopy {
-    staging_offset: u64,
-    first_instance: usize,
-    instance_count: usize,
+pub(crate) struct PickCopy {
+    pub(crate) staging_offset: u64,
+    pub(crate) first_instance: usize,
+    pub(crate) instance_count: usize,
 }
 
-pub struct PickReadback {
+/// Staging copy of a CPU-path pick.
+pub struct CpuPick {
     buffer: wgpu::Buffer,
     copies: Vec<PickCopy>,
     ray: PickRay,
+    /// The units of the scene at `prepare_pick`: the host awaits the mapping before `resolve_pick`.
+    visual_scale: f64,
+    coordinate_origin: [f64; 3],
+}
+
+/// What `prepare_pick` copied; `resolve_pick` decides by the variant, not by the renderer's current
+/// mode, because the host awaits the mapping between the two calls.
+pub enum PickReadback {
+    Cpu(CpuPick),
+    Pool(PoolPick),
 }
 
 #[derive(Debug, Clone, Copy)]
-struct PickRay {
-    origin: glam::DVec3,
-    direction: glam::DVec3,
-    near_distance: f64,
-    far_distance: f64,
+pub(crate) struct PickRay {
+    pub(crate) origin: glam::DVec3,
+    pub(crate) direction: glam::DVec3,
+    pub(crate) near_distance: f64,
+    pub(crate) far_distance: f64,
 }
 
 impl PickReadback {
     pub fn buffer(&self) -> &wgpu::Buffer {
-        &self.buffer
+        match self {
+            Self::Cpu(pick) => &pick.buffer,
+            Self::Pool(pick) => pick.buffer(),
+        }
     }
 }
 
@@ -200,6 +232,8 @@ pub struct GpuResourceStats {
     pub hzb_buffer_bytes: u64,
     pub depth_texture_bytes: u64,
     pub hzb_texture_bytes: u64,
+    /// Buffers of the cell pool; 0 while the pool does not exist (it is created lazily).
+    pub cell_pool_bytes: u64,
 }
 
 impl GpuResourceStats {
@@ -209,6 +243,7 @@ impl GpuResourceStats {
             + self.hzb_buffer_bytes
             + self.depth_texture_bytes
             + self.hzb_texture_bytes
+            + self.cell_pool_bytes
     }
 }
 
@@ -252,8 +287,55 @@ pub(crate) const CUBE_INDICES: [u16; 36] = [
     4, 3, 4, 7,
 ];
 
+/// The pool is allocated alone: the CPU scene is released once the first level is uploaded, so
+/// only the pool counts against the budget.
+fn check_pool_creation_budget(pool_bytes: u64, max_bytes: u64) -> Result<(), GpuRendererError> {
+    check_peak_bytes(0, pool_bytes, max_bytes).map_err(|_| {
+        GpuRendererError::CellPool(CellPoolError::BudgetExceeded {
+            required_bytes: pool_bytes,
+            max_bytes,
+        })
+    })
+}
+
+/// Runs `upload` on the pool, creating it first when absent. If that call created the pool and
+/// fails, the pool is dropped. Returns whether this call created the pool.
+fn upload_creating_pool<P, E>(
+    slot: &mut Option<P>,
+    create: impl FnOnce() -> P,
+    upload: impl FnOnce(&mut P) -> Result<(), E>,
+) -> Result<bool, E> {
+    let created = slot.is_none();
+    let pool = slot.get_or_insert_with(create);
+    if let Err(error) = upload(pool) {
+        if created {
+            *slot = None;
+        }
+        return Err(error);
+    }
+    Ok(created)
+}
+
+/// How the device was lost: `destroyed` (an explicit `destroy()`, never recovered, R3-Q26) or
+/// `unknown` (driver or GPU-process loss), and the message the driver gave.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceLoss {
+    pub reason: &'static str,
+    pub message: String,
+}
+
+fn device_loss(reason: wgpu::DeviceLostReason, message: String) -> DeviceLoss {
+    let reason = match reason {
+        wgpu::DeviceLostReason::Destroyed => "destroyed",
+        _ => "unknown",
+    };
+    DeviceLoss { reason, message }
+}
+
 /// GPU renderer for a surface owned by the calling application.
 pub struct SurfaceRenderer<'window> {
+    /// Filled by the device-lost callback; the host reads it through `device_loss()`.
+    device_loss: Arc<Mutex<Option<DeviceLoss>>>,
     adapter_info: wgpu::AdapterInfo,
     surface: wgpu::Surface<'window>,
     device: wgpu::Device,
@@ -267,6 +349,14 @@ pub struct SurfaceRenderer<'window> {
     hzb_scene_opaque: bool,
     hzb_count_readback: Option<wgpu::Buffer>,
     hzb_count_receiver: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
+    frame_timer: Option<crate::frame_timer::FrameTimer>,
+    /// Limits of the CPU path: `downlevel_defaults` with the adapter's resolution. Every CPU size
+    /// and HZB decision uses these, not the (possibly raised) limits of the device.
+    cpu_limits: wgpu::Limits,
+    /// Pages of the pool this device runs (ADR 0040); `None`: the CPU path only.
+    cell_pool_pages: Option<u32>,
+    cell_pool_budget_bytes: u64,
+    cell_pool: Option<CellRenderer>,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     scene_buffer: Option<GpuInstanceBuffer>,
@@ -286,6 +376,8 @@ pub struct SurfaceRenderer<'window> {
     intensity_range: Option<[f32; 2]>,
     elevation_range: Option<[f32; 2]>,
     color_mode: ColorMode,
+    /// Ranges of the cut the cells draw, for the shader colour modes (`CellTarget::set_color_ranges`).
+    cell_color_ranges: CellColorRanges,
     depth_shading: bool,
     visual_scale: f64,
     coordinate_origin: [f64; 3],
@@ -319,19 +411,31 @@ impl<'window> SurfaceRenderer<'window> {
             .await
             .map_err(|_| GpuRendererError::NoCompatibleAdapter)?;
 
+        let limits = plan_device_limits(&adapter, config.cell_limits);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("octree-viewer-device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults()
-                    .using_resolution(adapter.limits()),
+                // Frame timing is optional: never fail device creation without it.
+                required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
+                required_limits: limits.required_limits,
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 ..Default::default()
             })
             .await
             .map_err(|error| GpuRendererError::DeviceRequest(error.to_string()))?;
 
-        let device_limits = device.limits();
+        let device_loss_slot = Arc::new(Mutex::new(None));
+        {
+            let slot = Arc::clone(&device_loss_slot);
+            device.set_device_lost_callback(move |reason, message| {
+                if let Ok(mut slot) = slot.lock() {
+                    slot.get_or_insert_with(|| device_loss(reason, message));
+                }
+            });
+        }
+        let cell_pool_pages =
+            cell_pool_pages(&adapter, &device.limits(), config.cell_pool_budget_bytes);
+        let device_limits = limits.cpu_limits;
         let [width, height] =
             bounded_framebuffer_size(width, height, device_limits.max_texture_dimension_2d);
         let instance_stride = size_of::<InstanceRaw>() as u64;
@@ -371,6 +475,7 @@ impl<'window> SurfaceRenderer<'window> {
                 &depth_texture,
                 surface_config.format,
                 [surface_config.width, surface_config.height],
+                device_limits.max_texture_dimension_2d,
             )
             .await
             .ok()
@@ -387,8 +492,10 @@ impl<'window> SurfaceRenderer<'window> {
             })
         });
         surface.configure(&device, &surface_config);
+        let frame_timer = crate::frame_timer::FrameTimer::new(&device, &queue);
 
         Ok(Self {
+            device_loss: device_loss_slot,
             adapter_info: adapter.get_info(),
             surface,
             device,
@@ -402,6 +509,11 @@ impl<'window> SurfaceRenderer<'window> {
             hzb_scene_opaque: false,
             hzb_count_readback,
             hzb_count_receiver: None,
+            frame_timer,
+            cpu_limits: device_limits,
+            cell_pool_pages,
+            cell_pool_budget_bytes: config.cell_pool_budget_bytes,
+            cell_pool: None,
             vertex_buffer,
             index_buffer,
             scene_buffer: None,
@@ -421,6 +533,7 @@ impl<'window> SurfaceRenderer<'window> {
             intensity_range: None,
             elevation_range: None,
             color_mode: ColorMode::Rgb,
+            cell_color_ranges: CellColorRanges::default(),
             depth_shading: true,
             visual_scale: 1.0,
             coordinate_origin: [0.0; 3],
@@ -431,6 +544,11 @@ impl<'window> SurfaceRenderer<'window> {
         self.surface_config.format
     }
 
+    /// The device loss reported by the driver, if any (the first one is kept).
+    pub fn device_loss(&self) -> Option<DeviceLoss> {
+        self.device_loss.lock().ok().and_then(|slot| slot.clone())
+    }
+
     pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
         &self.adapter_info
     }
@@ -439,7 +557,7 @@ impl<'window> SurfaceRenderer<'window> {
     pub fn upload_scene(&mut self, scene: &RenderScene) -> Result<u64, GpuRendererError> {
         let (bytes, count, bounds) = scene_upload_metadata(
             scene,
-            self.device.limits().max_buffer_size,
+            self.cpu_limits.max_buffer_size,
             self.gpu_budget.max_visible_instances,
         )?;
         let current_capacity = self
@@ -449,15 +567,16 @@ impl<'window> SurfaceRenderer<'window> {
         let target_capacity = buffer_capacity(
             bytes,
             size_of::<InstanceRaw>() as u64,
-            self.device.limits().max_buffer_size,
+            self.cpu_limits.max_buffer_size,
         )?;
         let added_capacity = if target_capacity > current_capacity {
             target_capacity
         } else {
             0
         };
+        // The pool is freed when the CPU path takes over, so it does not count here.
         check_peak_bytes(
-            self.allocated_gpu_bytes()?,
+            self.allocated_cpu_bytes()?,
             added_capacity,
             self.gpu_budget.max_bytes,
         )?;
@@ -469,7 +588,7 @@ impl<'window> SurfaceRenderer<'window> {
                 bytes,
                 count,
                 bounds,
-                self.device.limits().max_buffer_size,
+                self.cpu_limits.max_buffer_size,
             )?);
         } else if let Some(buffer) = &mut self.scene_buffer {
             if bytes > 0 {
@@ -489,11 +608,12 @@ impl<'window> SurfaceRenderer<'window> {
                 bytes,
                 count,
                 bounds,
-                self.device.limits().max_buffer_size,
+                self.cpu_limits.max_buffer_size,
             )?);
         }
         self.block_buffers.clear();
         self.visible_block_ids.clear();
+        self.cell_pool = None;
         self.hzb_reference_camera = None;
         self.visible_instance_count = scene.instance_count();
         self.pick_chunks = build_pick_chunks(scene.instances(), self.visual_scale);
@@ -544,7 +664,7 @@ impl<'window> SurfaceRenderer<'window> {
             &resident,
             block_ids,
             cache,
-            self.device.limits().max_buffer_size,
+            self.cpu_limits.max_buffer_size,
             self.gpu_budget,
             self.scene_buffer
                 .as_ref()
@@ -554,7 +674,7 @@ impl<'window> SurfaceRenderer<'window> {
         for (id, scene) in &plan.added {
             let (bytes, count, bounds) = scene_upload_metadata(
                 scene,
-                self.device.limits().max_buffer_size,
+                self.cpu_limits.max_buffer_size,
                 self.gpu_budget.max_visible_instances,
             )?;
             additions.insert(
@@ -566,7 +686,7 @@ impl<'window> SurfaceRenderer<'window> {
                     bytes,
                     count,
                     bounds,
-                    self.device.limits().max_buffer_size,
+                    self.cpu_limits.max_buffer_size,
                 )?,
             );
         }
@@ -580,6 +700,7 @@ impl<'window> SurfaceRenderer<'window> {
         self.intensity_range = plan.visible_intensity_range;
         self.elevation_range = plan.visible_elevation_range;
         self.scene_buffer = None;
+        self.cell_pool = None;
         self.pick_chunks.clear();
         self.hzb_reference_camera = None;
         self.hzb_scene_opaque = false;
@@ -610,15 +731,170 @@ impl<'window> SurfaceRenderer<'window> {
                         .ok_or(GpuRendererError::InvalidSceneSize)
                 })?;
         scene_and_blocks
-            .checked_add(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()))
+            .checked_add(self.cell_pool_bytes())
+            .and_then(|bytes| {
+                bytes.checked_add(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()))
+            })
             .and_then(|bytes| bytes.checked_add(self.hzb_count_readback.as_ref().map_or(0, |_| 4)))
             .ok_or(GpuRendererError::InvalidSceneSize)
+    }
+
+    /// Bytes the CPU path accounts for: everything but the cell pool, which is freed when the CPU
+    /// path takes over and has its own creation check.
+    fn allocated_cpu_bytes(&self) -> Result<u64, GpuRendererError> {
+        Ok(self.allocated_gpu_bytes()? - self.cell_pool_bytes())
+    }
+
+    fn cell_pool_bytes(&self) -> u64 {
+        self.cell_pool
+            .as_ref()
+            .map_or(0, CellRenderer::resource_bytes)
+    }
+
+    /// Whether the device meets the limits and features of the cell pool (R3-Q5). When false, only
+    /// the CPU path is available and the cell methods return `CellPoolError::Unsupported`.
+    pub fn cells_supported(&self) -> bool {
+        self.cell_pool_pages.is_some()
+    }
+
+    /// Pages of the cell pool this device runs: 65,536 (512 MiB) or what its limits admit, at
+    /// least 32,768 (ADR 0040). `None` when only the CPU path is available. The driver's
+    /// `PoolConfig::capacity_pages` must be this value.
+    pub fn cell_pool_pages(&self) -> Option<u32> {
+        self.cell_pool_pages
+    }
+
+    /// Whether the cell pool exists, which is when `render` draws cells instead of the CPU scene.
+    pub fn cells_active(&self) -> bool {
+        self.cell_pool.is_some()
+    }
+
+    /// The camera eye in scaled local units, in `f64`: `PageFrame::eye_scaled` for the page
+    /// entries of this frame.
+    pub fn cell_eye(&self) -> [f64; 3] {
+        self.camera.position()
+    }
+
+    /// Writes a packed level into the given page slots. The first call creates the pool and, once
+    /// the upload succeeds, releases the CPU scene: the CPU path and the cells path are exclusive.
+    /// If that first call fails, the new pool is dropped and the renderer stays as it was. The pool
+    /// is freed by `upload_scene`, `upload_voxel_cut`, `sync_visible_blocks`, `clear_dataset` and
+    /// `clear_cells`.
+    pub fn upload_cell_level(
+        &mut self,
+        level: &PackedLevel,
+        page_slots: &[u32],
+    ) -> Result<(), GpuRendererError> {
+        let Some(pool_pages) = self.cell_pool_pages else {
+            return Err(GpuRendererError::CellPool(CellPoolError::Unsupported));
+        };
+        if self.cell_pool.is_none() {
+            // The pages were chosen to fit this budget; the check guards the invariant.
+            check_pool_creation_budget(
+                pool_resource_bytes(pool_pages),
+                self.cell_pool_budget_bytes,
+            )?;
+        }
+        let device = &self.device;
+        let queue = &self.queue;
+        let format = self.surface_config.format;
+        let created = upload_creating_pool(
+            &mut self.cell_pool,
+            || CellRenderer::new(device, queue, format, pool_pages),
+            |pool| pool.upload_level(level, page_slots),
+        )
+        .map_err(GpuRendererError::CellPool)?;
+        if created {
+            self.release_cpu_scene();
+        }
+        Ok(())
+    }
+
+    /// Frees what only the CPU path draws from, so that in cells mode only the pool (plus the
+    /// shared depth texture and uniforms) is resident. Bounds, ranges and the camera are kept.
+    fn release_cpu_scene(&mut self) {
+        self.scene_buffer = None;
+        self.block_buffers.clear();
+        self.visible_block_ids.clear();
+        self.visible_instance_count = 0;
+        self.pick_chunks.clear();
+        self.hzb_reference_camera = None;
+        self.hzb_scene_opaque = false;
+        self.hzb_count_receiver = None;
+        if let Some(hzb) = &mut self.hzb {
+            hzb.reset_scene();
+        }
+    }
+
+    fn existing_cell_pool(&mut self) -> Result<&mut CellRenderer, GpuRendererError> {
+        self.cell_pool
+            .as_mut()
+            .ok_or(GpuRendererError::CellPool(CellPoolError::NoPool))
+    }
+
+    /// Makes the pages inert; do this before uploading other levels into the same slots.
+    pub fn free_cell_pages(&mut self, page_slots: &[u32]) -> Result<(), GpuRendererError> {
+        match &mut self.cell_pool {
+            Some(pool) => pool
+                .free_pages(page_slots)
+                .map_err(GpuRendererError::CellPool),
+            None => Err(GpuRendererError::CellPool(CellPoolError::NoPool)),
+        }
+    }
+
+    pub fn alloc_cell_mask_slot(&mut self) -> Result<Option<u32>, GpuRendererError> {
+        Ok(self.existing_cell_pool()?.alloc_mask_slot())
+    }
+
+    pub fn free_cell_mask_slot(&mut self, slot: u32) -> Result<(), GpuRendererError> {
+        match &mut self.cell_pool {
+            Some(pool) => pool
+                .free_mask_slot(slot)
+                .map_err(GpuRendererError::CellPool),
+            None => Err(GpuRendererError::CellPool(CellPoolError::NoPool)),
+        }
+    }
+
+    /// Bit `x + 8y + 64z` set: that cell of the node is replaced by finer ones and not drawn.
+    pub fn set_cell_node_mask(
+        &mut self,
+        slot: u32,
+        mask: &[u32; MASK_WORDS],
+    ) -> Result<(), GpuRendererError> {
+        self.existing_cell_pool()?
+            .set_node_mask(slot, mask)
+            .map_err(GpuRendererError::CellPool)
+    }
+
+    /// The pages to draw this frame, with eye-relative origins and octant bits (see
+    /// `PageInfo::entry` and `cell_eye`). `frame` is the one the entries were built with: its
+    /// coordinate origin and visual scale must be the renderer's, and its eye is kept for picking.
+    pub fn set_active_cell_pages(
+        &mut self,
+        pages: &[(u32, PageEntry)],
+        frame: &PageFrame,
+    ) -> Result<(), GpuRendererError> {
+        let (visual_scale, coordinate_origin) = (self.visual_scale, self.coordinate_origin);
+        let pool = self.existing_cell_pool()?;
+        let stamp = PageFrameStamp::of(frame);
+        if !stamp.same_units(visual_scale, coordinate_origin) {
+            return Err(GpuRendererError::PageFrameMismatch);
+        }
+        pool.set_active_pages(pages)
+            .map_err(GpuRendererError::CellPool)?;
+        pool.set_page_frame(stamp);
+        Ok(())
+    }
+
+    /// Frees the pool; `render` draws the CPU scene again.
+    pub fn clear_cells(&mut self) {
+        self.cell_pool = None;
     }
 
     fn prepare_hzb_scene(&mut self, source_bytes: u64) {
         self.hzb_reference_camera = None;
         let allocated_without_hzb = self
-            .allocated_gpu_bytes()
+            .allocated_cpu_bytes()
             .unwrap_or(self.gpu_budget.max_bytes)
             .saturating_sub(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()));
         let available = self
@@ -636,7 +912,7 @@ impl<'window> SurfaceRenderer<'window> {
         if !opaque
             || buffer.instance_count < crate::hzb::MIN_OCCLUSION_CANDIDATES as u32
             || !hzb.can_prepare_scene(
-                &self.device,
+                &self.cpu_limits,
                 source_bytes,
                 buffer.instance_count as usize,
                 available,
@@ -656,6 +932,8 @@ impl<'window> SurfaceRenderer<'window> {
     /// Drops scene and block GPU data before opening another dataset.
     pub fn clear_dataset(&mut self) {
         self.scene_buffer = None;
+        self.cell_pool = None;
+        self.cell_color_ranges = CellColorRanges::default();
         self.hzb_reference_camera = None;
         self.hzb_scene_opaque = false;
         self.block_buffers.clear();
@@ -711,6 +989,27 @@ impl<'window> SurfaceRenderer<'window> {
                 self.hzb_count_receiver = None;
             }
             Err(mpsc::TryRecvError::Empty) => {}
+        }
+    }
+
+    /// Percentiles of the GPU time per frame over the last samples; `None` when the device has no
+    /// `timestamp-query` or nothing was sampled yet.
+    pub fn gpu_frame_stats(&self) -> Option<crate::GpuFrameStats> {
+        self.frame_timer.as_ref().and_then(|timer| timer.stats())
+    }
+
+    /// Turns the per-frame GPU timing on or off (off by default; no cost while off). A no-op
+    /// without `timestamp-query`.
+    pub fn set_gpu_frame_timing(&mut self, enabled: bool) {
+        if let Some(timer) = &mut self.frame_timer {
+            timer.set_enabled(enabled);
+        }
+    }
+
+    /// Starts a new sampling window for `gpu_frame_stats`.
+    pub fn reset_gpu_frame_stats(&mut self) {
+        if let Some(timer) = &mut self.frame_timer {
+            timer.reset();
         }
     }
 
@@ -877,6 +1176,32 @@ impl<'window> SurfaceRenderer<'window> {
 
     /// Copies only ray-intersecting instance ranges into a bounded staging buffer.
     pub fn prepare_pick(&self, pixel: [f64; 2]) -> Result<Option<PickReadback>, String> {
+        if let Some(pool) = &self.cell_pool {
+            let Some((origin, direction, near_distance, far_distance)) =
+                self.camera.ray(pixel, self.viewport_size())
+            else {
+                return Ok(None);
+            };
+            let headroom = self.gpu_budget.max_bytes.saturating_sub(
+                self.allocated_gpu_bytes()
+                    .map_err(|error| error.to_string())?,
+            );
+            return Ok(prepare_pool_pick(
+                &self.device,
+                &self.queue,
+                pool,
+                PickRay {
+                    origin,
+                    direction,
+                    near_distance,
+                    far_distance,
+                },
+                self.visual_scale,
+                self.coordinate_origin,
+                headroom,
+            )?
+            .map(PickReadback::Pool));
+        }
         let Some(source) = self.scene_buffer.as_ref() else {
             return Ok(None);
         };
@@ -911,7 +1236,7 @@ impl<'window> SurfaceRenderer<'window> {
             .and_then(|count| count.checked_mul(instance_bytes))
             .ok_or_else(|| "pick staging buffer size overflow".to_owned())?;
         let projected_gpu_bytes = self
-            .allocated_gpu_bytes()
+            .allocated_cpu_bytes()
             .map_err(|error| error.to_string())?
             .saturating_add(byte_len);
         if projected_gpu_bytes > self.gpu_budget.max_bytes {
@@ -957,7 +1282,7 @@ impl<'window> SurfaceRenderer<'window> {
             staging_offset += size;
         }
         self.queue.submit([encoder.finish()]);
-        Ok(Some(PickReadback {
+        Ok(Some(PickReadback::Cpu(CpuPick {
             buffer: staging,
             copies,
             ray: PickRay {
@@ -966,7 +1291,9 @@ impl<'window> SurfaceRenderer<'window> {
                 near_distance,
                 far_distance,
             },
-        }))
+            visual_scale: self.visual_scale,
+            coordinate_origin: self.coordinate_origin,
+        })))
     }
 
     pub fn resolve_pick(
@@ -974,13 +1301,16 @@ impl<'window> SurfaceRenderer<'window> {
         readback: &PickReadback,
         mapped: &[u8],
     ) -> Result<Option<PickHit>, String> {
-        resolve_pick_instances(
-            readback.ray,
-            &readback.copies,
-            mapped,
-            self.visual_scale,
-            self.coordinate_origin,
-        )
+        match readback {
+            PickReadback::Cpu(pick) => resolve_pick_instances(
+                pick.ray,
+                &pick.copies,
+                mapped,
+                pick.visual_scale,
+                pick.coordinate_origin,
+            ),
+            PickReadback::Pool(pick) => pick.resolve(mapped),
+        }
     }
 
     pub fn pan_camera(&mut self, delta_x: f64, delta_y: f64) -> bool {
@@ -1041,6 +1371,7 @@ impl<'window> SurfaceRenderer<'window> {
                 .hzb
                 .as_ref()
                 .map_or(0, |hzb| hzb.logical_texture_bytes()),
+            cell_pool_bytes: self.cell_pool_bytes(),
         }
     }
 
@@ -1050,7 +1381,7 @@ impl<'window> SurfaceRenderer<'window> {
 
     pub fn resize(&mut self, width: u32, height: u32) -> FrameStatus {
         let [width, height] =
-            bounded_framebuffer_size(width, height, self.device.limits().max_texture_dimension_2d);
+            bounded_framebuffer_size(width, height, self.cpu_limits.max_texture_dimension_2d);
         if width == 0 || height == 0 {
             self.suspended = true;
             return FrameStatus::Suspended;
@@ -1065,6 +1396,9 @@ impl<'window> SurfaceRenderer<'window> {
         self.depth_texture =
             create_depth_texture(&self.device, &self.surface_config, self.hzb_depth_supported);
         self.refresh_hzb_targets();
+        if let Some(pool) = &mut self.cell_pool {
+            pool.invalidate_viewport();
+        }
         if !self.camera.is_fitted()
             && let Some(bounds) = self.display_bounds()
         {
@@ -1086,6 +1420,7 @@ impl<'window> SurfaceRenderer<'window> {
             self.surface_config.width,
             self.surface_config.height,
         ]);
+        // The pool counts here: it stays resident while the HZB targets are rebuilt.
         let resize_fits_budget = self
             .allocated_gpu_bytes()
             .and_then(|current_bytes| {
@@ -1103,6 +1438,7 @@ impl<'window> SurfaceRenderer<'window> {
                 &self.device,
                 &self.depth_texture,
                 [self.surface_config.width, self.surface_config.height],
+                self.cpu_limits.max_texture_dimension_2d,
             )
         });
         if !resized {
@@ -1117,7 +1453,7 @@ impl<'window> SurfaceRenderer<'window> {
     fn reprepare_hzb_scene(&mut self) {
         self.hzb_reference_camera = None;
         let allocated_without_hzb = self
-            .allocated_gpu_bytes()
+            .allocated_cpu_bytes()
             .unwrap_or(self.gpu_budget.max_bytes)
             .saturating_sub(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()));
         let available = self
@@ -1137,7 +1473,7 @@ impl<'window> SurfaceRenderer<'window> {
         };
         if buffer.instance_count < crate::hzb::MIN_OCCLUSION_CANDIDATES as u32
             || !hzb.can_prepare_scene(
-                &self.device,
+                &self.cpu_limits,
                 u64::from(buffer.instance_count) * size_of::<InstanceRaw>() as u64,
                 buffer.instance_count as usize,
                 available,
@@ -1157,26 +1493,39 @@ impl<'window> SurfaceRenderer<'window> {
     /// Presents a frame with the current camera.
     pub fn render(&mut self) -> Result<FrameStatus, GpuRendererError> {
         self.update_hzb_visible_count();
+        if let Some(timer) = &mut self.frame_timer {
+            timer.collect(&self.device);
+        }
         if self.suspended {
             return Ok(FrameStatus::Suspended);
         }
-        let Some(CameraFrame {
-            view_projection,
-            mut render_origin,
-        }) = self
-            .camera
-            .frame([self.surface_config.width, self.surface_config.height])
-        else {
-            return Ok(FrameStatus::Suspended);
+        let viewport = [self.surface_config.width, self.surface_config.height];
+        // With a cell pool the cells are drawn eye-relative and the CPU scene and its HZB are idle.
+        let use_cells = self.cell_pool.is_some();
+        let (view_projection, mut render_origin) = if use_cells {
+            let Some(frame) = self.camera.eye_frame(viewport) else {
+                return Ok(FrameStatus::Suspended);
+            };
+            (frame.view_projection, [0.0; 4])
+        } else {
+            let Some(CameraFrame {
+                view_projection,
+                render_origin,
+            }) = self.camera.frame(viewport)
+            else {
+                return Ok(FrameStatus::Suspended);
+            };
+            (view_projection, render_origin)
         };
         render_origin[3] = self.visual_scale as f32;
         let camera_key = (view_projection, render_origin);
-        let use_hzb = self.hzb_reference_camera == Some(camera_key)
+        let use_hzb = !use_cells
+            && self.hzb_reference_camera == Some(camera_key)
             && self
                 .hzb
                 .as_ref()
                 .is_some_and(|hzb| hzb.indexed_bind_group().is_some());
-        if !use_hzb {
+        if !use_hzb && !use_cells {
             self.visible_instance_count = self
                 .scene_buffer
                 .as_ref()
@@ -1195,6 +1544,9 @@ impl<'window> SurfaceRenderer<'window> {
                     self.hzb_depth_supported,
                 );
                 self.refresh_hzb_targets();
+                if let Some(pool) = &mut self.cell_pool {
+                    pool.invalidate_viewport();
+                }
                 return Ok(FrameStatus::Reconfigured);
             }
             wgpu::CurrentSurfaceTexture::Lost => {
@@ -1234,10 +1586,37 @@ impl<'window> SurfaceRenderer<'window> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("octree-viewer-frame"),
             });
+        let timer_slot = self
+            .frame_timer
+            .as_mut()
+            .and_then(|timer| timer.begin(&mut encoder));
+        if use_cells && let Some(pool) = &mut self.cell_pool {
+            let eye_z = pool
+                .page_frame()
+                .map_or_else(|| self.camera.position()[2], |stamp| stamp.eye_scaled[2]);
+            pool.set_color(CellColor::for_frame(
+                self.color_mode,
+                self.cell_color_ranges,
+                eye_z,
+                self.visual_scale,
+                self.coordinate_origin[2],
+            ));
+            pool.encode_cells(
+                &mut encoder,
+                &view,
+                &depth_view,
+                &CellFrame {
+                    view_projection,
+                    clear_color: self.clear_color,
+                    depth_shading: self.depth_shading,
+                    viewport,
+                },
+            );
+        }
         if use_hzb && let Some(hzb) = &self.hzb {
             hzb.cull(&mut encoder, &self.queue);
         }
-        {
+        if !use_cells {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("octree-viewer-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1298,6 +1677,7 @@ impl<'window> SurfaceRenderer<'window> {
             }
         }
         if !use_hzb
+            && !use_cells
             && let Some(hzb) = &self.hzb
             && hzb.indexed_bind_group().is_some()
         {
@@ -1317,7 +1697,13 @@ impl<'window> SurfaceRenderer<'window> {
                 size_of::<u32>() as u64,
             );
         }
+        if let (Some(timer), Some(slot)) = (&self.frame_timer, timer_slot) {
+            timer.end(&mut encoder, slot);
+        }
         self.queue.submit([encoder.finish()]);
+        if let (Some(timer), Some(slot)) = (&mut self.frame_timer, timer_slot) {
+            timer.submitted(slot);
+        }
         if use_hzb
             && self.hzb_count_receiver.is_none()
             && let Some(readback) = &self.hzb_count_readback
@@ -1330,10 +1716,11 @@ impl<'window> SurfaceRenderer<'window> {
                 });
             self.hzb_count_receiver = Some(receiver);
         }
-        self.hzb_reference_camera = if self
-            .hzb
-            .as_ref()
-            .is_some_and(|hzb| hzb.indexed_bind_group().is_some())
+        self.hzb_reference_camera = if !use_cells
+            && self
+                .hzb
+                .as_ref()
+                .is_some_and(|hzb| hzb.indexed_bind_group().is_some())
         {
             Some(camera_key)
         } else {
@@ -1345,6 +1732,9 @@ impl<'window> SurfaceRenderer<'window> {
             self.depth_texture =
                 create_depth_texture(&self.device, &self.surface_config, self.hzb_depth_supported);
             self.refresh_hzb_targets();
+            if let Some(pool) = &mut self.cell_pool {
+                pool.invalidate_viewport();
+            }
             return Ok(FrameStatus::Reconfigured);
         }
         Ok(FrameStatus::Presented)
@@ -1409,7 +1799,7 @@ fn create_instance_buffer(
     })
 }
 
-fn build_pick_chunks(instances: &[InstanceRaw], visual_scale: f64) -> Vec<PickChunk> {
+pub(crate) fn build_pick_chunks(instances: &[InstanceRaw], visual_scale: f64) -> Vec<PickChunk> {
     instances
         .chunks(PICK_CHUNK_INSTANCES)
         .enumerate()
@@ -1457,7 +1847,7 @@ fn check_pick_candidate_budget(candidate_count: usize) -> Result<(), String> {
     }
 }
 
-fn resolve_pick_instances(
+pub(crate) fn resolve_pick_instances(
     ray: PickRay,
     copies: &[PickCopy],
     mapped: &[u8],
@@ -1537,7 +1927,7 @@ fn ray_box_entry(
     ray_box_interval(origin, direction, min, max).map(|(near, _)| near)
 }
 
-fn ray_box_interval(
+pub(crate) fn ray_box_interval(
     origin: glam::DVec3,
     direction: glam::DVec3,
     min: [f64; 3],
@@ -1734,9 +2124,109 @@ pub(crate) async fn create_pipeline_resources(
     })
 }
 
+/// The cell driver (`CellDriver`) writes through the renderer's public cell methods.
+impl CellTarget for SurfaceRenderer<'_> {
+    type Error = GpuRendererError;
+
+    fn has_pool(&self) -> bool {
+        self.cells_active()
+    }
+
+    fn drop_pool(&mut self) {
+        self.clear_cells();
+    }
+
+    fn eye(&self) -> [f64; 3] {
+        self.cell_eye()
+    }
+
+    fn upload_level(
+        &mut self,
+        level: &PackedLevel,
+        page_slots: &[u32],
+    ) -> Result<(), GpuRendererError> {
+        self.upload_cell_level(level, page_slots)
+    }
+
+    fn free_pages(&mut self, page_slots: &[u32]) -> Result<(), GpuRendererError> {
+        self.free_cell_pages(page_slots)
+    }
+
+    fn alloc_mask_slot(&mut self) -> Result<Option<u32>, GpuRendererError> {
+        self.alloc_cell_mask_slot()
+    }
+
+    fn set_node_mask(
+        &mut self,
+        slot: u32,
+        mask: &[u32; MASK_WORDS],
+    ) -> Result<(), GpuRendererError> {
+        self.set_cell_node_mask(slot, mask)
+    }
+
+    fn set_color_ranges(&mut self, ranges: CellColorRanges) {
+        self.cell_color_ranges = ranges;
+    }
+
+    fn set_active_pages(
+        &mut self,
+        pages: &[(u32, PageEntry)],
+        frame: &PageFrame,
+    ) -> Result<(), GpuRendererError> {
+        self.set_active_cell_pages(pages, frame)
+    }
+}
+
 #[cfg(test)]
 mod pick_tests {
     use super::*;
+
+    #[test]
+    fn device_loss_reason_separates_destroy_from_driver_loss() {
+        let destroyed = device_loss(wgpu::DeviceLostReason::Destroyed, "bye".into());
+        assert_eq!(
+            (destroyed.reason, destroyed.message.as_str()),
+            ("destroyed", "bye")
+        );
+        let lost = device_loss(wgpu::DeviceLostReason::Unknown, "gpu crash".into());
+        assert_eq!(lost.reason, "unknown");
+    }
+
+    #[test]
+    fn failed_first_upload_drops_the_new_pool_and_keeps_an_existing_one() {
+        let mut slot: Option<u8> = None;
+        assert_eq!(
+            upload_creating_pool(&mut slot, || 1, |_| Err::<(), _>("bad")),
+            Err("bad")
+        );
+        assert_eq!(slot, None);
+        assert_eq!(
+            upload_creating_pool(&mut slot, || 1, |_| Ok::<(), ()>(())),
+            Ok(true)
+        );
+        assert_eq!(slot, Some(1));
+        assert_eq!(
+            upload_creating_pool(&mut slot, || 2, |_| Err::<(), _>("bad")),
+            Err("bad")
+        );
+        assert_eq!(slot, Some(1));
+        assert_eq!(
+            upload_creating_pool(&mut slot, || 2, |_| Ok::<(), ()>(())),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn pool_creation_budget_counts_only_the_pool() {
+        assert!(check_pool_creation_budget(100, 100).is_ok());
+        assert!(matches!(
+            check_pool_creation_budget(101, 100),
+            Err(GpuRendererError::CellPool(CellPoolError::BudgetExceeded {
+                required_bytes: 101,
+                max_bytes: 100
+            }))
+        ));
+    }
 
     #[test]
     fn framebuffer_limits_apply_to_direct_renderer_callers() {

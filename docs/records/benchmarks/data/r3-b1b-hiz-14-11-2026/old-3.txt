@@ -1,0 +1,4 @@
+dataset majadas-v75.oct px 4
+fitted: reached true, settled true in 439 ms, retained 0 streaks (0 ms, longest 0 ms), forgotten at rest 0, frame p95 arrival 24.7001953125 / rest 17.300048828125 ms, render-call p95 8.300000011920929 / 0.699999988079071 ms, GTT +726 MiB, gpu p95 arrival 0.91 ms (12 samples, 0 dropped, resolution 1 ns) / rest 1.27 ms (600 samples, 0 dropped, resolution 1 ns)
+leaf: reached true, settled true in 11522 ms, retained 1 streaks (100 ms, longest 100 ms), forgotten at rest 0, frame p95 arrival 18.39990234375 / rest 17.5 ms, render-call p95 2.300000011920929 / 0.5 ms, GTT +713 MiB, gpu p95 arrival 0.99 ms (600 samples, 0 dropped, resolution 1 ns) / rest 7.28 ms (600 samples, 0 dropped, resolution 1 ns)
+GTT baseline 40 MiB, peak +745 MiB; console messages 1

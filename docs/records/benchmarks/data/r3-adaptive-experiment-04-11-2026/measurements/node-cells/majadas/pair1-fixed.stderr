@@ -1,0 +1,2 @@
+verified all 24091 hierarchy node IDs against paged traversal
+Error: "leaf chains have unresolved distinct-position collisions at depth cap"

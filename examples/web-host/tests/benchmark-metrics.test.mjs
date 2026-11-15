@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-    FRAME_RATE_WARMUP_MS, lodCounters, lodLogEntry, measureFrameRate, summarizeFrameReplies,
+    FRAME_RATE_WARMUP_MS, cellsTargetReached, lodCounters, lodLogEntry, lodStillLoading, lodTargetReached, measureFrameRate, summarizeFrameReplies,
 } from "../benchmark-metrics.mjs";
 
 test("summarizes frame reply intervals, round trips and render calls over a window", () => {
@@ -78,4 +78,36 @@ test("keeps a complete observation window when replies do not land on its bounda
     assert.equal(measureFrameRate([], 0, 4_000).windowDurationMs, 0);
     assert.equal(measureFrameRate([], null, 15_000).windowDurationMs, 0);
     assert.equal(measureFrameRate([], 0, 15_000).meanFps, null);
+});
+
+// The shape the cells path publishes (plan stats plus driver stats): no coverageComplete.
+const cellsRest = () => ({
+    cellPath: "enabled", cellsBusy: false, cutApply: "applied", cutDigestAtRest: "00aa00bb00cc00dd",
+    poolNodesWithoutLevel: 0, poolCoarsened: 0, poolStages: 0, cpuCoarsened: 0, gpuCoarsened: 0,
+    pendingBlockIds: [], pendingPageAnchors: [], uncoveredNodes: 0, lodError: null,
+    lodStagePixels: 4, targetVoxelPixels: 4,
+});
+
+test("the cells path reaches the target on the T11 criteria, not on coverageComplete", () => {
+    const rest = cellsRest();
+    assert.equal(lodTargetReached(rest), true);
+    assert.equal(cellsTargetReached(rest), true);
+    for (const change of [
+        { cutDigestAtRest: null }, { cutApply: "retained" }, { poolNodesWithoutLevel: 1 }, { poolCoarsened: 1 },
+        { poolStages: 1 }, { cpuCoarsened: 1 }, { gpuCoarsened: 1 }, { lodStagePixels: 8 },
+        { pendingBlockIds: ["7"] }, { pendingPageAnchors: ["3"] }, { lodError: "x" },
+    ]) {
+        assert.equal(lodTargetReached({ ...rest, ...change }), false, JSON.stringify(change));
+    }
+    // The CPU path keeps its own definition.
+    assert.equal(lodTargetReached({ ...rest, cellPath: undefined, coverageComplete: true }), true);
+    assert.equal(lodTargetReached({ ...rest, cellPath: undefined }), false);
+});
+
+test("cells loading ends at rest, also with a coarsened zone, and follows the published stage", () => {
+    const rest = cellsRest();
+    assert.equal(lodStillLoading(rest), false);
+    assert.equal(lodStillLoading({ ...rest, cpuCoarsened: 12 }), false, "a budget-coarsened rest is final");
+    assert.equal(lodStillLoading({ ...rest, lodStagePixels: 8 }), true);
+    assert.equal(lodStillLoading({ ...rest, cellsBusy: true }), true);
 });

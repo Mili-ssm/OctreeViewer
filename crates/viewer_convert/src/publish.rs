@@ -11,6 +11,7 @@ use std::{
     time::Instant,
 };
 
+use viewer_convert_core::written_block_ids;
 use viewer_core::{BlockId, DatasetSource};
 use viewer_format::FormatReader;
 
@@ -26,26 +27,7 @@ use crate::report::{ConversionProgress, ConversionStage, ConversionWorkerStats, 
 pub(crate) static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn output_block_ids(path: &Path) -> Result<(Vec<BlockId>, Vec<BlockId>), ConvertError> {
-    let reader = FormatReader::new(File::open(path)?)?;
-    let block_ids = reader
-        .block_storage_stats()?
-        .into_iter()
-        .map(|block| block.id)
-        .collect();
-    let hierarchy = reader.format_metadata().dataset().hierarchy();
-    let nodes = hierarchy
-        .query(hierarchy.stats().root_bounds)
-        .collect::<Vec<_>>();
-    let parent_ids = nodes
-        .iter()
-        .filter_map(|node| node.parent())
-        .collect::<HashSet<_>>();
-    let source_block_ids = nodes
-        .iter()
-        .filter(|node| !parent_ids.contains(&node.id()))
-        .flat_map(|node| node.blocks().iter().copied())
-        .collect();
-    Ok((block_ids, source_block_ids))
+    written_block_ids(&FormatReader::new(File::open(path)?)?)
 }
 
 pub(crate) fn verify_candidate_visual_scale(

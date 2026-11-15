@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("RUNS must be 1..20".into());
     }
     let mut reader = FormatReader::new(File::open(&args[0])?)?;
-    let metadata = reader.format_metadata().dataset().clone();
+    let metadata = (*reader.format_metadata().viewer_dataset()?).clone();
     let h = metadata.hierarchy();
     if h.semantics() != HierarchySemantics::Replacement {
         return Err("diagnostic requires Replacement semantics".into());

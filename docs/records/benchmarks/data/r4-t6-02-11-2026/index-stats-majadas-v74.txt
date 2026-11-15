@@ -1,0 +1,29 @@
+file target/render-data/majadas-v74.oct
+nodes 24091
+stats_node_count 24091
+leaves 19526
+max_level 15
+root_level 0
+root_side 2048
+single_child_nodes 6
+longest_single_child_run_nodes 1
+index_bytes 13515427
+oct_bytes 2127845594
+index_fraction_of_oct 0.006352
+level nodes single_child
+0 1 0
+1 4 0
+2 8 0
+3 24 0
+4 29 0
+5 82 0
+6 261 0
+7 434 5
+8 1132 1
+9 2242 0
+10 2904 0
+11 3848 0
+12 5666 0
+13 6292 0
+14 1159 0
+15 5 0

@@ -22,13 +22,14 @@ cualquier codec más costoso. El objetivo de más de 500 GB sigue sin demostrars
 
 Objetivos acordados (30-10-2026) en [requisitos](../requirements.md): equipo EQ-REF, PSS del visor RQ-05,
 disco temporal RQ-06 y tolerancias de V7 frente a V5 RQ-07; alcance y congelación en el
-[ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md). RQ-07 (RSS de conversión ≤ +30 %) y RQ-06
+[ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md). RQ-07 (cifra de conversión revisada por el
+[ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)) y RQ-06
 (temporales ≤ 2 × LAZ) son los objetivos vigentes; las mediciones actuales de §4 y §6 aún no los demuestran.
 
 **Alcance de V7 final:** pirámide densa (R4, [ADR 0020](../adr/0020-piramide-lod-densa.md)), jerarquía
 paginada (R5), rejilla global determinista y CRS ([ADR 0021](../adr/0021-rejilla-global-determinista-y-crs.md)),
 flags LAS y Extra Bytes conservados, escritor que rechaza > 256 atributos ([ADR 0007](../adr/0007-limites-por-defecto-del-lector.md)) y codificador LZ4
-propio ([ADR 0025](../adr/0025-codificador-lz4-propio.md)). Se congela cuando se cumpla RQ-07; hasta entonces V5 sigue por defecto.
+propio ([ADR 0025](../adr/0025-codificador-lz4-propio.md)). Congelado el 15-11-2026 con RQ-07 revisado ([ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md)): V7 es la salida por defecto; el codificador LZ4 propio sigue pendiente.
 
 ## Base contrastada
 
@@ -57,8 +58,8 @@ tabla e IDs empaquetados sin comprimir tras usarlos. Conservar candidatos, desem
 orden de primera aparición y payloads exactos. La prueba diferencial cubre la compatibilidad.
 
 Salida del incremento: reader/writer versionados, CLI, conversión LAS/LAZ y EPT local,
-pipeline y checkpoints con identidad exacta; V5 sigue siendo el default operativo durante
-la transición. La conversión web y sus defaults no cambian en este incremento.
+pipeline y checkpoints con identidad exacta; V5 era el default operativo durante
+la transición (V7 lo es desde el 15-11-2026, ADR 0044). La conversión web y sus defaults no cambian en este incremento.
 
 ## 2. Presupuestos y medición antes de ampliar concurrencia
 
@@ -429,7 +430,7 @@ bloques preparados incompatibles, cancelación con trabajo activo, errores de pr
 resultados obsoletos y recuperación/checkpoints. Nativo y WASM; Playwright al integrar la ruta
 del visor, con datos reales, navegación, cambio de objetivo, cierre/reapertura y fallos parciales.
 
-Promover a V7 final/default después de demostrar contratos, recursos y latencia aceptables en
+**Promoción hecha el 15-11-2026** ([ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md), [plan D3c](d3c-congelado-v7-final.md)); queda la retirada de V5/V6 y de las identidades `-pre` (ver el inventario). Texto original: promover a V7 final/default después de demostrar contratos, recursos y latencia aceptables en
 el corpus acordado, completar integración reader/writer y validar navegador. Regenerar muestras,
 datasets activos y herramientas desde fuentes conservadas. Después retirar backends y opciones
 V5/V6, manteniendo solo detección y error de regeneración cuando ayude al usuario. Archivar
@@ -440,13 +441,13 @@ no basta con cambiar la etiqueta o el default.
 
 | Ruta actual | Cierre que habrá que comprobar al promover |
 | --- | --- |
-| `viewer_convert::ConvertOptions`, CLI y `viewer_format::{version,layout,reader,writer}` | V7 final como default y único backend operativo. Detección V5/V6 puede conservar un error explícito de regeneración; ningún payload legacy debe seguir necesitando su decoder. |
-| `viewer_wasm/src/core_convert.rs` y `web-host/converter-worker.js` (el conversor antiguo `browser_convert.rs` se retiró en la etapa 4 del conversor web) | Constructor y worker escriben V7 final, abren/reabren su pareja y superan flujos reales de navegador. |
-| `create_web_sample`, `web-host/sample*.oct*`, `package-local.py`, `data/samples/*.oct*` y datasets locales activos | Regenerar y validar antes de sustituir. Fuentes: generador sintético, LAS versionados de `data/samples/` y LAZ locales de Belvedere/Albuera/Majadas documentados en `data/datasets/README.md`. El paquete web debe incluir la pareja nueva. |
+| `viewer_convert::ConvertOptions`, CLI y `viewer_format::{version,layout,reader,writer}` | **Hecho:** V7 final es el default (ADR 0044). **Pendiente para la retirada:** V5 sigue siendo el único formato con `--checkpoint`/`--resume` y entrada EPT (V7.1–V7.3-pre también para EPT), así que retirarlo exige checkpoints en el formato paginado o una decisión sobre RF-26; V5/V6 y las `-pre` siguen como backends. Detección V5/V6 puede conservar un error explícito de regeneración; ningún payload legacy debe seguir necesitando su decoder. |
+| `viewer_wasm/src/core_convert.rs` y `web-host/converter-worker.js` (el conversor antiguo `browser_convert.rs` se retiró en la etapa 4 del conversor web) | **Hecho** (D3c, [registro web](../records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md)): constructor y worker escriben V7 final por defecto. Pendiente: retirar las opciones V5/V6 del selector. |
+| `create_web_sample`, `web-host/sample*.oct*`, `package-local.py`, `data/samples/*.oct*` y datasets locales activos | **Hecho** para los datasets de render y las referencias ([registro](../records/benchmarks/D3C_V7_REFERENCES_15-11-2026.md)); `web-host/sample*.oct*` y `data/samples/*.oct*` no se tocaron en D3c y siguen pendientes. Regenerar y validar antes de sustituir. Fuentes: generador sintético, LAS versionados de `data/samples/` y LAZ locales de Belvedere/Albuera/Majadas documentados en `data/datasets/README.md`. El paquete web debe incluir la pareja nueva. |
 | Suites/perfiladores y generadores auxiliares | Herramientas activas aceptan V7; archivar comparaciones antiguas y retirar opciones/backend V5/V6 tras migrar los consumidores. |
 
 La suite de almacenamiento y el perfilador ya comparten las revisiones soportadas, incluyendo
-V7.1/V7.2; el comparador alternado usa V5/V7.2 por defecto. Los defaults de conversión siguen V5.
+V7.1/V7.2; el comparador alternado usa V5/V7.2 por defecto. Los defaults de conversión eran V5; desde D3c son V7 (ADR 0044).
 Pasan las 24 pruebas Python; la suite completó conversión V7.2 y lecturas hierarchy/reconstruct/
 progressive sobre `fs_e430_n4008_18.las`. Esto habilita la matriz pendiente, no constituye promoción
 ni retirada. [Comandos](../records/benchmarks/STORAGE_BENCH.md).

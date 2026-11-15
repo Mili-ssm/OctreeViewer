@@ -1,6 +1,6 @@
 # 0002 V5 sigue siendo la salida predeterminada durante la transición a V7
 
-Estado: Aceptada · Fecha: 24-10-2026 (decisión V7; fecha del valor por defecto no registrada)
+Estado: Sustituida por el [ADR 0044](0044-v7-final-congelada-y-predeterminada.md) · Fecha: 24-10-2026 (decisión V7; fecha del valor por defecto no registrada)
 
 ## Contexto
 V6 y V7 son revisiones optativas y experimentales; los datasets activos, fixtures y la muestra principal están en V5 y su migración precede a la retirada del backend.

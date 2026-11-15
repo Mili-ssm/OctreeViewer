@@ -1,6 +1,6 @@
 # 0022 V7 final incluye R4, R5 y la rejilla global, y se congela una vez
 
-Estado: Aceptada · Fecha: 30-10-2026
+Estado: Aceptada (umbral de conversión revisado por el [ADR 0043](0043-coste-de-conversion-de-v7-frente-a-v5.md); congelado y promoción ejecutados por el [ADR 0044](0044-v7-final-congelada-y-predeterminada.md)) · Fecha: 30-10-2026
 
 ## Contexto
 El [plan V7](../plans/format-v7-plan.md) (l.21–22) reconocía que no había mínimos de hardware, almacenamiento ni tolerancias acordados antes de congelar el formato. Ahora R4 ([ADR 0020](0020-piramide-lod-densa.md)), R5 y la rejilla global ([ADR 0021](0021-rejilla-global-determinista-y-crs.md)) cambian el formato.
@@ -29,3 +29,6 @@ RQ-07 no se cumple con la pirámide densa, o R5 exige un cambio incompatible tra
 
 ## Evidencia
 [Plan V7](../plans/format-v7-plan.md) · [Requisitos RQ-07, RF-24](../requirements.md)
+
+## Revisión 15-11-2026
+El congelado se ejecuta con el [ADR 0044](0044-v7-final-congelada-y-predeterminada.md). Por decisión del propietario, el codificador LZ4 propio queda fuera y va después ([ADR 0025](0025-codificador-lz4-propio.md#revisión-15-11-2026)); RQ-07 se mide con V7 antes de cambiar el valor por defecto.

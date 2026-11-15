@@ -1,0 +1,66 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling wasm-bindgen-shared v0.2.129
+   Compiling rustversion v1.0.23
+   Compiling bumpalo v3.20.3
+   Compiling cfg-if v1.0.5
+   Compiling futures-core v0.3.34
+   Compiling once_cell v1.21.4
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-task v0.3.34
+   Compiling slab v0.4.12
+   Compiling thiserror v2.0.21
+   Compiling autocfg v1.5.1
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling byteorder v1.5.0
+   Compiling foldhash v0.2.0
+   Compiling equivalent v1.0.3
+   Compiling log v0.4.34
+   Compiling parking_lot_core v0.9.12
+   Compiling scopeguard v1.2.0
+   Compiling glam v0.34.1
+   Compiling hashbrown v0.17.1
+   Compiling cfg_aliases v0.2.2
+   Compiling smallvec v1.16.4
+   Compiling rustc-hash v1.1.0
+   Compiling futures-util v0.3.34
+   Compiling wgpu v30.0.1
+   Compiling lock_api v0.4.14
+   Compiling twox-hash v2.1.5
+   Compiling static_assertions v1.1.0
+   Compiling litrs v1.0.1
+   Compiling raw-window-handle v0.6.2
+   Compiling bitflags v2.13.2
+   Compiling arrayvec v0.7.8
+   Compiling uuid v1.29.0
+   Compiling profiling v1.0.18
+   Compiling lz4_flex v0.14.0 (/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/r1t7-control-a-20261101/vendor/lz4_flex)
+   Compiling num-traits v0.2.19
+   Compiling parking_lot v0.12.5
+   Compiling wasm-bindgen v0.2.129
+   Compiling document-features v0.2.12
+   Compiling syn v3.0.9
+   Compiling indexmap v2.14.2
+   Compiling laz v0.13.0
+   Compiling wasm-bindgen-macro-support v0.2.129
+   Compiling thiserror-impl v2.0.21
+   Compiling serde_derive v1.0.229
+   Compiling bytemuck_derive v1.12.1
+   Compiling bytemuck v1.25.2
+   Compiling naga-types v30.0.1
+   Compiling viewer_core v0.1.0 (/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/r1t7-control-a-20261101/crates/viewer_core)
+   Compiling wasm-bindgen-macro v0.2.129
+   Compiling viewer_format v0.1.0 (/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/r1t7-control-a-20261101/crates/viewer_format)
+   Compiling js-sys v0.3.106
+   Compiling web-sys v0.3.106
+   Compiling wasm-bindgen-futures v0.4.79
+   Compiling chrono v0.4.45
+   Compiling serde-wasm-bindgen v0.6.5
+   Compiling las v0.11.2
+   Compiling viewer_convert_core v0.1.0 (/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/r1t7-control-a-20261101/crates/viewer_convert_core)
+   Compiling wgpu-types v30.0.1
+   Compiling viewer_render_wgpu v0.1.0 (/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/r1t7-control-a-20261101/crates/viewer_render_wgpu)
+   Compiling viewer_wasm v0.1.0 (/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/r1t7-control-a-20261101/crates/viewer_wasm)
+    Finished `release` profile [optimized] target(s) in 30.59s

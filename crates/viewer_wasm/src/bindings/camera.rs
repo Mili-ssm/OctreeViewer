@@ -18,10 +18,7 @@ impl WasmVoxelViewer {
         } else {
             renderer.fit_scene(self.inner.render_scene())
         };
-        if fitted && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
-            self.lod_dirty = self.lod_config.is_some();
-        }
+        self.camera_changed(fitted);
         Ok(fitted)
     }
 
@@ -32,10 +29,7 @@ impl WasmVoxelViewer {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let changed = renderer.orbit_camera(delta_x, delta_y);
-        if changed && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
-            self.lod_dirty = self.lod_config.is_some();
-        }
+        self.camera_changed(changed);
         Ok(changed)
     }
 
@@ -46,10 +40,7 @@ impl WasmVoxelViewer {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let changed = renderer.pan_camera(delta_x, delta_y);
-        if changed && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
-            self.lod_dirty = self.lod_config.is_some();
-        }
+        self.camera_changed(changed);
         Ok(changed)
     }
 
@@ -60,11 +51,15 @@ impl WasmVoxelViewer {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let changed = renderer.zoom_camera(delta);
-        if changed && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
-            self.lod_dirty = self.lod_config.is_some();
-        }
+        self.camera_changed(changed);
         Ok(changed)
+    }
+
+    /// Epoch of the view `cameraTransport` returns now: bumped by every camera move and resize.
+    /// Send it to the builder (`setViewEpoch`) with that camera.
+    #[wasm_bindgen(js_name = viewEpoch)]
+    pub fn view_epoch(&self) -> f64 {
+        self.view_epoch as f64
     }
 
     /// Returns the camera pose in source dataset coordinates.
@@ -157,9 +152,21 @@ impl WasmVoxelViewer {
 }
 
 impl WasmVoxelViewer {
+    /// The view `cameraTransport` describes is newer: a camera move or a resize. Bumps
+    /// `viewEpoch`, which the host hands to the builder with the camera, so a cut can be told
+    /// from the cuts of older views.
     pub(super) fn camera_changed(&mut self, changed: bool) {
-        if changed && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
+        if !changed {
+            return;
+        }
+        self.view_epoch += 1;
+        if let Some(cells) = &mut self.cells_remote {
+            cells.camera_changed(self.view_epoch);
+        }
+        if let Some(cells) = &mut self.cells_local {
+            cells.mark_dirty();
+        }
+        if self.lod_session.is_some() {
             self.lod_dirty = self.lod_config.is_some();
         }
     }

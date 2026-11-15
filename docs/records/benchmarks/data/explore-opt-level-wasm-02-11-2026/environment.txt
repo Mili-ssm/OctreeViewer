@@ -1,0 +1,15 @@
+HEAD ac18a6f5b0db3eea427c4604fa10c88a76c0833d branch explore/opt-level, clean tree
+CPU: AMD Ryzen AI 9 365 w/ Radeon 880M (20 cpus)
+rustc 1.101.0-nightly (41089d07a 2026-10-27)
+wasm-bindgen 0.2.129
+v22.23.1
+Google Chrome 156.0.8078.73
+s build: default release (opt-level s, lto, cgu 1); o3 build: CARGO_PROFILE_RELEASE_OPT_LEVEL=3 CARGO_TARGET_DIR=target/o3wasm; s rebuilt in target/swasm gave identical SHA to existing pkg
+o3 pkg: target/web-root-o3/pkg (symlinks examples, v74 as in target/web-root); s served on 18767, o3 on 18768; run-sampled.py PORT env var added
+8451a21c3d572b3e10feb3b64a49f3a64b873b7aeb7b65b7ec7a4801b27e3aa7  target/web-root/pkg/viewer_wasm_bg.wasm
+6fb14176f1fe9bc89abd98c7c228897853a2635531822b0ecf6ecb4d5b433e8f  target/web-root-o3/pkg/viewer_wasm_bg.wasm
+39fd02d3efa573859113430c0392615447f33ab8bf38d2460f29a2a12225e1b0  target/render-data/belvedere-v74.oct
+b5dcc8d117b5c2d0b379e36ef1372d11b198fff269fba2e4d1ce35d6595a8c76  target/render-data/belvedere-v74.octattrs
+s raw 2656957 gzip9 644419 brotli 465194
+o3 raw 2228520 gzip9 690132 brotli 502071
+chrome 404 console error in all 6 runs (same both builds)

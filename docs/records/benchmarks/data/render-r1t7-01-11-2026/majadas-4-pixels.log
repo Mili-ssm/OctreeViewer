@@ -1,0 +1,2 @@
+command: node examples/web-host/probe-orbit-load.mjs target/render-data/majadas.oct docs/records/benchmarks/data/render-r1t7-01-11-2026/majadas-4-pixels.json --url=http://127.0.0.1:18767/examples/web-host/index.html --px=4 --max-load-s=180 --orbit-s=10 --browser=chrome --pixels
+{"mode":"timing","reasons":[],"targetReached":true,"error":null}

@@ -1,6 +1,7 @@
 use std::{io, path::PathBuf};
 
 use thiserror::Error;
+use viewer_format::FormatVersion;
 
 use crate::options::{MAX_BLOCKS, MAX_POINTS_PER_BLOCK, MAX_SPATIAL_WORKERS};
 
@@ -30,6 +31,14 @@ pub enum ConvertError {
     },
     #[error(transparent)]
     Format(#[from] viewer_format::FormatError),
+    #[error("LAS Extra Bytes: {0}")]
+    LasExtraBytes(#[from] viewer_core::las::LasExtraBytesError),
+    /// Extra Bytes rejected while adapting the source to a format that stores them.
+    #[error("LAS Extra Bytes cannot be written as {version}: {source}")]
+    LasExtraBytesForFormat {
+        version: FormatVersion,
+        source: viewer_core::las::LasExtraBytesError,
+    },
     #[error(transparent)]
     Spatial(#[from] viewer_core::SpatialError),
     #[error(transparent)]
@@ -56,6 +65,8 @@ pub enum ConvertError {
     InvalidSpatialDivisions(u8),
     #[error("root partition ranges must be between 0 and 8, got {0}")]
     InvalidRootRanges(usize),
+    #[error("sample grid per axis must be between 1 and 256, got {0}")]
+    InvalidSampleGrid(usize),
     #[error("LAS dimensions do not match the planned output attribute schema")]
     InvalidAttributeSchema,
     #[error("estimated controlled memory is {requested} bytes, exceeding budget {limit} bytes")]
@@ -81,6 +92,27 @@ pub enum ConvertError {
     UnsupportedEpt(String),
     #[error("invalid EPT dataset: {0}")]
     InvalidEpt(String),
+    #[error("{0} is fixed by the output format version and cannot be overridden")]
+    FixedByFormat(&'static str),
+    #[error("{what} cannot be written as {version}; pass --format-version v5 to convert it")]
+    UnsupportedForGlobalFormat {
+        what: &'static str,
+        version: FormatVersion,
+    },
+    #[error("{what} cannot be written as {version}; pass --format-version v5 to convert it")]
+    UnsupportedForPagedFormat {
+        what: &'static str,
+        version: FormatVersion,
+    },
+    #[error("row order hybrid needs a v7 output format")]
+    HybridRowOrderUnsupported,
+    #[error(
+        "coordinate magnitude {coordinate} exceeds the converter limit of 2^35 CRS units for {version}"
+    )]
+    GlobalCoordinateRange {
+        coordinate: f64,
+        version: FormatVersion,
+    },
     #[error("conversion size or identifier count overflowed")]
     SizeOverflow,
     #[error("point {point_index} at {position:?} is outside the LAS/LAZ header bounds")]

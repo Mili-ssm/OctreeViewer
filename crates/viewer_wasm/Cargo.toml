@@ -8,6 +8,9 @@ readme = "README.md"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+test-reference-spacing = []
+
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true

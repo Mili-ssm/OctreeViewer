@@ -1,0 +1,1 @@
+cargo run --profile perf --offline -p viewer_render_wgpu --example node_cells_bench -- target/render-data/majadas-v75.oct 0

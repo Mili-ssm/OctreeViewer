@@ -1,0 +1,5 @@
+   Compiling viewer_render_wgpu v0.1.0 (/home/mili/.cache/codex-worktrees/octree-r3-v75/crates/viewer_render_wgpu)
+    Finished `perf` profile [optimized] target(s) in 2.52s
+     Running `target/perf/examples/node_cells_bench target/render-data/majadas-v75.oct 0`
+verified all 24091 hierarchy node IDs against paged traversal
+Error: "leaf chains have unresolved distinct-position collisions at depth cap"

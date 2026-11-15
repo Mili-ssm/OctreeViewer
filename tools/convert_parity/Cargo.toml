@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 viewer_convert_core = { path = "../../crates/viewer_convert_core" }
+viewer_format = { path = "../../crates/viewer_format" }
 
 # Only the native reference needs the CLI path; the wasm32 lib must not pull it in.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

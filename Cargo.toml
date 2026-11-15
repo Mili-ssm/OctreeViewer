@@ -44,7 +44,7 @@ wgpu = "30"
 lz4_flex = { path = "vendor/lz4_flex" }
 
 [profile.release]
-opt-level = "s"
+opt-level = 3
 lto = true
 codegen-units = 1
 

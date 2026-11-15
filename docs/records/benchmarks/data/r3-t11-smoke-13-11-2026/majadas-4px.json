@@ -1,0 +1,520 @@
+{
+  "schemaVersion": 1,
+  "probe": "probe-cells-smoke",
+  "startedAt": "2026-11-13T21:49:38.934Z",
+  "input": "target/render-data/majadas-v75.oct",
+  "targetPixels": 4,
+  "timeoutMs": 120000,
+  "restMs": 5000,
+  "gttBaselineBytes": 42389504,
+  "gttAvailable": true,
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ],
+  "poses": [
+    {
+      "label": "fitted",
+      "pose": {
+        "position": [
+          262939.48948669434,
+          4425681.110486083,
+          2100.3895054257328
+        ],
+        "target": [
+          262939.48948669434,
+          4424773.292999268,
+          528.0034942626953
+        ]
+      },
+      "timeOrigin": "open",
+      "poseApplied": true,
+      "reached": true,
+      "timeToReachedMs": 436,
+      "arrivalFrames": {
+        "replies": 27,
+        "intervalMs": {
+          "count": 26,
+          "p50": 16.699951171875,
+          "p95": 21.5,
+          "max": 25.89990234375
+        },
+        "roundTripMs": {
+          "count": 27,
+          "p50": 1.7000000029802322,
+          "p95": 4.4000000059604645,
+          "max": 6.700000002980232
+        },
+        "renderCallMs": {
+          "count": 27,
+          "p50": 0.699999988079071,
+          "p95": 4.200000002980232,
+          "max": 6.5999999940395355
+        }
+      },
+      "retained": {
+        "samples": 0,
+        "of": 3,
+        "streaks": 0,
+        "durationsMs": [],
+        "totalMs": 0
+      },
+      "statsAtReached": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "17c0761cfc9ac208",
+        "cellsBusy": false,
+        "viewEpoch": 4,
+        "cutEpochSent": 13,
+        "cutEpochApplied": 13,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 218,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 3538392,
+        "wasmLinearMemoryBytes": 9633792,
+        "cellPath": "enabled"
+      },
+      "gttAtReachedDeltaBytes": 447193088,
+      "rest": {
+        "windowMs": 5033,
+        "forgottenDelta": 0,
+        "stillAtRest": true,
+        "frames": {
+          "replies": 302,
+          "intervalMs": {
+            "count": 301,
+            "p50": 16.699951171875,
+            "p95": 17.699951171875,
+            "max": 19.099853515625
+          },
+          "roundTripMs": {
+            "count": 302,
+            "p50": 1,
+            "p95": 1.4000000059604645,
+            "max": 2.2999999970197678
+          },
+          "renderCallMs": {
+            "count": 302,
+            "p50": 0.3999999910593033,
+            "p95": 0.6000000089406967,
+            "max": 1.2999999970197678
+          }
+        },
+        "gttDeltaBytes": 427929600
+      },
+      "statsAtRestEnd": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "17c0761cfc9ac208",
+        "cellsBusy": false,
+        "viewEpoch": 4,
+        "cutEpochSent": 13,
+        "cutEpochApplied": 13,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 218,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 3538392,
+        "wasmLinearMemoryBytes": 9633792,
+        "cellPath": "enabled"
+      },
+      "endedInRetainedStreak": false
+    },
+    {
+      "label": "orbit",
+      "pose": {
+        "position": [
+          262418.78676774976,
+          4425516.933549434,
+          2100.3895054257328
+        ],
+        "target": [
+          262939.48948669434,
+          4424773.292999268,
+          528.0034942626953
+        ]
+      },
+      "timeOrigin": "request",
+      "poseApplied": true,
+      "reached": true,
+      "timeToReachedMs": 113,
+      "arrivalFrames": {
+        "replies": 7,
+        "intervalMs": {
+          "count": 6,
+          "p50": 16.5,
+          "p95": 17.199951171875,
+          "max": 17.199951171875
+        },
+        "roundTripMs": {
+          "count": 7,
+          "p50": 0.7000000029802322,
+          "p95": 1.2999999970197678,
+          "max": 1.2999999970197678
+        },
+        "renderCallMs": {
+          "count": 7,
+          "p50": 0.20000000298023224,
+          "p95": 0.5999999940395355,
+          "max": 0.5999999940395355
+        }
+      },
+      "retained": {
+        "samples": 0,
+        "of": 2,
+        "streaks": 0,
+        "durationsMs": [],
+        "totalMs": 0
+      },
+      "statsAtReached": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "9e3675e60f259f6c",
+        "cellsBusy": false,
+        "viewEpoch": 5,
+        "cutEpochSent": 14,
+        "cutEpochApplied": 14,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 218,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 3538392,
+        "wasmLinearMemoryBytes": 9633792,
+        "cellPath": "enabled"
+      },
+      "gttAtReachedDeltaBytes": 427929600,
+      "rest": {
+        "windowMs": 5024,
+        "forgottenDelta": 0,
+        "stillAtRest": true,
+        "frames": {
+          "replies": 302,
+          "intervalMs": {
+            "count": 301,
+            "p50": 16.699951171875,
+            "p95": 17.199951171875,
+            "max": 18.300048828125
+          },
+          "roundTripMs": {
+            "count": 302,
+            "p50": 0.5,
+            "p95": 1,
+            "max": 2.199999988079071
+          },
+          "renderCallMs": {
+            "count": 302,
+            "p50": 0.20000000298023224,
+            "p95": 0.4000000059604645,
+            "max": 1.800000011920929
+          }
+        },
+        "gttDeltaBytes": 427929600
+      },
+      "statsAtRestEnd": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "9e3675e60f259f6c",
+        "cellsBusy": false,
+        "viewEpoch": 5,
+        "cutEpochSent": 14,
+        "cutEpochApplied": 14,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 218,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 3538392,
+        "wasmLinearMemoryBytes": 9633792,
+        "cellPath": "enabled"
+      },
+      "endedInRetainedStreak": false
+    },
+    {
+      "label": "jump",
+      "pose": {
+        "position": [
+          262939.48948669434,
+          4424864.074747949,
+          685.242095378999
+        ],
+        "target": [
+          262939.48948669434,
+          4424773.292999268,
+          528.0034942626953
+        ]
+      },
+      "timeOrigin": "request",
+      "poseApplied": true,
+      "reached": true,
+      "timeToReachedMs": 1387,
+      "arrivalFrames": {
+        "replies": 83,
+        "intervalMs": {
+          "count": 82,
+          "p50": 16.60009765625,
+          "p95": 19,
+          "max": 22.2001953125
+        },
+        "roundTripMs": {
+          "count": 83,
+          "p50": 0.7999999970197678,
+          "p95": 3.5999999940395355,
+          "max": 6.699999988079071
+        },
+        "renderCallMs": {
+          "count": 83,
+          "p50": 0.6000000089406967,
+          "p95": 2.7999999970197678,
+          "max": 6.5
+        }
+      },
+      "retained": {
+        "samples": 0,
+        "of": 14,
+        "streaks": 0,
+        "durationsMs": [],
+        "totalMs": 0
+      },
+      "statsAtReached": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "1aa08ae03dec85e9",
+        "cellsBusy": false,
+        "viewEpoch": 6,
+        "cutEpochSent": 58,
+        "cutEpochApplied": 58,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 3417,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 42947336,
+        "wasmLinearMemoryBytes": 48693248,
+        "cellPath": "enabled"
+      },
+      "gttAtReachedDeltaBytes": 412463104,
+      "rest": {
+        "windowMs": 5037,
+        "forgottenDelta": 0,
+        "stillAtRest": true,
+        "frames": {
+          "replies": 302,
+          "intervalMs": {
+            "count": 301,
+            "p50": 16.699951171875,
+            "p95": 17.10009765625,
+            "max": 18.300048828125
+          },
+          "roundTripMs": {
+            "count": 302,
+            "p50": 0.4000000059604645,
+            "p95": 1.0999999940395355,
+            "max": 2.7999999970197678
+          },
+          "renderCallMs": {
+            "count": 302,
+            "p50": 0.20000000298023224,
+            "p95": 0.4000000059604645,
+            "max": 1.300000011920929
+          }
+        },
+        "gttDeltaBytes": 412463104
+      },
+      "statsAtRestEnd": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "1aa08ae03dec85e9",
+        "cellsBusy": false,
+        "viewEpoch": 6,
+        "cutEpochSent": 58,
+        "cutEpochApplied": 58,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 3417,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 42947336,
+        "wasmLinearMemoryBytes": 48693248,
+        "cellPath": "enabled"
+      },
+      "endedInRetainedStreak": false
+    },
+    {
+      "label": "leaf",
+      "pose": {
+        "position": [
+          262926.18798828125,
+          4424768.753997803,
+          319.3529968261719
+        ],
+        "target": [
+          262926.18798828125,
+          4424848.041685104,
+          319.3529968261719
+        ]
+      },
+      "timeOrigin": "request",
+      "poseApplied": true,
+      "reached": true,
+      "timeToReachedMs": 10264,
+      "arrivalFrames": {
+        "replies": 616,
+        "intervalMs": {
+          "count": 615,
+          "p50": 16.699951171875,
+          "p95": 19.5,
+          "max": 25.39990234375
+        },
+        "roundTripMs": {
+          "count": 616,
+          "p50": 0.7999999970197678,
+          "p95": 3.8999999910593033,
+          "max": 10.400000005960464
+        },
+        "renderCallMs": {
+          "count": 616,
+          "p50": 0.30000001192092896,
+          "p95": 3.2999999970197678,
+          "max": 9.299999997019768
+        }
+      },
+      "retained": {
+        "samples": 0,
+        "of": 98,
+        "streaks": 0,
+        "durationsMs": [],
+        "totalMs": 0
+      },
+      "statsAtReached": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "601e4de4bf7e0672",
+        "cellsBusy": false,
+        "viewEpoch": 7,
+        "cutEpochSent": 202,
+        "cutEpochApplied": 202,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 22764,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 402090000,
+        "wasmLinearMemoryBytes": 411107328,
+        "cellPath": "enabled"
+      },
+      "gttAtReachedDeltaBytes": 409325568,
+      "rest": {
+        "windowMs": 5026,
+        "forgottenDelta": 0,
+        "stillAtRest": true,
+        "frames": {
+          "replies": 302,
+          "intervalMs": {
+            "count": 301,
+            "p50": 16.699951171875,
+            "p95": 17.10009765625,
+            "max": 18.400146484375
+          },
+          "roundTripMs": {
+            "count": 302,
+            "p50": 0.5,
+            "p95": 1.1000000089406967,
+            "max": 3
+          },
+          "renderCallMs": {
+            "count": 302,
+            "p50": 0.20000000298023224,
+            "p95": 0.30000001192092896,
+            "max": 0.8999999910593033
+          }
+        },
+        "gttDeltaBytes": 409325568
+      },
+      "statsAtRestEnd": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "601e4de4bf7e0672",
+        "cellsBusy": false,
+        "viewEpoch": 7,
+        "cutEpochSent": 202,
+        "cutEpochApplied": 202,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 22764,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 402090000,
+        "wasmLinearMemoryBytes": 411107328,
+        "cellPath": "enabled"
+      },
+      "endedInRetainedStreak": false
+    }
+  ],
+  "url": "http://127.0.0.1:8767/examples/web-host/index.html?cells=1&buildWorker=1",
+  "browserVersion": "157.0.8103.78",
+  "fittedPose": {
+    "position": [
+      262939.48948669434,
+      4425681.110486083,
+      2100.3895054257328
+    ],
+    "target": [
+      262939.48948669434,
+      4424773.292999268,
+      528.0034942626953
+    ]
+  },
+  "metadata": {
+    "name": "majadas-v75.oct",
+    "bytes": 2120805496,
+    "nodeCount": 24091,
+    "boundsMin": [
+      262305.18798828125,
+      4424149.753997803,
+      164.35299682617188
+    ],
+    "boundsMax": [
+      263573.7909851074,
+      4425396.832000732,
+      891.6539916992188
+    ],
+    "coordinateOrigin": [
+      262305.18798828125,
+      4424149.753997803,
+      164.35299682617188
+    ]
+  },
+  "finalLod": {
+    "cutApply": "applied",
+    "cutDigestAtRest": "601e4de4bf7e0672",
+    "cellsBusy": false,
+    "viewEpoch": 7,
+    "cutEpochSent": 202,
+    "cutEpochApplied": 202,
+    "poolStages": 0,
+    "poolNodesWithoutLevel": 0,
+    "poolCoarsened": 0,
+    "poolOverflow": 0,
+    "poolDescendantTooFine": false,
+    "poolResidentPages": 22764,
+    "cellsForgottenTotal": 0,
+    "cellCpuBytes": 402090000,
+    "wasmLinearMemoryBytes": 411107328,
+    "cellPath": "enabled"
+  },
+  "gttPeakDeltaBytes": 447201280
+}

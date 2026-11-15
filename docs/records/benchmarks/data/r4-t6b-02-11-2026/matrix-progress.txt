@@ -1,0 +1,15 @@
+180 exit 0
+180 exit 0
+180 exit 0
+180 exit 0
+300 exit 0
+300 exit 0
+300 exit 0
+300 exit 0
+300 exit 0
+300 exit 0
+300 exit 0
+300 exit 0
+300 exit 0
+180 exit 0
+finished

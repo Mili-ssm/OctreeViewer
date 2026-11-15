@@ -1,0 +1,8 @@
+# worst error / 4 ulp bound at 1e6: 0.351
+# real fixture: 10 levels, 0 spanning, 3333 octant cells
+# belvedere inside-leaf max error 0.00012 px at 1024.00 m (73728 corners, 0 skipped)
+# majadas inside-leaf max error 0.00010 px at 0.40 m (73728 corners, 0 skipped)
+# adapter AMD Radeon 880M Graphics (RADV STRIX1) (Vulkan, IntegratedGpu): 13312 slots bit-identical
+# adapter AMD Radeon 880M Graphics (radeonsi, strix1, ACO, DRM 3.64, 7.2.15-300.fc45.x86_64) (Gl, Other): 13312 slots bit-identical
+# adapter llvmpipe (LLVM 23.1.2, 256 bits) (Vulkan, Cpu): 13312 slots bit-identical
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 123 filtered out; finished in 0.14s

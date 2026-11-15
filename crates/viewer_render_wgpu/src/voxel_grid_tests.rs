@@ -369,6 +369,54 @@ fn voxel_scene_stops_at_the_rendered_instance_limit() {
     );
 }
 
+/// A `v7.4-pre` root with 256 representatives per axis must stop at its own representative
+/// cells (depth 8), not at the 8-per-axis depth 3 of the older formats.
+#[test]
+fn stored_spacing_sets_the_terminal_depth_of_a_coarse_node() {
+    let node = |id, parent, level, side: f64, blocks| {
+        SpatialNode::new(
+            viewer_core::NodeId::new(id),
+            parent,
+            level,
+            SpatialBounds::new([0.0; 3], [side; 3]).unwrap(),
+            2,
+            0.0,
+            blocks,
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            node(1, None, 0, 1.0, vec![BlockId::new(1)])
+                .with_spacing(1.0 / 256.0)
+                .unwrap(),
+            node(2, Some(viewer_core::NodeId::new(1)), 1, 0.5, vec![]),
+        ],
+        vec![],
+        Some(2),
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(4096);
+    cache.insert(block(vec![point([0.1; 3]), point([0.8; 3])]));
+
+    // Cells stay above the 1 px target at every depth, so only the representative rule stops.
+    let scene = build_voxel_scene_with_limit(
+        &hierarchy,
+        &[viewer_core::NodeId::new(1)],
+        &cache,
+        [0.0; 3],
+        1.0,
+        &|bounds| bounds_side(bounds) * 100_000.0,
+        usize::MAX,
+    )
+    .unwrap();
+
+    let sizes: Vec<f32> = scene.scene.instances().iter().map(|i| i.size).collect();
+    assert_eq!(sizes.len(), 2);
+    assert!(sizes.iter().all(|size| (size - 1.0 / 256.0).abs() < 1.0e-7));
+}
+
 fn block(points: Vec<Point>) -> PointBlock {
     PointBlock::new(BlockId::new(1), PointBatch::new(points), vec![])
 }

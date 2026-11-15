@@ -1,0 +1,1 @@
+CARGO_TARGET_DIR=target cargo run --manifest-path target/r3-options/Cargo.toml --bin r3-options-diagnostic --profile perf --offline -- target/render-data/majadas-v75.oct > target/r3-options/output.txt 2> target/r3-options/stderr.txt

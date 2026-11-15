@@ -457,7 +457,7 @@ fn advance_cursor<S: PlanStore>(builder: Builder<'_, '_, S>, batch: &mut Batch<'
 /// Progress or result of one root range thread.
 enum RangeMessage {
     Progress(usize, JobProgress),
-    Finished(usize, Result<RangePartition, ConvertError>),
+    Finished(usize, Box<Result<RangePartition, ConvertError>>),
 }
 
 impl<S: PlanStore, F: SourceFactory + Sync> RangeRunner<S, SystemClock, F> for ThreadedExecutor {
@@ -517,7 +517,7 @@ impl<S: PlanStore, F: SourceFactory + Sync> RangeRunner<S, SystemClock, F> for T
                     {
                         abort_above.fetch_min(range, Ordering::Relaxed);
                     }
-                    let _ = sender.send(RangeMessage::Finished(range, result));
+                    let _ = sender.send(RangeMessage::Finished(range, Box::new(result)));
                 });
             }
             drop(sender);
@@ -529,7 +529,7 @@ impl<S: PlanStore, F: SourceFactory + Sync> RangeRunner<S, SystemClock, F> for T
                             host_error.get_or_insert(error);
                         }
                     }
-                    RangeMessage::Finished(range, result) => results[range] = Some(result),
+                    RangeMessage::Finished(range, result) => results[range] = Some(*result),
                 }
             }
         });

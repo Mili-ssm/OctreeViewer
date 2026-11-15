@@ -33,12 +33,16 @@ impl FormatVersion {
     pub const V7_PRE1: Self = Self::V7Pre(NonZeroU32::new(1).expect("nonzero revision"));
     pub const V7_PRE2: Self = Self::V7Pre(NonZeroU32::new(2).expect("nonzero revision"));
     pub const V7_PRE3: Self = Self::V7Pre(NonZeroU32::new(3).expect("nonzero revision"));
+    /// Global integer octree frame, node prefixes and CRS record (R4).
+    pub const V7_PRE4: Self = Self::V7Pre(NonZeroU32::new(4).expect("nonzero revision"));
+    /// Paged hierarchy: root page next to the footer, child pages on demand (R5).
+    pub const V7_PRE5: Self = Self::V7Pre(NonZeroU32::new(5).expect("nonzero revision"));
 
     /// Revision written when the caller does not choose one.
-    pub const DEFAULT_OUTPUT: Self = Self::V5;
+    pub const DEFAULT_OUTPUT: Self = Self::V7;
 
     /// Every revision the writer implements, in user-facing listing order.
-    pub const WRITABLE: [Self; 8] = [
+    pub const WRITABLE: [Self; 11] = [
         Self::V7_PRE1,
         Self::V7_PRE2,
         Self::V7_PRE3,
@@ -47,12 +51,37 @@ impl FormatVersion {
         Self::V6_PRE2,
         Self::V6_PRE3,
         Self::V6_PRE4,
+        Self::V7_PRE4,
+        Self::V7_PRE5,
+        Self::V7,
     ];
 
     /// Whether block-level EPT checkpoint/resume can target this revision.
     pub fn supports_block_checkpoint(self) -> bool {
         crate::layout::StorageLayout::from_version(self)
             .is_ok_and(crate::layout::StorageLayout::supports_block_checkpoint)
+    }
+
+    /// Whether the writer needs a [`crate::GlobalFrame`] in the metadata (the global integer
+    /// octree of `v7.4-pre`) and `i64` block origins instead of per-block `f64` transforms.
+    pub fn uses_global_frame(self) -> bool {
+        crate::layout::StorageLayout::from_version(self)
+            .is_ok_and(crate::layout::StorageLayout::uses_global_frame)
+    }
+
+    /// Whether the index is a metadata block plus a root page with child pages (`v7.5-pre` and `v7`).
+    pub fn uses_pages(self) -> bool {
+        crate::layout::StorageLayout::from_version(self)
+            .is_ok_and(crate::layout::StorageLayout::uses_pages)
+    }
+
+    /// Row order the format fixes: `v7` always writes hybrid (ADR 0044); every other revision
+    /// leaves the choice to the caller (`Source` by default).
+    pub const fn fixed_row_order(self) -> Option<crate::RowOrder> {
+        match self {
+            Self::V7 => Some(crate::RowOrder::Hybrid),
+            _ => None,
+        }
     }
 
     /// Reject unimplemented output formats before touching any output stream.
@@ -233,9 +262,8 @@ mod tests {
         }
         for version in [
             FormatVersion::V6,
-            FormatVersion::V7,
             FormatVersion::V6Pre(NonZeroU32::new(5).unwrap()),
-            FormatVersion::V7Pre(NonZeroU32::new(4).unwrap()),
+            FormatVersion::V7Pre(NonZeroU32::new(6).unwrap()),
         ] {
             assert!(version.ensure_writable().is_err(), "{version}");
         }
@@ -246,7 +274,7 @@ mod tests {
             .collect();
         assert_eq!(
             names.join("|"),
-            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre"
+            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre|v7.5-pre|v7"
         );
     }
 
@@ -277,6 +305,8 @@ mod tests {
             (7, 1, "v7.1-pre"),
             (7, 2, "v7.2-pre"),
             (7, 3, "v7.3-pre"),
+            (7, 4, "v7.4-pre"),
+            (7, 5, "v7.5-pre"),
             (7, 0, "v7"),
             (8, 9, "unknown(8, 9)"),
         ] {

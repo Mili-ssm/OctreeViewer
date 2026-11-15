@@ -1,0 +1,9 @@
+node=120259084303 depth=29 spacing=Some(3.0517578125e-5) metadata_points=1 decoded=1 finite=1 unique=1 span_bits=22 actual_max_bits=22 actual_over21_points=1 occupied_min=[4192336, 3929, 4185129] occupied_max=[4192336, 3929, 4185129]
+node=124554051592 depth=29 spacing=Some(3.0517578125e-5) metadata_points=2 decoded=2 finite=2 unique=1 span_bits=22 actual_max_bits=22 actual_over21_points=2 occupied_min=[4188080, 27529, 3932] occupied_max=[4188080, 27529, 3932]
+node=300647710726 depth=29 spacing=Some(3.0517578125e-5) metadata_points=1 decoded=1 finite=1 unique=1 span_bits=22 actual_max_bits=22 actual_over21_points=1 occupied_min=[2813464, 4186113, 4191683] occupied_max=[2813464, 4186113, 4191683]
+SUMMARY path="target/render-data/belvedere-v75.oct" authoritative_nodes=3941 leaves=3174 leaf_metadata_points=81682329 initial_span_over21_nodes=3 candidate_metadata_points=4 scanned_points=4 finite=4 nonfinite=0 actual_over21_nodes=3 actual_over21_points=4 skipped_nodes=0
+candidate_points_hist={1: 2, 2: 1}
+span_bits_hist={22: 3}
+actual_max_bits_hist={22: 3}
+unique_positions_hist={1: 3}
+absolute_depth_hist={29: 3}

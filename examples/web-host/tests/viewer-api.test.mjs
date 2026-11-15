@@ -79,6 +79,7 @@ class FakeResizeObserver {
     observe() {
         if (FakeResizeObserver.failObserve) throw new Error("resize observer failed");
     }
+    unobserve() {}
     disconnect() { this.disconnected = true; }
 }
 
@@ -347,3 +348,154 @@ for (const scenario of [
         }
     });
 }
+
+class DomCanvas extends FakeCanvas {
+    isConnected = true;
+    parentNode = {};
+    replacedBy = null;
+    cloneNode() { return new DomCanvas(); }
+    replaceWith(other) { this.replacedBy = other; this.isConnected = false; this.parentNode = null; }
+    transferControlToOffscreen() { return { owner: this }; }
+}
+
+async function withDeviceLossViewer(canvas, run) {
+    const previous = {
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        Worker: globalThis.Worker,
+        ResizeObserver: globalThis.ResizeObserver,
+        window: globalThis.window,
+        requestAnimationFrame: globalThis.requestAnimationFrame,
+    };
+    globalThis.HTMLCanvasElement = FakeCanvas;
+    globalThis.Worker = FakeWorker;
+    globalThis.ResizeObserver = FakeResizeObserver;
+    globalThis.requestAnimationFrame = () => 1;
+    globalThis.window = { Worker: FakeWorker, devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
+    try {
+        const viewer = createViewer(canvas);
+        await viewer.ready;
+        await run(viewer, FakeWorker.instance);
+    } finally {
+        Object.assign(globalThis, previous);
+    }
+}
+
+test("a device loss swaps the host canvas, hands the worker the new OffscreenCanvas and announces it", async () => {
+    const canvas = new DomCanvas();
+    await withDeviceLossViewer(canvas, async (viewer, worker) => {
+        const events = [];
+        viewer.on("deviceLost", detail => events.push(detail));
+        let announced = null;
+        // The event goes to the new element, which the host finds through the old one's replacement.
+        worker.send({ type: "deviceLost", reason: "unknown", message: "gpu crash" });
+        const replacement = canvas.replacedBy;
+        assert.ok(replacement instanceof DomCanvas, "the element was replaced in the DOM");
+        const message = worker.messages.find(m => m.type === "replaceCanvas");
+        assert.equal(message.canvas.owner, replacement, "the worker gets the replacement's OffscreenCanvas");
+        assert.equal(events[0].canvasReplaced, true);
+        assert.equal(canvas.listeners.get("pointerdown").length, 0, "listeners left the old element");
+        assert.equal(replacement.listeners.get("pointerdown").length, 1, "and are on the new one");
+        replacement.addEventListener("voxelviewer:status", () => { announced = true; });
+        worker.send({ type: "status", message: "later" });
+        assert.equal(announced, true, "later events go to the new element");
+    });
+});
+
+test("canvasReplaced is dispatched on the new element", async () => {
+    const canvas = new DomCanvas();
+    const seen = [];
+    const original = DomCanvas.prototype.cloneNode;
+    DomCanvas.prototype.cloneNode = function () {
+        const clone = original.call(this);
+        clone.addEventListener("voxelviewer:canvasReplaced", event => seen.push(event.detail.canvas === clone));
+        return clone;
+    };
+    try {
+        await withDeviceLossViewer(canvas, async (_viewer, worker) => {
+            worker.send({ type: "deviceLost", reason: "unknown", message: "x" });
+        });
+    } finally {
+        DomCanvas.prototype.cloneNode = original;
+    }
+    assert.deepEqual(seen, [true]);
+});
+
+test("a destroyed device does not replace the canvas", async () => {
+    const canvas = new DomCanvas();
+    await withDeviceLossViewer(canvas, async (_viewer, worker) => {
+        worker.send({ type: "deviceLost", reason: "destroyed", message: "destroy()" });
+        assert.equal(canvas.replacedBy, null);
+        assert.equal(worker.messages.some(m => m.type === "replaceCanvas"), false);
+    });
+});
+
+test("a canvas outside the DOM is not replaced: the worker is told to recover on its own and canvasReplaced is false", async () => {
+    const canvas = new DomCanvas();
+    canvas.isConnected = false;
+    await withDeviceLossViewer(canvas, async (viewer, worker) => {
+        const events = [];
+        viewer.on("deviceLost", detail => events.push(detail));
+        worker.send({ type: "deviceLost", reason: "unknown", message: "x" });
+        assert.equal(canvas.replacedBy, null);
+        assert.equal(worker.messages.find(m => m.type === "replaceCanvas").canvas, null);
+        assert.equal(events[0].canvasReplaced, false);
+    });
+});
+
+test("the clone takes the focus the old element had", async () => {
+    const canvas = new DomCanvas();
+    const focused = [];
+    canvas.ownerDocument = { activeElement: canvas };
+    const original = DomCanvas.prototype.cloneNode;
+    DomCanvas.prototype.cloneNode = function () {
+        const clone = original.call(this);
+        clone.focus = (options) => focused.push(options);
+        return clone;
+    };
+    try {
+        await withDeviceLossViewer(canvas, async (_viewer, worker) => {
+            worker.send({ type: "deviceLost", reason: "unknown", message: "x" });
+        });
+        assert.deepEqual(focused, [{ preventScroll: true }]);
+        const plain = new DomCanvas();
+        plain.ownerDocument = { activeElement: {} };
+        const before = focused.length;
+        await withDeviceLossViewer(plain, async (_viewer, worker) => {
+            worker.send({ type: "deviceLost", reason: "unknown", message: "x" });
+        });
+        assert.equal(focused.length, before, "no focus change when the old element had none");
+    } finally {
+        DomCanvas.prototype.cloneNode = original;
+    }
+});
+
+test("init asks for the cells path unless the option is false (R3-Q35)", async () => {
+    const previous = {
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        Worker: globalThis.Worker,
+        ResizeObserver: globalThis.ResizeObserver,
+        window: globalThis.window,
+        requestAnimationFrame: globalThis.requestAnimationFrame,
+        cancelAnimationFrame: globalThis.cancelAnimationFrame,
+    };
+    globalThis.HTMLCanvasElement = FakeCanvas;
+    globalThis.Worker = FakeWorker;
+    globalThis.ResizeObserver = FakeResizeObserver;
+    globalThis.window = { Worker: FakeWorker, devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
+    globalThis.requestAnimationFrame = () => 1;
+    globalThis.cancelAnimationFrame = () => {};
+    try {
+        const initCells = async (options) => {
+            const viewer = createViewer(new FakeCanvas(), options);
+            await viewer.ready;
+            const cells = FakeWorker.instance.messages.find((message) => message.type === "init").cells;
+            viewer.dispose();
+            return cells;
+        };
+        assert.equal(await initCells(undefined), true);
+        assert.equal(await initCells({ cells: false }), false);
+        assert.equal(await initCells({ cells: true }), true);
+    } finally {
+        Object.assign(globalThis, previous);
+    }
+});

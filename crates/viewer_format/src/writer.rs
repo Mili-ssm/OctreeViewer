@@ -5,6 +5,7 @@ use std::{
 
 use viewer_core::{BlockId, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode};
 
+use crate::MAX_SCHEMA_ATTRIBUTES;
 use crate::layout::{FOOTER_SIZE, HEADER_SIZE, StorageLayout};
 use crate::metadata::validate_metadata;
 use crate::version::FileRole;
@@ -15,9 +16,10 @@ use crate::checkpoint_record::{
 };
 use crate::index_codec::{footer_bytes, header_for_role, write_index};
 pub(crate) use crate::prepare::{
-    BlockRecord, BoundsAccumulator, build_block_nodes, prepare_point_block_for_version,
+    BlockRecord, BoundsAccumulator, build_block_nodes, ensure_global_frame_matches,
+    prepare_point_block_for_version,
 };
-pub use crate::prepare::{FormatWriterOptions, PreparedPointBlock, prepare_point_block};
+pub use crate::prepare::{FormatWriterOptions, PreparedPointBlock, RowOrder, prepare_point_block};
 
 /// Writes independently encoded blocks and a canonical index to a fresh seekable stream.
 /// A footer is emitted only after every payload and the complete index have been written.
@@ -39,6 +41,9 @@ impl<W: Write + Seek> FormatWriter<W> {
     pub fn checkpoint_record(&self, id: BlockId) -> Result<Vec<u8>, FormatError> {
         if self.failed {
             return Err(FormatError::WriterPoisoned);
+        }
+        if self.layout.uses_global_frame() {
+            return Err(FormatError::UnsupportedFormatVersion(self.layout.version()));
         }
         let record = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
         encode_checkpoint_record(id, record)
@@ -62,6 +67,10 @@ impl<W: Write + Seek> FormatWriter<W> {
         W: std::io::Read,
     {
         let layout = StorageLayout::from_version(version)?;
+        if layout.uses_global_frame() {
+            return Err(FormatError::UnsupportedFormatVersion(version));
+        }
+        ensure_global_frame_matches(layout, &metadata)?;
         validate_metadata(&metadata)?;
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
         let primary_end = writer.seek(SeekFrom::End(0))?;
@@ -201,6 +210,11 @@ impl<W: Write + Seek> FormatWriter<W> {
         options: FormatWriterOptions,
     ) -> Result<Self, FormatError> {
         let layout = StorageLayout::from_version(version)?;
+        if layout.uses_pages() {
+            return Err(FormatError::InvalidMetadata(
+                "paged layouts are written as a .oct / .octattrs pair",
+            ));
+        }
         Self::new_with_layout(writer, metadata, options, layout)
     }
 
@@ -234,7 +248,17 @@ impl<W: Write + Seek> FormatWriter<W> {
             return Err(FormatError::OutputMustBeEmpty);
         }
         writer.seek(SeekFrom::Start(0))?;
+        ensure_global_frame_matches(layout, &metadata)?;
         validate_metadata(&metadata)?;
+        ensure_schema_within_limit(&metadata)?;
+        if layout.uses_pages()
+            && metadata.dataset().hierarchy().semantics()
+                != viewer_core::HierarchySemantics::Replacement
+        {
+            return Err(FormatError::InvalidMetadata(
+                "paged layouts do not support additive hierarchies",
+            ));
+        }
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
         writer.write_all(&header_for_role(layout.version(), FileRole::Monolithic)?)?;
         Ok(Self {
@@ -339,6 +363,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 quantization_error: prepared.quantization_error,
                 origin: prepared.origin,
                 scale: prepared.scale,
+                origin_quanta: prepared.origin_quanta,
                 world_bounds: prepared.world_bounds,
                 payloads: prepared.payloads,
                 ranges: prepared.ranges,
@@ -403,6 +428,41 @@ impl<W: Write + Seek> FormatWriter<W> {
 
         let metadata = self.adjusted_metadata()?;
         validate_metadata(&metadata)?;
+        if self.layout.uses_pages() {
+            let written = crate::paged_index::write_paged_index(
+                &mut self.writer,
+                &metadata,
+                &self.blocks,
+                self.options.page_target_bytes(),
+                self.layout,
+            )?;
+            let file_length = written
+                .index_offset
+                .checked_add(written.index_length)
+                .and_then(|value| value.checked_add(FOOTER_SIZE))
+                .ok_or(FormatError::FileSizeOverflow)?;
+            if let Some(attributes) = self.attributes.as_mut() {
+                let length = attributes
+                    .stream_position()?
+                    .checked_add(FOOTER_SIZE)
+                    .ok_or(FormatError::FileSizeOverflow)?;
+                attributes.write_all(&footer_bytes(
+                    self.layout.footer_magic(),
+                    written.index_offset,
+                    written.index_length,
+                    length,
+                    written.index_crc,
+                ))?;
+                attributes.flush()?;
+            }
+            self.writer.write_all(&crate::paged_index::paged_footer(
+                self.layout,
+                &written,
+                file_length,
+            ))?;
+            self.writer.flush()?;
+            return Ok((self.writer, self.attributes));
+        }
         let index_offset = self.writer.stream_position()?;
         let (index_length, index_checksum) =
             write_index(&mut self.writer, &metadata, &self.blocks, self.layout)?;
@@ -451,8 +511,10 @@ impl<W: Write + Seek> FormatWriter<W> {
             .map(|node| (node.id(), BoundsAccumulator::from_bounds(node.bounds())))
             .collect::<BTreeMap<_, _>>();
 
+        // `v7.4-pre` bounds are derived from level and prefix; blocks never widen them.
+        let widens_bounds = !self.layout.uses_global_frame();
         for (block_id, record) in &self.blocks {
-            if let Some(block_bounds) = record.world_bounds {
+            if let Some(block_bounds) = record.world_bounds.filter(|_| widens_bounds) {
                 for node_id in &self.block_nodes[block_id] {
                     bounds
                         .get_mut(node_id)
@@ -469,7 +531,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         by_level.sort_unstable_by(|left, right| right.cmp(left));
         for (_, node_id) in by_level {
             let node = source_hierarchy.node(node_id).expect("indexed node");
-            if let Some(parent_id) = node.parent() {
+            if let Some(parent_id) = node.parent().filter(|_| widens_bounds) {
                 let child_bounds = bounds[&node_id].to_bounds()?;
                 bounds
                     .get_mut(&parent_id)
@@ -540,6 +602,17 @@ impl<W: Write + Seek> FormatWriter<W> {
         }
         Ok(source_metadata.with_dataset(dataset, ranges))
     }
+}
+
+fn ensure_schema_within_limit(metadata: &FormatMetadata) -> Result<(), FormatError> {
+    let count = metadata.dataset().hierarchy().attributes().len();
+    if count > MAX_SCHEMA_ATTRIBUTES {
+        return Err(FormatError::TooManyAttributes {
+            count,
+            limit: MAX_SCHEMA_ATTRIBUTES,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,0 +1,7 @@
+2026-11-02T14:03:52.149111+01:00
+0.74 1.25 2.23 1/2322 3328476
+cargo: absent
+rustc: absent
+chrome: absent
+chromium: absent
+firefox: absent

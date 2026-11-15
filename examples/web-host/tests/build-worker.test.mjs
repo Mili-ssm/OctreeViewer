@@ -1,9 +1,10 @@
+import { readConcurrency } from "../http-range-source.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { test } from "node:test";
 
-const stripImports = source => source.replace(/^import .*\n/, "");
+const stripImports = source => source.replace(/^import .*\n/gm, "");
 const viewerSource = stripImports(await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"));
 const buildSource = stripImports(await readFile(new URL("../build-worker.js", import.meta.url), "utf8"));
 const settle = async () => {
@@ -23,15 +24,29 @@ const opened = () => ({
 
 // ---- Build worker in a vm with a fake WASM binding ------------------------------------------
 
-async function runBuildWorker({ updates = [] } = {}) {
+async function runBuildWorker({
+    updates = [], graftFails = false, pageLoadFails = false, asyncBlocks = null, abortable = null,
+} = {}) {
     const posted = [];
+    const grafted = [];
+    const pageLoads = [];
     const updateCalls = [];
     const builders = [];
+    const budgets = [];
+    const planCalls = [];
+    const inserts = [];
     let receive;
     class WasmSceneBuilder {
         constructor(maxVoxels, maxBytes) { this.limits = [maxVoxels, maxBytes]; builders.push(this); }
-        openLodDataset() { return { status: "metadata_ready", visualScale: 2 }; }
-        pendingAsyncLodBlocks() { return []; }
+        openLodDataset() {
+            return {
+                status: "metadata_ready", visualScale: 2, cellPath: asyncBlocks?.cells ? "enabled" : "disabled",
+            };
+        }
+        enableCells() {}
+        setCellPoolPages() {}
+        pendingAsyncLodBlocks() { return asyncBlocks && !inserts.length ? ["7"] : []; }
+        insertAsyncLodBlock(...args) { inserts.push(args); }
         setColorMode(mode) {
             if (mode === "attribute:9:0") throw new Error("invalid attribute index");
             this.mode = mode;
@@ -44,25 +59,64 @@ async function runBuildWorker({ updates = [] } = {}) {
             return {
                 epoch: updateCalls.length, sceneBuffer: planned.scene === false ? null : new ArrayBuffer(8),
                 instanceCount: 1, blockIds: ["7"], digest: "00", needsRefinement: planned.needsRefinement ?? false,
-                lod: lod(),
+                lod: planned.lod ?? lod(),
             };
+        }
+        graftPage(page) {
+            grafted.push(page.anchor);
+            if (graftFails) throw new Error("page budget exhausted: a 100-byte page does not fit");
         }
         free() {}
     }
     class Reader {
         static async open() { return new Reader(); }
+        async loadPage(anchor) {
+            pageLoads.push(anchor);
+            if (pageLoadFails) throw new Error("network error");
+            return { anchor, free() {} };
+        }
+        planLodRead(...args) {
+            planCalls.push(args);
+            let view = null;
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                setSource: (primary) => { view = primary; },
+                read: abortable ? () => new Promise((_, reject) => {
+                    abortable.signals.push(view.signal);
+                    view.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+                }) : async () => ({
+                    value: { positions: new Float32Array(3), colors: new Uint8Array(3), attributes: ["column"] },
+                    release() {}, free() {},
+                }),
+                free() {},
+            };
+        }
         lodDatasetDescriptor() {
             return {
-                coordinateOrigin: [0, 0, 0], semantics: "replacement", hasAttributes: false, attributeSchema: [],
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                hasAttributes: asyncBlocks ? asyncBlocks.hasAttributes !== false : false,
+                attributeSchema: asyncBlocks?.schema ?? [],
+                dataMin: [0, 0, 0], dataMax: [0.5, 0.5, 0.5],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
             };
         }
         free() {}
     }
-    class Budget { clone() { return this; } }
+    class Budget {
+        constructor(limit) { this.limit = limit; budgets.push(this); }
+        clone() { return this; }
+        limitBytes() { return String(this.limit); }
+        free() {}
+    }
     class Scheduler {
-        updateBlocks() { return []; }
-        pendingBlocks() { return []; }
+        updateBlocks() { return abortable?.cancel ? ["1"] : []; }
+        pendingBlocks() { return asyncBlocks && !inserts.length ? ["7"] : []; }
+        inFlightCount() { return 0; }
+        takeNextAdmitted() { return { ticket: 1 }; }
+        isCurrent() { return true; }
+        complete() { return "completed"; }
         cancelAll() { return []; }
     }
     vm.runInNewContext(buildSource, {
@@ -71,6 +125,11 @@ async function runBuildWorker({ updates = [] } = {}) {
             postMessage(message) { posted.push(message); },
         },
         performance: { now: () => Date.now() },
+        resolveSource: async (spec) => (abortable ? { size: 8, withSignal: (signal) => ({ signal }) } : spec),
+        AbortController,
+        sumRangeStats: () => null,
+        readConcurrency,
+        isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 2 }) }),
         WasmSceneBuilder, WasmAsyncFormatReader: Reader, WasmAsyncReadBudget: Budget,
         WasmBlockRequestScheduler: Scheduler,
@@ -80,7 +139,7 @@ async function runBuildWorker({ updates = [] } = {}) {
     send("init", {});
     send("open", { gen: 1, file: {}, cacheBytes: 1024, limits: [100, 200] });
     await settle();
-    return { posted, updateCalls, builders, send, settle };
+    return { posted, updateCalls, builders, grafted, budgets, pageLoads, planCalls, inserts, send, settle };
 }
 
 test("build worker opens the dataset and reports its metadata", async () => {
@@ -90,7 +149,17 @@ test("build worker opens the dataset and reports its metadata", async () => {
     assert.equal(message.gen, 1);
     assert.equal(message.opened.visualScale, 2);
     assert.equal(message.opened.nodeCount, 1);
-    assert.deepEqual([...message.opened.boundsMax], [1, 1, 1]);
+    assert.deepEqual([...message.opened.boundsMax], [0.5, 0.5, 0.5]); // tight data extent, not the root node
+});
+
+test("build worker recreates the read budget when a later open brings another cacheBytes", async () => {
+    const worker = await runBuildWorker();
+    worker.send("open", { gen: 2, file: {}, cacheBytes: 1024, limits: [100, 200] });
+    await worker.settle();
+    assert.deepEqual(worker.budgets.map(budget => budget.limit), [1024]);
+    worker.send("open", { gen: 3, file: {}, cacheBytes: 4096, limits: [100, 200] });
+    await worker.settle();
+    assert.deepEqual(worker.budgets.map(budget => budget.limit), [1024, 4096]);
 });
 
 test("build worker coalesces views queued during a build: latest wins", async () => {
@@ -130,6 +199,46 @@ test("build worker repeats the build while the planner asks for refinement and r
         .map(item => [item.type, item.epoch, item.viewEpoch]), [["scene", 1, 1], ["lod", 2, 1]]);
 });
 
+test("build worker does not request a page that failed to load again until a view asks to retry", async () => {
+    const pending = { ...lod(), pendingPageAnchors: ["5"] };
+    const worker = await runBuildWorker({ pageLoadFails: true, updates: new Array(6).fill({ lod: pending }) });
+    const view = (epoch, retryFailed = false) => worker.send("view", {
+        gen: 1, epoch, camera: [epoch], viewport: [4, 4], visualScale: 2, targetPx: 4, retryFailed,
+    });
+    view(1);
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    view(2);
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(worker.pageLoads, ["5"], "a new view alone does not refetch the failed page");
+    view(3, true);
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(worker.pageLoads, ["5", "5"]);
+});
+
+test("build worker stops refetching a page the budget cannot hold until the view changes", async () => {
+    const pending = { ...lod(), pendingPageAnchors: ["5"] };
+    const exhausted = { ...pending, pageBudgetExhausted: true };
+    const worker = await runBuildWorker({
+        graftFails: true,
+        updates: [{ lod: pending }, { lod: exhausted }, { lod: exhausted }, { lod: exhausted }],
+    });
+    worker.send("view", { gen: 1, epoch: 1, camera: [1], viewport: [4, 4], visualScale: 2, targetPx: 4 });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(worker.grafted, ["5"], "no refetch loop while the view is unchanged");
+    assert.equal(worker.updateCalls.length, 2, "the failed graft refreshes the stats once");
+    assert.ok(worker.posted.filter(item => item.type === "scene" || item.type === "lod")
+        .some(item => item.lod.pageBudgetExhausted), "the host receives the exhausted state");
+    assert.ok(worker.posted.some(item => item.type === "error" && item.operation === "asyncPageRead"));
+    worker.send("view", { gen: 1, epoch: 2, camera: [2], viewport: [4, 4], visualScale: 2, targetPx: 4 });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(worker.grafted, ["5", "5"], "a new view retries the page");
+});
+
 test("build worker ignores views and color changes for another gen", async () => {
     const worker = await runBuildWorker();
     worker.send("view", { gen: 9, epoch: 1, camera: [1], viewport: [4, 4], visualScale: 2, targetPx: 4 });
@@ -166,6 +275,63 @@ test("build worker reports a rejected colour mode as an error and keeps the prev
     assert.equal(error.gen, 1);
     assert.match(error.message, /invalid attribute index/);
     assert.deepEqual(worker.posted.filter(item => item.type === "colorMode").map(item => item.mode), ["intensity"]);
+});
+
+const COLUMNS = [{ name: "intensity" }, { name: "classification" }, { name: "vector" }];
+const plan = call => JSON.parse(JSON.stringify(call, (_key, value) => (typeof value === "bigint" ? `${value}n` : value)));
+const sendView = async (worker, epoch = 1) => {
+    worker.send("view", { gen: 1, epoch, camera: [1], viewport: [4, 4], visualScale: 2, targetPx: 4 });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 20));
+};
+
+test("a ticket the scheduler drops aborts its range reads: a cancellation, not an error", async () => {
+    const abortable = { signals: [], cancel: false };
+    const worker = await runBuildWorker({ asyncBlocks: { cells: false, schema: [] }, abortable });
+    await sendView(worker);
+    assert.equal(abortable.signals[0].aborted, false);
+    abortable.cancel = true;
+    await sendView(worker, 2);
+    assert.equal(abortable.signals[0].aborted, true);
+    assert.deepEqual(worker.posted.filter(message => message.type === "error"), []);
+});
+
+test("with cells the build worker reads intensity and class with the geometry in every colour mode", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS } });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometryAttributes", null, [0, 1]]);
+    assert.deepEqual(plan(worker.inserts[0].slice(3)), [null, ["column"]]);
+});
+
+test("with cells an attribute colour mode adds its column to the geometry read", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS } });
+    worker.send("colorMode", { gen: 1, mode: "attribute:2:1" });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometryAttributes", 2, [0, 1]]);
+});
+
+test("with cells an attribute mode on intensity reads it once and intensity mode reads no painted column", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS } });
+    worker.send("colorMode", { gen: 1, mode: "attribute:0:0" });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometryAttributes", 0, [1]]);
+    const other = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS } });
+    other.send("colorMode", { gen: 1, mode: "intensity" });
+    await sendView(other);
+    assert.deepEqual(plan(other.planCalls[0]), ["7n", "geometryAttributes", null, [0, 1]]);
+});
+
+test("with cells and no attribute file no column is read", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS, hasAttributes: false } });
+    worker.send("colorMode", { gen: 1, mode: "attribute:0:0" });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometryAttributes", null, []]);
+});
+
+test("without cells the build worker keeps the per-mode reads", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: false, schema: COLUMNS } });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometry", null, null]);
 });
 
 // ---- Render worker in build-worker mode ------------------------------------------------------
@@ -236,6 +402,10 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
             postMessage(message) { messages.push(message); },
         },
         performance: { now: () => now },
+        resolveSource: async (spec) => spec,
+        sumRangeStats: () => null,
+        readConcurrency,
+        isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
         WasmVoxelViewer: { createOffscreen: async () => viewer },
         WasmAsyncReadBudget: class {}, WasmBlockRequestScheduler: class {}, WasmAsyncFormatReader: class {},
@@ -245,7 +415,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         receive({ data: { type, ...fields } });
         await settle();
     };
-    await send("init", { canvas: {}, width: 100, height: 50, colorMode: "rgb", depthShading: false, buildWorker });
+    await send("init", { canvas: {}, width: 100, height: 50, colorMode: "rgb", depthShading: false, buildWorker, cells: false });
     const open = () => send("openFile", {
         file: { name: "a.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
     });

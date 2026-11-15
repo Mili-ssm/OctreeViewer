@@ -1,0 +1,11 @@
+{"variant": "v5", "round": 1, "rc": 0, "wall_s": 20.984, "peak_rss_kib": 66804, "oct_bytes": 981063326, "octattrs_bytes": 610586859, "loadavg_at_end": [2.86962890625, 3.3447265625, 3.4560546875]}
+{"variant": "v7", "round": 1, "rc": 0, "wall_s": 42.57, "peak_rss_kib": 89676, "oct_bytes": 530962031, "octattrs_bytes": 889640140, "loadavg_at_end": [4.98828125, 3.86083984375, 3.6279296875]}
+{"variant": "v7", "round": 2, "rc": 0, "wall_s": 42.722, "peak_rss_kib": 91772, "oct_bytes": 530962031, "octattrs_bytes": 889640140, "loadavg_at_end": [5.8193359375, 4.2763671875, 3.783203125]}
+{"variant": "v5", "round": 2, "rc": 0, "wall_s": 22.011, "peak_rss_kib": 70912, "oct_bytes": 981063326, "octattrs_bytes": 610586859, "loadavg_at_end": [6.5810546875, 4.5498046875, 3.88427734375]}
+{"variant": "v5", "round": 3, "rc": 0, "wall_s": 21.244, "peak_rss_kib": 66372, "oct_bytes": 981063326, "octattrs_bytes": 610586859, "loadavg_at_end": [6.32275390625, 4.6630859375, 3.94140625]}
+{"variant": "v7", "round": 3, "rc": 0, "wall_s": 42.117, "peak_rss_kib": 90716, "oct_bytes": 530962031, "octattrs_bytes": 889640140, "loadavg_at_end": [6.33740234375, 4.91455078125, 4.05908203125]}
+{"variant": "v7", "round": 4, "rc": 0, "wall_s": 41.499, "peak_rss_kib": 90228, "oct_bytes": 530962031, "octattrs_bytes": 889640140, "loadavg_at_end": [6.33837890625, 5.109375, 4.16259765625]}
+{"variant": "v5", "round": 4, "rc": 0, "wall_s": 20.598, "peak_rss_kib": 67556, "oct_bytes": 981063326, "octattrs_bytes": 610586859, "loadavg_at_end": [6.958984375, 5.31640625, 4.25048828125]}
+{"variant": "v5", "round": 5, "rc": 0, "wall_s": 21.129, "peak_rss_kib": 66524, "oct_bytes": 981063326, "octattrs_bytes": 610586859, "loadavg_at_end": [6.76171875, 5.40234375, 4.30712890625]}
+{"variant": "v7", "round": 5, "rc": 0, "wall_s": 42.898, "peak_rss_kib": 93468, "oct_bytes": 530962031, "octattrs_bytes": 889640140, "loadavg_at_end": [7.37890625, 5.75537109375, 4.4736328125]}
+{"variant": "v7.5-pre-hybrid", "round": 0, "rc": 0, "wall_s": 41.193, "peak_rss_kib": 90384, "oct_bytes": 530962031, "octattrs_bytes": 889640140, "loadavg_at_end": [7.0908203125, 5.8818359375, 4.56884765625]}

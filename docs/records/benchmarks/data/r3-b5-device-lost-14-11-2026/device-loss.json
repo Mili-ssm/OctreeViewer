@@ -1,0 +1,165 @@
+{
+  "probe": "probe-device-loss",
+  "startedAt": "2026-11-14T03:44:23.232Z",
+  "input": "target/render-data/majadas-v75.oct",
+  "methodsTried": [
+    {
+      "method": "cdp",
+      "result": null,
+      "lossObserved": true
+    }
+  ],
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ],
+  "url": "http://127.0.0.1:8767/examples/web-host/index.html?cells=1&buildWorker=1",
+  "browserVersion": "157.0.8103.78",
+  "before": {
+    "digest": "f2bbcfeaaff029c0",
+    "settleMs": 812,
+    "pose": {
+      "position": [
+        262380.57932938315,
+        4424773.292999268,
+        1496.0642835919443
+      ],
+      "target": [
+        262939.48948669434,
+        4424773.292999268,
+        528.0034942626953
+      ]
+    },
+    "cellPath": "enabled",
+    "loadMarker": 0.05618398632046917
+  },
+  "beforeStats": {
+    "gpu": {
+      "adapter": {
+        "name": "AMD Radeon 880M Graphics (RADV STRIX1)",
+        "backend": "BrowserWebGpu",
+        "deviceType": "Other",
+        "driver": "",
+        "driverInfo": ""
+      },
+      "deviceLost": null,
+      "uploadedBytes": "0",
+      "visibleInstances": 0,
+      "visibleBlocks": 0,
+      "hzbActive": false,
+      "requestedResources": {
+        "instanceBufferBytes": "0",
+        "fixedBufferBytes": "376",
+        "hzbBufferBytes": "36",
+        "depthTextureBytes": "2331600",
+        "hzbTextureBytes": "5592404",
+        "totalBytes": "697577352"
+      },
+      "gpuFrameMs": null
+    },
+    "lod": {
+      "cutApply": "applied",
+      "cutDigestAtRest": "f2bbcfeaaff029c0",
+      "cellsBusy": false,
+      "poolResidentPages": 265,
+      "poolNodesWithoutLevel": 0,
+      "cellPath": "enabled"
+    }
+  },
+  "adapter": {
+    "name": "AMD Radeon 880M Graphics (RADV STRIX1)",
+    "backend": "BrowserWebGpu",
+    "deviceType": "Other",
+    "driver": "",
+    "driverInfo": ""
+  },
+  "deviceLostBefore": null,
+  "crashMethod": "cdp",
+  "recoveredAfterMs": 611,
+  "after": {
+    "digest": "f2bbcfeaaff029c0",
+    "settleMs": 817,
+    "pose": {
+      "position": [
+        262380.57932938315,
+        4424773.292999268,
+        1496.0642835919443
+      ],
+      "target": [
+        262939.48948669434,
+        4424773.292999268,
+        528.0034942626953
+      ]
+    },
+    "loadMarker": 0.05618398632046917
+  },
+  "screenshotBytes": {
+    "before": 123692,
+    "after": 123694
+  },
+  "afterStats": {
+    "gpu": {
+      "adapter": {
+        "name": "AMD Radeon 880M Graphics (RADV STRIX1)",
+        "backend": "BrowserWebGpu",
+        "deviceType": "Other",
+        "driver": "",
+        "driverInfo": ""
+      },
+      "deviceLost": null,
+      "uploadedBytes": "0",
+      "visibleInstances": 0,
+      "visibleBlocks": 0,
+      "hzbActive": false,
+      "requestedResources": {
+        "instanceBufferBytes": "0",
+        "fixedBufferBytes": "376",
+        "hzbBufferBytes": "36",
+        "depthTextureBytes": "2331600",
+        "hzbTextureBytes": "5592404",
+        "totalBytes": "697577352"
+      },
+      "gpuFrameMs": null
+    },
+    "lod": {
+      "cutApply": "applied",
+      "cutDigestAtRest": "f2bbcfeaaff029c0",
+      "cellsBusy": false,
+      "poolResidentPages": 231,
+      "poolNodesWithoutLevel": 0,
+      "cellPath": "enabled"
+    }
+  },
+  "events": [
+    {
+      "type": "deviceLost",
+      "reason": "unknown",
+      "message": "A valid external Instance reference no longer exists."
+    },
+    {
+      "type": "deviceRecovery",
+      "state": "started",
+      "attempt": 1,
+      "reason": "unknown"
+    },
+    {
+      "type": "deviceRecovery",
+      "state": "recovered",
+      "attempt": 1,
+      "reason": "unknown"
+    }
+  ],
+  "deviceLostAfter": null,
+  "checks": {
+    "lossReported": true,
+    "recovered": true,
+    "noReload": true,
+    "samePose": true,
+    "sameDigest": true,
+    "newDeviceHealthy": true,
+    "canvasPainted": true,
+    "noPageErrors": true
+  }
+}

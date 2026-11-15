@@ -1,0 +1,66 @@
+InspectingInput
+PlanningMetadata
+PlanningSpatialIndex
+  55600/81682329 points (0 MiB written; 0%)
+  8174271/81682329 points (0 MiB written; 10%)
+  16366271/81682329 points (0 MiB written; 20%)
+  24558271/81682329 points (0 MiB written; 30%)
+  32686271/81682329 points (0 MiB written; 40%)
+  40878271/81682329 points (0 MiB written; 50%)
+  49070271/81682329 points (0 MiB written; 60%)
+  57198271/81682329 points (0 MiB written; 70%)
+  65390271/81682329 points (0 MiB written; 80%)
+  73518271/81682329 points (0 MiB written; 90%)
+  81682329/81682329 points (0 MiB written; 100%)
+BuildingSpatialHierarchy
+ReadingAndWritingBlocks
+  0/81682329 points (0 MiB written; 0%)
+  8172172/81682329 points (78 MiB written; 10%)
+  16366396/81682329 points (156 MiB written; 20%)
+  24511762/81682329 points (234 MiB written; 30%)
+  32674702/81682329 points (311 MiB written; 40%)
+  40856382/81682329 points (388 MiB written; 50%)
+  49053697/81682329 points (466 MiB written; 60%)
+  57236900/81682329 points (544 MiB written; 70%)
+  65363553/81682329 points (622 MiB written; 80%)
+  73519583/81682329 points (700 MiB written; 90%)
+  81682329/81682329 points (776 MiB written; 100%)
+ValidatingOutput
+  0/81682329 points (1633 MiB written; 0%)
+  8202366/81682329 points (1633 MiB written; 10%)
+  16366396/81682329 points (1633 MiB written; 20%)
+  24511762/81682329 points (1633 MiB written; 30%)
+  32676725/81682329 points (1633 MiB written; 40%)
+  40870383/81682329 points (1633 MiB written; 50%)
+  49020177/81682329 points (1633 MiB written; 60%)
+  57188443/81682329 points (1633 MiB written; 70%)
+  65379297/81682329 points (1633 MiB written; 80%)
+  73519583/81682329 points (1633 MiB written; 90%)
+  81682329/81682329 points (1633 MiB written; 100%)
+PublishingOutput
+Complete
+Converted 81682329 points in 3941 blocks (1712809941 bytes; estimated controlled memory 130 MiB) to target/explore-o3/out.oct + target/explore-o3/out.octattrs
+Not preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata
+	Command being timed: "target/o3/release/viewer_convert data/datasets/belv_2009_digital-aerial_pcd_copc.laz target/explore-o3/out.oct --format-version v7.4-pre"
+	User time (seconds): 118.59
+	System time (seconds): 25.66
+	Percent of CPU this job got: 342%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:42.17
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 103072
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 10671249
+	Voluntary context switches: 63178
+	Involuntary context switches: 4472
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 60832208
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

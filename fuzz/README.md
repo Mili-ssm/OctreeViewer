@@ -13,6 +13,7 @@ verifican siempre y los tests de corrupción cubren la comprobación real.
 | Objetivo | Entrada | Qué ejecuta |
 | --- | --- | --- |
 | `fuzz_format_reader` | bytes | `FormatReader::new` monolítico y, como segunda variante, `.oct` + `.octattrs` partidos (primeros 4 bytes LE = punto de corte); si abre, lee XYZ, colores y todas las columnas de todos los bloques |
+| `fuzz_paged_reader` | bytes | `PagedReader::open` (`v7.5-pre`, lectura de cola) y todas las páginas hijas encadenadas (máx. 256), leyendo los bytes de cada bloque; también liberando páginas. `fuzz_format_reader` ya cubre la vista ansiosa del mismo formato |
 | `fuzz_las_preflight` | bytes | `preflight_las`; si pasa, `viewer_convert::convert_file` sobre archivos temporales (tmpfs, borrados en cada iteración): comprobación de la tabla de chunks LAZ (privada a `viewer_convert`, por eso no se llama directa), lector `las` con `laz-parallel` y conversión |
 
 Un pánico, abort o asignación por encima de los límites de libFuzzer tras un preflight correcto
@@ -32,6 +33,7 @@ Requiere `cargo install cargo-fuzz` (usa el nightly fijado en `rust-toolchain.to
 cd fuzz
 cargo run --bin gen_seeds   # regenera semillas en corpus/: una por revisión escribible (monolítica y partida) y LAS/LAZ 1.4 formatos 6-8 con y sin EVLR (solo las pequeñas se versionan)
 cargo fuzz run fuzz_format_reader -- -max_total_time=900 -rss_limit_mb=2048 -malloc_limit_mb=1024
+cargo fuzz run fuzz_paged_reader -- -max_total_time=900 -rss_limit_mb=2048 -malloc_limit_mb=1024
 cargo fuzz run fuzz_las_preflight -- -max_total_time=900 -rss_limit_mb=2048 -malloc_limit_mb=1024
 ```
 

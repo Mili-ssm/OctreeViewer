@@ -46,6 +46,29 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend().format_metadata()
     }
 
+    /// Opens a `v7.5-pre` primary file lazily: one tail read brings the footer, metadata block and
+    /// root page; child pages come from [`Self::read_page`]. `format_metadata()` then holds only
+    /// the root page's nodes.
+    pub fn open_lazy(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
+        let core = crate::paged_index::open_core(&mut reader, limits)?;
+        Ok(Self {
+            backend: IndexedReader::from_paged_core(reader, core, false)?,
+        })
+    }
+
+    /// The page registry of a lazily opened reader; `None` for eager formats.
+    pub fn page_source(&self) -> Option<&std::sync::Arc<crate::PageSource>> {
+        self.backend().page_source()
+    }
+
+    /// Reads and validates the page hanging from `anchor`, registering its blocks.
+    pub fn read_page(
+        &mut self,
+        anchor: viewer_core::NodeId,
+    ) -> Result<crate::PageGraft, FormatError> {
+        self.backend_mut().read_page(anchor)
+    }
+
     pub fn index_size_bytes(&self) -> u64 {
         self.backend().index_size_bytes()
     }
@@ -145,6 +168,12 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend_mut().read_reserved(id, selection, reservation)
     }
 
+    /// Per-cloud reference spacing (RF-05): stored in `v7.5-pre`, computed from all leaves in the
+    /// other formats.
+    pub fn reference_spacing(&self) -> Option<f64> {
+        self.backend().reference_spacing()
+    }
+
     pub fn attribute_range(
         &self,
         schema_index: u32,
@@ -163,6 +192,11 @@ impl<R: Read + Seek> FormatReader<R> {
 
     pub fn read_positions(&mut self, id: BlockId) -> Result<PointBatch, FormatError> {
         self.backend_mut().read_positions(id)
+    }
+
+    /// Exact `i64` quanta (2^-15 CRS units) of a `v7.4-pre` block, for lossless export.
+    pub fn read_block_quanta(&mut self, id: BlockId) -> Result<Vec<[i64; 3]>, FormatError> {
+        self.backend_mut().read_block_quanta(id)
     }
 
     pub fn read_attribute(
@@ -299,6 +333,23 @@ impl<R: Read + Seek> OctreeReader for FormatReader<R> {
 
     fn attribute_range(&self, index: u32, component: u32) -> Result<Option<[f64; 2]>, Self::Error> {
         FormatReader::attribute_range(self, index, component)
+    }
+}
+
+impl FormatReader<std::io::Cursor<Vec<u8>>> {
+    /// Lazy paged-layout (`v7.5-pre` and `v7`) reader whose payloads and pages are fetched by the caller (browser Blobs).
+    /// `footer` is the last 40 bytes of the file and `index` the index region it names.
+    pub fn paged_external(
+        file_length: u64,
+        footer: &[u8],
+        index: &[u8],
+        limits: FormatReaderLimits,
+    ) -> Result<Self, FormatError> {
+        let location = crate::PagedCore::locate_index(file_length, footer, &limits)?;
+        let core = crate::PagedCore::from_index(index, location, limits)?;
+        Ok(Self {
+            backend: IndexedReader::from_paged_core(std::io::Cursor::new(Vec::new()), core, true)?,
+        })
     }
 }
 

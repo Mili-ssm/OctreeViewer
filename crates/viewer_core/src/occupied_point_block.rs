@@ -30,7 +30,7 @@ pub struct OccupiedPointBlock {
 impl OccupiedPointBlock {
     /// Validates payload alignment and cells before building a deterministic leaf-to-row map.
     ///
-    /// Path/row pairs are sorted once. Rows within each leaf retain original source order.
+    /// Path/row pairs are sorted once. Rows within each leaf keep the block's row order.
     /// Temporary storage is O(rows); topology construction adds O(leaves * depth) work.
     /// Payloads are moved, not cloned. Allocation failures follow the normal Rust policy.
     pub fn new(
@@ -74,7 +74,7 @@ impl OccupiedPointBlock {
         self.index.rows_for_cell(coord)
     }
 
-    /// Copies one cell's points, RGB and typed attributes in original source order.
+    /// Copies one cell's points, RGB and typed attributes in the block's row order.
     ///
     /// The returned block is a subset with the source ID as provenance; it is not a new
     /// hierarchy block and must not replace the full source in a dataset cache.

@@ -6,8 +6,8 @@ use viewer_core::{
 };
 
 use crate::{
-    FormatMetadata, FormatReaderLimits, FormatVersion, OctreeReader, OctreeWriter,
-    PreparedOctreeWriter, SourcePointBlock, crc32, prepare_point_block,
+    FormatMetadata, FormatVersion, OctreeReader, OctreeWriter, PreparedOctreeWriter,
+    SourcePointBlock, crc32, prepare_point_block,
 };
 
 use super::{FormatError, FormatWriter, FormatWriterOptions};
@@ -216,30 +216,59 @@ fn split_resume_rejects_truncated_or_corrupt_record_without_writing_candidates()
 }
 
 #[test]
-fn wide_schema_requires_explicit_reader_limits() {
+fn wide_schema_is_limited_to_the_default_reader_limit() {
+    // RF-27: the writer refuses schemas the default reader limit (256) would refuse, so every
+    // file it produces opens without explicit limits.
     let base = sample_metadata();
-    let schema = (0..257)
-        .map(|index| {
-            AttributeDescriptor::new(format!("column_{index}"), AttributeDataType::U8, 1).unwrap()
-        })
-        .collect::<Vec<_>>();
-    let hierarchy = SpatialHierarchy::new(
-        base.dataset()
-            .hierarchy()
-            .query(base.dataset().hierarchy().stats().root_bounds)
-            .cloned()
-            .collect(),
-        schema.clone(),
-        Some(2),
-    )
-    .unwrap();
-    let metadata = FormatMetadata::new(
-        DatasetMetadata::new(base.dataset().coordinate_frame(), hierarchy),
-        base.crs().map(str::to_owned),
-        base.sampling_policy().map(str::to_owned),
-        Vec::new(),
-    )
-    .unwrap();
+    let wide = |count: usize| {
+        let schema = (0..count)
+            .map(|index| {
+                AttributeDescriptor::new(format!("column_{index}"), AttributeDataType::U8, 1)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let hierarchy = SpatialHierarchy::new(
+            base.dataset()
+                .hierarchy()
+                .query(base.dataset().hierarchy().stats().root_bounds)
+                .cloned()
+                .collect(),
+            schema.clone(),
+            Some(2),
+        )
+        .unwrap();
+        let metadata = FormatMetadata::new(
+            DatasetMetadata::new(base.dataset().coordinate_frame(), hierarchy),
+            base.crs().map(str::to_owned),
+            base.sampling_policy().map(str::to_owned),
+            Vec::new(),
+        )
+        .unwrap();
+        (metadata, schema)
+    };
+    let (metadata, _) = wide(257);
+    for version in FormatVersion::WRITABLE
+        .into_iter()
+        .filter(|version| !version.uses_global_frame())
+    {
+        let result = FormatWriter::new_for_version(
+            version,
+            Cursor::new(Vec::new()),
+            metadata.clone(),
+            options(),
+        );
+        assert!(
+            matches!(
+                result,
+                Err(FormatError::TooManyAttributes {
+                    count: 257,
+                    limit: 256
+                })
+            ),
+            "{version:?}"
+        );
+    }
+    let (metadata, schema) = wide(256);
     let block = || {
         let columns = schema
             .iter()
@@ -255,8 +284,10 @@ fn wide_schema_requires_explicit_reader_limits() {
             columns,
         )
     };
-    let limits = FormatReaderLimits::new(1 << 20, 1 << 20, 10, 10, 257, 65_535, 1 << 20).unwrap();
-    for version in FormatVersion::WRITABLE {
+    for version in FormatVersion::WRITABLE
+        .into_iter()
+        .filter(|version| !version.uses_global_frame())
+    {
         let mut writer = FormatWriter::new_for_version(
             version,
             Cursor::new(Vec::new()),
@@ -266,21 +297,9 @@ fn wide_schema_requires_explicit_reader_limits() {
         .unwrap();
         writer.write_block(block()).unwrap();
         let bytes = writer.finish().unwrap().into_inner();
-
-        assert!(
-            matches!(
-                crate::FormatReader::new(Cursor::new(bytes.clone())),
-                Err(FormatError::CountLimit {
-                    kind: "attributes",
-                    requested: 257,
-                    limit: 256
-                })
-            ),
-            "{version:?}"
-        );
-        let reader = crate::FormatReader::with_limits(Cursor::new(bytes), limits).unwrap();
+        let reader = crate::FormatReader::new(Cursor::new(bytes)).unwrap();
         let attributes = reader.format_metadata().dataset().hierarchy().attributes();
-        assert_eq!(attributes.len(), 257, "{version:?}");
+        assert_eq!(attributes.len(), 256, "{version:?}");
     }
 }
 

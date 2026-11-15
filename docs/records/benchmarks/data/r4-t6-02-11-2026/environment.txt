@@ -1,0 +1,16 @@
+3819e60df4237d066e28a330d6e834912ba3e665
+0102fc478f2c55d21b185ffa9d05bb27e6c0a0ce71a08c03dc0aa7da94e6014d  target/web-root/pkg/viewer_wasm_bg.wasm
+d478ca4c37180ef8371f271688220db9f168a28565496310dd0a604f8ee960ed  target/render-data/majadas-v74.oct
+d5f1e97e5a5f188a4f734888b5781d5fb7a65a350f760c92f19fc1d1e72c74fc  target/render-data/belvedere-v74.oct
+a35b6064786d4dae4b3fc4fae65c6ba1f8ab4f9cbf6089172d4c3760f8c438a9  target/render-data/majadas-v74.octattrs
+b49076686f306790db8015f627e72b5e8bb1ab5d9dfcdf3ec7201ae24704b6aa  target/render-data/belvedere-v74.octattrs
+CPU(s):                                  20
+Model name:                              AMD Ryzen AI 9 365 w/ Radeon 880M
+CPU(s) scaling MHz:                      53%
+Google Chrome 156.0.8078.73
+v22.23.1
+wasm-bindgen 0.2.129
+powersave
+rustc 1.101.0-nightly (41089d07a 2026-10-27)
+uname: Linux pc-tatil 7.2.13-200.fc44.x86_64 #1 SMP PREEMPT_DYNAMIC Mon Oct 26 18:54:52 UTC 2026 x86_64 GNU/Linux
+deviation: matrix run with run-sampled.py copied from r1t7 dir (output dir changed); datasets majadas-v74/belvedere-v74 (v7.4-pre); server python3 -m http.server 18767 --directory target/web-root

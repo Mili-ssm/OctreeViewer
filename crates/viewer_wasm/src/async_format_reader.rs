@@ -3,10 +3,11 @@ use std::{cell::Cell, io::Cursor, rc::Rc, sync::Arc};
 
 use js_sys::{ArrayBuffer, Float32Array, Promise, Uint8Array};
 use serde::Serialize;
-use viewer_core::{AttributeValues, BlockId, PointBatch};
+use viewer_core::{AttributeValues, BlockId, NodeId, PointBatch};
 use viewer_format::{
-    FormatReader, FormatReaderLimits, PayloadReadRange, ReadBudget, ReadReservation, ReadSelection,
-    ReadSource, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES, SelectedRead,
+    FormatReader, FormatReaderLimits, PageGraft, PagedCore, PayloadReadRange, ReadBudget,
+    ReadReservation, ReadSelection, ReadSource, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES,
+    SelectedRead, TAIL_READ_BYTES,
 };
 use wasm_bindgen::{JsCast, prelude::*};
 use wasm_bindgen_futures::JsFuture;
@@ -57,8 +58,18 @@ pub struct WasmAsyncFormatReader {
 pub struct WasmAsyncLodReadRequest {
     shared: Arc<AsyncReaderShared>,
     plans: Vec<viewer_format::ReadPlan>,
+    /// Trailing plans whose columns travel with the block unpainted (`geometryAttributes`).
+    carried: usize,
     reservation: Option<ReadReservation>,
     cancelled: Rc<Cell<bool>>,
+    /// Per-request Blob-likes (a signal-scoped view of the range source) replacing the shared ones.
+    sources: SourceOverride,
+}
+
+#[derive(Default)]
+struct SourceOverride {
+    primary: Option<Blob>,
+    attributes: Option<Blob>,
 }
 
 /// Cancellation is logical: an active Blob promise resolves before its reservation is released.
@@ -74,6 +85,20 @@ pub struct WasmAsyncLodReadResult {
     reservation: Option<ReadReservation>,
     read_ms: f64,
     decode_ms: f64,
+}
+
+/// A validated hierarchy page in flight between the reader and the dataset that grafts it.
+#[wasm_bindgen]
+pub struct WasmPageGraft {
+    graft: Option<PageGraft>,
+}
+
+impl WasmPageGraft {
+    pub(crate) fn take(&mut self) -> Result<PageGraft, JsValue> {
+        self.graft
+            .take()
+            .ok_or_else(|| err("page graft was already used"))
+    }
 }
 
 #[wasm_bindgen]
@@ -150,6 +175,16 @@ impl WasmAsyncLodReadRequest {
         }
     }
 
+    /// Replaces the shared Blobs for this request only (the default stays when not called). The
+    /// replacements must expose the same bytes; they let a source scope its reads to this request.
+    #[wasm_bindgen(js_name = setSource)]
+    pub fn set_source(&mut self, primary: Blob, attributes: Option<Blob>) {
+        self.sources = SourceOverride {
+            primary: Some(primary),
+            attributes,
+        };
+    }
+
     #[wasm_bindgen(js_name = read)]
     pub async fn read(&mut self) -> Result<WasmAsyncLodReadResult, JsValue> {
         let mut plans = std::mem::take(&mut self.plans).into_iter();
@@ -158,20 +193,21 @@ impl WasmAsyncLodReadRequest {
             .ok_or_else(|| err("LOD read request is empty"))?;
         let first_selection = first.selection();
         let (first_result, mut read_ms, mut decode_ms) =
-            read_plan(&self.shared, first, &self.cancelled).await?;
-        let second_result = if let Some(second) = plans.next() {
+            read_plan(&self.shared, first, &self.cancelled, &self.sources).await?;
+        let mut rest = Vec::with_capacity(plans.len());
+        for plan in plans {
             if self.cancelled.get() {
-                return Err(err("LOD read request was cancelled"));
+                return Err(cancelled_error());
             }
-            let (result, read, decode) = read_plan(&self.shared, second, &self.cancelled).await?;
+            let (result, read, decode) =
+                read_plan(&self.shared, plan, &self.cancelled, &self.sources).await?;
             read_ms += read;
             decode_ms += decode;
-            Some(result)
-        } else {
-            None
-        };
+            rest.push(result);
+        }
+        let carried = rest.split_off(rest.len().saturating_sub(self.carried));
         let clock = WorkClock::start();
-        let value = lod_result_to_js(first_selection, first_result, second_result)?;
+        let value = lod_result_to_js(first_selection, first_result, rest.pop(), carried)?;
         decode_ms += clock.elapsed_ms();
         Ok(WasmAsyncLodReadResult {
             value: Some(value),
@@ -196,33 +232,62 @@ impl WasmAsyncFormatReader {
             |budget| budget.inner,
         );
         let primary_len = blob_length(&primary)?;
-        let header = read_range(&primary, 0, SPLIT_HEADER_BYTES).await?;
-        let footer = read_range(
-            &primary,
-            primary_len
-                .checked_sub(SPLIT_FOOTER_BYTES)
-                .ok_or_else(|| err("primary Blob is shorter than footer"))?,
-            SPLIT_FOOTER_BYTES,
-        )
-        .await?;
-        let (offset, length) =
-            Reader::split_index_range(primary_len, &header, &footer, FormatReaderLimits::default())
-                .map_err(format_error)?;
-        let metadata_reservation = budget
-            .try_reserve(length)
-            .map_err(format_error)?
-            .ok_or_else(|| {
+        // One tail read serves both layouts: its last 40 bytes are the footer, and a paged file's
+        // metadata block and root page sit right before it.
+        let tail_len = primary_len.min(TAIL_READ_BYTES);
+        if tail_len < SPLIT_FOOTER_BYTES {
+            return Err(err("primary Blob is shorter than footer"));
+        }
+        let tail = read_range(&primary, primary_len - tail_len, tail_len).await?;
+        let footer = tail[tail.len() - SPLIT_FOOTER_BYTES as usize..].to_vec();
+        let (reader, metadata_reservation) = if PagedCore::is_paged_footer(&footer) {
+            let limits = FormatReaderLimits::default();
+            let location =
+                PagedCore::locate_index(primary_len, &footer, &limits).map_err(format_error)?;
+            let metadata_reservation = budget
+                .try_reserve(location.length)
+                .map_err(format_error)?
+                .ok_or_else(|| {
                 err("shared async read budget is unavailable for the resident format index")
             })?;
-        let index = read_range(&primary, offset, length).await?;
-        let mut reader = Reader::from_split_buffers(
-            primary_len,
-            &header,
-            &footer,
-            &index,
-            FormatReaderLimits::default(),
-        )
-        .map_err(format_error)?;
+            let tail_start = primary_len - tail_len;
+            let index = if location.offset >= tail_start {
+                let start = (location.offset - tail_start) as usize;
+                tail[start..tail.len() - SPLIT_FOOTER_BYTES as usize].to_vec()
+            } else {
+                read_range(&primary, location.offset, location.length).await?
+            };
+            let reader = Reader::paged_external(primary_len, &footer, &index, limits)
+                .map_err(format_error)?;
+            (reader, metadata_reservation)
+        } else {
+            drop(tail);
+            let header = read_range(&primary, 0, SPLIT_HEADER_BYTES).await?;
+            let (offset, length) = Reader::split_index_range(
+                primary_len,
+                &header,
+                &footer,
+                FormatReaderLimits::default(),
+            )
+            .map_err(format_error)?;
+            let metadata_reservation = budget
+                .try_reserve(length)
+                .map_err(format_error)?
+                .ok_or_else(|| {
+                    err("shared async read budget is unavailable for the resident format index")
+                })?;
+            let index = read_range(&primary, offset, length).await?;
+            let reader = Reader::from_split_buffers(
+                primary_len,
+                &header,
+                &footer,
+                &index,
+                FormatReaderLimits::default(),
+            )
+            .map_err(format_error)?;
+            (reader, metadata_reservation)
+        };
+        let mut reader = reader;
         if let Some(blob) = attributes.as_ref() {
             let n = blob_length(blob)?;
             if n < SPLIT_HEADER_BYTES + SPLIT_FOOTER_BYTES {
@@ -250,7 +315,8 @@ impl WasmAsyncFormatReader {
     #[wasm_bindgen(js_name = lodDatasetDescriptor)]
     pub fn lod_dataset_descriptor(&self, cache_bytes: u32) -> Result<JsValue, JsValue> {
         let metadata = self.shared.reader.format_metadata();
-        let dataset = metadata.dataset();
+        // World-space bounds and stored spacing, as the viewer consumes them.
+        let dataset = metadata.viewer_dataset().map_err(format_error)?;
         let hierarchy = dataset.hierarchy();
         let descriptor = js_sys::Object::new();
         set(
@@ -263,6 +329,11 @@ impl WasmAsyncFormatReader {
             "semantics",
             &JsValue::from_str(&format!("{:?}", hierarchy.semantics()).to_lowercase()),
         )?;
+        if metadata.global_frame().is_some()
+            && let Some(crs) = metadata.crs()
+        {
+            set(&descriptor, "crs", &JsValue::from_str(crs))?;
+        }
         set(
             &descriptor,
             "cacheBytes",
@@ -286,8 +357,31 @@ impl WasmAsyncFormatReader {
             )?;
         }
 
+        // Extent of the data (tight in `v7.4-pre`; node bounds stay lattice cubes).
+        let data_bounds = hierarchy.stats().data_bounds;
+        set(&descriptor, "dataMin", &number_array(&data_bounds.min()))?;
+        set(&descriptor, "dataMax", &number_array(&data_bounds.max()))?;
+
+        let paged = self.shared.reader.page_source();
+        // `nodeCount` is the declared total for a paged file (its hierarchy is not resident) and
+        // `maxLevel` the deepest resident node; paged files carry no per-node descriptor.
+        let node_count = paged.map_or_else(
+            || hierarchy.stats().node_count as f64,
+            |source| source.declared_nodes() as f64,
+        );
+        set(&descriptor, "paged", &JsValue::from_bool(paged.is_some()))?;
+        set(&descriptor, "nodeCount", &JsValue::from_f64(node_count))?;
+        set(
+            &descriptor,
+            "maxLevel",
+            &JsValue::from_f64(f64::from(hierarchy.stats().max_level)),
+        )?;
         let nodes = js_sys::Array::new();
-        let mut pending = vec![hierarchy.root_id()];
+        let mut pending = if paged.is_some() {
+            Vec::new()
+        } else {
+            vec![hierarchy.root_id()]
+        };
         while let Some(node_id) = pending.pop() {
             let node = hierarchy
                 .node(node_id)
@@ -321,6 +415,9 @@ impl WasmAsyncFormatReader {
                 blocks.push(&JsValue::from_str(&block_id.get().to_string()));
             }
             set(&value, "blocks", &blocks.into())?;
+            if let Some(spacing) = node.spacing() {
+                set(&value, "spacing", &JsValue::from_f64(spacing))?;
+            }
             nodes.push(&value);
             pending.extend(hierarchy.child_ids(node.id()).iter().rev().copied());
         }
@@ -361,17 +458,43 @@ impl WasmAsyncFormatReader {
         Ok(descriptor.into())
     }
 
+    /// Fetches, validates and registers the hierarchy page hanging from `anchor` (a decimal node
+    /// id). The result is grafted with `graftPage` on the viewer or builder that owns the
+    /// hierarchy. Page reads have no `ReadBudget`: the dataset's page budget bounds them.
+    #[wasm_bindgen(js_name = loadPage)]
+    pub async fn load_page(&self, anchor: String) -> Result<WasmPageGraft, JsValue> {
+        let id = NodeId::new(
+            anchor
+                .parse()
+                .map_err(|_| err("anchor must be an unsigned 64-bit integer string"))?,
+        );
+        let source = self
+            .shared
+            .reader
+            .page_source()
+            .ok_or_else(|| err("the format is not paged"))?
+            .clone();
+        let range = source.page_range(id).map_err(format_error)?;
+        let bytes = read_range(&self.shared.primary, range.offset, range.length).await?;
+        let graft = source.accept_page(id, &bytes).map_err(format_error)?;
+        Ok(WasmPageGraft { graft: Some(graft) })
+    }
+
     /// Plans a block result with one shared reservation, ready for independent async execution.
     /// `positionsAttribute` returns XYZ and one typed column as a single quota-owned result.
+    /// `geometryAttributes` (the cells path) returns XYZ and RGB, the optional `schemaIndex`
+    /// column as `attribute` and every `carriedIndices` column in `attributes`.
     #[wasm_bindgen(js_name = planLodRead)]
     pub fn plan_lod_read(
         &self,
         block_id: u64,
         selection: &str,
         schema_index: Option<u32>,
+        carried_indices: Option<Vec<u32>>,
     ) -> Result<Option<WasmAsyncLodReadRequest>, JsValue> {
         let id = BlockId::new(block_id);
         let mut plans = Vec::with_capacity(2);
+        let mut carried = 0;
         match selection {
             "geometry" => plans.push(
                 self.shared
@@ -400,9 +523,25 @@ impl WasmAsyncFormatReader {
                         .map_err(format_error)?,
                 );
             }
+            "geometryAttributes" => {
+                let plan = |selection| {
+                    self.shared
+                        .reader
+                        .plan_read(id, selection)
+                        .map_err(format_error)
+                };
+                plans.push(plan(ReadSelection::Geometry)?);
+                if let Some(schema_index) = schema_index {
+                    plans.push(plan(ReadSelection::Attribute { schema_index })?);
+                }
+                for schema_index in carried_indices.unwrap_or_default() {
+                    plans.push(plan(ReadSelection::Attribute { schema_index })?);
+                    carried += 1;
+                }
+            }
             _ => {
                 return Err(err(
-                    "selection must be geometry, positions, or positionsAttribute",
+                    "selection must be geometry, positions, positionsAttribute, or geometryAttributes",
                 ));
             }
         }
@@ -414,8 +553,10 @@ impl WasmAsyncFormatReader {
         Ok(Some(WasmAsyncLodReadRequest {
             shared: Arc::clone(&self.shared),
             plans,
+            carried,
             reservation: Some(reservation),
             cancelled: Rc::new(Cell::new(false)),
+            sources: SourceOverride::default(),
         }))
     }
 
@@ -480,7 +621,15 @@ impl WasmAsyncFormatReader {
         let mut buffers = Vec::with_capacity(plan.ranges().len());
         let not_cancelled = Cell::new(false);
         for range in plan.ranges() {
-            buffers.push(read_range_for(&self.shared, range, &not_cancelled).await?);
+            buffers.push(
+                read_range_for(
+                    &self.shared,
+                    range,
+                    &not_cancelled,
+                    &SourceOverride::default(),
+                )
+                .await?,
+            );
         }
         let selected = self
             .shared
@@ -522,17 +671,18 @@ async fn read_plan(
     shared: &AsyncReaderShared,
     plan: viewer_format::ReadPlan,
     cancelled: &Cell<bool>,
+    sources: &SourceOverride,
 ) -> Result<(SelectedRead, f64, f64), JsValue> {
     let mut buffers = Vec::with_capacity(plan.ranges().len());
     let read_clock = WorkClock::start();
     for range in plan.ranges() {
         if cancelled.get() {
-            return Err(err("LOD read request was cancelled"));
+            return Err(cancelled_error());
         }
-        buffers.push(read_range_for(shared, range, cancelled).await?);
+        buffers.push(read_range_for(shared, range, cancelled, sources).await?);
     }
     if cancelled.get() {
-        return Err(err("LOD read request was cancelled"));
+        return Err(cancelled_error());
     }
     let read_ms = read_clock.elapsed_ms();
     let decode_clock = WorkClock::start();
@@ -547,15 +697,17 @@ async fn read_range_for(
     shared: &AsyncReaderShared,
     range: &PayloadReadRange,
     cancelled: &Cell<bool>,
+    sources: &SourceOverride,
 ) -> Result<Vec<u8>, JsValue> {
     if cancelled.get() {
-        return Err(err("LOD read request was cancelled"));
+        return Err(cancelled_error());
     }
     let blob = match range.source() {
-        ReadSource::Primary => &shared.primary,
-        ReadSource::Attributes => shared
+        ReadSource::Primary => sources.primary.as_ref().unwrap_or(&shared.primary),
+        ReadSource::Attributes => sources
             .attributes
             .as_ref()
+            .or(shared.attributes.as_ref())
             .ok_or_else(|| err("attribute Blob required by this selection"))?,
     };
     let end = range
@@ -569,7 +721,7 @@ async fn read_range_for(
     let promise: Promise = slice.array_buffer();
     let value = JsFuture::from(promise).await?;
     if cancelled.get() {
-        return Err(err("LOD read request was cancelled"));
+        return Err(cancelled_error());
     }
     let buffer: ArrayBuffer = value
         .dyn_into()
@@ -585,6 +737,7 @@ fn lod_result_to_js(
     first_selection: ReadSelection,
     first: SelectedRead,
     second: Option<SelectedRead>,
+    carried: Vec<SelectedRead>,
 ) -> Result<JsValue, JsValue> {
     let first = selected_to_js(first)?;
     let object = js_sys::Object::new();
@@ -604,6 +757,13 @@ fn lod_result_to_js(
             return Err(err("second LOD read result must be an attribute"));
         }
         set(&object, "attribute", &second)?;
+    }
+    if !carried.is_empty() {
+        let columns = js_sys::Array::new();
+        for column in carried {
+            columns.push(&selected_to_js(column)?);
+        }
+        set(&object, "attributes", &columns.into())?;
     }
     let point_count = js_sys::Reflect::get(&first, &JsValue::from_str("pointCount"))?;
     set(&object, "pointCount", &point_count)?;
@@ -762,9 +922,23 @@ fn number_array(values: &[f64]) -> JsValue {
     }
     array.into()
 }
+/// A cancelled request rejects with an `AbortError`, the same name an aborted range read carries,
+/// so workers classify both as cancellations.
+fn cancelled_error() -> JsValue {
+    let error = js_sys::Error::new("LOD read request was cancelled");
+    error.set_name("AbortError");
+    error.into()
+}
 fn err(message: &str) -> JsValue {
     JsValue::from_str(message)
 }
 fn format_error(error: impl std::fmt::Display) -> JsValue {
     err(&error.to_string())
+}
+
+impl WasmAsyncFormatReader {
+    /// The metadata-only reader behind this facade (root page only when the format is paged).
+    pub(crate) fn format_reader(&self) -> &Reader {
+        &self.shared.reader
+    }
 }

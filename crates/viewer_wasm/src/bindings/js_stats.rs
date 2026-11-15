@@ -42,15 +42,60 @@ impl WasmVoxelViewer {
                         self.selected_attribute.and(self.selected_attribute_range),
                     ),
                 )?;
+                if let Some(cells) = self.cells_stats() {
+                    super::cells::add_cells_stats(&value, self.cell_path, &cells)?;
+                }
                 Ok(value)
             }
-            None => Ok(JsValue::NULL),
+            None => match self.cells_stats() {
+                // In-process cells have no `LodViewStats`: the host reads the plan's fields (pending
+                // ids, uncovered nodes) beside the cells'. A remote render worker has only the
+                // cells fields; its plan arrives from the build worker.
+                Some(cells) => {
+                    let value = super::cells::cells_stats_object(self.cell_path, &cells)?;
+                    if let Some((plan, target_voxel_pixels)) = &self.last_cells_plan {
+                        super::cells::add_plan_stats(&value, plan)?;
+                        js_sys::Reflect::set(
+                            &value,
+                            &"targetVoxelPixels".into(),
+                            &JsValue::from_f64(*target_voxel_pixels),
+                        )?;
+                        js_sys::Reflect::set(
+                            &value,
+                            &"lodError".into(),
+                            &self
+                                .last_lod_error
+                                .as_ref()
+                                .map_or(JsValue::NULL, |message| JsValue::from_str(message)),
+                        )?;
+                    }
+                    Ok(value)
+                }
+                None => Ok(JsValue::NULL),
+            },
         }
     }
 
     #[wasm_bindgen(js_name = stats)]
     pub fn stats(&self) -> Result<JsValue, JsValue> {
         to_value(&self.inner.stats()).map_err(|error| JsValue::from_str(&error.to_string()))
+    }
+
+    /// `{ reason: "unknown" | "destroyed", message }` once the GPU device was lost, else `null`.
+    /// Cheap: the host polls it to start the recovery of R3-Q26.
+    #[wasm_bindgen(js_name = deviceLost)]
+    pub fn device_lost(&self) -> JsValue {
+        let Some(loss) = self.gpu_renderer.as_ref().and_then(|r| r.device_loss()) else {
+            return JsValue::NULL;
+        };
+        let object = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&object, &"reason".into(), &JsValue::from_str(loss.reason));
+        let _ = js_sys::Reflect::set(
+            &object,
+            &"message".into(),
+            &JsValue::from_str(&loss.message),
+        );
+        object.into()
     }
 
     #[wasm_bindgen(js_name = gpuStats)]
@@ -88,6 +133,8 @@ impl WasmVoxelViewer {
             &JsValue::from_str(&adapter_info.driver_info),
         )?;
         js_sys::Reflect::set(&stats, &"adapter".into(), &adapter)?;
+        let device_lost = self.device_lost();
+        js_sys::Reflect::set(&stats, &"deviceLost".into(), &device_lost)?;
         js_sys::Reflect::set(
             &stats,
             &"uploadedBytes".into(),
@@ -125,7 +172,42 @@ impl WasmVoxelViewer {
             )?;
         }
         js_sys::Reflect::set(&stats, &"requestedResources".into(), &memory)?;
+        // GPU time per frame from timestamp queries (R3-Q31); null without the feature or samples.
+        let frame_ms = match renderer.gpu_frame_stats() {
+            Some(frame) => {
+                let object = js_sys::Object::new();
+                for (name, value) in [
+                    ("p50", frame.p50_ms),
+                    ("p95", frame.p95_ms),
+                    ("max", frame.max_ms),
+                    ("samples", frame.samples as f64),
+                    ("dropped", frame.dropped as f64),
+                    ("resolutionNs", frame.resolution_ns),
+                ] {
+                    js_sys::Reflect::set(&object, &name.into(), &JsValue::from_f64(value))?;
+                }
+                object.into()
+            }
+            None => JsValue::NULL,
+        };
+        js_sys::Reflect::set(&stats, &"gpuFrameMs".into(), &frame_ms)?;
         Ok(stats.into())
+    }
+
+    /// Turns per-frame GPU timing on or off (off by default; needs `timestamp-query`).
+    #[wasm_bindgen(js_name = setGpuFrameTiming)]
+    pub fn set_gpu_frame_timing(&mut self, enabled: bool) {
+        if let Some(renderer) = self.gpu_renderer.as_mut() {
+            renderer.set_gpu_frame_timing(enabled);
+        }
+    }
+
+    /// Starts a new window for the `gpuFrameMs` percentiles.
+    #[wasm_bindgen(js_name = resetGpuFrameStats)]
+    pub fn reset_gpu_frame_stats(&mut self) {
+        if let Some(renderer) = self.gpu_renderer.as_mut() {
+            renderer.reset_gpu_frame_stats();
+        }
     }
 }
 
@@ -178,6 +260,17 @@ pub(super) fn add_cache_activity(
         )?;
     }
     js_sys::Reflect::set(value, &"cacheActivity".into(), &activity)?;
+    let (pages, page_bytes, page_evictions) = dataset.page_stats();
+    let page_activity = js_sys::Object::new();
+    for (name, count) in [
+        ("residentPages", pages as f64),
+        ("pageBytes", page_bytes as f64),
+        ("pageEvictions", page_evictions as f64),
+        ("residentNodes", dataset.resident_node_count() as f64),
+    ] {
+        js_sys::Reflect::set(&page_activity, &name.into(), &JsValue::from_f64(count))?;
+    }
+    js_sys::Reflect::set(value, &"pageActivity".into(), &page_activity)?;
     js_sys::Reflect::set(
         value,
         &"pendingTargetEvictions".into(),
@@ -272,6 +365,17 @@ pub(super) fn lod_view_stats_to_js(
         pending_block_ids.push(&JsValue::from_str(&block_id.get().to_string()));
     }
     js_sys::Reflect::set(&value, &"pendingBlockIds".into(), &pending_block_ids)?;
+    // Hierarchy pages the target needs, highest projected error first (paged formats only).
+    let pending_page_anchors = js_sys::Array::new();
+    for anchor in &stats.pending_page_anchors {
+        pending_page_anchors.push(&JsValue::from_str(&anchor.get().to_string()));
+    }
+    js_sys::Reflect::set(&value, &"pendingPageAnchors".into(), &pending_page_anchors)?;
+    js_sys::Reflect::set(
+        &value,
+        &"pageBudgetExhausted".into(),
+        &JsValue::from_bool(stats.page_budget_exhausted),
+    )?;
     js_sys::Reflect::set(
         &value,
         &"uncoveredNodes".into(),

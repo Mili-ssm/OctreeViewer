@@ -30,6 +30,15 @@ contiene simultáneamente un ancestro y sus hijos. El hint de última celda sigu
 Los máximos inclusivos, negativos y puntos exteriores usan el mismo mapeo/clamping que el resto
 del builder; no hay una segunda regla de coordenadas con tolerancias epsilon.
 
+## Espaciado de referencia por nube (RF-05)
+
+La continuidad entre nubes usa un único espaciado por nube: la **mediana ponderada por puntos del
+espaciado de todas sus hojas** (hojas ordenadas por espaciado creciente; gana la primera cuyo
+recuento acumulado alcanza la mitad del total, y en un empate exacto el valor menor; sin puntos,
+todas pesan igual). Lo calcula `viewer_core::reference_spacing`. `v7.5-pre` lo guarda en el bloque
+de metadatos ([formato](../reference/format/FORMAT_V7_PRE5.md)), de modo que no cambia al injertar
+o expulsar páginas; los demás formatos, con la jerarquía completa, lo calculan al abrir.
+
 ## Coste acotado y fallback
 
 - Se admiten como máximo ocho regiones distintas por nodo. Es una guardia de coste, no una

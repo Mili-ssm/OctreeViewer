@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "probe": "probe-cells-colour",
+  "startedAt": "2026-11-14T02:33:02.548Z",
+  "input": "target/render-data/belvedere-v75.oct",
+  "targetPixels": 4,
+  "timeoutMs": 120000,
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ],
+  "responseErrors": [],
+  "modes": [
+    {
+      "mode": "rgb",
+      "index": 0,
+      "settled": true,
+      "settleMs": 635,
+      "samples": 7,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 15,
+      "builtNodesLast": 1,
+      "rebuiltTotalDelta": 0,
+      "cutDigestAtRest": "d7e5b19e6c7d5237",
+      "canvasSha256": "e0e482be5c39150b7ee3ccd21b82852319af75aa23daab12cf243064fe01c057",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/belvedere-v75-0-rgb.png"
+    },
+    {
+      "mode": "intensity",
+      "index": 1,
+      "settled": true,
+      "settleMs": 1663,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 0,
+      "builtNodesLast": 0,
+      "rebuiltTotalDelta": 0,
+      "cutDigestAtRest": "d7e5b19e6c7d5237",
+      "canvasSha256": "f2d3270b936580545b3b27c545abc21cdfaf3326d191b97edaab413fe8325c65",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/belvedere-v75-1-intensity.png"
+    },
+    {
+      "mode": "elevation",
+      "index": 2,
+      "settled": true,
+      "settleMs": 1664,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 0,
+      "builtNodesLast": 0,
+      "rebuiltTotalDelta": 0,
+      "cutDigestAtRest": "d7e5b19e6c7d5237",
+      "canvasSha256": "eb75cee4a0880281077ed5327a5f5bd1cf976dd6bc87b1e5910a68ca33562062",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/belvedere-v75-2-elevation.png"
+    },
+    {
+      "mode": "classification",
+      "index": 3,
+      "settled": true,
+      "settleMs": 1649,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 0,
+      "builtNodesLast": 0,
+      "rebuiltTotalDelta": 0,
+      "cutDigestAtRest": "d7e5b19e6c7d5237",
+      "canvasSha256": "e60c3dd4ce828270c64bc4a3ba8640974c241adf611ed2640ad9338dfe6241bb",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/belvedere-v75-3-classification.png"
+    },
+    {
+      "mode": "attribute:0:0",
+      "index": 4,
+      "settled": true,
+      "settleMs": 1660,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 22,
+      "builtNodesLast": 2,
+      "rebuiltTotalDelta": 22,
+      "cutDigestAtRest": "d7e5b19e6c7d5237",
+      "canvasSha256": "9bebda300ea9059360be74fcd530013859700bedfc47c625059202249545707d",
+      "attributeRange": [
+        0,
+        0
+      ],
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/belvedere-v75-4-attribute_0_0.png"
+    },
+    {
+      "mode": "rgb",
+      "index": 5,
+      "settled": true,
+      "settleMs": 1664,
+      "samples": 17,
+      "cellPathSeen": [
+        "enabled"
+      ],
+      "nodeCellsDuringSwitch": 22,
+      "builtNodesLast": 1,
+      "rebuiltTotalDelta": 22,
+      "cutDigestAtRest": "d7e5b19e6c7d5237",
+      "canvasSha256": "a67f69dfbafdab302955eee257d96282e7d72f5db0a246c3f4dac17d27caba1d",
+      "attributeRange": null,
+      "strayScenes": 0,
+      "screenshot": "target/r3-b2/belvedere-v75-5-rgb.png"
+    }
+  ],
+  "failures": [
+    "1 console messages"
+  ],
+  "url": "http://127.0.0.1:8767/examples/web-host/index.html?cells=1&buildWorker=1",
+  "attributesFile": "target/render-data/belvedere-v75.octattrs",
+  "attributeSchema": [
+    {
+      "name": "intensity",
+      "dataType": "u16",
+      "componentCount": 1
+    },
+    {
+      "name": "classification",
+      "dataType": "u8",
+      "componentCount": 1
+    },
+    {
+      "name": "return_number",
+      "dataType": "u8",
+      "componentCount": 1
+    },
+    {
+      "name": "number_of_returns",
+      "dataType": "u8",
+      "componentCount": 1
+    },
+    {
+      "name": "scan_angle_degrees",
+      "dataType": "f32",
+      "componentCount": 1
+    },
+    {
+      "name": "user_data",
+      "dataType": "u8",
+      "componentCount": 1
+    },
+    {
+      "name": "point_source_id",
+      "dataType": "u16",
+      "componentCount": 1
+    },
+    {
+      "name": "gps_time",
+      "dataType": "f64",
+      "componentCount": 1
+    },
+    {
+      "name": "rgb",
+      "dataType": "u16",
+      "componentCount": 3
+    },
+    {
+      "name": "las_flags",
+      "dataType": "u8",
+      "componentCount": 1
+    }
+  ],
+  "availableModes": [
+    "rgb",
+    "intensity",
+    "elevation",
+    "classification",
+    "attribute:0:0",
+    "attribute:1:0",
+    "attribute:2:0",
+    "attribute:3:0",
+    "attribute:4:0",
+    "attribute:5:0",
+    "attribute:6:0",
+    "attribute:7:0",
+    "attribute:8:0",
+    "attribute:8:1",
+    "attribute:8:2",
+    "attribute:9:0"
+  ],
+  "sequence": [
+    "rgb",
+    "intensity",
+    "elevation",
+    "classification",
+    "attribute:0:0",
+    "rgb"
+  ],
+  "backToRgb": {
+    "cutDigestAtRest": true,
+    "canvasSha256": false
+  }
+}

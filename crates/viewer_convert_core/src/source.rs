@@ -1,12 +1,22 @@
 //! Source inspection and decoder-panic containment, free of paths and the filesystem.
 
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::Arc;
 
 use las::Reader;
-use viewer_core::las::{LasPreflightError, LazChunkTableLayout};
+use viewer_core::las::{
+    LasExtraByte, LasPreflightError, LasSchemaSpec, LazChunkTableLayout, las_attribute_schema_for,
+    parse_extra_byte_descriptors, validate_extra_bytes,
+};
 use viewer_core::{AttributeDescriptor, CoordinateFrame, SpatialBounds};
 
+use viewer_format::{
+    CrsRecord, FormatVersion, SourceScaleOffset, cell_origin_from_base, quanta_to_units,
+    quantize_coordinate,
+};
+
 use crate::error::ConvertError;
+use crate::options::ConvertOptions;
 
 pub struct SourceInfo {
     pub bounds: SpatialBounds,
@@ -16,6 +26,154 @@ pub struct SourceInfo {
     pub point_format: las::point::Format,
     pub transforms: las::Vector<las::Transform>,
     pub has_crs: bool,
+    /// CRS read from the projection records (local when there is none); written by `v7.4-pre`.
+    pub crs: CrsRecord,
+    /// LAS scale and offset, kept for the exact export of `v7.4-pre`.
+    pub scale_offset: Option<SourceScaleOffset>,
+    /// Set by [`SourceInfo::for_options`] when the output is a global-octree format.
+    pub global: Option<GlobalRoot>,
+    /// Payload of the Extra Bytes VLRs (`LASF_Spec`, record 4), concatenated; parsed only for a
+    /// format that keeps them, so other formats never fail on exotic descriptors.
+    pub extra_byte_vlrs: Vec<u8>,
+    /// Set by [`SourceInfo::for_options`] for `v7.5-pre`: the output then also holds `las_flags`
+    /// and one column per Extra Byte descriptor (RF-24).
+    pub las_extra_bytes: Option<Arc<[LasExtraByte]>>,
+}
+
+/// Root node and frame origin of a `v7.4-pre` conversion, from the header bounds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GlobalRoot {
+    pub level: u32,
+    pub prefix: [u64; 3],
+    pub frame_origin_quanta: [i64; 3],
+    /// Maximum quantized corner of the header box (points outside it are rejected), the tight
+    /// data extent stored next to the frame origin.
+    pub data_max_quanta: [i64; 3],
+    /// Lattice anchor: `i64::MIN` for a cloud with a CRS identity, the frame origin for a local one.
+    pub lattice_base: [i64; 3],
+}
+
+/// Coordinates below this magnitude (CRS units) keep every node bound exact in `f64`.
+const MAX_GLOBAL_COORDINATE: f64 = (1_u64 << 35) as f64;
+
+impl GlobalRoot {
+    /// Smallest node containing both header corners, and the minimum quantized corner as origin.
+    fn from_bounds(
+        bounds: SpatialBounds,
+        local: bool,
+        version: FormatVersion,
+    ) -> Result<Self, ConvertError> {
+        let mut low = [0_i64; 3];
+        let mut high = [0_i64; 3];
+        for axis in 0..3 {
+            for coordinate in [bounds.min()[axis], bounds.max()[axis]] {
+                if coordinate.is_nan() || coordinate.abs() >= MAX_GLOBAL_COORDINATE {
+                    return Err(ConvertError::GlobalCoordinateRange {
+                        coordinate,
+                        version,
+                    });
+                }
+            }
+            let min =
+                quantize_coordinate(bounds.min()[axis]).ok_or(ConvertError::InvalidHeaderBounds)?;
+            let max =
+                quantize_coordinate(bounds.max()[axis]).ok_or(ConvertError::InvalidHeaderBounds)?;
+            low[axis] = min;
+            high[axis] = max;
+        }
+        let lattice_base = if local { low } else { [i64::MIN; 3] };
+        // `u = q - base` read as `u64`: the smallest node holding both corners shares their top bits.
+        let unsigned =
+            |q: i64, axis: usize| (i128::from(q) - i128::from(lattice_base[axis])) as u64;
+        let common = (0..3)
+            .map(|axis| (unsigned(low[axis], axis) ^ unsigned(high[axis], axis)).leading_zeros())
+            .min()
+            .unwrap_or(64);
+        let prefix = std::array::from_fn(|axis| {
+            unsigned(low[axis], axis)
+                .checked_shr(64 - common)
+                .unwrap_or(0)
+        });
+        Ok(Self {
+            level: common,
+            prefix,
+            frame_origin_quanta: low,
+            data_max_quanta: high,
+            lattice_base,
+        })
+    }
+
+    /// The root cube in CRS units (exact in `f64` within the coordinate limit).
+    pub fn bounds(&self) -> Result<SpatialBounds, ConvertError> {
+        let side = 2.0_f64.powi(49 - self.level as i32);
+        let min: [f64; 3] = std::array::from_fn(|axis| {
+            quanta_to_units(
+                cell_origin_from_base(self.lattice_base[axis], self.level, self.prefix[axis])
+                    .expect("a root holding the header box lies inside the quanta range"),
+            )
+        });
+        Ok(SpatialBounds::new(min, min.map(|value| value + side))?)
+    }
+}
+
+impl SourceInfo {
+    /// Attribute schema of the output, in column order.
+    pub fn schema(&self) -> Result<Vec<AttributeDescriptor>, ConvertError> {
+        let format = &self.point_format;
+        Ok(las_attribute_schema_for(&LasSchemaSpec {
+            has_gps_time: format.has_gps_time,
+            has_color: format.has_color,
+            has_nir: format.has_nir,
+            las_flags: self.las_extra_bytes.is_some(),
+            extra_bytes: self.las_extra_bytes.as_deref().unwrap_or(&[]),
+        })?)
+    }
+
+    /// Source dimensions the output drops.
+    pub fn omitted_dimensions(&self) -> Vec<String> {
+        let mut dimensions = omitted_dimensions(&self.point_format, self.has_crs);
+        if let Some(extras) = &self.las_extra_bytes {
+            // Extra Bytes in the record with no descriptor VLR are undocumented: they are
+            // dropped and stay reported.
+            let undocumented = extras.is_empty() && self.point_format.extra_bytes > 0;
+            dimensions.retain(|d| {
+                !d.starts_with("synthetic/") && (undocumented || d != "extra point bytes")
+            });
+        }
+        dimensions
+    }
+
+    /// Adapts the source to the output format: for `v7.4-pre` the frame origin becomes the
+    /// minimum quantized corner and the root the smallest global node containing the header box.
+    pub fn for_options(mut self, options: ConvertOptions) -> Result<Self, ConvertError> {
+        let options = options.validate()?;
+        if options.format_version().uses_pages() {
+            let version = options.format_version();
+            let wrap = |source| ConvertError::LasExtraBytesForFormat { version, source };
+            let extras = parse_extra_byte_descriptors(&self.extra_byte_vlrs).map_err(wrap)?;
+            // Without any descriptor the bytes cannot be typed: they are dropped (and reported
+            // in `omitted_dimensions`); descriptors that do not cover the record are an error.
+            if !self.extra_byte_vlrs.is_empty() {
+                validate_extra_bytes(&extras, usize::from(self.point_format.extra_bytes))
+                    .map_err(wrap)?;
+            }
+            self.las_extra_bytes = Some(extras.into());
+            // Fails here, before any point is read, when the schema does not fit.
+            self.schema().map_err(|error| match error {
+                ConvertError::LasExtraBytes(source) => wrap(source),
+                other => other,
+            })?;
+        }
+        if !options.format_version().uses_global_frame() {
+            return Ok(self);
+        }
+        let root =
+            GlobalRoot::from_bounds(self.bounds, self.crs.is_local(), options.format_version())?;
+        let origin = root.frame_origin_quanta.map(quanta_to_units);
+        self.frame = CoordinateFrame::new(origin)?;
+        self.global = Some(root);
+        Ok(self)
+    }
 }
 
 /// Bounds header-declared allocations by `len` and decoded LAZ chunk table entries by the
@@ -128,7 +286,29 @@ pub fn inspect_header(header: &las::Header) -> Result<SourceInfo, ConvertError> 
         point_format: *header.point_format(),
         transforms: *header.transforms(),
         has_crs: header.has_crs_vlrs(),
+        crs: crate::crs::read_crs(header),
+        scale_offset: scale_offset(header),
+        global: None,
+        extra_byte_vlrs: header
+            .all_vlrs()
+            .filter(|vlr| vlr.user_id == "LASF_Spec" && vlr.record_id == 4)
+            .flat_map(|vlr| vlr.data.iter().copied())
+            .collect(),
+        las_extra_bytes: None,
     })
+}
+
+fn scale_offset(header: &las::Header) -> Option<SourceScaleOffset> {
+    let transforms = header.transforms();
+    SourceScaleOffset::new(
+        [transforms.x.scale, transforms.y.scale, transforms.z.scale],
+        [
+            transforms.x.offset,
+            transforms.y.offset,
+            transforms.z.offset,
+        ],
+    )
+    .ok()
 }
 
 pub fn source_schema(format: &las::point::Format) -> Vec<AttributeDescriptor> {

@@ -388,6 +388,7 @@ impl SpatialHierarchy {
         // One final scan preserves diagnostic order without storing per-leaf priorities.
         let mut budget_limited = Vec::new();
         let mut resolution_limited = Vec::new();
+        let mut unloaded_anchors = Vec::new();
         let mut max_error_pixels: f64 = 0.0;
         let selected = match self.semantics {
             HierarchySemantics::Replacement => cut.frontier().collect::<Vec<_>>(),
@@ -406,7 +407,11 @@ impl SpatialHierarchy {
                 &mut scratch.children,
             );
             if scratch.children.is_empty() {
-                resolution_limited.push(id);
+                if self.unloaded.contains(&id) {
+                    unloaded_anchors.push(id);
+                } else {
+                    resolution_limited.push(id);
+                }
             } else {
                 let children_count = self
                     .count_points(&scratch.children)
@@ -433,6 +438,7 @@ impl SpatialHierarchy {
             max_error_pixels,
             budget_limited,
             resolution_limited,
+            unloaded_anchors,
         })
     }
 }

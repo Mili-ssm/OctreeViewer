@@ -33,10 +33,20 @@ impl WasmVoxelViewer {
             attribute: selected_attribute,
             attribute_range: selected_range,
         } = selection;
+        // Shader modes on live cells only change the uniform: no cells rebuilt, no pool reset.
+        let uniform_only = crate::cells_glue::shader_mode_only(
+            self.cells_local.is_some(),
+            self.selected_attribute.is_some(),
+            selected_attribute.is_some(),
+        );
         let renderer = self
             .gpu_renderer
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        if uniform_only {
+            renderer.set_color_mode(mode);
+            return Ok(());
+        }
         if renderer.color_mode() != mode || self.selected_attribute != selected_attribute {
             self.selected_attribute = selected_attribute;
             self.selected_attribute_range = selected_range;
@@ -46,6 +56,12 @@ impl WasmVoxelViewer {
                     .sync_visible_blocks(&[], dataset.resident_blocks())
                     .map_err(|error| JsValue::from_str(&error.to_string()))?;
                 dataset.clear_loaded_blocks();
+                if let Some(cells) = self.cells_local.as_mut() {
+                    // R3-Q33: a new attribute starts a new colour generation of the cells.
+                    if dataset.set_cell_paint(selected_attribute) {
+                        cells.mark_dirty();
+                    }
+                }
                 self.last_scene_digest = None;
                 self.reset_range_read_stats();
                 self.lod_stage_pixels = Some(16.0);
@@ -219,6 +235,7 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = renderFrame)]
     pub fn render_frame(&mut self) -> Result<String, JsValue> {
         self.refresh_lod_if_dirty()?;
+        self.run_remote_cells_frame();
         let renderer = self
             .gpu_renderer
             .as_mut()

@@ -1,0 +1,2763 @@
+{
+  "schemaVersion": 3,
+  "startedAt": "2026-11-14T04:02:48.494Z",
+  "probe": "probe-orbit-load",
+  "targetPixels": 4,
+  "orbitMs": 10000,
+  "maxLoadMs": 120000,
+  "buildWorker": true,
+  "browser": "chrome",
+  "adapter": {
+    "vendor": "amd",
+    "architecture": "rdna-3",
+    "device": "0x150e",
+    "description": "AMD Radeon 880M Graphics (RADV STRIX1)"
+  },
+  "gttIdleChromeBytes": 140251136,
+  "vulkan": [
+    {
+      "pid": 1419788,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419802,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419803,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419833,
+      "libvulkanRadeon": true,
+      "libvulkanLvp": true,
+      "libLLVM": true,
+      "driFds": 2
+    },
+    {
+      "pid": 1419835,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419851,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419879,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419888,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419892,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    }
+  ],
+  "sceneInputsAtStart": {
+    "buildWorker": true,
+    "camera": [
+      35.71428551296693,
+      50.000000070461184,
+      19.61675854732872,
+      106.85533095723711,
+      4.71238898038469,
+      1.0471975511965976,
+      64.50060009528619,
+      35.71428551296693,
+      50.000000070461184,
+      19.61675854732872,
+      1
+    ],
+    "viewport": [
+      1280,
+      720
+    ],
+    "voxelBuildLimits": [
+      8000000,
+      268435456
+    ],
+    "targetPx": 4,
+    "colorMode": "rgb",
+    "remoteVisualScale": 0.01649201621495024,
+    "viewEpoch": 1,
+    "appliedEpoch": 7,
+    "lastSentView": {
+      "camera": [
+        35.71428551296693,
+        50.000000070461184,
+        19.61675854732872,
+        106.85533095723711,
+        4.71238898038469,
+        1.0471975511965976,
+        64.50060009528619,
+        35.71428551296693,
+        50.000000070461184,
+        19.61675854732872,
+        1
+      ],
+      "viewport": [
+        1280,
+        720
+      ],
+      "targetPx": 4
+    },
+    "attributeRange": null,
+    "sceneDigest": "70a3425dcd6822fd",
+    "lod": {
+      "minVoxelEdgePixels": 7.902363820466803,
+      "maxVoxelEdgePixels": 15.99292684798516,
+      "oversizedVoxels": 0,
+      "projectionCachePeakEntries": 12103,
+      "voxelBuildBudgetBytes": "268435456",
+      "voxelBuildEstimatedPeakBytes": "35068088",
+      "voxelInstanceCapacityBytes": "360400",
+      "targetVoxelPixels": 4,
+      "visibleBlocks": 5,
+      "visiblePoints": "179326",
+      "renderedVoxels": 9010,
+      "voxelBudget": 8000000,
+      "lodStagePixels": 16,
+      "maxVisibleLevel": 2,
+      "cacheBytes": "2869376",
+      "cacheBudgetBytes": "268435456",
+      "pendingBlockIds": [],
+      "pendingPageAnchors": [],
+      "pageBudgetExhausted": false,
+      "uncoveredNodes": 0,
+      "coverageComplete": true,
+      "budgetOmittedNodes": 0,
+      "refinementWork": {
+        "updateCalls": 7,
+        "blockLoadCalls": 6,
+        "loadedBlocks": 0,
+        "evictedPendingBlocks": 0,
+        "sceneBuilds": 2,
+        "prefixRebuilds": 0,
+        "prefixVoxelBuildMs": 0,
+        "reusedSceneUpdates": 1,
+        "selections": 2,
+        "prepares": 8,
+        "selectionsPerUpdate": 0.2857142857142857,
+        "preparesPerUpdate": 1.1428571428571428,
+        "selectionMs": 0.5999999940395355,
+        "planningMs": 1.399999976158142,
+        "blockLoadMs": 0,
+        "rangeReadMs": 0,
+        "decodeAndOtherCpuMs": 0,
+        "voxelBuildMs": 122.80000001192093,
+        "uploadMs": 0,
+        "unchangedCutBuilds": 0,
+        "reusableSceneBuilds": 0,
+        "reusableVoxelBuildMs": 0,
+        "rangeReadCalls": 0,
+        "rangeReadBytes": "0",
+        "voxelSourcePoints": "239299",
+        "reusableVoxelSourcePoints": "0",
+        "reusedSourcePoints": "59973",
+        "prefixRetainedSourcePoints": "0",
+        "prefixAddedSourcePoints": "0"
+      },
+      "cacheActivity": {
+        "insertions": "5",
+        "evictions": "0",
+        "rejectedOversize": "0",
+        "rejectedProtected": "0"
+      },
+      "pageActivity": {
+        "residentPages": 0,
+        "pageBytes": 0,
+        "pageEvictions": 0,
+        "residentNodes": 268
+      },
+      "pendingTargetEvictions": 0,
+      "cacheCycleDetected": false,
+      "lodError": null,
+      "sceneDigest": "70a3425dcd6822fd",
+      "attributeRange": null
+    }
+  },
+  "firstLodMs": 257,
+  "vulkanDuringRender": [
+    {
+      "pid": 1419788,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419802,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419803,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419833,
+      "libvulkanRadeon": true,
+      "libvulkanLvp": true,
+      "libLLVM": true,
+      "driFds": 2
+    },
+    {
+      "pid": 1419835,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419851,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419879,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419888,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 1419892,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    }
+  ],
+  "targetReached": true,
+  "pageBudgetExhausted": false,
+  "finalStatus": "first coarse frame 100 ms · target reached 5028 ms · stage 4 px",
+  "loadElapsedMs": 12224,
+  "lastCellsState": null,
+  "openTimings": {
+    "firstCoarseFrameMs": 100.30000001192093,
+    "targetLodMs": 5028.200000017881,
+    "uniqueBytesRead": "0"
+  },
+  "sceneDigestAtRest": "0607cfbaf95adbee",
+  "restTrace": {
+    "setCamera": true,
+    "poseRestored": true
+  },
+  "initialPose": {
+    "position": [
+      412817.4521301963,
+      5089674.240005493,
+      8271.655413105644
+    ],
+    "target": [
+      416057.0599975586,
+      5089674.240005493,
+      2660.489990234375
+    ]
+  },
+  "sceneInputsAtRest": {
+    "buildWorker": true,
+    "camera": [
+      35.71428551296693,
+      50.000000070461184,
+      19.61675854732872,
+      106.85533095723729,
+      4.71238898038469,
+      1.0471975511965947,
+      64.50060009528619,
+      35.71428551296693,
+      50.000000070461184,
+      19.61675854732872,
+      1
+    ],
+    "viewport": [
+      1280,
+      720
+    ],
+    "voxelBuildLimits": [
+      8000000,
+      268435456
+    ],
+    "targetPx": 4,
+    "colorMode": "rgb",
+    "remoteVisualScale": 0.01649201621495024,
+    "viewEpoch": 1246,
+    "appliedEpoch": 44,
+    "lastSentView": {
+      "camera": [
+        35.71428551296693,
+        50.000000070461184,
+        19.61675854732872,
+        106.85533095723729,
+        4.71238898038469,
+        1.0471975511965947,
+        64.50060009528619,
+        35.71428551296693,
+        50.000000070461184,
+        19.61675854732872,
+        1
+      ],
+      "viewport": [
+        1280,
+        720
+      ],
+      "targetPx": 4
+    },
+    "attributeRange": null,
+    "sceneDigest": "0607cfbaf95adbee",
+    "lod": {
+      "minVoxelEdgePixels": 1.9937508603220806,
+      "maxVoxelEdgePixels": 3.9997297700861054,
+      "oversizedVoxels": 0,
+      "projectionCachePeakEntries": 184367,
+      "voxelBuildBudgetBytes": "268435456",
+      "voxelBuildEstimatedPeakBytes": "56764072",
+      "voxelInstanceCapacityBytes": "5526080",
+      "targetVoxelPixels": 4,
+      "visibleBlocks": 14,
+      "visiblePoints": "712519",
+      "renderedVoxels": 138152,
+      "voxelBudget": 8000000,
+      "lodStagePixels": 4,
+      "maxVisibleLevel": 3,
+      "cacheBytes": "16747520",
+      "cacheBudgetBytes": "268435456",
+      "pendingBlockIds": [],
+      "pendingPageAnchors": [],
+      "pageBudgetExhausted": false,
+      "uncoveredNodes": 0,
+      "coverageComplete": true,
+      "budgetOmittedNodes": 0,
+      "refinementWork": {
+        "updateCalls": 44,
+        "blockLoadCalls": 19,
+        "loadedBlocks": 0,
+        "evictedPendingBlocks": 0,
+        "sceneBuilds": 39,
+        "prefixRebuilds": 0,
+        "prefixVoxelBuildMs": 0,
+        "reusedSceneUpdates": 1,
+        "selections": 39,
+        "prepares": 45,
+        "selectionsPerUpdate": 0.8863636363636364,
+        "preparesPerUpdate": 1.0227272727272727,
+        "selectionMs": 2.1000000536441803,
+        "planningMs": 4.199999988079071,
+        "blockLoadMs": 0,
+        "rangeReadMs": 0,
+        "decodeAndOtherCpuMs": 0,
+        "voxelBuildMs": 22997.20000001788,
+        "uploadMs": 0,
+        "unchangedCutBuilds": 5,
+        "reusableSceneBuilds": 0,
+        "reusableVoxelBuildMs": 0,
+        "rangeReadCalls": 0,
+        "rangeReadBytes": "0",
+        "voxelSourcePoints": "18747746",
+        "reusableVoxelSourcePoints": "0",
+        "reusedSourcePoints": "59973",
+        "prefixRetainedSourcePoints": "0",
+        "prefixAddedSourcePoints": "0"
+      },
+      "cacheActivity": {
+        "insertions": "25",
+        "evictions": "0",
+        "rejectedOversize": "0",
+        "rejectedProtected": "0"
+      },
+      "pageActivity": {
+        "residentPages": 0,
+        "pageBytes": 0,
+        "pageEvictions": 0,
+        "residentNodes": 268
+      },
+      "pendingTargetEvictions": 0,
+      "cacheCycleDetected": false,
+      "lodError": null,
+      "sceneDigest": "0607cfbaf95adbee",
+      "attributeRange": null
+    }
+  },
+  "loadStartEpoch": 1794628969461.8,
+  "endEpoch": 1794628994127.3,
+  "phases": [
+    {
+      "label": "during-load",
+      "gpuFrameMs": {
+        "p50": 1.158154,
+        "p95": 1.775562,
+        "max": 2.200409,
+        "samples": 600,
+        "dropped": 0,
+        "resolutionNs": 1
+      },
+      "startEpoch": 1794628969761.5999,
+      "endEpoch": 1794628980671.3,
+      "requestedMs": 10000,
+      "stepMs": 16,
+      "emptyPixelCaptures": [
+        {
+          "epoch": 1794628972425,
+          "image": [
+            1282,
+            722
+          ],
+          "cornersBehindCamera": false,
+          "camera": {
+            "position": [
+              414855.48708879226,
+              5084877.292061183,
+              6846.866645719879
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "worldBounds": [
+            [
+              413891.5100097656,
+              5086642.470001221,
+              1471.0199890136719
+            ],
+            [
+              418222.60998535156,
+              5092706.010009766,
+              3849.959991455078
+            ]
+          ],
+          "hullPx": [
+            [
+              253.0826917999006,
+              739.9136674915811
+            ],
+            [
+              313.6352058283676,
+              76.23950504506543
+            ],
+            [
+              783.2494813798395,
+              32.69598561395693
+            ],
+            [
+              1280.352052289659,
+              508.00334201436783
+            ],
+            [
+              1098.5232366579173,
+              758.9797022882859
+            ],
+            [
+              382.66134490248425,
+              957.2314710528445
+            ]
+          ],
+          "regionPixels": 540433,
+          "emptyPixels": 197868,
+          "emptyFraction": 0.3661286412931853,
+          "wholeImage": {
+            "regionPixels": 925604,
+            "emptyPixels": 578366,
+            "emptyFraction": 0.6248525287271879
+          }
+        },
+        {
+          "epoch": 1794628974899,
+          "image": [
+            1282,
+            722
+          ],
+          "cornersBehindCamera": false,
+          "camera": {
+            "position": [
+              415326.64205626206,
+              5087223.125168308,
+              8613.536455957676
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "worldBounds": [
+            [
+              413891.5100097656,
+              5086642.470001221,
+              1471.0199890136719
+            ],
+            [
+              418222.60998535156,
+              5092706.010009766,
+              3849.959991455078
+            ]
+          ],
+          "hullPx": [
+            [
+              233.4189468994054,
+              4.736648248734259
+            ],
+            [
+              796.5390397774258,
+              -115.73729002471119
+            ],
+            [
+              1212.7218379083242,
+              678.1962824100259
+            ],
+            [
+              377.15119583209525,
+              964.8645476544332
+            ]
+          ],
+          "regionPixels": 545144,
+          "emptyPixels": 160968,
+          "emptyFraction": 0.29527611053226305,
+          "wholeImage": {
+            "regionPixels": 925604,
+            "emptyPixels": 538506,
+            "emptyFraction": 0.5817887563147955
+          }
+        },
+        {
+          "epoch": 1794628977423.4,
+          "image": [
+            1282,
+            722
+          ],
+          "cornersBehindCamera": false,
+          "camera": {
+            "position": [
+              414629.59378824197,
+              5089590.05791801,
+              8979.94330001583
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "worldBounds": [
+            [
+              413891.5100097656,
+              5086642.470001221,
+              1471.0199890136719
+            ],
+            [
+              418222.60998535156,
+              5092706.010009766,
+              3849.959991455078
+            ]
+          ],
+          "hullPx": [
+            [
+              77.8769071125971,
+              659.5043075147016
+            ],
+            [
+              208.0362422003898,
+              -19.10347877989111
+            ],
+            [
+              1118.4900549313172,
+              28.403971726692543
+            ],
+            [
+              1167.0898218614122,
+              727.5826677932511
+            ]
+          ],
+          "regionPixels": 687347,
+          "emptyPixels": 230573,
+          "emptyFraction": 0.3354535627565116,
+          "wholeImage": {
+            "regionPixels": 925604,
+            "emptyPixels": 459795,
+            "emptyFraction": 0.49675131049563315
+          }
+        }
+      ],
+      "statsSamples": [
+        {
+          "t": 1794628969765,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 16,
+          "cutApply": null
+        },
+        {
+          "t": 1794628970017,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 8,
+          "cutApply": null
+        },
+        {
+          "t": 1794628970269,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 8,
+          "cutApply": null
+        },
+        {
+          "t": 1794628970521,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 8,
+          "cutApply": null
+        },
+        {
+          "t": 1794628970774,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 8,
+          "cutApply": null
+        },
+        {
+          "t": 1794628971025,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628971277,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628971529,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628971780,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628972032,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628972284,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628972537,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628972788,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628973041,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628973293,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628973546,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628973800,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628974053,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628974305,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628974557,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628974809,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628975061,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628975314,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628975566,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628975819,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628976072,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628976324,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628976577,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628976834,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628977086,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628977388,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628977641,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628977893,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628978145,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628978397,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628978649,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628978901,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628979155,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628979407,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628979659,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628979911,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628980163,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628980416,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        }
+      ],
+      "summary": {
+        "replies": 645,
+        "intervalMs": {
+          "count": 644,
+          "p50": 16.699951171875,
+          "p95": 17.300048828125,
+          "max": 116.5
+        },
+        "roundTripMs": {
+          "count": 645,
+          "p50": 0.5999999940395355,
+          "p95": 1.0999999940395355,
+          "max": 6
+        },
+        "renderCallMs": {
+          "count": 645,
+          "p50": 0.30000001192092896,
+          "p95": 0.5,
+          "max": 1.2999999821186066
+        }
+      },
+      "lodLog": {
+        "entries": 15,
+        "stageDefined": 15,
+        "stageFirst": 8,
+        "stageLast": 4,
+        "stageMax": 8,
+        "stageRises": 0,
+        "stageMaxRise": 0,
+        "uncoveredMax": 0,
+        "uncoveredLast": 0,
+        "uncoveredMean": 0,
+        "oversizedMax": 815
+      }
+    },
+    {
+      "label": "after-target",
+      "gpuFrameMs": {
+        "p50": 1.184593,
+        "p95": 1.924381,
+        "max": 2.193656,
+        "samples": 600,
+        "dropped": 0,
+        "resolutionNs": 1
+      },
+      "startEpoch": 1794628981730.0999,
+      "endEpoch": 1794628992388.0999,
+      "requestedMs": 10000,
+      "stepMs": 16,
+      "emptyPixelCaptures": [
+        {
+          "epoch": 1794628984378.0999,
+          "image": [
+            1282,
+            722
+          ],
+          "cornersBehindCamera": false,
+          "camera": {
+            "position": [
+              413907.6379373083,
+              5086006.973553965,
+              7550.416177561095
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "worldBounds": [
+            [
+              413891.5100097656,
+              5086642.470001221,
+              1471.0199890136719
+            ],
+            [
+              418222.60998535156,
+              5092706.010009766,
+              3849.959991455078
+            ]
+          ],
+          "hullPx": [
+            [
+              190.4271955552281,
+              105.60358273792362
+            ],
+            [
+              677.4509375774225,
+              -28.32493664701472
+            ],
+            [
+              1287.68837938067,
+              430.8222756481584
+            ],
+            [
+              1105.6832568748498,
+              624.394589723971
+            ],
+            [
+              581.8829348318142,
+              992.4171645784312
+            ],
+            [
+              548.1570133191682,
+              920.4246878030494
+            ]
+          ],
+          "regionPixels": 523005,
+          "emptyPixels": 178902,
+          "emptyFraction": 0.3420655634267359,
+          "wholeImage": {
+            "regionPixels": 925604,
+            "emptyPixels": 573531,
+            "emptyFraction": 0.6196289125803259
+          }
+        },
+        {
+          "epoch": 1794628986919.9,
+          "image": [
+            1282,
+            722
+          ],
+          "cornersBehindCamera": false,
+          "camera": {
+            "position": [
+              414965.1945165174,
+              5088330.400349065,
+              8904.059585123385
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "worldBounds": [
+            [
+              413891.5100097656,
+              5086642.470001221,
+              1471.0199890136719
+            ],
+            [
+              418222.60998535156,
+              5092706.010009766,
+              3849.959991455078
+            ]
+          ],
+          "hullPx": [
+            [
+              81.58232825027392,
+              163.3347952379302
+            ],
+            [
+              609.1664438184276,
+              -176.4042991714754
+            ],
+            [
+              1258.659681083965,
+              469.9415315939182
+            ],
+            [
+              687.414158281129,
+              1016.8616738537405
+            ]
+          ],
+          "regionPixels": 574223,
+          "emptyPixels": 169276,
+          "emptyFraction": 0.29479139637388263,
+          "wholeImage": {
+            "regionPixels": 925604,
+            "emptyPixels": 516930,
+            "emptyFraction": 0.5584785718298538
+          }
+        },
+        {
+          "epoch": 1794628989368.5,
+          "image": [
+            1282,
+            722
+          ],
+          "cornersBehindCamera": false,
+          "camera": {
+            "position": [
+              415612.5268149037,
+              5089755.877237285,
+              9123.922681073327
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "worldBounds": [
+            [
+              413891.5100097656,
+              5086642.470001221,
+              1471.0199890136719
+            ],
+            [
+              418222.60998535156,
+              5092706.010009766,
+              3849.959991455078
+            ]
+          ],
+          "hullPx": [
+            [
+              96.91070339782381,
+              93.00371383363563
+            ],
+            [
+              1053.0722488686959,
+              -77.03835732024355
+            ],
+            [
+              1208.2662986824448,
+              612.504180180228
+            ],
+            [
+              198.7799450365617,
+              802.7601325018942
+            ]
+          ],
+          "regionPixels": 675664,
+          "emptyPixels": 224635,
+          "emptyFraction": 0.33246554500461767,
+          "wholeImage": {
+            "regionPixels": 925604,
+            "emptyPixels": 468081,
+            "emptyFraction": 0.5057033029243607
+          }
+        }
+      ],
+      "statsSamples": [
+        {
+          "t": 1794628981732,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628981984,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628982236,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628982489,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628982740,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628982992,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628983244,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628983496,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628983749,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628984001,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628984255,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628984506,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628984758,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628985010,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628985264,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628985516,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628985768,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628986021,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628986275,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628986527,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628986778,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628987030,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628987282,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628987533,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628987786,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628988037,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628988290,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628988542,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628988794,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628989045,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628989346,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628989598,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628989851,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628990103,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628990355,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628990606,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628990858,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628991111,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628991365,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628991618,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628991872,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        },
+        {
+          "t": 1794628992125,
+          "poolStages": null,
+          "poolCoarsened": null,
+          "cpuCoarsened": null,
+          "gpuCoarsened": null,
+          "uncoveredNodes": 0,
+          "stagePx": 4,
+          "cutApply": null
+        }
+      ],
+      "summary": {
+        "replies": 625,
+        "intervalMs": {
+          "count": 624,
+          "p50": 16.699951171875,
+          "p95": 17.5,
+          "max": 133.699951171875
+        },
+        "roundTripMs": {
+          "count": 625,
+          "p50": 0.5,
+          "p95": 1.0999999940395355,
+          "max": 4.5
+        },
+        "renderCallMs": {
+          "count": 625,
+          "p50": 0.20000001788139343,
+          "p95": 0.5,
+          "max": 2.2999999821186066
+        }
+      },
+      "lodLog": {
+        "entries": 17,
+        "stageDefined": 17,
+        "stageFirst": 4,
+        "stageLast": 4,
+        "stageMax": 4,
+        "stageRises": 0,
+        "stageMaxRise": 0,
+        "uncoveredMax": 0,
+        "uncoveredLast": 0,
+        "uncoveredMean": 0,
+        "oversizedMax": 0
+      }
+    }
+  ],
+  "wholeRunFrames": {
+    "replies": 1362,
+    "intervalMs": {
+      "count": 1361,
+      "p50": 16.699951171875,
+      "p95": 17.5,
+      "max": 506
+    },
+    "roundTripMs": {
+      "count": 1362,
+      "p50": 0.5,
+      "p95": 1.100000023841858,
+      "max": 6
+    },
+    "renderCallMs": {
+      "count": 1362,
+      "p50": 0.30000001192092896,
+      "p95": 0.5,
+      "max": 2.2999999821186066
+    }
+  },
+  "workerMetrics": {
+    "timeOrigin": 1794628968584.7,
+    "busyByMessage": {
+      "init": {
+        "count": 1,
+        "busyMs": 109.09999999403954,
+        "maxBusyMs": 109.09999999403954,
+        "queueWaitMs": 0.5,
+        "maxQueueWaitMs": 0.5
+      },
+      "resize": {
+        "count": 2,
+        "busyMs": 0.800000011920929,
+        "maxBusyMs": 0.800000011920929,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "frame": {
+        "count": 1393,
+        "busyMs": 572.2999993264675,
+        "maxBusyMs": 3.800000011920929,
+        "queueWaitMs": 10.90000006556511,
+        "maxQueueWaitMs": 0.10000002384185791
+      },
+      "api:setGpuFrameTiming": {
+        "count": 1,
+        "busyMs": 0,
+        "maxBusyMs": 0,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "openFile": {
+        "count": 1,
+        "busyMs": 0.699999988079071,
+        "maxBusyMs": 0.699999988079071,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "build:opened": {
+        "count": 1,
+        "busyMs": 1.2999999821186066,
+        "maxBusyMs": 1.2999999821186066,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "build:lod": {
+        "count": 5,
+        "busyMs": 0.5,
+        "maxBusyMs": 0.4000000059604645,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "buildScene": {
+        "count": 39,
+        "busyMs": 165.70000013709068,
+        "maxBusyMs": 7.799999982118607,
+        "queueWaitMs": 0.19999998807907104,
+        "maxQueueWaitMs": 0.09999999403953552
+      },
+      "api:getCamera": {
+        "count": 10,
+        "busyMs": 1.4000000655651093,
+        "maxBusyMs": 0.30000001192092896,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "api:sceneInputs": {
+        "count": 2,
+        "busyMs": 0.30000001192092896,
+        "maxBusyMs": 0.20000001788139343,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "api:resetGpuFrameStats": {
+        "count": 2,
+        "busyMs": 0,
+        "maxBusyMs": 0,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "api:getStats": {
+        "count": 93,
+        "busyMs": 18.100000023841858,
+        "maxBusyMs": 0.4000000059604645,
+        "queueWaitMs": 0.800000011920929,
+        "maxQueueWaitMs": 0.10000002384185791
+      },
+      "api:getMetadata": {
+        "count": 1,
+        "busyMs": 0.09999999403953552,
+        "maxBusyMs": 0.09999999403953552,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "api:setCamera": {
+        "count": 1,
+        "busyMs": 0.3999999761581421,
+        "maxBusyMs": 0.3999999761581421,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      }
+    },
+    "frameQueueWaitMs": {
+      "count": 1393,
+      "p50": 0,
+      "p95": 0.09999999403953552,
+      "max": 0.10000002384185791
+    },
+    "asyncBlocks": {
+      "blocks": 25,
+      "readMs": 6704.999999940395,
+      "decodeMs": 119.40000012516975,
+      "maxDecodeMs": 19.200000017881393,
+      "insertMs": 6.299999892711639,
+      "maxInsertMs": 1.199999988079071
+    },
+    "lodLogDropped": 0,
+    "buildWorkerEnabled": true,
+    "sceneDigest": "0607cfbaf95adbee",
+    "sceneAgeMs": {
+      "count": 36,
+      "p50": 697,
+      "p95": 842.5,
+      "max": 888.5
+    },
+    "epochLag": {
+      "count": 39,
+      "p50": 33,
+      "p95": 49,
+      "max": 50
+    },
+    "sceneApplyMs": {
+      "count": 39,
+      "p50": 3.5999999940395355,
+      "p95": 6.4000000059604645,
+      "max": 7.5,
+      "totalMs": 146.70000010728836
+    },
+    "viewsSent": 1246,
+    "viewsCoalesced": 1209,
+    "scenesApplied": 39,
+    "scenesDropped": 0,
+    "buildWorkerSpawns": 1,
+    "wasmLinearMemoryBytes": {
+      "render": 16580608,
+      "build": 66584576
+    },
+    "buildWorker": {
+      "timeOrigin": 1794628968711.3,
+      "busyByMessage": {
+        "init": {
+          "count": 1,
+          "busyMs": 16.799999982118607,
+          "maxBusyMs": 16.799999982118607
+        },
+        "open": {
+          "count": 1,
+          "busyMs": 21,
+          "maxBusyMs": 21
+        },
+        "view": {
+          "count": 1246,
+          "busyMs": 0.6000000536441803,
+          "maxBusyMs": 0.10000002384185791
+        },
+        "build": {
+          "count": 44,
+          "busyMs": 23280.300000071526,
+          "maxBusyMs": 825.8000000119209
+        },
+        "asyncInsert": {
+          "count": 25,
+          "busyMs": 6.299999892711639,
+          "maxBusyMs": 1.199999988079071
+        }
+      },
+      "asyncBlocks": {
+        "blocks": 25,
+        "readMs": 6704.999999940395,
+        "decodeMs": 119.40000012516975,
+        "maxDecodeMs": 19.200000017881393,
+        "insertMs": 6.299999892711639,
+        "maxInsertMs": 1.199999988079071
+      },
+      "pages": {
+        "reads": 0,
+        "waves": 0
+      },
+      "build": {
+        "builds": 44,
+        "scenes": 39,
+        "reused": 5,
+        "buildMs": 23280.300000071526,
+        "maxBuildMs": 825.8000000119209,
+        "viewsReceived": 1246,
+        "viewsCoalesced": 1209
+      },
+      "wasmLinearMemoryBytes": 66584576
+    }
+  },
+  "pendingDrainedMs": 23495,
+  "lodLogTotal": {
+    "entries": 44,
+    "dropped": 0
+  },
+  "buildWorkerMetrics": {
+    "sceneAgeMs": {
+      "count": 36,
+      "p50": 697,
+      "p95": 842.5,
+      "max": 888.5
+    },
+    "epochLag": {
+      "count": 39,
+      "p50": 33,
+      "p95": 49,
+      "max": 50
+    },
+    "viewsSent": 1246,
+    "viewsCoalesced": 1209,
+    "scenesApplied": 39,
+    "scenesDropped": 0,
+    "sceneApplyMs": {
+      "count": 39,
+      "p50": 3.5999999940395355,
+      "p95": 6.4000000059604645,
+      "max": 7.5,
+      "totalMs": 146.70000010728836
+    },
+    "buildBusyByMessage": {
+      "init": {
+        "count": 1,
+        "busyMs": 16.799999982118607,
+        "maxBusyMs": 16.799999982118607
+      },
+      "open": {
+        "count": 1,
+        "busyMs": 21,
+        "maxBusyMs": 21
+      },
+      "view": {
+        "count": 1246,
+        "busyMs": 0.6000000536441803,
+        "maxBusyMs": 0.10000002384185791
+      },
+      "build": {
+        "count": 44,
+        "busyMs": 23280.300000071526,
+        "maxBusyMs": 825.8000000119209
+      },
+      "asyncInsert": {
+        "count": 25,
+        "busyMs": 6.299999892711639,
+        "maxBusyMs": 1.199999988079071
+      }
+    },
+    "build": {
+      "builds": 44,
+      "scenes": 39,
+      "reused": 5,
+      "buildMs": 23280.300000071526,
+      "maxBuildMs": 825.8000000119209,
+      "viewsReceived": 1246,
+      "viewsCoalesced": 1209
+    },
+    "asyncBlocks": {
+      "blocks": 25,
+      "readMs": 6704.999999940395,
+      "decodeMs": 119.40000012516975,
+      "maxDecodeMs": 19.200000017881393,
+      "insertMs": 6.299999892711639,
+      "maxInsertMs": 1.199999988079071
+    },
+    "wasmLinearMemoryBytes": {
+      "render": 16580608,
+      "build": 66584576
+    }
+  },
+  "counters": {
+    "sceneBuilds": 39,
+    "voxelSourcePoints": "18747746",
+    "loadedBlocks": 0,
+    "evictedPendingBlocks": 0,
+    "uncoveredNodes": 0,
+    "oversizedVoxels": 0
+  },
+  "lodFinal": {
+    "refinementWork": {
+      "updateCalls": 44,
+      "blockLoadCalls": 19,
+      "loadedBlocks": 0,
+      "evictedPendingBlocks": 0,
+      "sceneBuilds": 39,
+      "prefixRebuilds": 0,
+      "prefixVoxelBuildMs": 0,
+      "reusedSceneUpdates": 1,
+      "selections": 39,
+      "prepares": 45,
+      "selectionsPerUpdate": 0.8863636363636364,
+      "preparesPerUpdate": 1.0227272727272727,
+      "selectionMs": 2.1000000536441803,
+      "planningMs": 4.199999988079071,
+      "blockLoadMs": 0,
+      "rangeReadMs": 0,
+      "decodeAndOtherCpuMs": 0,
+      "voxelBuildMs": 22997.20000001788,
+      "uploadMs": 0,
+      "unchangedCutBuilds": 5,
+      "reusableSceneBuilds": 0,
+      "reusableVoxelBuildMs": 0,
+      "rangeReadCalls": 0,
+      "rangeReadBytes": "0",
+      "voxelSourcePoints": "18747746",
+      "reusableVoxelSourcePoints": "0",
+      "reusedSourcePoints": "59973",
+      "prefixRetainedSourcePoints": "0",
+      "prefixAddedSourcePoints": "0"
+    },
+    "pendingTargetEvictions": 0,
+    "cacheCycleDetected": false
+  },
+  "metadata": {
+    "name": "belvedere-v75.oct",
+    "bytes": 815312074,
+    "nodeCount": 3941,
+    "sourcePointCount": "81682329"
+  },
+  "finalEmptyPixels": {
+    "epoch": 1794628994493,
+    "image": [
+      1282,
+      722
+    ],
+    "cornersBehindCamera": false,
+    "camera": {
+      "position": [
+        412817.4521301963,
+        5089674.240005493,
+        8271.655413105644
+      ],
+      "target": [
+        416057.0599975586,
+        5089674.240005493,
+        2660.489990234375
+      ]
+    },
+    "worldBounds": [
+      [
+        413891.5100097656,
+        5086642.470001221,
+        1471.0199890136719
+      ],
+      [
+        418222.60998535156,
+        5092706.010009766,
+        3849.959991455078
+      ]
+    ],
+    "hullPx": [
+      [
+        35.85056429176917,
+        616.6284255970518
+      ],
+      [
+        236.4790901260212,
+        31.413694345237577
+      ],
+      [
+        1045.5209098739788,
+        31.413694345237577
+      ],
+      [
+        1246.1494357082308,
+        616.6284255970518
+      ],
+      [
+        1052.1507762419478,
+        695.9880367145595
+      ],
+      [
+        229.84922375805226,
+        695.9880367145595
+      ]
+    ],
+    "regionPixels": 671872,
+    "emptyPixels": 259950,
+    "emptyFraction": 0.38690405315298154,
+    "wholeImage": {
+      "regionPixels": 925604,
+      "emptyPixels": 509410,
+      "emptyFraction": 0.5503541471298741
+    }
+  },
+  "idleGpuBusyPercent": [
+    6,
+    6,
+    6,
+    7
+  ],
+  "gtt": {
+    "idleChromeDeltaMiB": 93,
+    "baselineBytes": 42389504,
+    "peakBytes": 199712768,
+    "peakDeltaMiB": 150,
+    "endBytes": 172838912,
+    "endDeltaMiB": 124
+  },
+  "pss": {
+    "types": {
+      "1419788": "browser",
+      "1419792": "browser",
+      "1419793": "browser",
+      "1419802": "zygote",
+      "1419803": "zygote",
+      "1419833": "gpu-process",
+      "1419835": "utility",
+      "1419851": "utility",
+      "1419879": "renderer",
+      "1419888": "renderer",
+      "1419892": "renderer"
+    },
+    "samples": 50,
+    "treePeakMiB": 565,
+    "treePeakAtS": 25.623897214012686,
+    "peakByTypeMiB": {
+      "browser": 138,
+      "zygote": 34,
+      "gpu-process": 72,
+      "utility": 55,
+      "renderer": 269
+    },
+    "file": "target/r3-b6/pixels-belvedere-cpu-4px-local.json.pss.jsonl",
+    "incomplete": 0
+  },
+  "gpuBusy": {
+    "files": [
+      "/sys/class/drm/card1/device/gpu_busy_percent"
+    ],
+    "sampleCount": 105,
+    "max": 18,
+    "mean": 14.923809523809524,
+    "samples": [
+      {
+        "t": 1794628968262,
+        "card": "card1",
+        "percent": 7
+      },
+      {
+        "t": 1794628968512,
+        "card": "card1",
+        "percent": 6
+      },
+      {
+        "t": 1794628968762,
+        "card": "card1",
+        "percent": 6
+      },
+      {
+        "t": 1794628969012,
+        "card": "card1",
+        "percent": 6
+      },
+      {
+        "t": 1794628969263,
+        "card": "card1",
+        "percent": 7
+      },
+      {
+        "t": 1794628969513,
+        "card": "card1",
+        "percent": 5
+      },
+      {
+        "t": 1794628969763,
+        "card": "card1",
+        "percent": 6
+      },
+      {
+        "t": 1794628970013,
+        "card": "card1",
+        "percent": 8
+      },
+      {
+        "t": 1794628970264,
+        "card": "card1",
+        "percent": 9
+      },
+      {
+        "t": 1794628970515,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1794628970765,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1794628971016,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1794628971266,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1794628971515,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1794628971765,
+        "card": "card1",
+        "percent": 15
+      },
+      {
+        "t": 1794628972016,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628972266,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628972516,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628972767,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628973016,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628973266,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628973516,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628973767,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628974017,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628974267,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628974517,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628974767,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628975017,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628975268,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628975518,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628975769,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628976020,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628976269,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628976519,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628976769,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628977019,
+        "card": "card1",
+        "percent": 18
+      },
+      {
+        "t": 1794628977269,
+        "card": "card1",
+        "percent": 18
+      },
+      {
+        "t": 1794628977519,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628977769,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628978019,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628978269,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628978519,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628978769,
+        "card": "card1",
+        "percent": 18
+      },
+      {
+        "t": 1794628979019,
+        "card": "card1",
+        "percent": 18
+      },
+      {
+        "t": 1794628979269,
+        "card": "card1",
+        "percent": 18
+      },
+      {
+        "t": 1794628979519,
+        "card": "card1",
+        "percent": 18
+      },
+      {
+        "t": 1794628979769,
+        "card": "card1",
+        "percent": 18
+      },
+      {
+        "t": 1794628980019,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628980269,
+        "card": "card1",
+        "percent": 18
+      },
+      {
+        "t": 1794628980519,
+        "card": "card1",
+        "percent": 18
+      },
+      {
+        "t": 1794628980769,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628981019,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628981270,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628981521,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1794628981772,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1794628982021,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1794628982271,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1794628982521,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1794628982771,
+        "card": "card1",
+        "percent": 15
+      },
+      {
+        "t": 1794628983022,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628983272,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628983522,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628983772,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628984022,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628984272,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628984522,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628984773,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628985023,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628985273,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628985523,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628985773,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628986023,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628986273,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628986523,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628986773,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628987023,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628987273,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628987524,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628987774,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628988024,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628988274,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628988524,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628988774,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628989025,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628989275,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628989524,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628989774,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628990025,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628990274,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628990524,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628990774,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628991024,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628991274,
+        "card": "card1",
+        "percent": 17
+      },
+      {
+        "t": 1794628991525,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628991775,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628992026,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628992275,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628992525,
+        "card": "card1",
+        "percent": 15
+      },
+      {
+        "t": 1794628992776,
+        "card": "card1",
+        "percent": 16
+      },
+      {
+        "t": 1794628993026,
+        "card": "card1",
+        "percent": 15
+      },
+      {
+        "t": 1794628993275,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1794628993527,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1794628993777,
+        "card": "card1",
+        "percent": 8
+      },
+      {
+        "t": 1794628994029,
+        "card": "card1",
+        "percent": 6
+      },
+      {
+        "t": 1794628994279,
+        "card": "card1",
+        "percent": 5
+      }
+    ]
+  },
+  "mode": "timing",
+  "functionalReasons": [],
+  "environment": {
+    "loadavgStart": [
+      1.05,
+      1.15,
+      1.66
+    ],
+    "loadavgEnd": [
+      1.22,
+      1.19,
+      1.66
+    ],
+    "cpus": 20,
+    "node": "v22.23.1",
+    "wasmUrl": "http://127.0.0.1:8767/pkg/viewer_wasm_bg.wasm",
+    "wasmSha256": "476427c76260c9e094a82701c6ebef605d5721ccb4e6cae156b2066ec67b06f7",
+    "dataset": {
+      "path": "target/render-data/belvedere-v75.oct",
+      "bytes": 815312074,
+      "attributesBytes": 896280499
+    }
+  },
+  "consoleErrors": [
+    {
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ]
+}

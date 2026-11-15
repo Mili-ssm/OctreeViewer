@@ -1,0 +1,1338 @@
+diff --git a/crates/viewer_render_wgpu/examples/node_cells_bench.rs b/crates/viewer_render_wgpu/examples/node_cells_bench.rs
+index 79c9745..4c320bf 100644
+--- a/crates/viewer_render_wgpu/examples/node_cells_bench.rs
++++ b/crates/viewer_render_wgpu/examples/node_cells_bench.rs
+@@ -2,13 +2,17 @@
+ //! R3 stop criteria depend on. Not part of `scripts/check.sh`.
+ //!
+ //! Usage: node_cells_bench INPUT.oct [MAX_ROWS_PRINTED=10]
+-use std::{collections::BTreeMap, fs::File, time::Instant};
++use std::{
++    collections::{BTreeMap, BTreeSet},
++    fs::File,
++    time::Instant,
++};
+ 
+-use viewer_core::{Point, PointBlock};
+-use viewer_format::FormatReader;
++use viewer_core::{DatasetSource, Point};
++use viewer_format::{FormatReader, OctreeReader, PagedReader};
+ use viewer_render_wgpu::{
+-    CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellSource,
+-    PointNodeCellSource, chain_keep_mask, representative_depth, representative_depth_for_spacing,
++    CHAIN_MIN_GROWTH, CellGrid, NodeCell, NodeCellSource, PointNodeCellSource, chain_keep_mask,
++    representative_depth, representative_depth_for_spacing,
+ };
+ 
+ /// Planned GPU instance size (ADR 0027): 512 instances per 8 KiB page.
+@@ -35,6 +39,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+         .transpose()?
+         .unwrap_or(10);
+     let mut reader = FormatReader::new(File::open(&args[0])?)?;
++    let mut attrs_path = args[0].clone();
++    attrs_path.push("attrs");
++    if !reader.has_attributes() {
++        reader.attach_attributes(File::open(attrs_path)?)?;
++    }
++    // The paged hierarchy records the authoritative bit even for an unloaded anchor.
++    let mut leaf_flags = BTreeMap::new();
++    if reader.format_version().uses_pages() {
++        let mut paged = PagedReader::open(File::open(&args[0])?)?;
++        let mut pages = vec![paged.root_page().clone()];
++        let mut cursor = 0;
++        while cursor < pages.len() {
++            let page = &pages[cursor];
++            for node in page.nodes() {
++                if leaf_flags.insert(node.id(), !node.has_children()).is_some() {
++                    return Err(format!("duplicate paged node ID {}", node.id().get()).into());
++                }
++            }
++            let children: Vec<_> = page.child_pages().collect();
++            for (anchor, pointer) in children {
++                pages.push(paged.read_child_page(anchor, pointer)?);
++            }
++            cursor += 1;
++        }
++    }
+     let viewer_dataset = reader.format_metadata().viewer_dataset()?;
+     let metadata = &*viewer_dataset;
+     let hierarchy = metadata.hierarchy().clone();
+@@ -49,18 +78,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     };
+ 
+     let nodes: Vec<_> = hierarchy.query(root).cloned().collect();
++    if reader.format_version().uses_pages() {
++        let queried: BTreeSet<_> = nodes.iter().map(|node| node.id()).collect();
++        let paged: BTreeSet<_> = leaf_flags.keys().copied().collect();
++        if queried.len() != nodes.len() || queried != paged {
++            return Err(format!("node traversal mismatch: queried {} entries / {} unique, paged {} unique; missing {}, unexpected {}", nodes.len(), queried.len(), paged.len(), paged.difference(&queried).count(), queried.difference(&paged).count()).into());
++        }
++        eprintln!(
++            "verified all {} hierarchy node IDs against paged traversal",
++            paged.len()
++        );
++    }
+     let mut non_cubic = Vec::new();
+     let mut unexpected_depth = Vec::new();
+     let mut multi_block = 0_usize;
+     let mut depth_by_level = BTreeMap::<(u32, u8), usize>::new();
+     let mut chain_histogram = BTreeMap::<usize, usize>::new();
+-    let (mut leaves, mut leaves_at_cap, mut over_4x) = (0_usize, 0_usize, 0_usize);
++    let (mut leaves, mut leaves_at_cap, mut duplicate_only, mut over_4x) =
++        (0_usize, 0_usize, 0_usize, 0_usize);
+     let (mut leaf_seconds, mut leaf_points, mut leaf_cell_bytes, mut leaf_point_bytes) =
+         (0.0_f64, 0_u64, 0_usize, 0_usize);
+     let mut worst_ratio = 0.0_f64;
+     let mut worst_leaf = String::new();
+     let (mut internal_seconds, mut internal_nodes) = (0.0_f64, 0_usize);
+     let mut cells_total = 0_usize;
++    let mut cells_by_depth = BTreeMap::<u8, usize>::new();
++    let mut regions_by_depth = BTreeMap::<u8, usize>::new();
++    let mut peak_nominal_key_bytes = 0_usize;
+     let mut growth_stats = [GrowthStats::default(); CANDIDATE_GROWTH.len()];
+ 
+     for node in &nodes {
+@@ -76,10 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+         if (exact - exact.round()).abs() > 1.0e-6 {
+             unexpected_depth.push((node.id().get(), node.level(), exact));
+         }
+-        if node.blocks().len() != 1 {
+-            multi_block += usize::from(node.blocks().len() > 1);
+-            continue;
+-        }
++        multi_block += usize::from(node.blocks().len() > 1);
+         let local = viewer_core::SpatialBounds::new(
+             std::array::from_fn(|axis| bounds.min()[axis] - origin[axis]),
+             std::array::from_fn(|axis| bounds.max()[axis] - origin[axis]),
+@@ -89,36 +130,112 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+             |spacing| representative_depth_for_spacing(&grid, spacing),
+         );
+         *depth_by_level.entry((node.level(), first)).or_default() += 1;
+-        let points = reader.read_positions(node.blocks()[0])?;
+-        let point_count = points.len();
+-        let block = PointBlock::new(node.blocks()[0], points, Vec::new());
+-        let is_leaf = hierarchy.is_leaf(node.id());
++        let blocks: Vec<_> = node
++            .blocks()
++            .iter()
++            .map(|id| reader.read_block(*id))
++            .collect::<Result<_, _>>()?;
++        let point_count: usize = blocks.iter().map(|block| block.points().len()).sum();
++        let finite_count = blocks
++            .iter()
++            .flat_map(|block| block.points().points())
++            .filter(|p| p.position.iter().all(|v| v.is_finite()))
++            .count();
++        let is_leaf = if leaf_flags.is_empty() {
++            hierarchy.is_leaf(node.id())
++        } else {
++            *leaf_flags
++                .get(&node.id())
++                .ok_or("node missing authoritative has_children flag")?
++        };
+         let started = Instant::now();
+         // Growth 1.0 keeps every level: the chain before pruning.
+-        let cells = PointNodeCellSource { min_growth: 1.0 }.node_cells(
+-            &grid,
+-            node.id(),
+-            local,
+-            node.spacing(),
+-            is_leaf,
+-            &block,
+-        )?;
++        let cells = PointNodeCellSource { min_growth: 1.0 }
++            .node_cells(&grid, node.id(), local, node.spacing(), is_leaf, &blocks)
++            .map_err(|error| {
++                let mut bins = std::collections::BTreeSet::new();
++                let mut positions = std::collections::BTreeSet::new();
++                let mut finite = 0;
++                for block in &blocks {
++                    for point in block.points().points() {
++                        if point.position.iter().any(|v| !v.is_finite()) { continue; }
++                        finite += 1;
++                        positions.insert(point.position.map(|value| if value == 0.0 { 0 } else { value.to_bits() }));
++                        bins.insert(std::array::from_fn::<_, 3, _>(|axis| {
++                            (((f64::from(point.position[axis]) - local.min()[axis]) / side) * (1_u64 << 21) as f64).floor() as u64
++                        }));
++                    }
++                }
++                format!(
++                    "node {} level {} leaf {is_leaf} spacing {:?} bounds {:?} root_side {} first_depth {first} finite {finite} unique_positions {} occupied_21bit_cells {}: {error}",
++                    node.id().get(),
++                    node.level(),
++                    node.spacing(),
++                    local, grid.root_side, positions.len(), bins.len()
++                )
++            })?;
+         let seconds = started.elapsed().as_secs_f64();
++        // The finest built level has the widest coordinate range and is always retained.
++        if let Some(level) = cells.levels.last() {
++            let count = 1_u64 << level.depth;
++            let cell_side = grid.root_side / count as f64;
++            let single_region = (0..3).all(|axis| {
++                let last = (count - 1) as f64;
++                let lo = ((local.min()[axis] - grid.root_min[axis]) / cell_side)
++                    .round()
++                    .clamp(0.0, last);
++                let hi = (((local.max()[axis] - grid.root_min[axis]) / cell_side).round() - 1.0)
++                    .clamp(lo, last);
++                (hi as u64) - (lo as u64) < (1 << 21)
++            });
++            let record_size = if single_region {
++                std::mem::size_of::<(u64, usize, usize, [u64; 3])>()
++            } else {
++                std::mem::size_of::<((u128, u64), usize, usize, [u64; 3])>()
++            };
++            peak_nominal_key_bytes = peak_nominal_key_bytes.max(finite_count * record_size);
++        }
+         let cell_count: usize = cells.levels.iter().map(|level| level.cells.len()).sum();
+         cells_total += cell_count;
++        for level in &cells.levels {
++            *cells_by_depth.entry(level.depth).or_default() += level.cells.len();
++            let count = (1_u64 << level.depth) as f64;
++            let cell_side = grid.root_side / count;
++            let node_origin: [u64; 3] = std::array::from_fn(|axis| {
++                ((local.min()[axis] - grid.root_min[axis]) / cell_side)
++                    .round()
++                    .clamp(0.0, (count - 1.0).max(0.0)) as u64
++            });
++            let regions: BTreeSet<_> = level
++                .cells
++                .iter()
++                .map(|cell| {
++                    std::array::from_fn::<_, 3, _>(|axis| {
++                        (cell.coord[axis] - node_origin[axis]) >> 21
++                    })
++                })
++                .collect();
++            *regions_by_depth.entry(level.depth).or_default() += regions.len();
++        }
+         if is_leaf {
+             leaves += 1;
+             *chain_histogram.entry(cells.levels.len()).or_default() += 1;
+-            let cap = first.saturating_add(CHAIN_SPAN).min(MAX_CELL_DEPTH);
+-            // The chain only reaches its last allowed depth while cells were still growing. A last
+-            // level with one cell per point (a single-point leaf at the deepest level included)
+-            // has nothing left to split, so the cap did not truncate it.
+-            if cells
+-                .levels
+-                .last()
+-                .is_some_and(|level| level.depth == cap && level.cells.len() < point_count)
+-            {
+-                leaves_at_cap += 1;
++            if let Some(last) = cells.levels.last() {
++                let positions = blocks
++                    .iter()
++                    .flat_map(|block| block.points().points().iter().map(|point| point.position));
++                match classify_cap(positions, last.cells.len()) {
++                    CapStatus::DistinctCollision => leaves_at_cap += 1,
++                    CapStatus::DuplicatesOnly => duplicate_only += 1,
++                    CapStatus::InvariantError => {
++                        return Err(format!(
++                            "node {} has more occupied cells than unique finite positions",
++                            node.id().get()
++                        )
++                        .into());
++                    }
++                    CapStatus::Separated => {}
++                }
+             }
+             let cell_bytes = cell_count * INSTANCE_BYTES;
+             let point_bytes = point_count * std::mem::size_of::<Point>();
+@@ -163,10 +280,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+ 
+     println!("file: {}", args[0].to_string_lossy());
+     println!(
+-        "nodes: {} (leaves {leaves}, internal {internal_nodes}), nodes with several blocks (skipped): {multi_block}",
++        "nodes: {} (leaves {leaves}, internal {internal_nodes}), nodes with several blocks: {multi_block}",
+         nodes.len()
+     );
+     println!("size_of NodeCell: {} B", std::mem::size_of::<NodeCell>());
++    println!(
++        "Byte ratios compare projected 16-byte GPU instance payload with Point struct payload; they exclude allocation capacity, attributes, page metadata and other overhead."
++    );
+     println!("non-cubic nodes: {}", non_cubic.len());
+     for (id, sides) in non_cubic.iter().take(max_rows) {
+         println!("  node {id}: sides {sides:?}");
+@@ -188,16 +308,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     }
+     if leaves > 0 {
+         println!(
+-            "leaves at chain cap: {leaves_at_cap} ({:.3} %)",
++            "leaves with unresolved distinct-position collisions at terminal depth (experimental): {leaves_at_cap} ({:.3} %)",
+             100.0 * leaves_at_cap as f64 / leaves as f64
+         );
+         println!(
+-            "leaves with chain > 4x point bytes: {over_4x}; worst ratio {worst_ratio:.2}x; \
+-             total chain bytes {leaf_cell_bytes} vs point bytes {leaf_point_bytes} ({:.2}x)",
++            "leaves with only duplicate positions at terminal depth (experimental): {duplicate_only}"
++        );
++        println!(
++            "leaves with unpruned chain > 4x point bytes: {over_4x}; worst ratio {worst_ratio:.2}x; \
++             total unpruned chain bytes {leaf_cell_bytes} vs point bytes {leaf_point_bytes} ({:.2}x)",
+             leaf_cell_bytes as f64 / leaf_point_bytes.max(1) as f64
+         );
+         println!(
+-            "leaf build: {:.3} ms/leaf, {:.1} ns/point, {:.1} chain B/leaf, {:.1} point B/leaf",
++            "unpruned leaf build (all levels): {:.3} ms/leaf, {:.1} ns/point, {:.1} unpruned chain B/leaf, {:.1} point B/leaf",
+             1000.0 * leaf_seconds / leaves as f64,
+             1.0e9 * leaf_seconds / leaf_points.max(1) as f64,
+             leaf_cell_bytes as f64 / leaves as f64,
+@@ -221,6 +344,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+             1000.0 * internal_seconds / internal_nodes as f64
+         );
+     }
+-    println!("total cells: {cells_total}");
++    println!("cells by depth: {cells_by_depth:?}");
++    println!("occupied regions summed per node by depth: {regions_by_depth:?}");
++    println!(
++        "peak nominal temporary key payload: {peak_nominal_key_bytes} bytes (finite points times narrow or wide record size at finest level; excludes allocation capacity and other memory; not RSS)"
++    );
++    println!(
++        "total cells: {cells_total}; CPU NodeCell payload bytes: {}; projected GPU instance payload bytes: {}",
++        cells_total * std::mem::size_of::<NodeCell>(),
++        cells_total * INSTANCE_BYTES
++    );
++    if leaves_at_cap > 0 {
++        return Err("leaf chains have unresolved distinct-position collisions at depth cap".into());
++    }
+     Ok(())
+ }
++
++#[derive(Debug, PartialEq)]
++enum CapStatus {
++    DistinctCollision,
++    DuplicatesOnly,
++    InvariantError,
++    Separated,
++}
++
++fn classify_cap(positions: impl Iterator<Item = [f32; 3]>, cells: usize) -> CapStatus {
++    let mut unique = BTreeSet::new();
++    let mut finite = 0;
++    for position in positions {
++        if position.iter().any(|value| !value.is_finite()) {
++            continue;
++        }
++        finite += 1;
++        unique.insert(position.map(|value| if value == 0.0 { 0 } else { value.to_bits() }));
++    }
++    match cells.cmp(&unique.len()) {
++        std::cmp::Ordering::Less => CapStatus::DistinctCollision,
++        std::cmp::Ordering::Greater => CapStatus::InvariantError,
++        std::cmp::Ordering::Equal if unique.len() < finite => CapStatus::DuplicatesOnly,
++        std::cmp::Ordering::Equal => CapStatus::Separated,
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn classifies_finite_positions_across_blocks_at_cap() {
++        let blocks = [
++            vec![[0.0, -0.0, 1.0], [1.0, 2.0, 3.0], [f32::NAN, 0.0, 0.0]],
++            vec![[-0.0, 0.0, 1.0], [f32::INFINITY, 0.0, 0.0]],
++        ];
++        let positions = || blocks.iter().flat_map(|block| block.iter().copied());
++        assert_eq!(classify_cap(positions(), 1), CapStatus::DistinctCollision);
++        assert_eq!(classify_cap(positions(), 2), CapStatus::DuplicatesOnly);
++        assert_eq!(classify_cap(positions(), 3), CapStatus::InvariantError);
++        assert_eq!(
++            classify_cap([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]].into_iter(), 2),
++            CapStatus::Separated
++        );
++    }
++}
+diff --git a/crates/viewer_render_wgpu/src/lib.rs b/crates/viewer_render_wgpu/src/lib.rs
+index 9938b15..fa4425b 100644
+--- a/crates/viewer_render_wgpu/src/lib.rs
++++ b/crates/viewer_render_wgpu/src/lib.rs
+@@ -24,8 +24,8 @@ pub use camera::{CameraFrame, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection}
+ pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
+ pub use node_cells::{
+     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel,
+-    NodeCellSource, NodeCells, PointNodeCellSource, chain_keep_mask, node_cells_digest,
+-    representative_depth, representative_depth_for_spacing,
++    NodeCellSource, NodeCells, PointNodeCellSource, chain_keep_mask, node_cell_origin,
++    node_cells_digest, representative_depth, representative_depth_for_spacing,
+ };
+ pub use scene::{
+     ColorMode, InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL,
+diff --git a/crates/viewer_render_wgpu/src/node_cells.rs b/crates/viewer_render_wgpu/src/node_cells.rs
+index 951a87c..ab2c956 100644
+--- a/crates/viewer_render_wgpu/src/node_cells.rs
++++ b/crates/viewer_render_wgpu/src/node_cells.rs
+@@ -1,18 +1,18 @@
+ //! Camera-independent cells per LOD node on the dyadic grid anchored at the root.
+ //!
+-//! An internal node yields one level at its representative depth (8 cells per axis); a leaf yields
++//! An internal node yields a pruned pyramid of levels from 8 to 256 cells per axis; a leaf yields
+ //! a chain of finer levels down to the density of its source points. Grid, node bounds and point
+ //! positions must share one coordinate frame (the caller subtracts the coordinate origin).
+ 
+-use std::fmt;
++use std::{collections::HashSet, fmt};
+ 
+ use viewer_core::{NodeId, PointBlock, SpatialBounds};
+ 
+ use crate::attributes::ScalarAttribute;
+ 
+-/// Deepest dyadic level a cell can have (24 bits per axis).
+-pub const MAX_CELL_DEPTH: u8 = 24;
+-/// Levels a leaf chain may add to its representative depth: 10 bits per axis for a root-sized node.
++/// Deepest absolute dyadic level representable by the grid coordinate type.
++pub const MAX_CELL_DEPTH: u8 = 63;
++/// Previous fixed leaf-chain span, retained for benchmark comparisons.
+ pub const CHAIN_SPAN: u8 = 7;
+ /// Minimum cell-count growth between two stored levels of a leaf chain. Stored counts then grow
+ /// geometrically towards the finest level, which holds at most one cell per point, so the chain
+@@ -59,12 +59,13 @@ fn side_of(bounds: SpatialBounds) -> f64 {
+ /// Exact per-cell sums, accumulated in point order like the CPU voxel build.
+ #[derive(Debug, Clone, Copy, PartialEq)]
+ pub struct NodeCell {
+-    pub coord: [u32; 3],
++    pub coord: [u64; 3],
+     pub rgb_sum: [u64; 3],
+     pub intensity_sum: f64,
++    pub intensity_count: u32,
+     pub count: u32,
+-    /// Classification of the first point of the cell; 0 without the attribute.
+-    pub classification: u8,
++    /// Classification of the first point of the cell; -1 without the attribute.
++    pub classification: i16,
+     pub z_min: f32,
+     pub z_max: f32,
+ }
+@@ -76,7 +77,7 @@ pub struct NodeCellLevel {
+     pub cells: Vec<NodeCell>,
+ }
+ 
+-/// One level for an internal node; a chain of increasing depth for a leaf.
++/// A pruned pyramid for an internal node; a chain of increasing depth for a leaf.
+ #[derive(Debug, Clone, PartialEq)]
+ pub struct NodeCells {
+     pub node: NodeId,
+@@ -89,6 +90,8 @@ pub enum NodeCellError {
+     InvalidGrid,
+     /// The node has no extent, so no representative depth exists.
+     DegenerateBounds,
++    RelativeDepthExceeded,
++    AbsoluteDepthExceeded,
+ }
+ 
+ impl fmt::Display for NodeCellError {
+@@ -96,6 +99,10 @@ impl fmt::Display for NodeCellError {
+         match self {
+             Self::InvalidGrid => f.write_str("cell grid anchor or side is not finite and positive"),
+             Self::DegenerateBounds => f.write_str("node bounds have no extent"),
++            Self::AbsoluteDepthExceeded => f.write_str("absolute cell depth exceeds 63"),
++            Self::RelativeDepthExceeded => {
++                f.write_str("node requires more than 21 relative bits per axis")
++            }
+         }
+     }
+ }
+@@ -110,7 +117,7 @@ pub trait NodeCellSource {
+         bounds: SpatialBounds,
+         spacing: Option<f64>,
+         is_leaf: bool,
+-        block: &PointBlock,
++        blocks: &[PointBlock],
+     ) -> Result<NodeCells, NodeCellError>;
+ }
+ 
+@@ -137,7 +144,7 @@ impl NodeCellSource for PointNodeCellSource {
+         bounds: SpatialBounds,
+         spacing: Option<f64>,
+         is_leaf: bool,
+-        block: &PointBlock,
++        blocks: &[PointBlock],
+     ) -> Result<NodeCells, NodeCellError> {
+         if !(grid.root_side.is_finite()
+             && grid.root_side > 0.0
+@@ -148,33 +155,59 @@ impl NodeCellSource for PointNodeCellSource {
+         if (0..3).all(|axis| bounds.max()[axis] <= bounds.min()[axis]) {
+             return Err(NodeCellError::DegenerateBounds);
+         }
+-        let first = match spacing {
+-            Some(spacing) => representative_depth_for_spacing(grid, spacing),
+-            None => representative_depth(grid, bounds),
++        let requested_spacing = if is_leaf {
++            spacing.unwrap_or(side_of(bounds) / 8.0)
++        } else {
++            side_of(bounds) / 8.0
++        };
++        if !requested_spacing.is_finite()
++            || requested_spacing <= 0.0
++            || (grid.root_side / requested_spacing).log2() > f64::from(MAX_CELL_DEPTH)
++        {
++            return Err(NodeCellError::AbsoluteDepthExceeded);
++        }
++        let first = if is_leaf {
++            spacing.map_or_else(
++                || representative_depth(grid, bounds),
++                |spacing| representative_depth_for_spacing(grid, spacing),
++            )
++        } else {
++            representative_depth(grid, bounds)
+         };
+         let last = if is_leaf {
+-            first.saturating_add(CHAIN_SPAN).min(MAX_CELL_DEPTH)
++            MAX_CELL_DEPTH
+         } else {
+-            first
++            first.saturating_add(5)
+         };
+-        let points = Points::new(block);
+-        let mut levels: Vec<NodeCellLevel> = Vec::new();
++        if last > MAX_CELL_DEPTH {
++            return Err(NodeCellError::AbsoluteDepthExceeded);
++        }
++        let points: Vec<_> = blocks.iter().map(Points::new).collect();
++        let distinct_positions: HashSet<_> = blocks
++            .iter()
++            .flat_map(|block| block.points().points())
++            .filter(|point| is_leaf && point.position.iter().all(|value| value.is_finite()))
++            .map(|point| {
++                point
++                    .position
++                    .map(|value| if value == 0.0 { 0 } else { value.to_bits() })
++            })
++            .collect();
++        let mut levels = Vec::new();
+         for depth in first..=last {
+-            let cells = build_level(grid, bounds, &points, depth);
+-            // A level with as many cells as the previous one adds no detail.
+-            if levels
+-                .last()
+-                .is_some_and(|previous| previous.cells.len() == cells.len())
+-            {
++            let cells = build_level(grid, bounds, &points, depth)?;
++            let fully_separated = is_leaf && cells.len() == distinct_positions.len();
++            levels.push(NodeCellLevel { depth, cells });
++            if fully_separated {
+                 break;
+             }
+-            levels.push(NodeCellLevel { depth, cells });
+-        }
+-        if is_leaf {
+-            let counts: Vec<usize> = levels.iter().map(|level| level.cells.len()).collect();
+-            let mut keep = chain_keep_mask(&counts, self.min_growth).into_iter();
+-            levels.retain(|_| keep.next().unwrap_or(true));
++            if is_leaf && depth == MAX_CELL_DEPTH {
++                return Err(NodeCellError::AbsoluteDepthExceeded);
++            }
+         }
++        let counts: Vec<usize> = levels.iter().map(|level| level.cells.len()).collect();
++        let mut keep = chain_keep_mask(&counts, self.min_growth).into_iter();
++        levels.retain(|_| keep.next().unwrap_or(true));
+         Ok(NodeCells { node, levels })
+     }
+ }
+@@ -213,44 +246,71 @@ impl<'a> Points<'a> {
+ }
+ 
+ /// Inclusive cell range of the node on one axis at `depth`.
+-fn node_range(grid: &CellGrid, bounds: SpatialBounds, depth: u8, axis: usize) -> (u32, u32) {
++fn node_range(grid: &CellGrid, bounds: SpatialBounds, depth: u8, axis: usize) -> (u64, u64) {
+     let count = 1_u64 << depth;
+     let cell_side = grid.root_side / count as f64;
+     let edge = |value: f64| ((value - grid.root_min[axis]) / cell_side).round();
+     let last = (count - 1) as f64;
+     let lo = edge(bounds.min()[axis]).clamp(0.0, last);
+     let hi = (edge(bounds.max()[axis]) - 1.0).clamp(lo, last);
+-    (lo as u32, hi as u32)
++    (lo as u64, hi as u64)
+ }
+ 
++/// Lowest cell of the node on every axis at `depth`: the origin the builder's relative coordinates
++/// (and so its Morton order) are measured from.
++pub fn node_cell_origin(grid: &CellGrid, bounds: SpatialBounds, depth: u8) -> [u64; 3] {
++    std::array::from_fn(|axis| node_range(grid, bounds, depth, axis).0)
++}
++
++#[cfg(test)]
++type KeyedPoint = (u64, usize, usize, [u64; 3]);
++
+ fn build_level(
+     grid: &CellGrid,
+     bounds: SpatialBounds,
+-    points: &Points<'_>,
++    points: &[Points<'_>],
+     depth: u8,
+-) -> Vec<NodeCell> {
+-    let count = f64::from(1_u32 << depth);
+-    let range: [(u32, u32); 3] = std::array::from_fn(|axis| node_range(grid, bounds, depth, axis));
+-    let mut keyed: Vec<(u128, usize, [u32; 3])> = Vec::new();
+-    for (index, point) in points.block.points().points().iter().enumerate() {
+-        if point.position.iter().any(|value| !value.is_finite()) {
+-            continue;
++) -> Result<Vec<NodeCell>, NodeCellError> {
++    let count = (1_u64 << depth) as f64;
++    let range: [(u64, u64); 3] = std::array::from_fn(|axis| node_range(grid, bounds, depth, axis));
++    let single_region = range.iter().all(|(lo, hi)| hi - lo < (1 << 21));
++    if single_region {
++        build_level_keyed(grid, points, count, range, morton)
++    } else {
++        build_level_keyed(grid, points, count, range, region_morton)
++    }
++}
++
++fn build_level_keyed<K: Ord + Copy>(
++    grid: &CellGrid,
++    points: &[Points<'_>],
++    count: f64,
++    range: [(u64, u64); 3],
++    key_for: impl Fn([u64; 3]) -> K,
++) -> Result<Vec<NodeCell>, NodeCellError> {
++    let mut keyed: Vec<(K, usize, usize, [u64; 3])> = Vec::new();
++    for (block_index, block) in points.iter().enumerate() {
++        for (index, point) in block.block.points().points().iter().enumerate() {
++            if point.position.iter().any(|value| !value.is_finite()) {
++                continue;
++            }
++            let coord = std::array::from_fn(|axis| {
++                let scaled = ((f64::from(point.position[axis]) - grid.root_min[axis])
++                    / grid.root_side
++                    * count)
++                    .floor();
++                scaled.clamp(range[axis].0 as f64, range[axis].1 as f64) as u64
++            });
++            let relative = std::array::from_fn(|axis| coord[axis] - range[axis].0);
++            let key = key_for(relative);
++            keyed.push((key, block_index, index, coord));
+         }
+-        // Same floor as the CPU grid, then clamped to the node: a point on the max face (or off
+-        // by rounding) lands in the node's last cell and every finite point counts once.
+-        let coord = std::array::from_fn(|axis| {
+-            let scaled = ((f64::from(point.position[axis]) - grid.root_min[axis]) / grid.root_side
+-                * count)
+-                .floor();
+-            (scaled.clamp(f64::from(range[axis].0), f64::from(range[axis].1))) as u32
+-        });
+-        keyed.push((morton(coord), index, coord));
+     }
+-    // Stable by construction: the index breaks ties, so sums follow point order.
+-    keyed.sort_unstable_by_key(|(key, index, _)| (*key, *index));
++    keyed.sort_unstable_by_key(|(key, block, index, _)| (*key, *block, *index));
+     let mut cells: Vec<NodeCell> = Vec::new();
+     let mut current = None;
+-    for (key, index, coord) in keyed {
++    for (key, block_index, index, coord) in keyed {
++        let points = &points[block_index];
+         let point = &points.block.points().points()[index];
+         if current != Some(key) {
+             current = Some(key);
+@@ -258,11 +318,12 @@ fn build_level(
+                 coord,
+                 rgb_sum: [0; 3],
+                 intensity_sum: 0.0,
++                intensity_count: 0,
+                 count: 0,
+                 classification: points
+                     .classification
+                     .and_then(|values| values.value_at(index))
+-                    .map_or(0, |value| value as u8),
++                    .map_or(-1, |value| value as i16),
+                 z_min: point.position[2],
+                 z_max: point.position[2],
+             });
+@@ -270,6 +331,7 @@ fn build_level(
+         let cell = cells.last_mut().expect("a cell was just pushed");
+         if let Some(value) = points.intensity.and_then(|values| values.value_at(index)) {
+             cell.intensity_sum += f64::from(value);
++            cell.intensity_count += 1;
+         }
+         cell.rgb_sum[0] += u64::from(point.color.r);
+         cell.rgb_sum[1] += u64::from(point.color.g);
+@@ -278,15 +340,24 @@ fn build_level(
+         cell.z_min = cell.z_min.min(point.position[2]);
+         cell.z_max = cell.z_max.max(point.position[2]);
+     }
+-    cells
++    Ok(cells)
+ }
+ 
+-/// Interleaves 24 bits per axis (x most significant) into a 72-bit Morton code.
+-fn morton(coord: [u32; 3]) -> u128 {
+-    let mut code = 0_u128;
+-    for bit in 0..u32::from(MAX_CELL_DEPTH) {
++fn region_morton(coord: [u64; 3]) -> (u128, u64) {
++    let mut high = 0_u128;
++    for bit in 0..42 {
+         for (axis, value) in coord.iter().enumerate() {
+-            code |= u128::from((value >> bit) & 1) << (3 * bit + (2 - axis as u32));
++            high |= u128::from((value >> (bit + 21)) & 1) << (3 * bit + (2 - axis));
++        }
++    }
++    (high, morton(coord))
++}
++
++fn morton(coord: [u64; 3]) -> u64 {
++    let mut code = 0_u64;
++    for bit in 0..21 {
++        for (axis, value) in coord.iter().enumerate() {
++            code |= ((value >> bit) & 1) << (3 * bit + (2 - axis));
+         }
+     }
+     code
+@@ -315,11 +386,22 @@ pub fn node_cells_digest(cells: &NodeCells) -> u64 {
+                 feed(&value.to_le_bytes());
+             }
+             feed(&cell.intensity_sum.to_bits().to_le_bytes());
++            feed(&cell.intensity_count.to_le_bytes());
+             feed(&cell.count.to_le_bytes());
+-            feed(&[cell.classification]);
++            feed(&cell.classification.to_le_bytes());
+             feed(&cell.z_min.to_bits().to_le_bytes());
+             feed(&cell.z_max.to_bits().to_le_bytes());
+         }
+     }
+     hash
+ }
++
++#[cfg(test)]
++mod layout_tests {
++    use super::*;
++
++    #[test]
++    fn single_region_record_fits_six_machine_words() {
++        assert!(std::mem::size_of::<KeyedPoint>() <= 6 * std::mem::size_of::<u64>());
++    }
++}
+diff --git a/crates/viewer_render_wgpu/src/node_cells_tests.rs b/crates/viewer_render_wgpu/src/node_cells_tests.rs
+index 24a476f..4f0fbed 100644
+--- a/crates/viewer_render_wgpu/src/node_cells_tests.rs
++++ b/crates/viewer_render_wgpu/src/node_cells_tests.rs
+@@ -78,7 +78,14 @@ fn attributed_block(points: Vec<Point>, intensity: Vec<u16>, class: Vec<u8>) ->
+ 
+ fn cells_of(grid: &CellGrid, bounds: SpatialBounds, leaf: bool, block: &PointBlock) -> NodeCells {
+     PointNodeCellSource::default()
+-        .node_cells(grid, NodeId::new(7), bounds, None, leaf, block)
++        .node_cells(
++            grid,
++            NodeId::new(7),
++            bounds,
++            None,
++            leaf,
++            std::slice::from_ref(block),
++        )
+         .unwrap()
+ }
+ 
+@@ -92,17 +99,25 @@ fn internal_node_cells_are_its_representatives() {
+         let mut rng = Lcg(0x1000 + u64::from(divisions));
+         let points = random_points(&mut rng, [0.0; 3], node_side as f32, 3000);
+         let cell_side = node_side / 8.0;
+-        let mut expected = BTreeMap::<[u32; 3], u32>::new();
++        let mut expected = BTreeMap::<[u64; 3], u32>::new();
+         for point in &points {
+             let coord = point
+                 .position
+-                .map(|v| (f64::from(v) / cell_side).floor() as u32);
++                .map(|v| (f64::from(v) / cell_side).floor() as u64);
+             assert!(coord.iter().all(|c| *c < 8));
+             *expected.entry(coord).or_default() += 1;
+         }
+-        let cells = cells_of(&grid(), bounds, false, &plain_block(points));
+-        assert_eq!(cells.levels.len(), 1, "divisions {divisions}");
+-        let level = &cells.levels[0];
++        let level = &PointNodeCellSource { min_growth: 1.0 }
++            .node_cells(
++                &grid(),
++                NodeId::new(7),
++                bounds,
++                None,
++                false,
++                &[plain_block(points.clone())],
++            )
++            .unwrap()
++            .levels[0];
+         assert_eq!(level.depth, expected_depth);
+         let actual: BTreeMap<_, _> = level.cells.iter().map(|c| (c.coord, c.count)).collect();
+         assert_eq!(actual, expected, "divisions {divisions}");
+@@ -158,11 +173,11 @@ fn cell_sums_match_accumulate_block() {
+         class: u8,
+         z: (f32, f32),
+     }
+-    let mut reference = BTreeMap::<[u32; 3], Reference>::new();
++    let mut reference = BTreeMap::<[u64; 3], Reference>::new();
+     for (index, point) in points.iter().enumerate() {
+         let coord = point
+             .position
+-            .map(|v| (f64::from(v) / cell_side).floor() as u32);
++            .map(|v| (f64::from(v) / cell_side).floor() as u64);
+         let entry = reference.entry(coord).or_default();
+         if entry.count == 0 {
+             entry.class = class[index];
+@@ -182,7 +197,7 @@ fn cell_sums_match_accumulate_block() {
+         assert_eq!(cell.rgb_sum, expected.rgb);
+         assert_eq!(cell.intensity_sum.to_bits(), expected.intensity.to_bits());
+         assert_eq!(cell.count, expected.count);
+-        assert_eq!(cell.classification, expected.class);
++        assert_eq!(cell.classification, i16::from(expected.class));
+         assert_eq!((cell.z_min, cell.z_max), expected.z);
+     }
+     let morton_sorted = level
+@@ -192,7 +207,7 @@ fn cell_sums_match_accumulate_block() {
+     assert!(morton_sorted, "cells must be in Morton order");
+ }
+ 
+-fn morton(coord: [u32; 3]) -> u128 {
++fn morton(coord: [u64; 3]) -> u128 {
+     (0..32).fold(0_u128, |acc, bit| {
+         (0..3).fold(acc, |acc, axis| {
+             acc | (u128::from((coord[axis] >> bit) & 1) << (3 * bit + (2 - axis)))
+@@ -221,12 +236,12 @@ fn points_on_shared_and_max_faces_count_once() {
+         [9.0, f32::INFINITY, 9.0],
+         ColorRgb::new(1, 2, 3),
+     ));
+-    for leaf in [false, true] {
++    for leaf in [false] {
+         let cells = cells_of(&grid(), bounds, leaf, &plain_block(points.clone()));
+         for level in &cells.levels {
+             let total: u32 = level.cells.iter().map(|cell| cell.count).sum();
+             assert_eq!(total, finite, "leaf {leaf}, depth {}", level.depth);
+-            let n = 1_u32 << level.depth;
++            let n = 1_u64 << level.depth;
+             let cells_per_node = n / 8;
+             let lo = n / 8;
+             for cell in &level.cells {
+@@ -237,14 +252,68 @@ fn points_on_shared_and_max_faces_count_once() {
+         }
+     }
+     // The max-face point lands in the last cell, the shared plane in the upper cell.
+-    let cells = cells_of(&grid(), bounds, false, &plain_block(points));
++    let cells = PointNodeCellSource { min_growth: 1.0 }
++        .node_cells(
++            &grid(),
++            NodeId::new(7),
++            bounds,
++            None,
++            false,
++            &[plain_block(points)],
++        )
++        .unwrap();
+     let coords: Vec<_> = cells.levels[0].cells.iter().map(|c| c.coord).collect();
+     assert!(coords.contains(&[15, 15, 15]));
+     assert!(coords.contains(&[12, 12, 12]));
+ }
+ 
+ #[test]
+-fn leaf_chain_stops_when_cells_stop_growing() {
++fn adaptive_leaf_counts_shared_and_max_faces_and_clamps_to_node() {
++    let bounds = cube([8.0; 3], 8.0);
++    let points = vec![
++        Point::new([8.0; 3], ColorRgb::new(1, 2, 3)),
++        Point::new([12.0; 3], ColorRgb::new(4, 5, 6)),
++        Point::new([16.0; 3], ColorRgb::new(7, 8, 9)),
++        Point::new([16.0; 3], ColorRgb::new(10, 11, 12)),
++        Point::new([f32::NAN, 8.0, 8.0], ColorRgb::new(0, 0, 0)),
++    ];
++    let cells = cells_of(&grid(), bounds, true, &plain_block(points));
++    let level = cells.levels.last().unwrap();
++    assert_eq!(level.depth, 6);
++    assert_eq!(level.cells.iter().map(|cell| cell.count).sum::<u32>(), 4);
++    let max = level
++        .cells
++        .iter()
++        .find(|cell| cell.coord == [15, 15, 15])
++        .unwrap();
++    assert_eq!(max.count, 2);
++    assert_eq!(max.rgb_sum, [17, 19, 21]);
++    assert!(level.cells.iter().any(|cell| cell.coord == [12, 12, 12]));
++    assert!(level.cells.iter().any(|cell| cell.coord == [8, 8, 8]));
++}
++
++#[test]
++fn adaptive_leaf_rejects_distinct_points_clamped_to_same_face() {
++    let points = vec![
++        Point::new([16.0; 3], ColorRgb::new(1, 2, 3)),
++        Point::new([16.000_1; 3], ColorRgb::new(4, 5, 6)),
++    ];
++    let result = PointNodeCellSource::default().node_cells(
++        &grid(),
++        NodeId::new(1),
++        cube([8.0; 3], 8.0),
++        None,
++        true,
++        &[plain_block(points)],
++    );
++    assert!(matches!(
++        result,
++        Err(crate::NodeCellError::AbsoluteDepthExceeded)
++    ));
++}
++
++#[test]
++fn leaf_chain_stops_when_all_positions_are_duplicates() {
+     let bounds = cube([0.0; 3], 16.0);
+     let points = vec![Point::new([3.0, 4.0, 5.0], ColorRgb::new(9, 9, 9)); 40];
+     let cells = cells_of(&grid(), bounds, true, &plain_block(points));
+@@ -255,7 +324,7 @@ fn leaf_chain_stops_when_cells_stop_growing() {
+ }
+ 
+ #[test]
+-fn leaf_chain_respects_ten_bit_span() {
++fn leaf_chain_extends_past_previous_fixed_span() {
+     // Root-sized node: representative depth 3. Point `b_j` shares the level-(2 + j) cell of `a`
+     // and separates at level 3 + j, so the cell count grows at every level.
+     let bounds = cube([0.0; 3], SIDE);
+@@ -274,11 +343,11 @@ fn leaf_chain_respects_ten_bit_span() {
+             bounds,
+             None,
+             true,
+-            &plain_block(points),
++            &[plain_block(points)],
+         )
+         .unwrap();
+     let depths: Vec<_> = cells.levels.iter().map(|level| level.depth).collect();
+-    let expected: Vec<_> = (d0..=d0 + CHAIN_SPAN).collect();
++    let expected: Vec<_> = (d0..=d0 + CHAIN_SPAN + 2).collect();
+     assert_eq!(depths, expected);
+     assert!(
+         cells
+@@ -310,7 +379,7 @@ fn page_origin_relative_precision() {
+     let mut naive_worst = 0.0_f64;
+     for cell in &level.cells {
+         let center: [f64; 3] =
+-            std::array::from_fn(|a| far.root_min[a] + (f64::from(cell.coord[a]) + 0.5) * cell_side);
++            std::array::from_fn(|a| far.root_min[a] + (cell.coord[a] as f64 + 0.5) * cell_side);
+         let distance = (0..3)
+             .map(|a| (center[a] - camera[a]).powi(2))
+             .sum::<f64>()
+@@ -370,3 +439,432 @@ fn leaf_chain_has_at_most_three_cells_per_point() {
+         assert_eq!(counts, count, "the finest level keeps every point");
+     }
+ }
++
++#[test]
++fn leaf_chain_keeps_finer_detail_after_a_plateau() {
++    let bounds = cube([0.0; 3], SIDE);
++    let points = vec![
++        Point::new([1.0, 0.0, 0.0], ColorRgb::new(1, 2, 3)),
++        Point::new([1.5, 0.0, 0.0], ColorRgb::new(4, 5, 6)),
++    ];
++    let cells = cells_of(&grid(), bounds, true, &plain_block(points));
++    assert!(cells.levels.last().unwrap().cells.len() == 2);
++}
++
++#[test]
++fn blocks_preserve_missing_attributes_and_point_order() {
++    let p = Point::new([1.0; 3], ColorRgb::new(2, 3, 4));
++    let blocks = [
++        plain_block(vec![p]),
++        attributed_block(vec![p], vec![12], vec![7]),
++    ];
++    let cells = PointNodeCellSource::default()
++        .node_cells(
++            &grid(),
++            NodeId::new(1),
++            cube([0.0; 3], SIDE),
++            None,
++            false,
++            &blocks,
++        )
++        .unwrap();
++    for level in cells.levels {
++        let cell = &level.cells[0];
++        assert_eq!(
++            (
++                cell.count,
++                cell.intensity_count,
++                cell.intensity_sum,
++                cell.classification
++            ),
++            (2, 1, 12.0, -1)
++        );
++        assert_eq!(cell.rgb_sum, [4, 6, 8]);
++    }
++}
++
++#[test]
++fn absolute_depth_above_24_and_subregions() {
++    let deep = CellGrid {
++        root_min: [0.0; 3],
++        root_side: 2.0_f64.powi(26),
++    };
++    let block = plain_block(vec![Point::new([0.25; 3], ColorRgb::new(1, 2, 3))]);
++    let cells = PointNodeCellSource::default()
++        .node_cells(
++            &deep,
++            NodeId::new(1),
++            cube([0.0; 3], 2.0),
++            None,
++            false,
++            std::slice::from_ref(&block),
++        )
++        .unwrap();
++    assert!(cells.levels.iter().all(|level| level.depth > 24));
++    let result = PointNodeCellSource::default().node_cells(
++        &grid(),
++        NodeId::new(1),
++        cube([0.0; 3], SIDE),
++        Some(SIDE / 2.0_f64.powi(22)),
++        true,
++        &[block],
++    );
++    assert!(result.is_ok());
++}
++
++#[test]
++fn node_cells_digest_covers_multiple_blocks_and_missing_attributes() {
++    let p = Point::new([1.0; 3], ColorRgb::new(2, 3, 4));
++    let blocks = [
++        plain_block(vec![p]),
++        attributed_block(vec![p], vec![12], vec![7]),
++    ];
++    let cells = PointNodeCellSource::default()
++        .node_cells(
++            &grid(),
++            NodeId::new(1),
++            cube([0.0; 3], SIDE),
++            None,
++            false,
++            &blocks,
++        )
++        .unwrap();
++    assert_eq!(node_cells_digest(&cells), 11_489_581_987_825_140_401);
++}
++
++#[test]
++fn node_cell_color_and_attributes_match_cpu_voxel_builder() {
++    let p1 = Point::new([1.0; 3], ColorRgb::new(1, 4, 12));
++    let p2 = Point::new([2.0; 3], ColorRgb::new(2, 9, 25));
++    let blocks = [
++        plain_block(vec![p1]),
++        attributed_block(vec![p2], vec![20], vec![7]),
++    ];
++    let bounds = cube([0.0; 3], SIDE);
++    let project = |b: SpatialBounds| b.max()[0] - b.min()[0];
++    let mut cpu = crate::voxel_grid::VoxelSceneBuilder::new(bounds, [0.0; 3], 8.0, 100);
++    for block in &blocks {
++        cpu.add_block(block, &project).unwrap();
++    }
++    let scene = cpu.finish(&project);
++    let actual = &scene.scene.instances()[0];
++    let cells = PointNodeCellSource { min_growth: 1.0 }
++        .node_cells(&grid(), NodeId::new(1), bounds, None, false, &blocks)
++        .unwrap();
++    let cell = &cells.levels[0].cells[0];
++    let rgb = cell
++        .rgb_sum
++        .map(|sum| ((sum + u64::from(cell.count) / 2) / u64::from(cell.count)) as u8);
++    assert_eq!(
++        actual.color,
++        ColorRgb::new(rgb[0], rgb[1], rgb[2]).to_linear_rgba()
++    );
++    assert_eq!(
++        actual.intensity,
++        (cell.intensity_sum / f64::from(cell.intensity_count)) as f32
++    );
++    assert_eq!(actual.classification, f32::from(cell.classification));
++    assert_eq!(cell.count, 2);
++}
++
++#[test]
++fn leaf_stops_when_each_finite_point_has_its_own_cell() {
++    let bounds = cube([0.0; 3], SIDE);
++    let block = plain_block(vec![Point::new([1.0; 3], ColorRgb::new(1, 2, 3))]);
++    let cells = PointNodeCellSource::default()
++        .node_cells(
++            &grid(),
++            NodeId::new(1),
++            bounds,
++            Some(SIDE / 2.0_f64.powi(15)),
++            true,
++            &[block],
++        )
++        .unwrap();
++    assert_eq!(cells.levels.len(), 1);
++    assert_eq!(cells.levels[0].depth, 15);
++}
++
++#[test]
++fn cpu_voxel_builder_matches_multiple_cells_and_attribute_presence() {
++    let p1 = Point::new([1.0; 3], ColorRgb::new(1, 4, 12));
++    let p2 = Point::new([2.0; 3], ColorRgb::new(2, 9, 25));
++    let p3 = Point::new([10.0; 3], ColorRgb::new(6, 8, 10));
++    for blocks in [
++        vec![
++            attributed_block(vec![p1, p3], vec![0, 80], vec![0, 8]),
++            plain_block(vec![p2]),
++        ],
++        vec![plain_block(vec![p1, p3]), plain_block(vec![p2])],
++    ] {
++        let bounds = cube([0.0; 3], SIDE);
++        let project = |b: SpatialBounds| b.max()[0] - b.min()[0];
++        let mut cpu = crate::voxel_grid::VoxelSceneBuilder::new(bounds, [0.0; 3], 8.0, 100);
++        for block in &blocks {
++            cpu.add_block(block, &project).unwrap();
++        }
++        let scene = cpu.finish(&project);
++        let cells = PointNodeCellSource { min_growth: 1.0 }
++            .node_cells(&grid(), NodeId::new(1), bounds, None, false, &blocks)
++            .unwrap();
++        let level = &cells.levels[0];
++        assert_eq!(level.cells.len(), scene.scene.instances().len());
++        for cell in &level.cells {
++            let center = cell.coord.map(|coord| (coord as f32 + 0.5) * 8.0);
++            let instance = scene
++                .scene
++                .instances()
++                .iter()
++                .find(|instance| instance.center == center)
++                .unwrap();
++            let rgb = cell
++                .rgb_sum
++                .map(|sum| ((sum + u64::from(cell.count) / 2) / u64::from(cell.count)) as u8);
++            assert_eq!(
++                instance.color,
++                ColorRgb::new(rgb[0], rgb[1], rgb[2]).to_linear_rgba()
++            );
++            let intensity = if cell.intensity_count == 0 {
++                -1.0
++            } else {
++                (cell.intensity_sum / f64::from(cell.intensity_count)) as f32
++            };
++            assert_eq!(instance.intensity, intensity);
++            assert_eq!(instance.classification, f32::from(cell.classification));
++        }
++    }
++}
++
++#[test]
++fn adaptive_leaf_separates_distinct_positions_after_old_limit_with_duplicates() {
++    let blocks = [
++        plain_block(vec![Point::new([0.0; 3], ColorRgb::new(1, 2, 3))]),
++        attributed_block(
++            vec![
++                Point::new([-0.0, 0.0, 0.0], ColorRgb::new(4, 5, 6)),
++                Point::new([0.03125, 0.0, 0.0], ColorRgb::new(7, 8, 9)),
++            ],
++            vec![10, 20],
++            vec![3, 4],
++        ),
++    ];
++    let cells = PointNodeCellSource::default()
++        .node_cells(
++            &grid(),
++            NodeId::new(1),
++            cube([0.0; 3], SIDE),
++            None,
++            true,
++            &blocks,
++        )
++        .unwrap();
++    let last = cells.levels.last().unwrap();
++    assert_eq!(last.depth, 11);
++    assert_eq!(last.cells.len(), 2);
++    assert_eq!(last.cells[0].count, 2);
++    assert_eq!(last.cells[0].rgb_sum, [5, 7, 9]);
++    assert_eq!(last.cells[0].intensity_sum, 10.0);
++}
++
++#[test]
++fn adaptive_leaf_crosses_region_limit_and_rejects_clamped_collisions() {
++    let source = PointNodeCellSource::default();
++    let bounds = cube([0.0; 3], SIDE);
++    let point = |x| Point::new([x, 0.0, 0.0], ColorRgb::new(1, 2, 3));
++    let build = |points| {
++        source.node_cells(
++            &grid(),
++            NodeId::new(1),
++            bounds,
++            Some(SIDE / 2.0_f64.powi(21)),
++            true,
++            &[plain_block(points)],
++        )
++    };
++    let cells = build(vec![point(0.0), point((SIDE / 2.0_f64.powi(21)) as f32)]).unwrap();
++    assert_eq!(cells.levels[0].depth, 21);
++    assert_eq!(cells.levels[0].cells.len(), 2);
++    assert_eq!(
++        build(vec![point(0.0), point((SIDE / 2.0_f64.powi(22)) as f32)])
++            .unwrap()
++            .levels
++            .last()
++            .unwrap()
++            .depth,
++        22
++    );
++    assert!(matches!(
++        build(vec![point(64.0), point(65.0)]),
++        Err(crate::NodeCellError::AbsoluteDepthExceeded)
++    ));
++    let max = build(vec![point(63.0), point(64.0)]).unwrap();
++    assert_eq!(max.levels[0].cells.len(), 2);
++}
++
++#[test]
++fn subregions_preserve_global_morton_order_and_aggregate_duplicates() {
++    let unit = SIDE / 2.0_f64.powi(23);
++    let coords = [
++        [2097152, 0, 0],
++        [0, 2097152, 0],
++        [0, 0, 2097152],
++        [2097151, 2097151, 2097151],
++        [2097152, 2097152, 2097152],
++        [4194304, 0, 0],
++        [0, 4194304, 0],
++        [0, 0, 4194304],
++    ];
++    let points: Vec<_> = coords
++        .iter()
++        .map(|coord| {
++            Point::new(
++                coord.map(|v| (f64::from(v) * unit) as f32),
++                ColorRgb::new(1, 2, 3),
++            )
++        })
++        .collect();
++    let blocks = [
++        plain_block(points.clone()),
++        attributed_block(vec![points[0]], vec![7], vec![9]),
++    ];
++    let cells = PointNodeCellSource::default()
++        .node_cells(
++            &grid(),
++            NodeId::new(1),
++            cube([0.0; 3], SIDE),
++            Some(unit),
++            true,
++            &blocks,
++        )
++        .unwrap();
++    let level = &cells.levels[0];
++    let mut expected: Vec<[u64; 3]> = coords.iter().map(|coord| coord.map(|v| v as u64)).collect();
++    expected.sort_by_key(|coord| morton(*coord));
++    assert_eq!(
++        level
++            .cells
++            .iter()
++            .map(|cell| cell.coord)
++            .collect::<Vec<_>>(),
++        expected
++    );
++    let duplicate = level
++        .cells
++        .iter()
++        .find(|cell| cell.coord == [2097152, 0, 0])
++        .unwrap();
++    assert_eq!(
++        (
++            duplicate.count,
++            duplicate.rgb_sum,
++            duplicate.intensity_sum,
++            duplicate.classification
++        ),
++        (2, [2, 4, 6], 7.0, -1)
++    );
++}
++
++#[test]
++fn subregions_keep_all_high_bits_at_maximum_depth() {
++    let grid = CellGrid {
++        root_min: [0.0; 3],
++        root_side: 2.0_f64.powi(63),
++    };
++    let positions = [
++        [2.0_f32.powi(62), 0.0, 0.0],
++        [0.0, 2.0_f32.powi(62), 0.0],
++        [0.0, 0.0, 2.0_f32.powi(62)],
++        [2.0_f32.powi(61), 0.0, 0.0],
++    ];
++    let block = plain_block(
++        positions
++            .into_iter()
++            .map(|p| Point::new(p, ColorRgb::new(1, 2, 3)))
++            .collect(),
++    );
++    let cells = PointNodeCellSource::default()
++        .node_cells(
++            &grid,
++            NodeId::new(1),
++            cube([0.0; 3], grid.root_side),
++            Some(1.0),
++            true,
++            &[block],
++        )
++        .unwrap();
++    let coords: Vec<_> = cells.levels[0]
++        .cells
++        .iter()
++        .map(|cell| cell.coord)
++        .collect();
++    assert_eq!(cells.levels[0].depth, 63);
++    assert_eq!(
++        coords,
++        vec![
++            [1_u64 << 61, 0, 0],
++            [0, 0, 1_u64 << 62],
++            [0, 1_u64 << 62, 0],
++            [1_u64 << 62, 0, 0]
++        ]
++    );
++}
++
++#[test]
++fn single_region_matches_generic_at_nonzero_node_origin() {
++    let grid = CellGrid {
++        root_min: [0.0; 3],
++        root_side: 2.0_f64.powi(23),
++    };
++    let origin = 2_097_152_f32;
++    let positions = [
++        [origin, origin, origin],
++        [origin + 2_097_151.0, origin, origin],
++        [origin, origin + 2_097_151.0, origin],
++        [origin, origin, origin + 2_097_151.0],
++    ];
++    let points: Vec<_> = positions
++        .into_iter()
++        .map(|p| Point::new(p, ColorRgb::new(1, 2, 3)))
++        .collect();
++    let shared = [
++        plain_block(points.clone()),
++        attributed_block(vec![points[0]], vec![7], vec![9]),
++        plain_block(vec![Point::new(
++            [f32::NAN, origin, origin],
++            ColorRgb::new(8, 8, 8),
++        )]),
++    ];
++    let source = PointNodeCellSource::default();
++    let build = |bounds, blocks: &[PointBlock]| {
++        source
++            .node_cells(&grid, NodeId::new(1), bounds, Some(1.0), true, blocks)
++            .unwrap()
++    };
++    let narrow = build(cube([f64::from(origin); 3], 2.0_f64.powi(21)), &shared);
++    let wide = build(cube([f64::from(origin); 3], 2.0_f64.powi(22)), &shared);
++    assert_eq!(narrow, wide);
++    let duplicate = &narrow.levels[0].cells[0];
++    assert_eq!(duplicate.coord, [origin as u64; 3]);
++    assert_eq!(duplicate.count, 2);
++    assert_eq!(duplicate.rgb_sum, [2, 4, 6]);
++    assert_eq!(
++        (duplicate.intensity_sum, duplicate.intensity_count),
++        (7.0, 1)
++    );
++    assert_eq!(duplicate.classification, -1);
++    let boundary = Point::new(
++        [origin + 2_097_152.0, origin, origin],
++        ColorRgb::new(4, 5, 6),
++    );
++    let mut with_boundary = shared.to_vec();
++    with_boundary.push(plain_block(vec![boundary]));
++    let mut wide_with_boundary = build(
++        cube([f64::from(origin); 3], 2.0_f64.powi(22)),
++        &with_boundary,
++    )
++    .levels
++    .remove(0)
++    .cells;
++    wide_with_boundary.retain(|cell| cell.coord != [4_194_304, 2_097_152, 2_097_152]);
++    assert_eq!(narrow.levels[0].cells, wide_with_boundary);
++}

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Conversion core shared by the native converter and the web host: options, errors, source
 //! inspection, the spatial planner and the block preparation helpers. It has no filesystem,
 //! thread or wall-clock access (clippy denies those APIs here); hosts supply them through the
@@ -8,6 +9,8 @@
 
 #[doc(hidden)]
 pub mod blocks;
+#[doc(hidden)]
+pub mod crs;
 #[doc(hidden)]
 pub mod diagnostics;
 #[doc(hidden)]
@@ -42,7 +45,9 @@ pub use pipeline::hybrid::{
 pub use pipeline::point_source::{ByteSource, LasFactory, MemBytes, SourceFactory};
 pub use pipeline::spool_store::{MemSpoolStore, SpoolStore};
 pub use report::{ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats};
-pub use serial::{PlanSummary, SerialOutput, convert_serial, validate_output_serial};
+pub use serial::{
+    PlanSummary, SerialOutput, convert_serial, validate_output_serial, written_block_ids,
+};
 
 #[cfg(test)]
 mod range_tests;

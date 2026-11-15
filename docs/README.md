@@ -15,7 +15,8 @@ Punto de entrada del proyecto: [README](../README.md) (estado y prioridades acti
 | --- | --- | --- |
 | [Inventario](reference/inventory.md) | Mapa de componentes, identidades de formato, herramientas, límites y candidatos. | vivo |
 | [Formato V5](reference/format/FORMAT_V5.md) | Especificación del `.oct`/`.octattrs` predeterminado. | vivo |
-| [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md) | Especificaciones de las revisiones V7 experimentales. | vivo |
+| [Formato V7](reference/format/FORMAT_V7.md) | Especificación de la identidad final `v7` (disposición de v7.5-pre, magics propios). | vivo |
+| [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](reference/format/FORMAT_V7_PRE4.md), [V7.5-pre](reference/format/FORMAT_V7_PRE5.md) | Especificaciones de las revisiones V7 experimentales (v7.5: índice paginado, R5). | vivo |
 
 ## Planes y specs
 
@@ -27,7 +28,12 @@ trabajo nuevo va en un plan nuevo.
 | --- | --- | --- |
 | [Plan V7](plans/format-v7-plan.md) | Contrato, recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | activo |
 | [Render y carga a escala](plans/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | activo |
-| [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | pendiente |
+| [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho, siguen el PR a `main` y D4) |
+| [D3c: congelado de V7 final](plans/d3c-congelado-v7-final.md) | Identidad final V7 sobre v7.5-pre con el escritor híbrido, salida predeterminada y regeneración de datasets y referencias (ADR 0044). | completado |
+| [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | completado |
+| [R3: anchura de región, layout, máscaras y flags](plans/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | completado |
+| [R4: pirámide densa y rejilla global](plans/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | completado |
+| [R5: jerarquía paginada](plans/render-r5-jerarquia-paginada.md) | Revisión `v7.5-pre`: páginas por niveles desde anclas, k por página, lector perezoso local y HTTP Range; flags LAS y Extra Bytes. | completado |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 | [Etapa 1](plans/conversor-web-paralelo-etapa1.md), [2](plans/conversor-web-paralelo-etapa2.md), [3](plans/conversor-web-paralelo-etapa3.md), [4](plans/conversor-web-paralelo-etapa4.md) del conversor web | S0/M0/S1; trabajos por nodo, S8, S9 y M1; S2, S10, M2 y M3a; M3b con zonas OPFS y retirada del conversor antiguo. | cerrado |
 
@@ -49,6 +55,15 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Referencia CLI web](records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) | SHA de salida del CLI y tiempos Belvedere/Majadas (M0) para la paridad del conversor web. | fechado |
 | [Puerta R7 de M1](records/benchmarks/M1_R7_2026-10-29.md) | Belvedere `convert` (4 workers) tras M1 frente a la base: `Recursive` y cola de listos, y divisiones 8 (regresión, diagnóstico y corrección). | fechado |
 | [Referencias SHA R1](records/benchmarks/R1_REFERENCE_SHA_2026-10-29.md) | SHA del CLI tras la norma portátil (ADR 0016); sustituyen a los de M0, cuyos tiempos siguen vigentes. | fechado |
+| [Referencia SHA v7.4-pre (R4-T3)](records/benchmarks/R4_V74_REFERENCE_SHA_02-11-2026.md) | SHA del primer fixture `v7.4-pre` del escritor de `viewer_format`, junto a las referencias R1. | fechado |
+| [Referencia SHA v7.4-pre con origen en cuantos (R4-T4)](records/benchmarks/R4_V74_REFERENCE_SHA_2_02-11-2026.md) | SHA de `seed-sample-rev8*` tras guardar el origen de marco como `i64` cuantos; sustituye al anterior. | fechado |
+| [Referencia SHA v7.4-pre con extensión de datos (R4)](records/benchmarks/R4_V74_REFERENCE_SHA_3_02-11-2026.md) | SHA de `seed-sample-rev8*` tras guardar el máximo cuantizado de los datos en el índice; sustituye al anterior. | fechado |
+| [Referencia SHA de las semillas v7.5-pre (R5)](records/benchmarks/R5_V75_REFERENCE_SHA_02-11-2026.md) | SHA de `seed-sample-rev9` y de las semillas de páginas encadenadas (`fuzz_paged_reader`). | fechado |
+| [Referencia SHA de las semillas v7.5-pre, pareja y ids por página (R5)](records/benchmarks/R5_V75_REFERENCE_SHA_02-11-2026_2.md) | SHA de las semillas regeneradas tras volver a `.oct` + `.octattrs` y a ids `(página, índice)`; sustituye a la primera. | fechado |
+| [R3-T0: línea base CPU independiente](records/benchmarks/R3_T0_CPU_04-11-2026.md) | Nueve muestras en el entorno actual; no se mezclan con la captura parcial. | completado |
+| [R3-T0: fixtures en el anfitrión web real](records/benchmarks/R3_T0_WEB_REAL_04-11-2026.md) | Seis aperturas; jerarquía diferida e injerto en v7.5, índice completo en v7.4. | completado |
+| [R3-T0: fixtures y línea base CPU parcial](records/benchmarks/R3_T0_PARTIAL_04-11-2026.md) | Fixtures en ambas versiones y tres muestras CPU en el entorno anterior. | parcial |
+| [Referencia SHA de las semillas v7.5-pre con espaciado de referencia (R3-T0b)](records/benchmarks/R5_V75_REFERENCE_SHA_03-11-2026.md) | SHA de las semillas regeneradas al añadir el espaciado de referencia al bloque de metadatos; sustituye a la segunda. | fechado |
 | [S2: rangos de chunks LAZ](records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md) | Decodificación por rangos de chunks sin `seek`, fixture de chunks variables y velocidad en wasm32 frente a nativo. | fechado |
 | [S10: RAM del híbrido](records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md) | Pico de RAM y handles de spools híbridos RAM/OPFS; propuesta P3. | fechado |
 | [Zonas OPFS (S5 residual)](records/benchmarks/OPFS_ZONES_2026-10-30.md) | Ficheros > 4 GiB, `truncate`, liberación de handles tras `terminate()` y RAM de JS en Chrome y Firefox; base del ADR 0017. | fechado |
@@ -56,6 +71,68 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Puerta Node de M3b](records/benchmarks/M3B_NODE_GATE_2026-10-30.md) | Belvedere a través de los bindings en Node frente a `native_hybrid` y R7 corto de las pistas. | fechado |
 | [M3b en navegadores](records/benchmarks/M3B_BELVEDERE_2026-10-30.md) | Belvedere en Chrome y Firefox: SHA, tiempo frente al nativo, PSS y OPFS con spools de 2 y 4 GiB. | fechado |
 | [Línea base de render](records/benchmarks/RENDER_BASELINE_2026-10-30.md) | Arnés de órbita en Chrome y primer A/B de las mejoras R1 en Majadas y Belvedere. | fechado |
+| [Etapa retenida al mover (R1-T1a)](records/benchmarks/RENDER_R1_T1A_01-11-2026.md) | Regresiones de etapa/prioridad y humo Majadas con worker y respaldo. | fechado |
+| [Prioridad sobre pendientes (R1-T3b)](records/benchmarks/RENDER_R1_T3B_01-11-2026.md) | Coste de proyección, equivalencia de orden y humo Majadas. | fechado |
+| [Medida después de R1 (R1-T7)](records/benchmarks/RENDER_R1_T7_01-11-2026.md) | Matriz R0 tras R1, comparación con R2-T5 y contraste de expulsiones con revisiones anteriores. | fechado |
+| [Edad de escena tras R1 (R1-T7)](records/benchmarks/RENDER_R1_T7_SCENE_AGE_01-11-2026.md) | Por qué sube `sceneAgeMs` desde T1a y por qué se resuelve en R3. | fechado |
+| [R3-T1: alternativas de profundidad](records/benchmarks/R3_T1_OPTIONS_04-11-2026.md) | Diagnóstico de 16 hojas filtradas y propuesta sujeta a aprobación. | propuesta |
+| [R3-T1: repetición del benchmark en Majadas](records/benchmarks/R3_T1_BENCH_04-11-2026.md) | Salidas completas y confirmación del criterio de parada. | parada |
+| [R3-T1: parada por profundidad en Majadas](records/benchmarks/R3_T1_STOP_04-11-2026.md) | Colisiones entre posiciones `f32` distintas y duplicados en el límite de profundidad. | parada |
+| [R3: experimento CPU de celdas adaptativas](records/benchmarks/R3_ADAPTIVE_EXPERIMENT_04-11-2026.md) | V5 entre ramas y celdas v7.5 con continuación adaptativa; Belvedere falla por 22 bits. | fechado |
+| [R3: rango de hojas](records/benchmarks/R3_LEAF_SPAN_04-11-2026.md) | Tres hojas de Belvedere necesitan 22 bits relativos; ninguna en Majadas. | fechado |
+| [R3: subregiones experimentales](records/benchmarks/R3_SUBREGIONS_04-11-2026.md) | Conteos y tiempos nativos de una ejecución con clave por subregiones. | fechado |
+| [R3: scratch compacto de una región](records/benchmarks/R3_LAYOUT_COMPACT_05-11-2026.md) | Registro de 48 B cuando el nodo cabe en una región; comparación nativa emparejada. | fechado |
+| [R3-T5: spike de GPU en la Radeon 880M](records/benchmarks/R3_GPU_SPIKE_05-11-2026.md) | Primer tiempo de GPU: pool real con 12 B, 16 B y 40 B, *overdraw* y celdas visibles; salta el criterio de parada. | parada |
+| [R3-T7d: coste de CPU del pool y tamaños exactos](records/benchmarks/R3_T7D_CPU_06-11-2026.md) | Plan de residencia ≤ 1,38 ms por frame a 4 px (antes 3,28) y sin recorte falso; Majadas a 1 px en movimiento, 2,76 ms. | completado |
+| [R3-T9: `LodDataset` con celdas en nativo](records/benchmarks/R3_T9_CELLS_06-11-2026.md) | 9 casos asentados sin huecos ni retención; celdas ≤ 303 MiB de CPU en Majadas a 4 px; construcción de un nodo hasta 69 ms en p95. | completado |
+| [R3-T10: celdas entre workers en el navegador](records/benchmarks/R3_T10_WORKERS_07-11-2026.md) | Mismo `cutDigestAtRest` con worker de construcción y sin él; frame p95 18,1 ms frente a 17,3 de la ruta CPU; sin worker, 100 ms (R3-Q24). | completado |
+| [R3-T11: humo en navegador de la ruta de celdas](records/benchmarks/R3_T11_SMOKE_13-11-2026.md) | Alcanza el objetivo a 4 px en Belvedere y Majadas; Majadas a 1 px dentro de una hoja entra en bucle de olvido con el presupuesto de CPU de wasm lleno (R3-Q27). | fechado |
+| [R3-B1c: bucle de olvido a 1 px](records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md) | Residencia por celdas, hijos en curso protegidos y bloqueo sin oscilación: Majadas a 1 px se asienta; Belvedere a 1 px tras un salto desborda el pool de GPU. | fechado |
+| [R3-B1d: pool de 512 MiB](records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md) | Pool de 65.535 páginas con presupuesto propio y corte ajustado al pool: se asientan las 14 poses a 1 y 4 px; GTT pico ~+750 MiB. | fechado |
+| [R3-B1b: Hi-Z y tiempo de GPU](records/benchmarks/R3_B1B_HIZ_14-11-2026.md) | Fallo de escala de `hzb.rs` corregido, margen del Hi-Z derivado (+3 % de GPU) y tiempo de GPU en wasm: p95 7,38 ms en Majadas dentro de una hoja a 4 px. | fechado |
+| [R3-B2: modos de color en celdas](records/benchmarks/R3_B2_COLOR_14-11-2026.md) | Todos los modos con celdas y función de color común (paridad con diferencia 0); modos de shader sin reconstruir; atributos con generación de color. | fechado |
+| [R3-B2b: intensidad y clase en la ruta asíncrona](records/benchmarks/R3_B2B_ASYNC_ATTRS_14-11-2026.md) | Corrige B2: el worker de construcción no leía intensidad ni clase en modo RGB; ahora intensidad y clasificación coinciden con la ruta CPU en el navegador. | fechado |
+| [R3-B3: continuidad por nube](records/benchmarks/R3_B3_CONTINUITY_14-11-2026.md) | Mínimo de cubo de 1 × el espaciado de referencia, sin reconstruir al alternar; efecto visual mínimo en Belvedere y Majadas. | fechado |
+| [R3-B4: modos de px](records/benchmarks/R3_B4_PX_MODES_14-11-2026.md) | Fijo progresivo por defecto y dinámico 1–8 px hacia 16,7 ms con el tiempo de GPU; en Chrome refina y engrosa según la carga. | fechado |
+| [R3-B5: pérdida de dispositivo](records/benchmarks/R3_B5_DEVICE_LOST_14-11-2026.md) | Recuperación sin recargar en 0,61 s tras una caída del proceso GPU de Chrome, con la misma pose y el mismo corte; canvas sustituido por la API. | fechado |
+| [R3-T17: medida de la ruta de celdas](records/benchmarks/R3_T17_MEASURE_14-11-2026.md) | Celdas frente a CPU, local y RED-REF: RQ-01 y RQ-05 pasan; RQ-02 salvo +2,7 pp de píxeles vacíos en Majadas. | fechado |
+| [Velocidad de conversión, fase C (exploración)](records/benchmarks/EXPLORE_CONVERT_SPEED_14-11-2026.md) | v7.5/V5 sigue en ~1,9: la diferencia está en el muestreo de la jerarquía; TC3, TC1 y TC2(b) no bastan. | fechado |
+| [D1: cancelación y reintentos en HTTP Range](records/benchmarks/D1_REMOTE_CANCEL_RETRY_14-11-2026.md) | Reintentos con tiempo límite y descarga abortada al cancelar un bloque; sin efecto medible en Majadas por RED-REF. | fechado |
+| [D2: unión con huecos y concurrencia remota](records/benchmarks/D2_GAP_CONCURRENCY_14-11-2026.md) | 8 lecturas remotas por defecto (−15 a −30 % hasta el objetivo en la ruta CPU); la unión con huecos no compensa y `maxGap` queda en 0. | fechado |
+| [OQ-09: orden Morton en los bloques](records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md) | Orden híbrido: `.oct` −35 % sin más bytes por vista; todo Morton carga un 16–24 % antes pero descarga un 34–49 % más. Decidido en el ADR 0041. | fechado |
+| [D3a: orden de los puntos y construcción de celdas](records/benchmarks/D3A_CELL_SORT_ORDER_14-11-2026.md) | El constructor ordenaba con pdqsort, sensible al orden de entrada; con un radix estable construir las celdas cuesta un 13–46 % menos con cualquier fichero. | fechado |
+| [D3b: escritor híbrido de orden de filas](records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md) | `--row-order hybrid`: Belvedere 815 → 531 MB con un +1,3 % de tiempo total de conversión; Majadas apenas cambia. | fechado |
+| [C4: copia diferida y razón v7.5/V5](records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md) | La copia diferida no acelera la jerarquía (cota −1,8 %); la conversión v7.5 tarda ~2,0× V5, y el híbrido ocupa un 10,7 % menos que V5. | fechado |
+| [D3c-T3: RQ-07 con el V7 final](records/benchmarks/D3C_RQ07_V7_15-11-2026.md) | V7 tarda ×2,015 y usa +35,8 % de RSS frente a V5 en Belvedere: pasa el umbral del ADR 0043 (≤ ×2,1, ≤ +40 %); el par ocupa un 10,7 % menos. | fechado |
+| [D3c-T6b: conversión web de Belvedere con el V7 final](records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md) | En Chrome, V7 tarda ×1,87 lo que V5 (141,9 frente a 75,9 s; cota ≤ ×2,1) y el PSS pico sube de 3,76 a 4,75 GiB; SHA idénticos a los del CLI nativo. | fechado |
+| [D3c-T7: referencias, datasets y semillas con el V7 final](records/benchmarks/D3C_V7_REFERENCES_15-11-2026.md) | SHA por defecto (V7) de los casos de R1 y de los datasets de render; Belvedere coincide con el SHA web; semillas existentes intactas (+`rev10`); tests con datos reales y la app alcanzan el objetivo. | fechado |
+| [R3-T7c: medida nativa del pool de celdas](records/benchmarks/R3_T7C_NATIVE_06-11-2026.md) | `kpc` de producción en 3,28 ms en el peor caso (spike: 4,39 ms); el plan de residencia cuesta hasta 8,75 ms de CPU y la estimación de tamaños recorta de más. | parada |
+| [R3-T6: aceptación de la instancia de 16 B](records/benchmarks/R3_T6_ACCEPT_05-11-2026.md) | Páginas idénticas al spike en 22 casos, decodificación bit a bit en la Radeon 880M (Vulkan y GL) y en llvmpipe con `fma()` explícito y origen relativo al ojo (≤ 0,0006 px). | completado |
+| [R3-T16a: compactación y Hi-Z sobre el pool](records/benchmarks/R3_T16_OCCLUSION_05-11-2026.md) | Compactación en GPU con Hi-Z por celda en dos fases: Majadas dentro de una hoja a 4 px de 21,66 a 4,39 ms, sin agujeros; el Hi-Z por página no aporta. | completado |
+| [R3-T15: aceptación del nivel por octante](records/benchmarks/R3_T15_ACCEPT_05-11-2026.md) | 0 diferencias por octante entre `cell_cut` y el oráculo del spike; rangos de dibujo por corte. | completado |
+| [R3-T15: bytes residentes con nivel por octante](records/benchmarks/R3_T15_RESIDENT_05-11-2026.md) | Niveles completos residentes; `octant_tight` cabe en 256 MiB (238,9 MiB en el peor caso). | fechado |
+| [R3: opciones para no dibujar celdas ocultas](records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md) | HZB en dos pasadas, raymarching, híbrido o puntos por cómputo; estado actual y qué medir (OQ-08). | evaluación |
+| [R3-T4: celdas por encima del objetivo](records/benchmarks/R3_T4_OFFAXIS_05-11-2026.md) | Protección dentro del octante y factor fuera de eje; el factor global hace fallar Majadas, las demás variantes pasan. | fechado |
+| [R3-T4: alternativas al error proyectado](records/benchmarks/R3_T4_METRIC_05-11-2026.md) | Métrica ajustada y nivel por octante frente a la cota; `octant_tight` casi iguala a la CPU salvo 2,27× a 1 px. | fechado |
+| [R3-T4: spike de cobertura nativo](records/benchmarks/R3_T4_COVERAGE_05-11-2026.md) | Instancias, bytes y `DescendantTooFine` por pose en Belvedere y Majadas; saltan los criterios de parada. | parada |
+| [R3-T1: aceptación de celdas por nodo](records/benchmarks/R3_T1_ACCEPT_05-11-2026.md) | Ninguna hoja sin separar en Belvedere y Majadas completos con la continuación adaptativa. | fechado |
+| [R3: layout de páginas por anchura de región](records/benchmarks/R3_REGION_LAYOUT_05-11-2026.md) | Anchuras 8–32 con flags por página o por instancia sobre Belvedere y Majadas completos; gana W = 10 con instancia de 12 B. | fechado |
+| [Celdas por nodo sobre datos reales (R3-T1)](records/benchmarks/RENDER_R3_T1_NODE_CELLS_01-11-2026.md) | Longitud y bytes de la cadena de hoja en Majadas y Belvedere; criterios de parada de R3. | fechado |
+| [Spike de densidad de la pirámide (R4-T1)](records/benchmarks/R4_DENSITY_SPIKE_02-11-2026.md) | Hoja × `sample_grid` en Majadas y Belvedere: salto de espaciado, disco, RSS y tiempo. | fechado |
+| [Memoria del conversor con g = 256 (R4-T1)](records/benchmarks/R4_SPARSE_GRID_RSS_02-11-2026.md) | Causa y corrección de la RSS (umbral `mmap` de glibc, rejilla dispersa compacta). | fechado |
+| [Tiempo del conversor con g = 256 (R4-T1)](records/benchmarks/R4_CONVERT_TIME_02-11-2026.md) | Escaneo raíz en paralelo y ventana deslizante de bloques. | fechado |
+| [Tiempo del conversor, segunda ronda (R4-T1)](records/benchmarks/R4_CONVERT_TIME_2_02-11-2026.md) | Celda de muestreo en una pasada y tabla dispersa compacta; Majadas +24 % frente a V5. | fechado |
+| [Conversión v7.4-pre frente a V5 (R4-T4b)](records/benchmarks/R4_T4B_CONVERSION_02-11-2026.md) | Tiempo, RSS y disco de Majadas y Belvedere; tiempo +92–115 %. | fechado |
+| [Matriz de render y R3-T1 sobre v7.4-pre (R4-T6)](records/benchmarks/R4_T6_MEASUREMENT_02-11-2026.md) | Regresión de píxeles vacíos en Belvedere; contadores anómalos; hojas en el tope 1,4–2,0 %. | fechado |
+| [Matriz de render tras los arreglos del visor (R4-T6b)](records/benchmarks/R4_T6B_MEASUREMENT_02-11-2026.md) | Pasa los criterios de render; píxeles vacíos de Belvedere 0,71–0,76 → 0,29–0,36; R3 sigue en pausa. | fechado |
+| [opt-level 3 frente a "s" (exploración)](records/benchmarks/EXPLORE_OPT_LEVEL_02-11-2026.md) | Conversor nativo −20 % con opt-level 3; no cambia la proporción v7.4/V5. | fechado |
+| [opt-level 3 en el WASM (exploración)](records/benchmarks/EXPLORE_OPT_LEVEL_WASM_02-11-2026.md) | Descarga +7–8 % comprimida; edad de escena −14 %; tiempo al objetivo −18 %. | fechado |
+| [Hojas en el tope de R3-T1 (exploración)](records/benchmarks/EXPLORE_ADAPTIVE_LEAF_02-11-2026.md) | Meseta de espaciado con 8 celdas y bench según ADR 0028: 0,06 % y 0,14 % en el tope. | fechado |
+| [Tamaño de página de la jerarquía paginada (R5-P0)](records/benchmarks/R5_P0_PAGES_02-11-2026.md) | k = 5 vale en aéreo (p95 16–27 KB), no con ramificación 8; índice −50 %. | fechado |
+| [Bytes de la cadena de hoja (exploración)](records/benchmarks/EXPLORE_LEAF_CHAIN_BYTES_02-11-2026.md) | Poda de niveles casi duplicados: 0 hojas > 4 ×, cadena ≈ 1 × puntos. | fechado |
+| [CPU por nivel del conversor (exploración)](records/benchmarks/EXPLORE_CONVERT_CPU_02-11-2026.md) | Copia de registros y muestreo por ranura: −12–15 %, salida idéntica; v7.5/V5 sigue ~2×. | fechado |
+| [Revisión de técnicas 13-11-2026](records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md) | Contraste del conversor, la carga web, el render, el formato y la arquitectura con técnicas publicadas: propuestas `TC`, `TW`, `TR`, `TF` y `TA` con su medida de aceptación; sin implementar ni medir. | fechado |
+| [Apertura remota por HTTP Range (R5-P4)](records/benchmarks/R5_P4_HTTP_RANGE_02-11-2026.md) | RED-REF: primer frame 370–390 ms y 4 px ≤ 1,3 s con v7.5-pre; RQ-04 pasa; v7.4 como base. | fechado |
 | [Worker de construcción (R2)](records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md) | Escenas construidas fuera del hilo de render, activado y no: respuestas de frame y tiempo a objetivo en Majadas y Belvedere. | fechado |
 | [Digest del worker de construcción](records/benchmarks/RENDER_BUILD_WORKER_DIGEST_2026-10-30.md) | Digest en reposo distinto entre ambas rutas: la causa es la cámara de la sonda, no el worker. | fechado |
 | [Diagnóstico de T4](records/benchmarks/RENDER_T4_DIAGNOSIS_2026-10-30.md) | Causa de la regresión de T4 en Belvedere: orden de carga de los bloques pendientes. | fechado |

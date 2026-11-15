@@ -65,8 +65,8 @@ python3 examples/web-host/package-local.py
 Fuente única de las reglas.
 
 - Commits: [Conventional Commits](https://www.conventionalcommits.org/) (`docs:`, `build:`, `fix:`…).
-- **V5 predeterminado**: sigue siendo la salida por defecto durante la transición a V7, que
-  concentra el desarrollo; no se crean revisiones V5/V6 nuevas.
+- **V7 predeterminado**: `v7` final es la salida por defecto ([ADR 0044](docs/adr/0044-v7-final-congelada-y-predeterminada.md));
+  V5, V6 y las `-pre` siguen legibles y escribibles hasta su retirada. No se crean revisiones V5/V6 nuevas.
 - **Literales de versión**: `FormatVersion::V<n>` solo vive en `viewer_format`; el resto usa su
   API de capacidades (`DEFAULT_OUTPUT`, `WRITABLE`, `supports_block_checkpoint()`), así añadir una
   revisión no toca otros crates. Lo vigila `scripts/check_version_literals.sh`.
@@ -80,5 +80,5 @@ Fuente única de las reglas.
   [requisitos](docs/requirements.md#preguntas-abiertas).
 - **Benchmarks**: las cifras no se trasladan entre revisiones, perfiles, navegadores, datasets ni
   equipos; registrar el perfil. `fast` es para tests; `perf` (`opt-level` 3, LTO thin) para
-  benchmarks nativos; `release` (`opt-level` "s", LTO completo) es el de producción. No son
+  benchmarks nativos; `release` (`opt-level` 3, LTO completo; desde el 02-11-2026, antes "s") es el de producción. No son
   intercambiables.

@@ -1,0 +1,16 @@
+started_utc=2026-11-04T22:31:57Z
+hostname=pc-tatil
+kernel=Linux 7.2.15-300.fc45.x86_64
+git_head=3eb78f70f2a90d5a8b7b68d39efc5fd406d2983d
+d72d4f7655e722012b318dd8ea46d98d58eaf3f464ef1cc964cf9b88319567b6  /tmp/r3-adaptive-benchmark/subregions-fast-node-cells
+101464e9152145270f525f3be6818e702aca5c8bd9456e133641d339c26ed148  /home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v75.oct
+a0d4d915b949273522512aa7e1e03b05e5debb49ec67f21fc259dd0cb6f07e1e  /home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v75.octattrs
+argv=/tmp/r3-adaptive-benchmark/subregions-fast-node-cells /home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v75.oct
+LANG=C.UTF-8
+LC_ALL=<unset>
+RUSTUP_TOOLCHAIN=<unset>
+RUSTC=<unset>
+CARGO_PROFILE=<unset>
+RUSTFLAGS=<unset>
+run_exit_status=0
+finished_utc=2026-11-04T22:32:53Z

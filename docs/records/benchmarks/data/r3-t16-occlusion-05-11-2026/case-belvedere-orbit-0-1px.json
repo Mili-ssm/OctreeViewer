@@ -1,0 +1,15 @@
+{
+  "dataset": "belvedere", "pose": "orbit-0", "target_px": 1,
+  "viewport": [1280, 720],
+  "view_proj": [-1.3579952, 0, 0, 0, 0, -1.7071068, -0.894942, -0.70710677, 0, 1.7071068, -0.894942, -0.70710677, 0, 0, -251.75386, 0.0000042050847],
+  "eye": [3900.4899902343745, 21157.857001858116, 27289.307014065143],
+  "visual_scale": 0.01649201621495024,
+  "nodes": 6, "levels": 7,
+  "variants": {
+    "w10": { "slots_per_page": 682, "pages": 131, "slots_used": 89342, "empty_slots": 1397 },
+    "w16": { "slots_per_page": 512, "pages": 175, "slots_used": 89600, "empty_slots": 1655 }
+  },
+  "drawn_cells": 73999, "resident_cells": 87945,
+  "ranges_w10": 8, "ranges_w16": 8,
+  "f32_max_error_px": 0.00005720754464069306
+}

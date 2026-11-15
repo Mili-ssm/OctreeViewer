@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use thiserror::Error;
 
@@ -217,6 +217,8 @@ pub struct SpatialNode {
     point_count: u64,
     geometric_error: f64,
     blocks: Vec<BlockId>,
+    /// Spacing of the node's representatives, stored by `v7.4-pre`; older formats derive it.
+    spacing: Option<f64>,
 }
 
 /// Describes how payloads in parent and child nodes combine during refinement.
@@ -253,6 +255,35 @@ impl SpatialNode {
             point_count,
             geometric_error,
             blocks,
+            spacing: None,
+        })
+    }
+
+    /// Sets the stored representative spacing (a finite positive value in dataset units).
+    pub fn with_spacing(mut self, spacing: f64) -> Result<Self, SpatialError> {
+        if !spacing.is_finite() || spacing <= 0.0 {
+            return Err(SpatialError::InvalidSpacing {
+                node: self.id,
+                spacing,
+            });
+        }
+        self.spacing = Some(spacing);
+        Ok(self)
+    }
+
+    /// Spacing stored in the index, when the format has one.
+    pub const fn spacing(&self) -> Option<f64> {
+        self.spacing
+    }
+
+    /// Distance between the node's representatives: the stored spacing when the format has one,
+    /// otherwise one eighth of the node side (the 8 representatives per axis of V5 and V7.1-3-pre).
+    pub fn representative_spacing(&self) -> f64 {
+        self.spacing.unwrap_or_else(|| {
+            let side = (0..3)
+                .map(|axis| self.bounds.max()[axis] - self.bounds.min()[axis])
+                .fold(0.0, f64::max);
+            side / 8.0
         })
     }
 
@@ -289,6 +320,9 @@ impl SpatialNode {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpatialStats {
     pub root_bounds: SpatialBounds,
+    /// Extent of the data for framing the dataset; equals `root_bounds` unless the root is a
+    /// lattice cube larger than the points (`v7.4-pre`, see [`SpatialHierarchy::with_data_bounds`]).
+    pub data_bounds: SpatialBounds,
     pub node_count: usize,
     pub max_level: u32,
     pub source_point_count: Option<u64>,
@@ -324,6 +358,7 @@ pub struct LodSelection {
     max_error_pixels: f64,
     budget_limited: Vec<NodeId>,
     resolution_limited: Vec<NodeId>,
+    unloaded_anchors: Vec<NodeId>,
 }
 
 impl LodSelection {
@@ -352,6 +387,12 @@ impl LodSelection {
     pub fn resolution_limited(&self) -> &[NodeId] {
         &self.resolution_limited
     }
+
+    /// Selected anchors whose children are not loaded yet and that exceed tolerance. The caller
+    /// requests their pages, highest projected error first; they are not resolution-limited.
+    pub fn unloaded_anchors(&self) -> &[NodeId] {
+        &self.unloaded_anchors
+    }
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -368,6 +409,20 @@ pub enum LodSelectionError {
 
 #[derive(Debug, Error, PartialEq)]
 pub enum SpatialError {
+    #[error("node {0:?} is not in the hierarchy")]
+    UnknownNode(NodeId),
+    #[error("node {0:?} already has known children and cannot become an unloaded anchor")]
+    AnchorHasChildren(NodeId),
+    #[error("node {0:?} is not an unloaded anchor")]
+    NotUnloadedAnchor(NodeId),
+    #[error("node {0:?} is not the anchor of a grafted page")]
+    NotGraftedPage(NodeId),
+    #[error("page node {node:?} does not descend from anchor {anchor:?}")]
+    PageNodeOutsideAnchor { node: NodeId, anchor: NodeId },
+    #[error("page of anchor {anchor:?} has a resident descendant page at {descendant:?}")]
+    PageHasResidentDescendant { anchor: NodeId, descendant: NodeId },
+    #[error("page of anchor {anchor:?} contains retained node {node:?}")]
+    PageNodeRetained { anchor: NodeId, node: NodeId },
     #[error("spatial bounds must be finite and ordered, got min {min:?} and max {max:?}")]
     InvalidBounds { min: [f64; 3], max: [f64; 3] },
     #[error("spatial subdivision divisions must be 2, 4, or 8, got {0}")]
@@ -386,6 +441,8 @@ pub enum SpatialError {
     DuplicateAttributeName(String),
     #[error("node {node:?} has invalid geometric error {geometric_error}")]
     InvalidGeometricError { node: NodeId, geometric_error: f64 },
+    #[error("node {node:?} has invalid spacing {spacing}")]
+    InvalidSpacing { node: NodeId, spacing: f64 },
     #[error("spatial hierarchy must contain at least one node")]
     EmptyHierarchy,
     #[error("node identifier {0:?} is repeated")]
@@ -487,6 +544,37 @@ struct IndexedNode {
     children: Vec<NodeId>,
 }
 
+/// Reference spacing of a cloud (RF-05): the point-weighted median of its leaves' spacing, given
+/// as `(point count, spacing)` pairs. Spacings are sorted ascending and the first whose cumulative
+/// weight reaches half of the total wins, so an exact half picks the smaller value. A cloud
+/// without points weighs every leaf equally. `None` when there is no finite positive spacing.
+///
+/// `v7.5-pre` stores this value; the other formats compute it at open from all leaves.
+pub fn reference_spacing(leaves: impl IntoIterator<Item = (u64, f64)>) -> Option<f64> {
+    let mut leaves: Vec<(f64, u64)> = leaves
+        .into_iter()
+        .filter(|(_, spacing)| spacing.is_finite() && *spacing > 0.0)
+        .map(|(points, spacing)| (spacing, points))
+        .collect();
+    leaves.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+    let weigh = |points: u64| u128::from(points);
+    let weighted_total: u128 = leaves.iter().map(|leaf| weigh(leaf.1)).sum();
+    let unit = weighted_total == 0;
+    let total = if unit {
+        leaves.len() as u128
+    } else {
+        weighted_total
+    };
+    let mut cumulative = 0_u128;
+    for (spacing, points) in &leaves {
+        cumulative += if unit { 1 } else { weigh(*points) };
+        if cumulative * 2 >= total {
+            return Some(*spacing);
+        }
+    }
+    None
+}
+
 /// Validated resident metadata index; point and block payloads are stored elsewhere.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpatialHierarchy {
@@ -496,6 +584,10 @@ pub struct SpatialHierarchy {
     attributes: Vec<AttributeDescriptor>,
     stats: SpatialStats,
     semantics: HierarchySemantics,
+    /// Nodes whose children are not known yet (page not resident). Always childless.
+    unloaded: HashSet<NodeId>,
+    /// Anchors whose page was grafted after construction; only these can be evicted.
+    grafted: HashSet<NodeId>,
 }
 
 impl SpatialHierarchy {
@@ -602,6 +694,7 @@ impl SpatialHierarchy {
             .unwrap_or(0);
         let stats = SpatialStats {
             root_bounds,
+            data_bounds: root_bounds,
             node_count: node_map.len(),
             max_level,
             source_point_count,
@@ -633,6 +726,8 @@ impl SpatialHierarchy {
             attributes,
             stats,
             semantics,
+            unloaded: HashSet::new(),
+            grafted: HashSet::new(),
         })
     }
 
@@ -656,6 +751,25 @@ impl SpatialHierarchy {
         self.block_ids.binary_search(&block_id).is_ok()
     }
 
+    /// Per-cloud reference spacing (RF-05) over every leaf; see [`reference_spacing`]. `None` while
+    /// any anchor is unloaded, because the true leaves are then not resident.
+    pub fn reference_spacing(&self) -> Option<f64> {
+        if !self.unloaded.is_empty() {
+            return None;
+        }
+        reference_spacing(
+            self.nodes
+                .values()
+                .filter(|indexed| indexed.children.is_empty())
+                .map(|indexed| {
+                    (
+                        indexed.metadata.point_count(),
+                        indexed.metadata.representative_spacing(),
+                    )
+                }),
+        )
+    }
+
     /// Whether an existing node has no structural children.
     pub fn is_leaf(&self, id: NodeId) -> bool {
         self.nodes
@@ -671,12 +785,196 @@ impl SpatialHierarchy {
             .map_or(&[], |indexed| indexed.children.as_slice())
     }
 
+    /// Whether the node's children are not loaded yet (an anchor of a missing page).
+    pub fn is_unloaded(&self, id: NodeId) -> bool {
+        self.unloaded.contains(&id)
+    }
+
+    /// Marks a childless node as an unloaded anchor: its subtree exists but is not resident.
+    pub fn mark_unloaded(&mut self, id: NodeId) -> Result<(), SpatialError> {
+        let node = self.nodes.get(&id).ok_or(SpatialError::UnknownNode(id))?;
+        if !node.children.is_empty() {
+            return Err(SpatialError::AnchorHasChildren(id));
+        }
+        self.unloaded.insert(id);
+        Ok(())
+    }
+
+    /// Grows the hierarchy with the page of an unloaded `anchor`. `nodes` must be in
+    /// parent-before-child order, each descending from the anchor; `anchors` are page nodes
+    /// whose own pages stay unloaded. Validation is atomic: on error nothing changes.
+    pub fn graft_page(
+        &mut self,
+        anchor: NodeId,
+        nodes: Vec<SpatialNode>,
+        anchors: &[NodeId],
+    ) -> Result<(), SpatialError> {
+        if !self.nodes.contains_key(&anchor) {
+            return Err(SpatialError::UnknownNode(anchor));
+        }
+        if !self.unloaded.contains(&anchor) {
+            return Err(SpatialError::NotUnloadedAnchor(anchor));
+        }
+        let mut incoming: HashMap<NodeId, &SpatialNode> = HashMap::with_capacity(nodes.len());
+        for node in &nodes {
+            if self.nodes.contains_key(&node.id) || incoming.insert(node.id, node).is_some() {
+                return Err(SpatialError::DuplicateNodeId(node.id));
+            }
+        }
+        for node in &nodes {
+            let parent_id = node.parent.ok_or(SpatialError::PageNodeOutsideAnchor {
+                node: node.id,
+                anchor,
+            })?;
+            let parent = if parent_id == anchor {
+                &self.nodes[&anchor].metadata
+            } else if let Some(parent) = incoming.get(&parent_id) {
+                parent
+            } else {
+                return Err(SpatialError::UnknownParent {
+                    node: node.id,
+                    parent: parent_id,
+                });
+            };
+            if parent.level.checked_add(1) != Some(node.level) {
+                return Err(SpatialError::InvalidChildLevel {
+                    node: node.id,
+                    parent: parent_id,
+                });
+            }
+            if !parent.bounds.contains(&node.bounds) {
+                return Err(SpatialError::ChildOutsideParent {
+                    node: node.id,
+                    parent: parent_id,
+                });
+            }
+        }
+        // Parents must precede children so the anchor reachability check below is one pass.
+        let mut reachable = HashSet::from([anchor]);
+        for node in &nodes {
+            if !reachable.contains(&node.parent.expect("validated above")) {
+                return Err(SpatialError::UnknownParent {
+                    node: node.id,
+                    parent: node.parent.expect("validated above"),
+                });
+            }
+            reachable.insert(node.id);
+        }
+        for id in anchors {
+            if !incoming.contains_key(id) {
+                return Err(SpatialError::UnknownNode(*id));
+            }
+        }
+
+        self.unloaded.remove(&anchor);
+        self.grafted.insert(anchor);
+        for node in nodes {
+            let id = node.id;
+            let parent = node.parent.expect("validated above");
+            self.nodes
+                .get_mut(&parent)
+                .expect("parent was validated above")
+                .children
+                .push(id);
+            self.nodes.insert(
+                id,
+                IndexedNode {
+                    metadata: node,
+                    children: Vec::new(),
+                },
+            );
+        }
+        self.unloaded.extend(anchors.iter().copied());
+        self.refresh_derived();
+        Ok(())
+    }
+
+    /// Shrinks the hierarchy by dropping the page below `anchor`, which becomes unloaded again.
+    /// Refused while a descendant page is resident or a `retained` (planner cut) node lies in
+    /// the page, so no retained node ever loses its ancestors. Returns the removed node ids.
+    pub fn evict_page(
+        &mut self,
+        anchor: NodeId,
+        retained: &[NodeId],
+    ) -> Result<Vec<NodeId>, SpatialError> {
+        if !self.nodes.contains_key(&anchor) {
+            return Err(SpatialError::UnknownNode(anchor));
+        }
+        if !self.grafted.contains(&anchor) {
+            return Err(SpatialError::NotGraftedPage(anchor));
+        }
+        let mut descendants = Vec::new();
+        let mut pending = self.nodes[&anchor].children.clone();
+        while let Some(id) = pending.pop() {
+            descendants.push(id);
+            pending.extend(self.nodes[&id].children.iter().copied());
+        }
+        if let Some(descendant) = descendants.iter().find(|id| self.grafted.contains(id)) {
+            return Err(SpatialError::PageHasResidentDescendant {
+                anchor,
+                descendant: *descendant,
+            });
+        }
+        let page: HashSet<NodeId> = descendants.iter().copied().collect();
+        if let Some(node) = retained.iter().find(|id| page.contains(id)) {
+            return Err(SpatialError::PageNodeRetained {
+                anchor,
+                node: *node,
+            });
+        }
+        for id in &descendants {
+            self.nodes.remove(id);
+            self.unloaded.remove(id);
+        }
+        self.nodes
+            .get_mut(&anchor)
+            .expect("anchor checked above")
+            .children
+            .clear();
+        self.grafted.remove(&anchor);
+        self.unloaded.insert(anchor);
+        self.refresh_derived();
+        Ok(descendants)
+    }
+
+    /// Recomputes the values derived from the resident node set after a graft or eviction.
+    fn refresh_derived(&mut self) {
+        let mut block_ids = self
+            .nodes
+            .values()
+            .flat_map(|indexed| indexed.metadata.blocks.iter().copied())
+            .collect::<Vec<_>>();
+        block_ids.sort_unstable();
+        block_ids.dedup();
+        self.block_ids = block_ids.into_boxed_slice();
+        self.stats.node_count = self.nodes.len();
+        self.stats.max_level = self
+            .nodes
+            .values()
+            .map(|indexed| indexed.metadata.level)
+            .max()
+            .unwrap_or(0);
+    }
+
     pub fn attributes(&self) -> &[AttributeDescriptor] {
         &self.attributes
     }
 
     pub const fn stats(&self) -> SpatialStats {
         self.stats
+    }
+
+    /// Sets the tight data extent reported in [`SpatialStats::data_bounds`]. Node bounds are
+    /// untouched; the extent must lie inside the root bounds.
+    pub fn with_data_bounds(mut self, data_bounds: SpatialBounds) -> Result<Self, SpatialError> {
+        if !self.stats.root_bounds.contains(&data_bounds) {
+            return Err(SpatialError::InvalidBounds {
+                min: data_bounds.min(),
+                max: data_bounds.max(),
+            });
+        }
+        self.stats.data_bounds = data_bounds;
+        Ok(self)
     }
 
     pub const fn semantics(&self) -> HierarchySemantics {
@@ -732,10 +1030,12 @@ impl SpatialHierarchy {
         let mut best_children = Vec::new();
         let mut budget_limited = Vec::new();
         let mut resolution_limited = Vec::new();
+        let mut unloaded_anchors = Vec::new();
         loop {
             let mut best: Option<(usize, NodeId, f64, u64)> = None;
             budget_limited.clear();
             resolution_limited.clear();
+            unloaded_anchors.clear();
 
             for (index, id) in frontier.iter().copied().enumerate() {
                 let node = &self.nodes[&id].metadata;
@@ -754,7 +1054,11 @@ impl SpatialHierarchy {
                     &mut children,
                 );
                 if children.is_empty() {
-                    resolution_limited.push(id);
+                    if self.unloaded.contains(&id) {
+                        unloaded_anchors.push(id);
+                    } else {
+                        resolution_limited.push(id);
+                    }
                     continue;
                 }
                 let children_count = self.count_points(&children)?;
@@ -797,6 +1101,7 @@ impl SpatialHierarchy {
                     max_error_pixels,
                     budget_limited,
                     resolution_limited,
+                    unloaded_anchors,
                 });
             };
 
@@ -836,7 +1141,8 @@ impl SpatialHierarchy {
             if !frustum.intersects(&indexed.metadata.bounds) {
                 continue;
             }
-            if indexed.metadata.point_count > 0 {
+            // An unloaded anchor stays in the frontier even when empty: its page may hold points.
+            if indexed.metadata.point_count > 0 || self.unloaded.contains(&id) {
                 frontier.push(id);
             } else {
                 pending.extend(indexed.children.iter().rev().copied());

@@ -1,9 +1,8 @@
 # Native `.oct` format, v7.1-pre
 
 Development identity: major **7**, revision **1**, explicitly selected as `v7.1-pre`.
-Final V7 (revision zero) and unimplemented revisions are rejected. This is a working migration
-baseline, not the final V7 storage design. V5 remains the operational default until the
-[V7 promotion criteria](../../plans/format-v7-plan.md) are met; V5/V6 are scheduled for retirement.
+Unimplemented revisions are rejected. This is a working migration
+baseline, not the final V7 storage design. The final [v7](FORMAT_V7.md) is the default output ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md)); V5/V6 are scheduled for retirement ([plan](../../plans/format-v7-plan.md)).
 
 ## Binary contract
 
@@ -39,7 +38,7 @@ pairs must not be relabelled as a substitute for conversion and validation.
 The existing native LAS/LAZ preparation pipeline can produce V7.1-pre with ordered output.
 EPT local conversion remains serial. `fork_reader` shares a validated index across independent
 cursors; this does not connect concurrent reads to the viewer. WASM reading remains synchronous,
-and web conversion still defaults to V5; `createForVersion` selects implemented revisions.
+and web conversion defaulted to V5 in this increment (now final v7, ADR 0044); `createForVersion` selects implemented revisions.
 V7 web conversion has not been exercised in a browser in this increment. Runtime concurrency is independent of physical version.
 
 The common attribute encoder now packs byte-column dictionary IDs directly from input after

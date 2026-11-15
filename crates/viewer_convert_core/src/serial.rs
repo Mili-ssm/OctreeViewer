@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::io::{Read, Seek, Write};
 
 use viewer_core::{BlockId, DatasetSource};
-use viewer_format::{FormatReader, OctreeWriter};
+use viewer_format::{FormatReader, OctreeReader, OctreeWriter};
 
 use crate::blocks::{ConversionPlan, output_writer, prepare_planned_block, write_prepared};
 use crate::error::ConvertError;
@@ -55,12 +55,13 @@ where
     C: Clock,
     W: Write + Seek,
 {
+    let options = options.validate()?;
     emit_progress(
         on_progress,
         progress(ConversionStage::InspectingInput, 0, 0),
         0,
     )?;
-    let source = inspect_source(input)?;
+    let source = inspect_source(input)?.for_options(options)?;
     let full = input
         .split(1, 1)?
         .into_iter()
@@ -133,8 +134,35 @@ where
     })
 }
 
+/// Every block id of a written file and those of its leaf nodes (the blocks that hold source
+/// points). `v7.5-pre` renumbers blocks when it writes its pages, so the plan's ids do not apply.
+pub fn written_block_ids<R: Read + Seek>(
+    reader: &FormatReader<R>,
+) -> Result<(Vec<BlockId>, Vec<BlockId>), ConvertError> {
+    let block_ids = reader
+        .block_storage_stats()?
+        .into_iter()
+        .map(|block| block.id)
+        .collect();
+    let hierarchy = reader.format_metadata().dataset().hierarchy();
+    let nodes = hierarchy
+        .query(hierarchy.stats().root_bounds)
+        .collect::<Vec<_>>();
+    let parent_ids = nodes
+        .iter()
+        .filter_map(|node| node.parent())
+        .collect::<HashSet<_>>();
+    let source_block_ids = nodes
+        .iter()
+        .filter(|node| !parent_ids.contains(&node.id()))
+        .flat_map(|node| node.blocks().iter().copied())
+        .collect();
+    Ok((block_ids, source_block_ids))
+}
+
 /// Rereads every block of the pair and checks that the source blocks hold `plan.point_count`
-/// points: the checks of the native validation, one block at a time.
+/// points: the checks of the native validation, one block at a time. `v7.5-pre` numbers its blocks
+/// by page, so its ids come from the file instead of the plan.
 pub fn validate_output_serial<R: Read + Seek>(
     geometry: R,
     attributes: R,
@@ -143,11 +171,12 @@ pub fn validate_output_serial<R: Read + Seek>(
 ) -> Result<ConversionWorkerStats, ConvertError> {
     let mut reader = FormatReader::new(geometry)?;
     reader.attach_attributes(attributes)?;
-    let source_blocks = plan
-        .source_block_ids
-        .iter()
-        .copied()
-        .collect::<HashSet<_>>();
+    let (block_ids, source_block_ids) = if reader.format_version().uses_pages() {
+        written_block_ids(&reader)?
+    } else {
+        (plan.block_ids.clone(), plan.source_block_ids.clone())
+    };
+    let source_blocks = source_block_ids.iter().copied().collect::<HashSet<_>>();
     emit_progress(
         on_progress,
         progress(ConversionStage::ValidatingOutput, 0, plan.point_count),
@@ -164,7 +193,7 @@ pub fn validate_output_serial<R: Read + Seek>(
         .and_then(|bytes| bytes.checked_add(1024 * 1024))
         .ok_or(ConvertError::SizeOverflow)?;
     let mut validated_points = 0_u64;
-    for block_id in plan.block_ids.iter().copied() {
+    for block_id in block_ids {
         let points = reader.read_block(block_id)?.points().len() as u64;
         if source_blocks.contains(&block_id) {
             validated_points = validated_points

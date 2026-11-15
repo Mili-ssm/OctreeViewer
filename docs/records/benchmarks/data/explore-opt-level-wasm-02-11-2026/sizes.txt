@@ -1,0 +1,2 @@
+s raw 2656957 gzip9 644419 brotli 465194
+o3 raw 2228520 gzip9 690132 brotli 502071

@@ -4,19 +4,20 @@
 //! `WasmSceneBuilder` wraps this for JavaScript. It lives outside the bindings so native tests
 //! can run the exact same code and compare its scenes with the viewer's.
 
-use viewer_core::{BlockId, PointBlock};
+use viewer_core::{BlockId, NodeId, PointBlock};
 use viewer_render_wgpu::{
     ColorMode, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection, VoxelBuildLimits,
 };
 
 use crate::{
-    LodBuiltScene, LodDataset, LodViewStats,
-    lod_driver::{ColorSelection, LodStep, LodStepResult, SceneSink, update_lod_view},
+    LodBuiltScene, LodDataset, LodViewStats, PageInsert,
+    cells_glue::{BuilderCells, BuilderOutput},
+    lod_driver::{ColorSelection, LodStep, LodStepResult, SceneSink, update_lod_view_paged},
     lod_session::LodSession,
 };
 
-/// Same bounds as `WasmVoxelViewer::updateLod`.
-const TARGET_PIXELS_RANGE: std::ops::RangeInclusive<f64> = 0.5..=16.0;
+// Same bounds as `WasmVoxelViewer::updateLod`.
+use crate::cells_glue::TARGET_PIXELS_RANGE;
 
 /// Keeps the rebuilt scene for the caller instead of uploading it.
 #[derive(Default)]
@@ -46,6 +47,15 @@ pub(crate) struct BuilderUpdate {
     pub async_priority_order: Vec<BlockId>,
     /// More refinement stages (or newly arrived blocks) call for another update.
     pub needs_refinement: bool,
+}
+
+/// What one builder update produced: the cells path never carries a scene, so the render worker
+/// keeps its pool; the CPU path never carries cells.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+#[allow(clippy::large_enum_variant)] // a transient return value, built once per update
+pub(crate) enum BuilderStep {
+    Cells(BuilderOutput),
+    Scene(BuilderUpdate),
 }
 
 pub(crate) struct SceneBuilderCore<R> {
@@ -123,7 +133,8 @@ impl<R> SceneBuilderCore<R> {
     /// Selects the cut for `camera` and rebuilds the scene when it changed.
     ///
     /// `load_block` serves blocks the session's reader can supply; hosts that deliver blocks
-    /// asynchronously return `Ok(None)` and read `async_priority_order` instead.
+    /// asynchronously return `Ok(None)` and read `async_priority_order` instead. `load_page`
+    /// reads the hierarchy pages of a paged reader.
     pub(crate) fn update(
         &mut self,
         camera: OrbitCamera,
@@ -131,6 +142,7 @@ impl<R> SceneBuilderCore<R> {
         visual_scale: f64,
         target_pixels: f64,
         mut load_block: impl FnMut(&mut R, BlockId) -> Result<Option<PointBlock>, String>,
+        mut load_page: impl FnMut(&mut R, NodeId) -> Result<PageInsert, String>,
     ) -> Result<BuilderUpdate, String> {
         if !TARGET_PIXELS_RANGE.contains(&target_pixels) {
             return Err("targetVoxelPixels must be finite and between 0.5 and 16".to_owned());
@@ -141,24 +153,22 @@ impl<R> SceneBuilderCore<R> {
         if visual_scale != self.session.dataset().visual_scale() {
             return Err("visualScale does not match the dataset".to_owned());
         }
-        // Same resets the viewer applies when the camera moves or the target changes.
-        if self.last_camera != Some(camera) || self.target_pixels != Some(target_pixels) {
+        if self.target_pixels != Some(target_pixels) {
             self.stage_pixels = None;
+        }
+        if self.last_camera != Some(camera) {
+            self.dirty = true;
         }
         self.last_camera = Some(camera);
         self.target_pixels = Some(target_pixels);
 
         let view = ViewProjection::new(camera, viewport, visual_scale, self.limits);
         let can_load_blocks = self.host_delivers_blocks || self.session.reader().is_some();
-        let (dataset, mut reader) = self.session.parts_mut();
-        let mut load = |id| match reader.as_deref_mut() {
-            Some(reader) => load_block(reader, id),
-            None => Ok(None),
-        };
+        let (dataset, reader) = self.session.parts_mut();
         let mut sink = CollectSink::default();
         let mut stage_pixels = self.stage_pixels;
         let mut dirty = self.dirty;
-        let result = update_lod_view(
+        let result = update_lod_view_paged(
             dataset,
             &LodStep {
                 view: &view,
@@ -169,7 +179,9 @@ impl<R> SceneBuilderCore<R> {
             &mut stage_pixels,
             &mut dirty,
             &mut sink,
-            &mut load,
+            reader,
+            &mut load_block,
+            &mut load_page,
         );
         self.stage_pixels = stage_pixels;
         self.dirty = dirty;
@@ -185,6 +197,57 @@ impl<R> SceneBuilderCore<R> {
             async_priority_order,
             needs_refinement: self.dirty,
         })
+    }
+}
+
+impl<R> SceneBuilderCore<R> {
+    /// [`update`](Self::update) on the CPU path, or step 1 of the cells path while `cells` is
+    /// present. Same arguments otherwise.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn update_with_cells(
+        &mut self,
+        cells: Option<&mut BuilderCells>,
+        camera: OrbitCamera,
+        viewport: [u32; 2],
+        visual_scale: f64,
+        target_pixels: f64,
+        mut load_block: impl FnMut(&mut R, BlockId) -> Result<Option<PointBlock>, String>,
+        mut load_page: impl FnMut(&mut R, NodeId) -> Result<PageInsert, String>,
+    ) -> Result<BuilderStep, String> {
+        let Some(cells) = cells else {
+            return self
+                .update(
+                    camera,
+                    viewport,
+                    visual_scale,
+                    target_pixels,
+                    load_block,
+                    load_page,
+                )
+                .map(BuilderStep::Scene);
+        };
+        let view = cells.begin_update(
+            self.session.dataset(),
+            camera,
+            viewport,
+            visual_scale,
+            target_pixels,
+            self.limits,
+        )?;
+        let can_load_blocks = self.host_delivers_blocks || self.session.reader().is_some();
+        let (dataset, reader) = self.session.parts_mut();
+        cells
+            .plan(
+                dataset,
+                &view,
+                target_pixels,
+                can_load_blocks,
+                self.host_delivers_blocks,
+                reader,
+                &mut load_block,
+                &mut load_page,
+            )
+            .map(BuilderStep::Cells)
     }
 }
 

@@ -1,0 +1,8 @@
+base d931063d51adbdc39b758d856635d73a0e648e34 on feat/r3-v75 + uncommitted T10c2 fixes committed with this record
+rustc 1.101.0-nightly (41089d07a 2026-10-27)
+wasm-bindgen 0.2.129
+Google Chrome 157.0.8103.38
+model name	: AMD Ryzen AI 9 365 w/ Radeon 880M
+adapter reported by the page: amd / rdna-3 (Radeon 880M), WebGPU over Vulkan
+101464e9152145270f525f3be6818e702aca5c8bd9456e133641d339c26ed148  target/render-data/belvedere-v75.oct
+a0d4d915b949273522512aa7e1e03b05e5debb49ec67f21fc259dd0cb6f07e1e  target/render-data/belvedere-v75.octattrs

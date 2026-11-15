@@ -43,10 +43,25 @@ fn run(
     points_per_block: u64,
     divisions: u8,
     workers: usize,
+    format: Option<viewer_format::FormatVersion>,
+    row_order: Option<viewer_format::RowOrder>,
 ) -> Result<Outcome, String> {
-    let mut options = ConvertOptions::new(points_per_block, 0.01)
-        .and_then(|options| options.with_spatial_divisions(divisions))
+    let mut options =
+        ConvertOptions::new(points_per_block, 0.01).map_err(|error| error.to_string())?;
+    if let Some(version) = format {
+        options = options
+            .with_format_version(version)
+            .map_err(|error| error.to_string())?;
+    }
+    options = options
+        .with_spatial_divisions(divisions)
         .map_err(|error| error.to_string())?;
+    if let Some(order) = row_order {
+        options = options
+            .with_row_order(order)
+            .map_err(|error| error.to_string())?;
+    }
+    options = options.validate().map_err(|error| error.to_string())?;
     if workers != 0 {
         options = options
             .with_spatial_workers(workers)
@@ -82,7 +97,8 @@ fn run(
 }
 
 /// Converts and validates the buffer from `convert_parity_alloc`; `workers == 0` keeps the core
-/// default. Returns 1 on success; on failure returns 0 and the message is at `error_ptr`.
+/// default. `format` is 0 for the default revision, 1 for `v7.4-pre`, 2 for `v7.5-pre`, 3 for `v5` and 4 for `v7`; `row_order` is 0 for the format default, 1 for hybrid and 2 for source. Returns 1
+/// on success; on failure returns 0 and the message is at `error_ptr`.
 ///
 /// # Safety
 /// `ptr` must come from `convert_parity_alloc(len)` and stay unmodified during the call.
@@ -93,11 +109,31 @@ pub unsafe extern "C" fn convert_parity_run(
     points_per_block: u64,
     divisions: u32,
     workers: u32,
+    format: u32,
+    row_order: u32,
 ) -> u32 {
     // SAFETY: the caller passes a buffer from `convert_parity_alloc` of exactly `len` bytes.
     let input = unsafe { std::slice::from_raw_parts(ptr, len) };
     let divisions = u8::try_from(divisions).unwrap_or(u8::MAX);
-    let result = run(input, points_per_block, divisions, workers as usize);
+    let result = run(
+        input,
+        points_per_block,
+        divisions,
+        workers as usize,
+        match format {
+            0 => None,
+            1 => Some(viewer_format::FormatVersion::V7_PRE4),
+            3 => Some(viewer_format::FormatVersion::V5),
+            4 => Some(viewer_format::FormatVersion::V7),
+            _ => Some(viewer_format::FormatVersion::V7_PRE5),
+        },
+        // 0 leaves the order to the format; 1 requests hybrid, 2 requests source explicitly.
+        match row_order {
+            0 => None,
+            1 => Some(viewer_format::RowOrder::Hybrid),
+            _ => Some(viewer_format::RowOrder::Source),
+        },
+    );
     let succeeded = result.is_ok();
     OUTCOME.with(|outcome| {
         *outcome.borrow_mut() = result.unwrap_or_else(|error| Outcome {

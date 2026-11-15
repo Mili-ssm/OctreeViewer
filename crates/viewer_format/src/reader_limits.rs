@@ -1,10 +1,12 @@
-use crate::FormatError;
+use crate::{FormatError, MAX_SCHEMA_ATTRIBUTES};
 
-const MAX_ATTRIBUTES_DEFAULT: u32 = 256;
 const MAX_COMPONENTS_DEFAULT: u32 = 65_535;
 const MAX_STRING_BYTES_DEFAULT: u32 = 1_048_576;
 const MAX_INDEX_BYTES_DEFAULT: u64 = 256 * 1024 * 1024;
 const MAX_BLOCK_BYTES_DEFAULT: u64 = 256 * 1024 * 1024;
+// A page holds 512 KB by choice (R5-Q2); 1 MiB is the point where k = 1 must stop (plan R5, P2).
+const MAX_PAGE_BYTES_DEFAULT: u64 = 1024 * 1024;
+const MAX_RESIDENT_PAGES_DEFAULT: u32 = 4096;
 const MAX_NODES_DEFAULT: u64 = 2_000_000;
 const MAX_BLOCKS_DEFAULT: u64 = 2_000_000;
 // Measured worst case (`tests/index_amplification.rs`, `fast` profile): one `u8` range takes
@@ -15,8 +17,9 @@ const MAX_ATTRIBUTE_RANGES_DEFAULT: u64 = 1 << 23;
 
 /// Resource limits checked before reader allocations.
 ///
-/// The default accepts at most 256 attributes. The format and writer allow wider schemas;
-/// callers opening those files must pass suitable limits to `FormatReader::with_limits`.
+/// The default accepts at most 256 attributes, the same bound the writer enforces (RF-27).
+/// The limit only matters for files from elsewhere or older writers with wider schemas;
+/// callers opening those must pass suitable limits to `FormatReader::with_limits`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatReaderLimits {
     pub(crate) max_index_bytes: u64,
@@ -27,6 +30,8 @@ pub struct FormatReaderLimits {
     pub(crate) max_attribute_components: u32,
     pub(crate) max_string_bytes: u32,
     pub(crate) max_attribute_ranges: u64,
+    pub(crate) max_page_bytes: u64,
+    pub(crate) max_resident_pages: u32,
 }
 
 impl FormatReaderLimits {
@@ -66,6 +71,8 @@ impl FormatReaderLimits {
             max_attribute_components,
             max_string_bytes,
             max_attribute_ranges: MAX_ATTRIBUTE_RANGES_DEFAULT,
+            max_page_bytes: MAX_PAGE_BYTES_DEFAULT,
+            max_resident_pages: MAX_RESIDENT_PAGES_DEFAULT,
         })
     }
 
@@ -78,6 +85,29 @@ impl FormatReaderLimits {
         self.max_attribute_ranges = max;
         Ok(self)
     }
+
+    /// `v7.5-pre` page limits: the largest page a reader accepts and how many pages a lazy
+    /// reader keeps resident (checked with `PagedReader::check_resident_pages`).
+    pub fn with_page_limits(
+        mut self,
+        max_page_bytes: u64,
+        max_resident_pages: u32,
+    ) -> Result<Self, FormatError> {
+        if max_page_bytes == 0 || max_resident_pages == 0 {
+            return Err(FormatError::InvalidReaderLimits);
+        }
+        self.max_page_bytes = max_page_bytes;
+        self.max_resident_pages = max_resident_pages;
+        Ok(self)
+    }
+
+    pub fn max_page_bytes(&self) -> u64 {
+        self.max_page_bytes
+    }
+
+    pub fn max_resident_pages(&self) -> u32 {
+        self.max_resident_pages
+    }
 }
 
 impl Default for FormatReaderLimits {
@@ -87,10 +117,12 @@ impl Default for FormatReaderLimits {
             max_block_bytes: MAX_BLOCK_BYTES_DEFAULT,
             max_nodes: MAX_NODES_DEFAULT,
             max_blocks: MAX_BLOCKS_DEFAULT,
-            max_attributes: MAX_ATTRIBUTES_DEFAULT,
+            max_attributes: MAX_SCHEMA_ATTRIBUTES as u32,
             max_attribute_components: MAX_COMPONENTS_DEFAULT,
             max_string_bytes: MAX_STRING_BYTES_DEFAULT,
             max_attribute_ranges: MAX_ATTRIBUTE_RANGES_DEFAULT,
+            max_page_bytes: MAX_PAGE_BYTES_DEFAULT,
+            max_resident_pages: MAX_RESIDENT_PAGES_DEFAULT,
         }
     }
 }

@@ -5,6 +5,7 @@ use std::io::Cursor;
 
 use las::{Builder, Point, Writer, point::Format};
 use viewer_core::SpatialBounds;
+use viewer_format::FormatVersion;
 
 use crate::{
     ConvertError, ConvertOptions, LasFactory, MemBytes, MemSpoolStore, NoClock, SourceFactory,
@@ -60,6 +61,8 @@ fn las_bytes(points: &[[f64; 3]], compressed: bool, intensity: impl Fn(usize) ->
 
 fn options(points_per_block: u64, divisions: u8, ranges: usize) -> ConvertOptions {
     ConvertOptions::new(points_per_block, 0.01)
+        .unwrap()
+        .with_format_version(FormatVersion::V5)
         .unwrap()
         .with_spatial_divisions(divisions)
         .unwrap()
@@ -159,6 +162,7 @@ fn context(info: &crate::source::SourceInfo, divisions: u8, limit: u64) -> JobCo
     JobContext {
         point_limit: limit,
         spatial_divisions: divisions,
+        sample_grid: crate::options::DEFAULT_SAMPLE_GRID,
         frame: info.frame,
         layout: SpoolLayout::source(info),
         collect_diagnostics: false,
@@ -380,9 +384,14 @@ fn ranges_are_admitted_by_the_memory_budget_and_reported_in_the_estimate() {
     assert!(estimate(&bytes, single(options(4096, 2, 4))) > default);
     // A budget with no room for a second range keeps the estimate of one range.
     let tight = |ranges| {
-        single(ConvertOptions::with_memory_budget(4096, 0.01, default + 1_000_000).unwrap())
-            .with_root_partition_ranges(ranges)
-            .unwrap()
+        single(
+            ConvertOptions::with_memory_budget(4096, 0.01, default + 1_000_000)
+                .unwrap()
+                .with_format_version(FormatVersion::V5)
+                .unwrap(),
+        )
+        .with_root_partition_ranges(ranges)
+        .unwrap()
     };
     assert_eq!(estimate(&bytes, tight(8)), default);
 }
@@ -393,7 +402,7 @@ mod spool_hints {
     use super::*;
     use crate::{
         pipeline::spool_store::{LedgerTotals, SpoolAccounting, SpoolExtent},
-        spatial::{MAX_SPATIAL_DEPTH, consume_rank},
+        spatial::{MAX_CONSUME_DEPTH, consume_rank},
     };
 
     #[derive(Default)]
@@ -516,7 +525,23 @@ mod spool_hints {
     fn consume_rank_orders_deeper_first_then_by_key() {
         assert!(consume_rank(2, 60_000) < consume_rank(1, 0));
         assert!(consume_rank(1, 3) < consume_rank(1, 4));
-        assert_eq!(consume_rank(MAX_SPATIAL_DEPTH, 0), 1 << 16);
+        assert_eq!(consume_rank(MAX_CONSUME_DEPTH, 0), 1 << 16);
+    }
+
+    #[test]
+    fn consume_rank_covers_global_depths() {
+        use crate::pipeline::node_job::GLOBAL_MAX_INTERNAL_LEVEL;
+        for key in [0u16, 7, u16::MAX] {
+            for depth in 1..=GLOBAL_MAX_INTERNAL_LEVEL {
+                assert!(
+                    consume_rank(depth + 1, key) < consume_rank(depth, key),
+                    "depth {depth} key {key}"
+                );
+            }
+        }
+        for depth in 1..=GLOBAL_MAX_INTERNAL_LEVEL + 1 {
+            assert!(consume_rank(depth, 3) < consume_rank(depth, 4));
+        }
     }
 
     #[test]
@@ -554,7 +579,7 @@ mod spool_hints {
                 assert!(
                     log.consumptions
                         .iter()
-                        .any(|(rank, _)| rank >> 16 < MAX_SPATIAL_DEPTH),
+                        .any(|(rank, _)| rank >> 16 < MAX_CONSUME_DEPTH),
                     "{label}: no consumption below depth 1"
                 );
             }

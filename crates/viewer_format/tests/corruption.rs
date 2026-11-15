@@ -8,15 +8,15 @@ use std::cell::Cell;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use common::options;
+use common::{global_metadata, options};
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
     CoordinateFrame, DatasetMetadata, NodeId, PointBatch, SpatialBounds, SpatialHierarchy,
     SpatialNode,
 };
 use viewer_format::{
-    FormatError, FormatMetadata, FormatReader, FormatReaderLimits, FormatVersion, FormatWriter,
-    SourcePointBlock, crc32,
+    CrsRaw, CrsRecord, FormatError, FormatMetadata, FormatReader, FormatReaderLimits,
+    FormatVersion, FormatWriter, SourcePointBlock, SourceScaleOffset, crc32,
 };
 
 const BLOCKS: u64 = 3;
@@ -135,6 +135,38 @@ fn source_block(index: u64) -> SourcePointBlock {
     SourcePointBlock::new(block_id(index), points, colors, attributes)
 }
 
+/// `v7.4-pre` root at level 48 (side 2 CRS units, origin (10, 14, 18) m), so the fixture's
+/// local points in [0, 1) lie inside it. Carries a WKT CRS and a source scale/offset.
+fn global_fixture_metadata() -> FormatMetadata {
+    let total = BLOCKS * POINTS_PER_BLOCK as u64;
+    let prefix = [5, 7, 9].map(|k| (1_u64 << 47) + k);
+    let crs = CrsRecord::new(
+        "EPSG".to_owned(),
+        32632,
+        CrsRaw::Wkt("PROJCS[\"WGS 84 / UTM zone 32N\"]".to_owned()),
+    )
+    .unwrap();
+    let source =
+        SourceScaleOffset::new([0.01, 0.01, 0.001], [500_000.0, 4_000_000.0, 0.0]).unwrap();
+    global_metadata(
+        48,
+        prefix,
+        (0..BLOCKS).map(block_id).collect(),
+        total,
+        descriptors(),
+        crs,
+        Some(source),
+    )
+}
+
+fn multi_block_metadata_for(version: FormatVersion) -> FormatMetadata {
+    if version.uses_global_frame() {
+        global_fixture_metadata()
+    } else {
+        multi_block_metadata()
+    }
+}
+
 fn multi_block_metadata() -> FormatMetadata {
     let total = BLOCKS * POINTS_PER_BLOCK as u64;
     let bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
@@ -169,7 +201,7 @@ fn monolithic(version: FormatVersion) -> Fixture {
     let mut writer = FormatWriter::new_for_version(
         version,
         Cursor::new(Vec::new()),
-        multi_block_metadata(),
+        multi_block_metadata_for(version),
         options(),
     )
     .unwrap();
@@ -187,7 +219,7 @@ fn split(version: FormatVersion) -> Fixture {
         version,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
-        multi_block_metadata(),
+        multi_block_metadata_for(version),
         options(),
     )
     .unwrap();
@@ -287,8 +319,11 @@ fn repair(bytes: &mut [u8], target: Target) {
 fn sweep_versions(body: impl Fn(FormatVersion) -> Vec<String> + Sync) {
     let findings: Vec<String> = std::thread::scope(|scope| {
         let body = &body;
+        // `v7.5-pre` and `v7` have no monolithic layout and a paged index: `tests/v7_5.rs` covers
+        // their corruption.
         let handles: Vec<_> = FormatVersion::WRITABLE
             .into_iter()
+            .filter(|version| !version.uses_pages())
             .map(|version| scope.spawn(move || body(version)))
             .collect();
         handles
@@ -421,12 +456,37 @@ fn index_fields(index: &[u8], version: FormatVersion) -> Vec<Field> {
     };
     walker.raw("index_magic", 8);
     walker.raw("dataset_origin", 24);
+    let global = version.uses_global_frame();
+    if global {
+        walker.int("root_level", 4, true);
+        for _ in 0..3 {
+            walker.int("root_prefix", 8, true);
+        }
+        walker.raw("frame_origin_quanta", 24);
+        walker.raw("data_max_quanta", 24);
+    }
     let has_source_count = walker.bytes[walker.at] == 1;
     walker.raw("source_count_tag", 1);
     if has_source_count {
         walker.int("source_point_count", 8, false);
     }
+    if global {
+        let authority = walker.int("crs_authority_length", 4, true);
+        walker.raw("crs_authority", authority as usize);
+        walker.int("crs_code", 4, false);
+        walker.raw("crs_raw_encoding", 1);
+        let raw = walker.int("crs_raw_length", 4, true);
+        walker.raw("crs_raw", raw as usize);
+        let has_source_scale = walker.bytes[walker.at] == 1;
+        walker.raw("source_scale_offset_tag", 1);
+        if has_source_scale {
+            walker.raw("source_scale_offset", 48);
+        }
+    }
     for name in ["crs_length", "sampling_length"] {
+        if global && name == "crs_length" {
+            continue;
+        }
         let length = walker.int(name, 4, true);
         walker.raw("string_bytes", length as usize);
     }
@@ -455,9 +515,17 @@ fn index_fields(index: &[u8], version: FormatVersion) -> Vec<Field> {
             walker.int("node_parent", 8, false);
         }
         walker.int("node_level", 4, false);
+        if global {
+            for _ in 0..3 {
+                walker.int("node_prefix", 8, false);
+            }
+        }
         walker.raw("node_bounds", 48);
         walker.int("node_point_count", 8, true);
         walker.raw("node_geometric_error", 8);
+        if global {
+            walker.raw("node_spacing", 8);
+        }
         let blocks = walker.int("node_block_count", 4, true);
         for _ in 0..blocks {
             walker.int("node_block_id", 8, true);
@@ -480,8 +548,14 @@ fn index_fields(index: &[u8], version: FormatVersion) -> Vec<Field> {
             walker.raw("block_geometry_encoding", 1);
         }
         walker.raw("block_quantization_error", 8);
-        walker.raw("block_origin", 24);
-        walker.raw("block_scale", 24);
+        if global {
+            for _ in 0..3 {
+                walker.int("block_origin_quanta", 8, false);
+            }
+        } else {
+            walker.raw("block_origin", 24);
+            walker.raw("block_scale", 24);
+        }
         walker.raw("block_reserved_u8", 1);
         walker.int("block_reserved_u32", 4, false);
         for _ in 0..attributes + 2 {
@@ -644,6 +718,9 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
 fn node_count_beyond_index_bytes_is_rejected_without_reserving() {
     let default_max_nodes = 2_000_000_u64;
     for version in FormatVersion::WRITABLE {
+        if version.uses_pages() {
+            continue; // paged index: covered by `tests/v7_5.rs`
+        }
         let mut fixture = monolithic(version);
         let bytes = &mut fixture.primary;
         let footer = bytes.len() - FOOTER;

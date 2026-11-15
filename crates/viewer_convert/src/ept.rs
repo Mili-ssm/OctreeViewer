@@ -123,6 +123,18 @@ pub(super) fn convert(
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
+    if options.format_version().uses_pages() {
+        return Err(ConvertError::UnsupportedForPagedFormat {
+            what: "an EPT dataset (additive hierarchy)",
+            version: options.format_version(),
+        });
+    }
+    if options.format_version().uses_global_frame() {
+        return Err(ConvertError::UnsupportedForGlobalFormat {
+            what: "an EPT dataset (additive hierarchy)",
+            version: options.format_version(),
+        });
+    }
     if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
     }
@@ -474,7 +486,8 @@ pub(super) fn convert(
     );
     let writer_options =
         FormatWriterOptions::new(options.max_quantization_error(), 64 * 1024 * 1024)
-            .map_err(ConvertError::Format)?;
+            .map_err(ConvertError::Format)?
+            .with_row_order(options.row_order());
     let mut resume_cursor = (0_usize, 0_u64);
     let mut processed = 0_u64;
     let mut written_blocks = 0_u64;

@@ -23,6 +23,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fuzz_paged_reader"
+path = "fuzz_targets/fuzz_paged_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fuzz_las_preflight"
 path = "fuzz_targets/fuzz_las_preflight.rs"
 test = false

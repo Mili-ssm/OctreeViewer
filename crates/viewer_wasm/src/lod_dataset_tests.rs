@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use super::{
     CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
-    highest_priority_pending_block, load_priority, next_lod_stage, node_spacing,
+    highest_priority_pending_block, index_block_owners, load_priority, next_lod_stage,
     prefix_extension_points, prioritized_pending_blocks, priority_precedes,
     resident_target_plan_is_complete, reusable_build_match,
 };
@@ -1431,6 +1431,105 @@ fn a_resident_fine_update_selects_and_prepares_once() {
     assert_eq!(dataset.refinement_work.prepares, 3);
 }
 
+#[test]
+fn pending_priority_projects_only_visible_pending_owners() {
+    let bounds = |x| SpatialBounds::new([x, 0.0, 0.0], [x + 0.5, 0.5, 0.5]).unwrap();
+    let mut nodes = vec![
+        SpatialNode::new(
+            NodeId::new(1),
+            None,
+            0,
+            SpatialBounds::new([-100.0; 3], [100.0; 3]).unwrap(),
+            1,
+            0.0,
+            vec![BlockId::new(1)],
+        )
+        .unwrap(),
+    ];
+    for id in 2..10_006 {
+        let blocks = match id {
+            2 => vec![10, 11, 14],
+            3 => vec![12, 13, 14],
+            4 => vec![10], // A higher-scoring owner outside the frustum.
+            _ => vec![id + 100],
+        };
+        nodes.push(
+            SpatialNode::new(
+                NodeId::new(id),
+                Some(NodeId::new(1)),
+                1,
+                bounds(if id == 4 { -2.0 } else { 1.0 }),
+                1,
+                0.0,
+                blocks.into_iter().map(BlockId::new).collect(),
+            )
+            .unwrap(),
+        );
+    }
+    let hierarchy = SpatialHierarchy::new(nodes, Vec::new(), None).unwrap();
+    let frustum =
+        SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 0.0).unwrap()]).unwrap();
+    let pending = [13, 10, 99_999, 14, 12, 11, 10].map(BlockId::new);
+    let uncovered = [BlockId::new(11)].into_iter().collect();
+    let owners = index_block_owners(&hierarchy);
+    let calls = std::cell::Cell::new(0);
+    let project = |node: &SpatialNode| {
+        calls.set(calls.get() + 1);
+        node.id().get() as f64
+    };
+    assert!(
+        prioritized_pending_blocks(&hierarchy, &owners, &[], &uncovered, &frustum, project)
+            .is_empty()
+    );
+    assert_eq!(calls.get(), 0);
+    assert_eq!(
+        highest_priority_pending_block(&hierarchy, &owners, &[], &uncovered, &frustum, project),
+        None
+    );
+    assert_eq!(calls.get(), 0);
+    let ordered =
+        prioritized_pending_blocks(&hierarchy, &owners, &pending, &uncovered, &frustum, project);
+    assert_eq!(
+        ordered,
+        vec![
+            (BlockId::new(11), 2.0),
+            (BlockId::new(12), 3.0),
+            (BlockId::new(13), 3.0),
+            (BlockId::new(14), 3.0),
+            (BlockId::new(10), 2.0)
+        ]
+    );
+    assert_eq!(calls.get(), 2);
+    let mut old_scores = std::collections::HashMap::<BlockId, f64>::new();
+    calls.set(0);
+    for node in hierarchy.query_frustum(frustum.clone()) {
+        let score = load_priority(project(node), node);
+        for block in node.blocks().iter().filter(|block| pending.contains(block)) {
+            old_scores
+                .entry(*block)
+                .and_modify(|current| {
+                    if score.total_cmp(current).is_gt() {
+                        *current = score;
+                    }
+                })
+                .or_insert(score);
+        }
+    }
+    assert_eq!(calls.get(), 10_004);
+    assert_eq!(old_scores.len(), ordered.len());
+    for (block, score) in &ordered {
+        assert_eq!(old_scores.get(block), Some(score));
+    }
+    calls.set(0);
+    assert_eq!(
+        highest_priority_pending_block(
+            &hierarchy, &owners, &pending, &uncovered, &frustum, project
+        ),
+        Some(ordered[0].0)
+    );
+    assert_eq!(calls.get(), 2);
+}
+
 /// Three equal leaves (geometric error 0) at increasing distance from the camera. Block ids
 /// ascend away from the camera, so the old tie-break by `BlockId` would load the farthest first.
 #[test]
@@ -1479,20 +1578,108 @@ fn pending_leaf_priority_follows_the_screen_space_metric_not_block_ids() {
     let project = |node: &SpatialNode| {
         camera.projected_error_pixels(
             node.bounds(),
-            node_spacing(node.bounds()),
+            node.representative_spacing(),
             [0.0; 3],
             viewport,
         )
     };
     let pending = [BlockId::new(104), BlockId::new(103), BlockId::new(102)];
-    let ordered = prioritized_pending_blocks(&hierarchy, &pending, &frustum, project);
+    let owners = index_block_owners(&hierarchy);
+    let ordered = prioritized_pending_blocks(
+        &hierarchy,
+        &owners,
+        &pending,
+        &std::collections::HashSet::new(),
+        &frustum,
+        project,
+    );
     let order = ordered.iter().map(|(id, _)| id.get()).collect::<Vec<_>>();
     assert_eq!(order, [102, 103, 104]);
     assert!(ordered[0].1 > ordered[1].1 && ordered[1].1 > ordered[2].1);
     assert_eq!(
-        highest_priority_pending_block(&hierarchy, &pending, &frustum, project),
+        highest_priority_pending_block(
+            &hierarchy,
+            &owners,
+            &pending,
+            &std::collections::HashSet::new(),
+            &frustum,
+            project
+        ),
         Some(BlockId::new(102))
     );
+}
+
+#[test]
+fn uncovered_multiblock_node_precedes_covered_refinement_in_both_load_modes() {
+    let bounds = |x: f64| SpatialBounds::new([x, 0.0, 0.0], [x + 20.0, 20.0, 20.0]).unwrap();
+    let node = |id, parent: Option<u64>, level, x, blocks: Vec<u64>| {
+        SpatialNode::new(
+            NodeId::new(id),
+            parent.map(NodeId::new),
+            level,
+            bounds(x),
+            1,
+            0.0,
+            blocks.into_iter().map(BlockId::new).collect(),
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            SpatialNode::new(
+                NodeId::new(1),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [100.0, 20.0, 20.0]).unwrap(),
+                1,
+                0.0,
+                vec![BlockId::new(10)],
+            )
+            .unwrap(),
+            node(2, Some(1), 1, 80.0, vec![11]),
+            node(4, Some(2), 2, 80.0, vec![12]),
+            node(3, Some(1), 1, 0.0, vec![13, 14]),
+        ],
+        Vec::new(),
+        None,
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    let mut camera = OrbitCamera::default();
+    let viewport = [800, 600];
+    assert!(camera.fit(
+        SceneBounds {
+            min: [0.0; 3],
+            max: [100.0, 20.0, 20.0]
+        },
+        viewport
+    ));
+    assert!(camera.set_pose([350.0, 10.0, 10.0], [50.0, 10.0, 10.0]));
+    let view = viewer_render_wgpu::ViewProjection::new(camera, viewport, 1.0, Default::default());
+    let make_dataset = || {
+        let mut dataset = LodDataset::new([0.0; 3], hierarchy.clone(), usize::MAX).unwrap();
+        dataset.insert_block(block(11)).unwrap();
+        dataset
+    };
+    let mut async_dataset = make_dataset();
+    let mut order = Vec::new();
+    let update = async_dataset
+        .update_view_progressive(&view, 4.0, 4.0, 4.0, Some(&mut order), |_| Ok(None))
+        .unwrap();
+    assert_eq!(update.stats.uncovered_nodes, 1);
+    assert_eq!(
+        order,
+        [BlockId::new(13), BlockId::new(14), BlockId::new(12)]
+    );
+    let mut sync_dataset = make_dataset();
+    let mut requested = None;
+    sync_dataset
+        .update_view_progressive(&view, 4.0, 4.0, 4.0, None, |id| {
+            requested = Some(id);
+            Ok(None)
+        })
+        .unwrap();
+    assert_eq!(requested, Some(BlockId::new(13)));
 }
 
 /// Same bounds and camera for every node, so only the point count and the error argument vary.
@@ -1709,6 +1896,7 @@ mod binding_parity {
         instance_count: Option<usize>,
         block_ids: Option<Vec<BlockId>>,
         rendered_voxels: usize,
+        stage: f64,
         pending: Vec<BlockId>,
         async_order: Vec<BlockId>,
         needs_refinement: bool,
@@ -1716,6 +1904,7 @@ mod binding_parity {
 
     enum Op {
         Insert(u64),
+        EvictAll,
         /// Inserts a block with a `temperature` column, painted when an attribute is selected.
         InsertAttributed(u64),
         Update {
@@ -1758,6 +1947,7 @@ mod binding_parity {
             source.id(),
             points,
             Some(column),
+            None,
             &attribute_schema(),
             selected,
             range,
@@ -1803,14 +1993,14 @@ mod binding_parity {
             instance_count: scene.as_ref().map(|s| s.voxels.scene.instance_count()),
             block_ids: scene.map(|s| s.block_ids),
             rendered_voxels: stats.rendered_voxels,
+            stage: stats.lod_stage_pixels,
             pending: stats.pending_block_ids.clone(),
             async_order,
             needs_refinement,
         }
     }
 
-    /// The state `WasmVoxelViewer` keeps around the shared functions: a moved camera or a new
-    /// target restarts at the coarse stage, an inserted block asks for a refinement.
+    /// The state `WasmVoxelViewer` keeps around the shared functions.
     struct ViewerPath {
         dataset: LodDataset,
         reader: Option<Vec<PointBlock>>,
@@ -1825,8 +2015,11 @@ mod binding_parity {
 
     impl ViewerPath {
         fn update(&mut self, camera: OrbitCamera, target: f64) -> Observed {
-            if self.camera != Some(camera) || self.target != Some(target) {
+            if self.target != Some(target) {
                 self.stage = None;
+            }
+            if self.camera != Some(camera) {
+                self.dirty = true;
             }
             self.camera = Some(camera);
             self.target = Some(target);
@@ -1884,9 +2077,14 @@ mod binding_parity {
         let camera = camera_from_transport(&camera.to_f64_array()).unwrap();
         let visual_scale = core.session().dataset().visual_scale();
         let update = core
-            .update(camera, [800, 600], visual_scale, target, |blocks, id| {
-                Ok(blocks.iter().find(|b| b.id() == id).cloned())
-            })
+            .update(
+                camera,
+                [800, 600],
+                visual_scale,
+                target,
+                |blocks, id| Ok(blocks.iter().find(|b| b.id() == id).cloned()),
+                |_, _| Err("the test dataset has no pages".to_owned()),
+            )
             .unwrap();
         assert!(update.epoch >= 1);
         observe(
@@ -1926,6 +2124,10 @@ mod binding_parity {
         let mut seen = Vec::new();
         for (step, op) in ops.iter().enumerate() {
             match op {
+                Op::EvictAll => {
+                    viewer.dataset.clear_loaded_blocks();
+                    builder.session_mut().dataset_mut().clear_loaded_blocks();
+                }
                 Op::Insert(id) => {
                     let block = blocks.iter().find(|b| b.id().get() == *id).unwrap().clone();
                     viewer.dataset.insert_block(block.clone()).unwrap();
@@ -1983,6 +2185,59 @@ mod binding_parity {
     }
 
     #[test]
+    fn alternating_cameras_keep_published_stage_with_missing_blocks() {
+        let seen = run_parity(
+            &[
+                update(0, 4.0),
+                Op::Insert(11),
+                Op::Insert(12),
+                Op::Insert(13),
+                update(0, 4.0),
+                update(0, 4.0),
+                update(0, 4.0),
+                Op::EvictAll,
+                update(1, 4.0),
+                update(0, 4.0),
+                update(1, 4.0),
+            ],
+            false,
+        );
+        assert!(seen.iter().skip(4).all(|o| !o.pending.is_empty()));
+        for pair in seen.windows(2) {
+            assert!(
+                pair[1].stage <= pair[0].stage,
+                "stages: {:?}",
+                seen.iter().map(|o| o.stage).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn target_change_and_new_dataset_restart_nonresident_stage() {
+        let seen = run_parity(
+            &[
+                update(0, 4.0),
+                Op::Insert(11),
+                Op::Insert(12),
+                Op::Insert(13),
+                update(0, 4.0),
+                update(0, 4.0),
+                update(0, 4.0),
+                Op::EvictAll,
+                update(1, 4.0),
+                update(1, 2.0),
+            ],
+            false,
+        );
+        assert_eq!(seen[4].stage, 4.0);
+        assert!(!seen[5].pending.is_empty());
+        assert_eq!(seen[5].stage, 16.0);
+        let fresh_dataset = run_parity(&[update(1, 2.0)], false);
+        assert!(!fresh_dataset[0].pending.is_empty());
+        assert_eq!(fresh_dataset[0].stage, 16.0);
+    }
+
+    #[test]
     fn builder_matches_the_viewer_while_the_host_inserts_blocks() {
         let ops = [
             update(0, 4.0),
@@ -1995,7 +2250,7 @@ mod binding_parity {
             update(0, 4.0),
             update(0, 4.0),
             update(0, 4.0),
-            // A moved camera restarts at the coarse stage.
+            // Camera movement preserves the current stage.
             update(1, 4.0),
             update(1, 4.0),
             update(2, 4.0),
@@ -2103,8 +2358,15 @@ mod binding_parity {
         let camera = cameras()[0];
         let scale = core.session().dataset().visual_scale();
         let mut run = |viewport: [u32; 2], scale: f64, target: f64| {
-            core.update(camera, viewport, scale, target, |_, _| Ok(None))
-                .err()
+            core.update(
+                camera,
+                viewport,
+                scale,
+                target,
+                |_, _| Ok(None),
+                |_, _| Err(String::new()),
+            )
+            .err()
         };
         assert!(run([800, 600], scale, 0.1).is_some());
         assert!(run([800, 600], scale, f64::NAN).is_some());
@@ -2148,6 +2410,7 @@ mod binding_parity {
                 source.id(),
                 source.points().clone(),
                 None,
+                None,
                 &[],
                 selected,
                 None,
@@ -2161,4 +2424,333 @@ mod binding_parity {
         assert!(assemble(None, 1).is_err());
         assert!(assemble(Some((0, 0)), usize::MAX).is_err());
     }
+}
+
+#[test]
+fn an_unloaded_anchor_holds_the_stage_and_is_requested() {
+    let (_, blocks) = native_dataset(400);
+    let root = SpatialNode::new(
+        NodeId::new(1),
+        None,
+        0,
+        SpatialBounds::new([0.0; 3], [64.0; 3]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(11)],
+    )
+    .unwrap();
+    let mut hierarchy = SpatialHierarchy::new(vec![root], Vec::new(), Some(400)).unwrap();
+    hierarchy.mark_unloaded(NodeId::new(1)).unwrap();
+    let mut dataset =
+        LodDataset::new([0.0; 3], hierarchy, 8 * blocks[0].estimated_memory_bytes()).unwrap();
+    dataset.insert_block(blocks[0].clone()).unwrap();
+
+    let update = dataset
+        .update_view_progressive(&native_view(), 4.0, 4.0, 4.0, None, |_| Ok(None))
+        .unwrap();
+    // The root block is resident and covers the view, yet its page of children is missing.
+    assert!(update.stats.pending_block_ids.is_empty());
+    assert_eq!(update.stats.pending_page_anchors, [NodeId::new(1)]);
+    assert!(update.stats.has_pending_loads());
+    assert_eq!(
+        next_lod_stage(Some(8.0), 4.0, update.stats.has_pending_loads(), true),
+        (Some(8.0), true)
+    );
+
+    let target = dataset
+        .metadata
+        .hierarchy()
+        .select_lod(
+            &SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 1000.0).unwrap()])
+                .unwrap(),
+            LodSelectionConfig::new(1.0, u64::MAX).unwrap(),
+            |_| 100.0,
+        )
+        .unwrap();
+    let plan = LodTransitionPlanner::new().prepare(
+        dataset.metadata.hierarchy(),
+        &target,
+        &DecodedBlockCache::new(usize::MAX),
+    );
+    assert!(!resident_target_plan_is_complete(&target, &plan));
+}
+
+/// Root (id 1) with two unloaded anchors 2 and 3; pages below them hold one child each.
+fn paged_dataset(budget: usize) -> (LodDataset, std::rc::Rc<std::cell::RefCell<Vec<NodeId>>>) {
+    let node = |id: u64, parent: Option<u64>, level: u32, min: f64, max: f64| {
+        SpatialNode::new(
+            NodeId::new(id),
+            parent.map(NodeId::new),
+            level,
+            SpatialBounds::new([min, 0.0, 0.0], [max, 8.0, 8.0]).unwrap(),
+            10,
+            0.0,
+            vec![BlockId::new(id)],
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            node(1, None, 0, 0.0, 8.0),
+            node(2, Some(1), 1, 0.0, 4.0),
+            node(3, Some(1), 1, 4.0, 8.0),
+        ],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+    let released = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let sink = std::rc::Rc::clone(&released);
+    let dataset = LodDataset::new([0.0; 3], hierarchy, 1 << 20)
+        .unwrap()
+        .with_pages(
+            &[NodeId::new(2), NodeId::new(3)],
+            Box::new(move |anchor| sink.borrow_mut().push(anchor)),
+            budget,
+        )
+        .unwrap();
+    (dataset, released)
+}
+
+fn page_below(anchor: u64, number: u32, child: u64, min: f64, max: f64) -> crate::PageInsert {
+    let node = SpatialNode::new(
+        NodeId::new(child),
+        Some(NodeId::new(anchor)),
+        2,
+        SpatialBounds::new([min, 0.0, 0.0], [max, 4.0, 4.0]).unwrap(),
+        5,
+        0.0,
+        vec![BlockId::new(child)],
+    )
+    .unwrap();
+    crate::PageInsert {
+        anchor: NodeId::new(anchor),
+        number,
+        nodes: vec![node],
+        unloaded: Vec::new(),
+        bytes: 100,
+    }
+}
+
+#[test]
+fn grafting_beyond_the_page_budget_evicts_the_oldest_unpinned_page() {
+    let (mut dataset, released) = paged_dataset(150);
+    dataset.graft_page(page_below(2, 1, 20, 0.0, 2.0)).unwrap();
+    assert!(dataset.references_block(BlockId::new(20)));
+    assert_eq!(dataset.resident_node_count(), 4);
+    // The second page needs room: the first one carries no retained node, so it goes.
+    dataset.graft_page(page_below(3, 2, 30, 4.0, 6.0)).unwrap();
+    assert_eq!(*released.borrow(), [NodeId::new(2)]);
+    assert!(!dataset.references_block(BlockId::new(20)));
+    assert!(dataset.references_block(BlockId::new(30)));
+    assert_eq!(dataset.page_stats(), (1, 100, 1));
+}
+
+#[test]
+fn the_stored_reference_spacing_does_not_change_as_pages_are_grafted_or_evicted() {
+    let (dataset, _) = paged_dataset(150);
+    // Paged without a stored value: the leaves are not resident, so nothing is invented.
+    assert_eq!(dataset.reference_spacing(), None);
+    let mut dataset = dataset.with_reference_spacing(0.25);
+    dataset.graft_page(page_below(2, 1, 20, 0.0, 2.0)).unwrap();
+    assert_eq!(dataset.reference_spacing(), Some(0.25));
+    dataset.graft_page(page_below(3, 2, 30, 4.0, 6.0)).unwrap();
+    assert_eq!(dataset.page_stats().2, 1, "the first page was evicted");
+    assert_eq!(dataset.reference_spacing(), Some(0.25));
+}
+
+#[test]
+fn a_whole_hierarchy_computes_its_reference_spacing_from_all_leaves() {
+    let (dataset, _) = native_dataset(400);
+    // Without a stored value the dataset computes the median of its leaves' spacing.
+    assert_eq!(
+        dataset.reference_spacing(),
+        dataset.metadata.hierarchy().reference_spacing()
+    );
+    assert!(dataset.reference_spacing().is_some());
+}
+
+#[test]
+fn pinned_pages_are_never_evicted_and_a_full_budget_is_an_error() {
+    let (mut dataset, released) = paged_dataset(150);
+    dataset.graft_page(page_below(2, 1, 20, 0.0, 2.0)).unwrap();
+    // The retained cut holds the page's node: nothing may be evicted.
+    dataset.insert_block(block(20)).unwrap();
+    dataset.insert_block(block(3)).unwrap();
+    let target = dataset
+        .metadata
+        .hierarchy()
+        .select_lod(
+            &SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 1000.0).unwrap()])
+                .unwrap(),
+            LodSelectionConfig::new(1.0, u64::MAX).unwrap(),
+            |_| 100.0,
+        )
+        .unwrap();
+    dataset
+        .planner
+        .update(dataset.metadata.hierarchy(), &target, &mut dataset.cache);
+    assert!(dataset.planner.retained_nodes().contains(&NodeId::new(20)));
+    let error = dataset
+        .graft_page(page_below(3, 2, 30, 4.0, 6.0))
+        .unwrap_err();
+    assert!(
+        matches!(error, LodDatasetError::PageBudget { pinned: 100, .. }),
+        "{error}"
+    );
+    // Only the rejected page is released; the pinned one stays.
+    assert_eq!(*released.borrow(), [NodeId::new(3)]);
+    assert!(dataset.references_block(BlockId::new(20)));
+    assert!(!dataset.references_block(BlockId::new(30)));
+}
+
+/// A synchronous reader that serves pages: the driver reads and grafts the pages the cut lacks and
+/// repeats the step until none is missing.
+#[test]
+fn a_synchronous_update_reads_the_pages_the_cut_lacks() {
+    use crate::lod_driver::{LodStep, SceneSink, update_lod_view_paged};
+
+    struct Discard;
+    impl SceneSink for Discard {
+        fn publish(&mut self, _: crate::LodBuiltScene) -> Result<(), String> {
+            Ok(())
+        }
+        fn base_cut_exceeded(&mut self, _: &LodDataset) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    let (_, blocks) = native_dataset(400);
+    let root = SpatialNode::new(
+        NodeId::new(1),
+        None,
+        0,
+        SpatialBounds::new([0.0; 3], [64.0; 3]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(11)],
+    )
+    .unwrap();
+    let mut hierarchy = SpatialHierarchy::new(vec![root], Vec::new(), Some(400)).unwrap();
+    hierarchy.mark_unloaded(NodeId::new(1)).unwrap();
+    let mut dataset = LodDataset::new([0.0; 3], hierarchy, 8 * blocks[0].estimated_memory_bytes())
+        .unwrap()
+        .with_pages(&[NodeId::new(1)], Box::new(|_| {}), 1 << 20)
+        .unwrap();
+    dataset.insert_block(blocks[0].clone()).unwrap();
+
+    let view = native_view();
+    let step = LodStep {
+        view: &view,
+        target_pixels: 4.0,
+        track_async_order: false,
+        can_load_blocks: true,
+    };
+    let mut reader = Vec::<NodeId>::new();
+    let child = SpatialNode::new(
+        NodeId::new(2),
+        Some(NodeId::new(1)),
+        1,
+        SpatialBounds::new([0.0; 3], [32.0, 64.0, 64.0]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(12)],
+    )
+    .unwrap();
+    let (mut stage, mut dirty) = (None, false);
+    let result = update_lod_view_paged(
+        &mut dataset,
+        &step,
+        &mut stage,
+        &mut dirty,
+        &mut Discard,
+        Some(&mut reader),
+        &mut |_, _| Ok(None),
+        &mut |loads: &mut Vec<NodeId>, anchor| {
+            loads.push(anchor);
+            Ok(crate::PageInsert {
+                anchor,
+                number: 1,
+                nodes: vec![child.clone()],
+                unloaded: Vec::new(),
+                bytes: 100,
+            })
+        },
+    )
+    .unwrap();
+    assert_eq!(reader, [NodeId::new(1)]);
+    assert!(dataset.references_block(BlockId::new(12)));
+    assert!(result.stats.pending_page_anchors.is_empty());
+}
+
+/// A page that cannot be grafted leaves its anchor pending for good: the stats must say the page
+/// budget is the reason, so hosts do not report the target as reached.
+#[test]
+fn a_page_that_does_not_fit_is_reported_as_page_budget_exhausted() {
+    let (_, blocks) = native_dataset(400);
+    let root = SpatialNode::new(
+        NodeId::new(1),
+        None,
+        0,
+        SpatialBounds::new([0.0; 3], [64.0; 3]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(11)],
+    )
+    .unwrap();
+    let mut hierarchy = SpatialHierarchy::new(vec![root], Vec::new(), Some(400)).unwrap();
+    hierarchy.mark_unloaded(NodeId::new(1)).unwrap();
+    let released = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let sink = std::rc::Rc::clone(&released);
+    let mut dataset = LodDataset::new([0.0; 3], hierarchy, 8 * blocks[0].estimated_memory_bytes())
+        .unwrap()
+        .with_pages(
+            &[NodeId::new(1)],
+            Box::new(move |anchor| sink.borrow_mut().push(anchor)),
+            50,
+        )
+        .unwrap();
+    dataset.insert_block(blocks[0].clone()).unwrap();
+    let view = native_view();
+    let update = |dataset: &mut LodDataset| {
+        dataset
+            .update_view_progressive(&view, 4.0, 4.0, 4.0, None, |_| Ok(None))
+            .unwrap()
+            .stats
+    };
+    let stats = update(&mut dataset);
+    assert_eq!(stats.pending_page_anchors, [NodeId::new(1)]);
+    assert!(!stats.page_budget_exhausted);
+
+    let child = SpatialNode::new(
+        NodeId::new(2),
+        Some(NodeId::new(1)),
+        1,
+        SpatialBounds::new([0.0; 3], [32.0, 64.0, 64.0]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(12)],
+    )
+    .unwrap();
+    let page = |bytes| crate::PageInsert {
+        anchor: NodeId::new(1),
+        number: 1,
+        nodes: vec![child.clone()],
+        unloaded: Vec::new(),
+        bytes,
+    };
+    assert!(matches!(
+        dataset.graft_page(page(100)),
+        Err(LodDatasetError::PageBudget { .. })
+    ));
+    // The reader forgets the rejected page so that a later retry can read it again.
+    assert_eq!(*released.borrow(), [NodeId::new(1)]);
+    let stats = update(&mut dataset);
+    assert_eq!(stats.pending_page_anchors, [NodeId::new(1)]);
+    assert!(stats.page_budget_exhausted);
+
+    // A page that fits clears the condition.
+    dataset.graft_page(page(40)).unwrap();
+    let stats = update(&mut dataset);
+    assert!(!stats.page_budget_exhausted);
 }

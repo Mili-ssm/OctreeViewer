@@ -1,0 +1,26 @@
+s {'ttt_lodlog': 898.8, 'ttt_status': 850, 'rt_p95': 1.1, 'rt_max': 3, 'age_p95': 258, 'age_max': 307, 'sceneBuilds': 118, 'voxelSourcePoints': 24495862, 'pss_peak_mib': 572.0, 'buildMs': 21365.0, 'digest': '7c066f3d2317d1e9', 'wasm': '8451a21c', 'mode': 'timing'}
+s {'ttt_lodlog': 805.4, 'ttt_status': nan, 'rt_p95': 1.2, 'rt_max': 3.8, 'age_p95': 274, 'age_max': 456, 'sceneBuilds': 105, 'voxelSourcePoints': 21537107, 'pss_peak_mib': 573.6, 'buildMs': 21562.2, 'digest': '7c066f3d2317d1e9', 'wasm': '8451a21c', 'mode': 'timing'}
+s {'ttt_lodlog': 891.6, 'ttt_status': nan, 'rt_p95': 1.1, 'rt_max': 3.4, 'age_p95': 277.4, 'age_max': 369.8, 'sceneBuilds': 100, 'voxelSourcePoints': 20617464, 'pss_peak_mib': 576.9, 'buildMs': 21472.7, 'digest': '7c066f3d2317d1e9', 'wasm': '8451a21c', 'mode': 'timing'}
+  s ttt_lodlog: median 891.6 [805.4-898.8] n=3
+  s ttt_status: median 850.0 [850.0-850.0] n=1
+  s rt_p95: median 1.1 [1.1-1.2] n=3
+  s rt_max: median 3.4 [3.0-3.8] n=3
+  s age_p95: median 274.0 [258.0-277.4] n=3
+  s age_max: median 369.8 [307.0-456.0] n=3
+  s sceneBuilds: median 105.0 [100.0-118.0] n=3
+  s voxelSourcePoints: median 21537107.0 [20617464.0-24495862.0] n=3
+  s pss_peak_mib: median 573.6 [572.0-576.9] n=3
+  s buildMs: median 21472.7 [21365.0-21562.2] n=3
+o3 {'ttt_lodlog': 735.0, 'ttt_status': 699, 'rt_p95': 1.2, 'rt_max': 16.7, 'age_p95': 244.8, 'age_max': 427.5, 'sceneBuilds': 127, 'voxelSourcePoints': 26401581, 'pss_peak_mib': 578.7, 'buildMs': 21554.7, 'digest': '7c066f3d2317d1e9', 'wasm': '6fb14176', 'mode': 'timing'}
+o3 {'ttt_lodlog': 752.7, 'ttt_status': nan, 'rt_p95': 1.2, 'rt_max': 5.7, 'age_p95': 237.4, 'age_max': 293.8, 'sceneBuilds': 116, 'voxelSourcePoints': 23883072, 'pss_peak_mib': 579.4, 'buildMs': 21329.3, 'digest': '7c066f3d2317d1e9', 'wasm': '6fb14176', 'mode': 'timing'}
+o3 {'ttt_lodlog': 506.8, 'ttt_status': 477, 'rt_p95': 1.1, 'rt_max': 3, 'age_p95': 227, 'age_max': 317.5, 'sceneBuilds': 142, 'voxelSourcePoints': 29308388, 'pss_peak_mib': 565.4, 'buildMs': 21283.2, 'digest': '7c066f3d2317d1e9', 'wasm': '6fb14176', 'mode': 'timing'}
+  o3 ttt_lodlog: median 735.0 [506.8-752.7] n=3
+  o3 ttt_status: median 588.0 [477.0-699.0] n=2
+  o3 rt_p95: median 1.2 [1.1-1.2] n=3
+  o3 rt_max: median 5.7 [3.0-16.7] n=3
+  o3 age_p95: median 237.4 [227.0-244.8] n=3
+  o3 age_max: median 317.5 [293.8-427.5] n=3
+  o3 sceneBuilds: median 127.0 [116.0-142.0] n=3
+  o3 voxelSourcePoints: median 26401581.0 [23883072.0-29308388.0] n=3
+  o3 pss_peak_mib: median 578.7 [565.4-579.4] n=3
+  o3 buildMs: median 21329.3 [21283.2-21554.7] n=3

@@ -57,10 +57,26 @@ def main() -> None:
     metrics_js = (HOST / "benchmark-metrics.mjs").read_text(encoding="utf-8")
     rendering_budget_js = (HOST / "rendering-budget.mjs").read_text(encoding="utf-8")
     viewer_api_js = (HOST / "viewer-api.mjs").read_text(encoding="utf-8")
+    canvas_replacement_js = (HOST / "canvas-replacement.mjs").read_text(encoding="utf-8")
     converter_api_js = (HOST / "converter-api.mjs").read_text(encoding="utf-8")
     converter_worker_js = (HOST / "converter-worker.js").read_text(encoding="utf-8")
     spool_tiers_js = (HOST / "spool-tiers.mjs").read_text(encoding="utf-8")
     converter_ui_js = (HOST / "converter-ui.mjs").read_text(encoding="utf-8")
+    range_source_js = (HOST / "http-range-source.mjs").read_text(encoding="utf-8")
+    inline_range_source_js = re.sub(r"^export ", "", range_source_js, flags=re.MULTILINE)
+    range_source_import = 'import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./http-range-source.mjs";\n'
+    worker_js = require_replace(worker_js, range_source_import, "", "range source import")
+    build_worker_js = require_replace(build_worker_js, range_source_import, "", "build worker range source import")
+    # The dynamic px controller is a small pure module: inline it in place of its import.
+    px_controller_js = (HOST / "px-controller.mjs").read_text(encoding="utf-8")
+    inline_px_controller_js = re.sub(r"^export ", "", px_controller_js, flags=re.MULTILINE)
+    px_controller_import = 'import { WINDOW_MS as PX_WINDOW_MS, createPxController } from "./px-controller.mjs";\n'
+    worker_js = require_replace(
+        worker_js,
+        px_controller_import,
+        inline_px_controller_js + "\nconst PX_WINDOW_MS = WINDOW_MS;\n",
+        "px controller import",
+    )
     embed_worker_js = worker_js
     embed_build_worker_js = build_worker_js
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
@@ -97,6 +113,8 @@ def main() -> None:
         "(value) => value.charCodeAt(0));\n"
         + wasm_js
         + "\n"
+        + inline_range_source_js
+        + "\n"
         + worker_js
     )
     # The build worker gets the WASM bytes from the viewer worker (init message), not a second copy.
@@ -106,7 +124,7 @@ def main() -> None:
     build_worker_js = require_replace(
         build_worker_js, "wasmExports = await init(", "wasmExports = await __wbg_init(", "build worker WASM init"
     )
-    build_worker_source = wasm_js + "\n" + build_worker_js
+    build_worker_source = wasm_js + "\n" + inline_range_source_js + "\n" + build_worker_js
     converter_worker_js = require_replace(
         converter_worker_js,
         wasm_import_line(converter_worker_js, "converter WASM import"),
@@ -145,7 +163,7 @@ def main() -> None:
     )
     main_js = require_replace(
         main_js,
-        'import {\n    FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, measureFrameRate, summarizeFrameReplies,\n} from "./benchmark-metrics.mjs";\n',
+        'import {\n    FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,\n    summarizeFrameReplies,\n} from "./benchmark-metrics.mjs";\n',
         "",
         "benchmark metrics import",
     )
@@ -157,6 +175,12 @@ def main() -> None:
     )
     main_js = require_replace(
         main_js,
+        'import { replaceCanvasElement } from "./canvas-replacement.mjs";\n',
+        "",
+        "canvas replacement import",
+    )
+    main_js = require_replace(
+        main_js,
         'import { createConverter } from "./converter-api.mjs";\n',
         "",
         "converter API import",
@@ -164,7 +188,7 @@ def main() -> None:
     converter_api_js = converter_api_js.replace("export function createConverter", "function createConverter")
     main_js = require_replace(
         main_js,
-        'import {\n    FORMAT_VERSIONS, progressText, spoolText, timingsText, validateConverterOptions,\n} from "./converter-ui.mjs";\n',
+        'import {\n    FORMAT_VERSIONS, OPTION_DEFAULTS, fixedFrameDisplayValue, fixedFrameHint, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,\n} from "./converter-ui.mjs";\n',
         "",
         "converter UI import",
     )
@@ -229,6 +253,8 @@ def main() -> None:
         + metrics_js.replace("export const ", "const ").replace("export function ", "function ")
         + "\n"
         + rendering_budget_js.replace("export const ", "const ").replace("export function ", "function ")
+        + "\n"
+        + canvas_replacement_js.replace("export function ", "function ")
         + "\n"
         + inline_spool_tiers_js
         + "\n"
@@ -302,6 +328,7 @@ def main() -> None:
     (embed_dir / "viewer-worker.js").write_text(embed_worker_js, encoding="utf-8")
     (embed_dir / "build-worker.js").write_text(embed_build_worker_js, encoding="utf-8")
     (embed_dir / "rendering-budget.mjs").write_text(rendering_budget_js, encoding="utf-8")
+    (embed_dir / "canvas-replacement.mjs").write_text(canvas_replacement_js, encoding="utf-8")
     (embed_dir / "viewer_wasm.js").write_text(embed_wasm_js, encoding="utf-8")
     (embed_dir / "viewer_wasm_bg.wasm").write_bytes(wasm_path.read_bytes())
     (embed_dir / "README.txt").write_text(

@@ -1,15 +1,19 @@
+#![forbid(unsafe_code)]
 //! Viewer orchestration and browser bindings for point import, conversion and presentation.
 //! `ViewerController` manages in-memory scenes and `LodDataset` manages streamed blocks;
 //! browser bindings adapt these contracts to workers, typed arrays and WebGPU surfaces.
 
 #[cfg(any(target_arch = "wasm32", test))]
 mod block_loading;
+#[cfg(any(target_arch = "wasm32", test))]
+mod cells_glue;
 mod controller;
 mod lod_dataset;
 #[cfg(any(target_arch = "wasm32", test))]
 mod lod_driver;
 #[cfg(target_arch = "wasm32")]
 mod lod_metadata;
+mod lod_pages;
 #[cfg(target_arch = "wasm32")]
 mod lod_request_scheduler;
 #[cfg(any(target_arch = "wasm32", test))]
@@ -21,8 +25,11 @@ pub use controller::{
     RenderInstanceSnapshot, ViewerConfig, ViewerController, ViewerError, ViewerStats,
 };
 pub use lod_dataset::{
-    LodBuiltScene, LodDataset, LodDatasetError, LodViewStats, LodViewUpdate, LodWorkStats,
+    CellDraw, CellPlanStats, CellUpdate, CellUpdateConfig, CellUpdateStats, CutRestProbe,
+    LodBuiltScene, LodCellUpdate, LodDataset, LodDatasetError, LodViewStats, LodViewUpdate,
+    LodWorkStats, PoolAck, add_cell_nodes, draw_cell_cut,
 };
+pub use lod_pages::{DEFAULT_PAGE_BUDGET_BYTES, PageInsert, PageRelease};
 
 #[cfg(target_arch = "wasm32")]
 mod async_format_reader;
@@ -40,7 +47,7 @@ mod spool_host;
 #[cfg(target_arch = "wasm32")]
 pub use async_format_reader::{
     WasmAsyncFormatReader, WasmAsyncLodReadRequest, WasmAsyncLodReadResult, WasmAsyncReadBudget,
-    WasmAsyncReadCancelToken,
+    WasmAsyncReadCancelToken, WasmPageGraft,
 };
 #[cfg(target_arch = "wasm32")]
 pub use bindings::{WasmSceneBuilder, WasmVoxelViewer};

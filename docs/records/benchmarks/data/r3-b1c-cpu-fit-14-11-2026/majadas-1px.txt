@@ -1,0 +1,6 @@
+dataset majadas-v75.oct px 1
+fitted: reached true, settled true in 634 ms, retained 0 streaks (0 ms, longest 0 ms), forgotten at rest 0, frame p95 arrival 22 / rest 17.199951171875 ms, render-call p95 3.699999988079071 / 0.4000000059604645 ms, GTT +413 MiB
+orbit: reached true, settled true in 210 ms, retained 0 streaks (0 ms, longest 0 ms), forgotten at rest 0, frame p95 arrival 17.900146484375 / rest 17.300048828125 ms, render-call p95 2.2999999821186066 / 0.3999999761581421 ms, GTT +403 MiB
+jump: reached true, settled true in 5347 ms, retained 0 streaks (0 ms, longest 0 ms), forgotten at rest 0, frame p95 arrival 18.699951171875 / rest 17.39990234375 ms, render-call p95 2.5 / 0.4000000059604645 ms, GTT +402 MiB
+leaf: reached false, settled true, retained 0 streaks (0 ms, longest 0 ms), forgotten at rest 0, frame p95 arrival 20.400146484375 / rest 17.5 ms, render-call p95 4.5999999940395355 / 0.4000000059604645 ms, GTT +391 MiB
+GTT baseline 40 MiB, peak +430 MiB; console messages 1

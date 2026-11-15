@@ -32,6 +32,19 @@ impl<R> LodSession<R> {
     }
 }
 
+/// Applies when a second cloud is added to an open session (RF-01); opening replaces the session.
+/// RF-02: a cloud whose CRS identity differs from the open one is rejected, naming both.
+/// Clouds without an identity (formats before `v7.4-pre`) are not compared.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn ensure_same_crs(open: Option<&str>, incoming: Option<&str>) -> Result<(), String> {
+    match (open, incoming) {
+        (Some(open), Some(incoming)) if open != incoming => Err(format!(
+            "cloud CRS {incoming} differs from the open cloud's CRS {open}"
+        )),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -40,6 +53,18 @@ mod tests {
         BlockId, ColorRgb, NodeId, Point, PointBatch, PointBlock, SpatialBounds, SpatialHierarchy,
         SpatialNode,
     };
+
+    #[test]
+    fn a_cloud_with_another_crs_identity_is_rejected_naming_both() {
+        let error = ensure_same_crs(Some("EPSG:25830"), Some("EPSG:32630")).unwrap_err();
+        assert!(
+            error.contains("EPSG:25830") && error.contains("EPSG:32630"),
+            "{error}"
+        );
+        assert!(ensure_same_crs(Some("EPSG:25830"), Some("EPSG:25830")).is_ok());
+        assert!(ensure_same_crs(None, Some("EPSG:25830")).is_ok());
+        assert!(ensure_same_crs(Some("EPSG:25830"), None).is_ok());
+    }
 
     fn dataset() -> LodDataset {
         let node = SpatialNode::new(

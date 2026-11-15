@@ -1,11 +1,13 @@
 import { CoalescedCommandQueue } from "./coalesced-command-queue.mjs";
 import {
-    FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, measureFrameRate, summarizeFrameReplies,
+    FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,
+    summarizeFrameReplies,
 } from "./benchmark-metrics.mjs";
+import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
 import {
-    FORMAT_VERSIONS, progressText, spoolText, timingsText, validateConverterOptions,
+    FORMAT_VERSIONS, OPTION_DEFAULTS, fixedFrameDisplayValue, fixedFrameHint, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
 } from "./converter-ui.mjs";
 
 let canvas = document.getElementById("viewer-canvas");
@@ -40,9 +42,12 @@ const statusRoot = document.getElementById("renderer-status");
 const startBenchmarkButton = document.getElementById("start-benchmark");
 const downloadBenchmarkButton = document.getElementById("download-benchmark");
 const colorMode = document.getElementById("color-mode");
+const pxMode = document.getElementById("px-mode");
+let latestPxStats = null;
 const voxelPixels = document.getElementById("voxel-pixels");
 const voxelPixelsValue = document.getElementById("voxel-pixels-value");
 const depthShading = document.getElementById("depth-shading");
+const continuity = document.getElementById("continuity");
 const cameraMode = document.getElementById("camera-mode");
 const cameraModeHelp = document.getElementById("camera-mode-help");
 
@@ -107,8 +112,8 @@ function formatBytes(bytes) {
 function updateProgressiveLoadState(lod) {
     if (!lod) return;
     loadingFile = observedRefinementId !== requestedRefinementId
-        || (!lod.lodError && (benchmarkRun?.refinement?.targetLodMs === null
-            || lod.pendingBlockIds.length > 0 || lod.lodStagePixels > lod.targetVoxelPixels));
+        || (!lod.lodError && !lod.pageBudgetExhausted && (benchmarkRun?.refinement?.targetLodMs === null
+            || lodStillLoading(lod)));
     cancelButton.hidden = !loadingFile;
     if (loadingFile) startRendering();
     else if (!benchmarkStopTimer) stopRendering();
@@ -157,6 +162,20 @@ window.__renderBench = {
     // Runs frames for a moment, as camera input would, so an idle scene keeps refining.
     wake: () => wakeRendering(),
     latestLodCounters: () => lodCounters(latestLodStats),
+    // Cells path: the resting digest of the applied cut (null until at rest) and the latest cell stats.
+    cutDigestAtRest: () => latestLodStats?.cutDigestAtRest ?? null,
+    cellStats: () => latestLodStats && {
+        cellPath: latestLodStats.cellPath ?? null, cellsBusy: latestLodStats.cellsBusy ?? null,
+        viewEpoch: latestLodStats.viewEpoch ?? null, cutEpochSent: latestLodStats.cutEpochSent ?? null,
+        cutEpochApplied: latestLodStats.cutEpochApplied ?? null,
+        continuity: latestLodStats.continuity ?? null, continuityMinSide: latestLodStats.continuityMinSide ?? null,
+        wasmLinearMemoryBytes: latestLodStats.wasmLinearMemoryBytes ?? null,
+    },
+    openTimings: () => benchmarkRun && {
+        firstCoarseFrameMs: benchmarkRun.firstCoarseFrameMs,
+        targetLodMs: benchmarkRun.targetLodMs,
+        uniqueBytesRead: benchmarkRun.uniqueBytesRead,
+    },
 };
 
 function exportBenchmarkRun() {
@@ -292,6 +311,12 @@ function resize() {
     }
 }
 
+// The cells path carries no projected-edge range (the planner does not measure it): show "—".
+function formatVoxelEdges(lod) {
+    return Number.isFinite(lod?.minVoxelEdgePixels) && Number.isFinite(lod?.maxVoxelEdgePixels)
+        ? `${lod.minVoxelEdgePixels.toFixed(2)}–${lod.maxVoxelEdgePixels.toFixed(2)} px` : "—";
+}
+
 function updateStats(message) {
     const lod = message.lod ?? latestLodStats;
     const points = lod?.visiblePoints ?? message.viewer.point_count;
@@ -303,10 +328,13 @@ function updateStats(message) {
         : "—";
     statsRoot.textContent = [
         `dataset: ${datasetName}`,
-        `finest voxel detail target: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`,
+        `finest voxel detail target: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`
+            + (latestPxStats?.mode === "dynamic"
+                ? ` · dynamic (${latestPxStats.signalSource ?? "no signal"}${latestPxStats.signalMs === null ? "" : ` p95 ${latestPxStats.signalMs.toFixed(1)} ms`})`
+                : ""),
         `LOD stage: ${lod?.lodStagePixels ?? "—"} px`,
         `rendered voxel limit: ${lod?.voxelBudget ?? "—"}`,
-        `projected voxel edges: ${lod ? `${lod.minVoxelEdgePixels.toFixed(2)}–${lod.maxVoxelEdgePixels.toFixed(2)} px` : "—"}`,
+        `projected voxel edges: ${formatVoxelEdges(lod)}`,
         `voxels above target: ${lod?.oversizedVoxels ?? "—"}`,
         `visible points: ${points}`,
         `visible voxels: ${lod?.renderedVoxels ?? message.gpu.visibleInstances}`,
@@ -314,7 +342,7 @@ function updateStats(message) {
         `visible blocks: ${message.gpu.visibleBlocks}`,
         `deepest visible LOD level: ${lod?.maxVisibleLevel ?? "—"}`,
         `LOD coverage: ${coverage}`,
-        `pending blocks: ${lod?.pendingBlockIds.length ?? 0} · evicted targets ${lod?.refinementWork?.evictedPendingBlocks ?? "—"}`,
+        `pending blocks: ${lod?.pendingBlockIds.length ?? 0} · pending pages ${lod?.pendingPageAnchors?.length ?? 0}${lod?.pageBudgetExhausted ? " (page budget exhausted)" : ""} · evicted targets ${lod?.refinementWork?.evictedPendingBlocks ?? "—"}`,
         `decoded cache: ${cache} · evictions / rejects ${lod?.cacheActivity?.evictions ?? "—"} / ${lod?.cacheActivity ? Number(lod.cacheActivity.rejectedOversize) + Number(lod.cacheActivity.rejectedProtected) : "—"}`,
         `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
         `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
@@ -427,9 +455,7 @@ function startBenchmark() {
     benchmarkArmed = true;
     if (loadingFile) {
         startRendering();
-    } else if (latestLodStats?.coverageComplete
-        && latestLodStats.pendingBlockIds.length === 0
-        && latestLodStats.lodStagePixels <= latestLodStats.targetVoxelPixels) {
+    } else if (lodTargetReached(latestLodStats)) {
         beginBenchmarkWindow();
     } else {
         benchmarkArmed = false;
@@ -438,11 +464,37 @@ function startBenchmark() {
     }
 }
 
+// `?url=FILE.oct[&attrs=FILE.octattrs|none][&px=4]` opens a file over HTTP Range; the attributes default to
+// the `.octattrs` next to it. The server must answer Range and send CORS headers.
+// `&maxGap=BYTES` merges range reads separated by up to that many bytes (default 0: touching only);
+// `&remoteReads=N` sets the concurrent LOD reads for this remote source (default 8).
+let urlOpened = false;
+function openUrlFromQuery() {
+    const params = new URLSearchParams(location.search);
+    const target = params.get("url");
+    if (urlOpened || !target) return;
+    urlOpened = true;
+    if (params.get("px")) voxelPixels.value = params.get("px");
+    const absolute = (value) => new URL(value, location.href).href;
+    const url = absolute(target);
+    const attrs = params.get("attrs");
+    const readOptions = {};
+    for (const name of ["maxGap", "remoteReads"]) {
+        const value = Number(params.get(name));
+        if (params.get(name) !== null && Number.isFinite(value) && value >= 0) readOptions[name] = Math.trunc(value);
+    }
+    const attributes = attrs === "none" ? undefined : { url: attrs ? absolute(attrs) : `${url}attrs`, ...readOptions };
+    openProjectFile({ url, ...readOptions }, decodeURIComponent(new URL(url).pathname.split("/").pop()), attributes);
+}
+
 function handleWorkerMessage(event) {
     if (event.currentTarget !== worker) return;
     const { data } = event;
-    if (data.type === "ready") {
+    if (data.type === "pxMode") {
+        pxMode.value = data.mode;
+    } else if (data.type === "ready") {
         ready = true;
+        pxMode.disabled = false;
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
@@ -455,6 +507,7 @@ function handleWorkerMessage(event) {
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
         requestFrameOnce();
+        openUrlFromQuery();
     } else if (data.type === "commandAck") {
         commandQueue.acknowledge(data.command);
     } else if (data.type === "status") {
@@ -483,7 +536,7 @@ function handleWorkerMessage(event) {
             benchmarkRun.nodeCount = data.opened.nodeCount;
             benchmarkRun.sourcePointCount = data.opened.sourcePointCount ?? null;
         }
-        statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes · selecting visible blocks…`;
+        statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes${data.opened.paged ? " (declared, paged)" : ""} · selecting visible blocks…`;
     } else if (data.type === "lod") {
         latestLodStats = data.lod;
         updateProgressiveLoadState(data.lod);
@@ -517,11 +570,14 @@ function handleWorkerMessage(event) {
         const firstView = data.firstCoarseMs === null
             ? "coarse frame pending"
             : `first coarse frame ${data.firstCoarseMs.toFixed(0)} ms`;
-        const targetView = data.targetLodMs === null
-            ? "target refining"
-            : `target reached ${data.targetLodMs.toFixed(0)} ms`;
+        const targetView = data.lod.pageBudgetExhausted
+            ? "page budget exhausted (target not reached)"
+            : data.targetLodMs === null || !lodTargetReached(data.lod)
+                ? "target refining"
+                : `target reached ${data.targetLodMs.toFixed(0)} ms`;
         statusRoot.textContent = `${firstView} · ${targetView} · stage ${data.lod.lodStagePixels} px`;
     } else if (data.type === "stats") {
+        latestPxStats = data.px ?? null;
         acknowledgeFrame();
         renderCallMs = data.frameStatus?.renderCallMs ?? renderCallMs;
         recordFrameReply(renderCallMs);
@@ -560,6 +616,15 @@ function handleWorkerMessage(event) {
                 detail: { ...data.hit, sceneGeneration: data.sceneGeneration },
             }));
         }
+    } else if (data.type === "deviceLost") {
+        if (data.reason !== "destroyed") swapCanvasForRecovery();
+        statusRoot.textContent = `GPU device lost (${data.reason}): ${data.message}`;
+    } else if (data.type === "deviceRecovery") {
+        // R3-Q26: the worker recreates the viewer by itself; the page only shows it and draws again.
+        statusRoot.textContent = data.state === "recovered"
+            ? `GPU device recovered (attempt ${data.attempt})`
+            : `GPU device lost: recovering (attempt ${data.attempt})…`;
+        if (data.state === "recovered") wakeRendering();
     } else if (data.type === "error") {
         loadingFile = false;
         observedRefinementId = requestedRefinementId;
@@ -621,6 +686,9 @@ function createWorkerViewer() {
             colorMode: colorMode.value,
             depthShading: depthShading.checked,
             buildWorker: new URLSearchParams(location.search).get("buildWorker") !== "0" ? BUILD_WORKER : undefined,
+            // R3 cells path by default (R3-Q35); ?cells=0 keeps the CPU path.
+            cells: new URLSearchParams(location.search).get("cells") !== "0",
+            canvasReplacement: true,
         }, [offscreen]);
         reloadButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";
@@ -630,6 +698,19 @@ function createWorkerViewer() {
         statusRoot.textContent = `Renderer initialization failed: ${error}. Recreate the viewer to retry.`;
         reloadButton.disabled = false;
     }
+}
+
+// R3-Q34: a GPU-process crash leaves the old canvas blank, so the worker gets a fresh element.
+function swapCanvasForRecovery() {
+    const replaced = replaceCanvasElement(canvas);
+    if (!replaced) {
+        worker.postMessage({ type: "replaceCanvas", canvas: null });
+        return;
+    }
+    canvas = replaced.canvas;
+    bindCanvasInteractions();
+    worker.postMessage({ type: "replaceCanvas", canvas: replaced.offscreen }, [replaced.offscreen]);
+    canvas.dispatchEvent(new CustomEvent("voxelviewer:canvasReplaced", { detail: { canvas } }));
 }
 
 function recreateViewer() {
@@ -662,11 +743,8 @@ function recreateViewer() {
     latestLodStats = null;
     datasetName = "Synthetic sample";
     cameraDelta = emptyCameraDelta();
-    const replacement = canvas.cloneNode(false);
-    replacement.width = canvas.width;
-    replacement.height = canvas.height;
-    canvas.replaceWith(replacement);
-    canvas = replacement;
+    const replaced = replaceCanvasElement(canvas, { transfer: false });
+    if (replaced) canvas = replaced.canvas;
     canvasTransferred = false;
     viewportSize = null;
     bindCanvasInteractions();
@@ -728,12 +806,39 @@ function updateLodControls() {
 }
 
 voxelPixels.addEventListener("input", updateLodControls);
+pxMode.addEventListener("change", () => {
+    if (benchmarkRun) benchmarkRun.settingsChanged = true;
+    worker.postMessage({ type: "pxMode", mode: pxMode.value });
+});
 depthShading.addEventListener("change", () => {
     if (benchmarkRun) benchmarkRun.settingsChanged = true;
     queueWorkerCommand("depthShading", { value: depthShading.checked });
 });
+continuity.addEventListener("change", () => {
+    resetBenchmarkWindow();
+    queueWorkerCommand("continuity", { enabled: continuity.checked });
+});
 for (const version of FORMAT_VERSIONS) {
-    optionFields.formatVersion.append(new Option(version, version, false, version === "v5"));
+    optionFields.formatVersion.append(new Option(version, version, false, version === OPTION_DEFAULTS.formatVersion));
+}
+
+// Global-frame formats fix these two values: disable the controls and say why (aria-describedby).
+const savedFixedFrameValues = {};
+function syncFixedFrameControls() {
+    const fixed = isGlobalFrameFormat(optionFields.formatVersion.value);
+    for (const name of ["pointsPerBlock", "spatialDivisions"]) {
+        const field = optionFields[name];
+        // Rewrite the value only when the fixed state flips, so typing in an enabled field sticks.
+        if (fixed !== field.disabled) {
+            if (fixed) savedFixedFrameValues[name] = field.value;
+            field.value = fixedFrameDisplayValue(name, optionFields.formatVersion.value, savedFixedFrameValues[name]);
+            if (!fixed) delete savedFixedFrameValues[name];
+        }
+        field.disabled = fixed;
+        const hint = document.getElementById(`${field.id}-fixed`);
+        hint.textContent = fixedFrameHint(name);
+        hint.hidden = !fixed;
+    }
 }
 
 function readConverterOptions() {
@@ -744,6 +849,7 @@ function readConverterOptions() {
 
 // Shows each field's message next to it (aria-describedby) and returns the options, or null if any is invalid.
 function refreshConverterOptions() {
+    syncFixedFrameControls();
     const { errors, options } = readConverterOptions();
     for (const [name, element] of Object.entries(optionFields)) {
         const message = document.getElementById(`${element.id}-error`);
@@ -766,6 +872,7 @@ function showConvertNotice(kind, message) {
 
 for (const element of Object.values(optionFields)) element.addEventListener("input", refreshConverterOptions);
 convertFileInput.addEventListener("change", refreshConverterOptions);
+refreshConverterOptions();
 convertButton.addEventListener("click", () => {
     const file = convertFileInput.files?.[0];
     if (!file || converterApi) return;
@@ -874,6 +981,8 @@ function finishConverter() {
     convertCancelButton.disabled = false;
 }
 
+// `file` is a File, or `{ url }` for a file read over HTTP Range (the workers open it; see
+// http-range-source.mjs). `attributesFile` follows the same rule.
 function openProjectFile(file, displayName = file?.name, attributesFile = undefined) {
     if (!ready || !file) return;
     currentProjectFile = file;
@@ -882,8 +991,8 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
     colorMode.value = "rgb";
     benchmarkRun = {
         datasetName: displayName,
-        fileBytes: file.size,
-        attributes: attributesFile ? { name: attributesFile.name, fileBytes: attributesFile.size } : null,
+        fileBytes: file.size ?? null,
+        attributes: attributesFile ? { name: attributesFile.name ?? attributesFile.url, fileBytes: attributesFile.size ?? null } : null,
         sourcePointCount: null,
         nodeCount: null,
         startedAt: performance.now(),

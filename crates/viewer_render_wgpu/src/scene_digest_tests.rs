@@ -12,9 +12,9 @@ use crate::{
     OrbitCamera, SceneBounds, ViewProjection, VoxelBuildLimits, build_voxel_scene_with_limits,
 };
 
-const ORIGIN: [f64; 3] = [1000.0, -2000.0, 50.0];
-const SIDE: f64 = 64.0;
-const VIEWPORT: [u32; 2] = [800, 600];
+pub(super) const ORIGIN: [f64; 3] = [1000.0, -2000.0, 50.0];
+pub(super) const SIDE: f64 = 64.0;
+pub(super) const VIEWPORT: [u32; 2] = [800, 600];
 const TARGET_PIXELS: [f64; 3] = [2.0, 4.0, 8.0];
 
 struct Lcg(u64);
@@ -51,13 +51,13 @@ fn points_in(rng: &mut Lcg, lo: [f64; 3], size: f64, count: usize) -> Vec<Point>
         .collect()
 }
 
-struct Fixture {
-    hierarchy: SpatialHierarchy,
-    cache: DecodedBlockCache,
+pub(super) struct Fixture {
+    pub(super) hierarchy: SpatialHierarchy,
+    pub(super) cache: DecodedBlockCache,
 }
 
 /// Root (id 1) plus eight octant children (ids 2..=9), each node owning the block with its id.
-fn fixture(semantics: HierarchySemantics) -> Fixture {
+pub(super) fn fixture(semantics: HierarchySemantics) -> Fixture {
     let mut rng = Lcg(0x5eed_0001);
     let mut blocks = Vec::new();
     let mut child_points = Vec::new();
@@ -134,11 +134,11 @@ fn fixture(semantics: HierarchySemantics) -> Fixture {
     Fixture { hierarchy, cache }
 }
 
-fn ids(values: &[u64]) -> Vec<NodeId> {
+pub(super) fn ids(values: &[u64]) -> Vec<NodeId> {
     values.iter().copied().map(NodeId::new).collect()
 }
 
-fn cameras() -> Vec<(&'static str, OrbitCamera)> {
+pub(super) fn cameras() -> Vec<(&'static str, OrbitCamera)> {
     let bounds = SceneBounds {
         min: [0.0; 3],
         max: [SIDE; 3],

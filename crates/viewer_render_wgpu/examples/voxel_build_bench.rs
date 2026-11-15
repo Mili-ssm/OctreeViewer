@@ -171,7 +171,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let memory_before_open = process_memory();
     let mut reader = FormatReader::new(File::open(&args[0])?)?;
     let metadata_visual_scale = reader.format_metadata().visual_scale();
-    let metadata = reader.format_metadata().dataset();
+    let viewer_dataset = reader.format_metadata().viewer_dataset()?;
+    let metadata = &*viewer_dataset;
     let hierarchy = metadata.hierarchy();
     let root = hierarchy.stats().root_bounds;
     let origin = metadata.coordinate_frame().origin();
@@ -220,12 +221,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         LodSelectionConfig::new(target_pixels, u64::MAX)?,
         |node| {
             let bounds = node.bounds();
-            let side = (0..3)
-                .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-                .fold(0.0_f64, f64::max);
+            let spacing = node.representative_spacing();
             camera.projected_error_pixels(
                 scaled_bounds(bounds, origin, metadata_visual_scale),
-                side / 8.0 * metadata_visual_scale,
+                spacing * metadata_visual_scale,
                 [0.0; 3],
                 VIEWPORT,
             )

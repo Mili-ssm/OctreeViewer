@@ -5,6 +5,7 @@ use std::{
 };
 
 use las::PointData;
+use viewer_core::las::{LasExtraByte, extra::MAX_EXTRA_BYTES_PER_POINT, las_flags_of_record};
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetMetadata, NodeId, SpatialBounds,
     SpatialHierarchy, SpatialNode,
@@ -25,18 +26,24 @@ use crate::pipeline::{
     spool_store::{PlanStore, SPOOL_IO_BUFFER_BYTES, SpoolExtent, SpoolId, SpoolStore},
 };
 use crate::report::{ConversionProgress, ConversionStage, emit_progress};
-use crate::source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
+use crate::source::{SourceInfo, next_descriptor};
 
-const MAX_SPOOL_RECORD_BYTES: usize = 55;
+pub(crate) const MAX_SPOOL_RECORD_BYTES: usize = 55 + 1 + MAX_EXTRA_BYTES_PER_POINT;
 const CHILD_SPOOL_BUFFER_BYTES: usize = 32 * 1024;
-pub const SAMPLE_GRID_SIZE: usize = 8;
 pub const MAX_SPATIAL_DEPTH: u32 = 32;
+
+/// Deepest job depth `consume_rank` accepts. Global-frame layouts split up to absolute level
+/// `GLOBAL_MAX_INTERNAL_LEVEL`, deeper than the legacy `MAX_SPATIAL_DEPTH`; the headroom keeps
+/// `(MAX_CONSUME_DEPTH + 1) << 16` inside `u32`.
+pub const MAX_CONSUME_DEPTH: u32 = 64;
+const _: () = assert!(MAX_CONSUME_DEPTH > crate::pipeline::node_job::GLOBAL_MAX_INTERNAL_LEVEL);
+const _: () = assert!(MAX_CONSUME_DEPTH > MAX_SPATIAL_DEPTH);
 
 /// Consume-order rank of the child spool `key` at `depth` (>= 1). The depth-first planner
 /// consumes deeper spools first and, at equal depth, the lower key first; the queued spools of
 /// one depth always share a parent, so `key` alone orders them.
 pub fn consume_rank(depth: u32, key: u16) -> u32 {
-    ((MAX_SPATIAL_DEPTH + 1 - depth) << 16) | u32::from(key)
+    ((MAX_CONSUME_DEPTH + 1 - depth) << 16) | u32::from(key)
 }
 const PLANNED_NODE_BYTES: u64 = 256;
 const SPATIAL_WORKER_OVERHEAD_BYTES: u64 = 1024 * 1024;
@@ -52,9 +59,20 @@ pub struct SpoolLayout {
     has_gps_time: bool,
     has_color: bool,
     has_nir: bool,
+    /// `v7.5-pre`: the record carries the `las_flags` byte and `extra_len` raw Extra Bytes.
+    has_flags: bool,
+    extra_len: u8,
+    is_extended: bool,
+    /// `v7.4-pre`: source positions are snapped to the 2^-15 grid so that node and cell
+    /// membership is decided on exact integers.
+    snap_to_quanta: bool,
 }
 
 impl SpoolLayout {
+    pub const fn is_global(self) -> bool {
+        self.snap_to_quanta
+    }
+
     pub fn source(source: &SourceInfo) -> Self {
         Self {
             transforms: source.transforms,
@@ -62,6 +80,13 @@ impl SpoolLayout {
             has_gps_time: source.point_format.has_gps_time,
             has_color: source.point_format.has_color,
             has_nir: source.point_format.has_nir,
+            has_flags: source.las_extra_bytes.is_some(),
+            // Checked against `MAX_EXTRA_BYTES_PER_POINT` by `SourceInfo::schema`.
+            extra_len: source.las_extra_bytes.as_deref().map_or(0, |extras| {
+                extras.iter().map(LasExtraByte::byte_len).sum::<usize>() as u8
+            }),
+            is_extended: source.point_format.is_extended,
+            snap_to_quanta: source.global.is_some(),
         }
     }
 
@@ -80,15 +105,37 @@ impl SpoolLayout {
             + usize::from(self.has_gps_time) * 8
             + usize::from(self.has_color) * 6
             + usize::from(self.has_nir) * 2
+            + usize::from(self.has_flags)
+            + usize::from(self.extra_len)
     }
 
+    /// Offset of the RGB16 triplet in a record (valid when `has_color`).
     #[inline]
-    fn position(self, raw: [i32; 3]) -> [f64; 3] {
+    fn rgb_offset(self) -> usize {
+        (if self.source_coordinates { 12 } else { 24 }) + 12 + usize::from(self.has_gps_time) * 8
+    }
+
+    /// The LAS coordinate before any snapping (header bounds are checked against it).
+    #[inline]
+    fn exact_position(self, raw: [i32; 3]) -> [f64; 3] {
         [
             self.transforms.x.direct(raw[0]),
             self.transforms.y.direct(raw[1]),
             self.transforms.z.direct(raw[2]),
         ]
+    }
+
+    #[inline]
+    fn position(self, raw: [i32; 3]) -> [f64; 3] {
+        let exact = self.exact_position(raw);
+        if self.snap_to_quanta {
+            exact.map(|value| {
+                viewer_format::quantize_coordinate(value)
+                    .map_or(value, viewer_format::quanta_to_units)
+            })
+        } else {
+            exact
+        }
     }
 }
 
@@ -106,6 +153,9 @@ pub struct SpoolPoint {
     gps_time: f64,
     rgb: [u16; 3],
     nir: u16,
+    las_flags: u8,
+    /// Raw Extra Bytes of the record; only the first `SpoolLayout::extra_len` are meaningful.
+    extra: [u8; MAX_EXTRA_BYTES_PER_POINT],
     display_color: ColorRgb,
 }
 
@@ -115,9 +165,12 @@ pub struct PlannedBlock {
     offset_points: u64,
     point_count: usize,
     layout: SpoolLayout,
+    /// Descriptors of the Extra Byte columns (`v7.5-pre`); empty otherwise.
+    extras: std::sync::Arc<[LasExtraByte]>,
     pub is_source_points: bool,
     // Blocks sharing a spool stay in construction order when streamed. Only the
-    // last range may release it, after all reads in its worker batch have joined.
+    // last range may release it; blocks are written in plan order, so by then every other
+    // read of the spool has finished.
     final_block_in_spool: bool,
 }
 
@@ -183,6 +236,16 @@ impl PlannedBlock {
         } else {
             0
         });
+        let mut las_flags = Vec::with_capacity(if self.layout.has_flags {
+            self.point_count
+        } else {
+            0
+        });
+        let mut extra_values: Vec<_> = self
+            .extras
+            .iter()
+            .map(|extra| extra.new_values(self.point_count))
+            .collect();
         let mut remaining = self.point_count;
         while remaining > 0 {
             let requested = remaining.min(batch_capacity);
@@ -217,16 +280,28 @@ impl PlannedBlock {
                 if self.layout.has_nir {
                     nir_values.push(point.nir);
                 }
+                if self.layout.has_flags {
+                    las_flags.push(point.las_flags);
+                }
+                let mut offset = 0;
+                for (extra, values) in self.extras.iter().zip(&mut extra_values) {
+                    let end = offset + extra.byte_len();
+                    extra.push_values(&point.extra[offset..end], values);
+                    offset = end;
+                }
             }
             remaining -= records;
         }
 
-        let mut descriptors = viewer_core::las::las_attribute_schema(
-            self.layout.has_gps_time,
-            self.layout.has_color,
-            self.layout.has_nir,
-        )
-        .into_iter();
+        let mut descriptors =
+            viewer_core::las::las_attribute_schema_for(&viewer_core::las::LasSchemaSpec {
+                has_gps_time: self.layout.has_gps_time,
+                has_color: self.layout.has_color,
+                has_nir: self.layout.has_nir,
+                las_flags: self.layout.has_flags,
+                extra_bytes: &self.extras,
+            })?
+            .into_iter();
         let mut attributes = Vec::with_capacity(10);
         attributes.push(AttributeColumn::new(
             next_descriptor(&mut descriptors, "intensity"),
@@ -283,6 +358,19 @@ impl PlannedBlock {
                 AttributeValues::U16(nir_values),
                 self.point_count,
             )?);
+        }
+        if self.layout.has_flags {
+            attributes.push(AttributeColumn::new(
+                next_descriptor(&mut descriptors, viewer_core::las::extra::LAS_FLAGS_NAME),
+                AttributeValues::U8(las_flags),
+                self.point_count,
+            )?);
+        }
+        for values in extra_values {
+            let descriptor = descriptors
+                .next()
+                .expect("LAS attribute schema covers every column");
+            attributes.push(AttributeColumn::new(descriptor, values, self.point_count)?);
         }
         Ok(SourcePointBlock::new(
             self.id, positions, colors, attributes,
@@ -387,7 +475,13 @@ fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     let point_limit =
         crate::options::input_batch_point_limit(options.points_per_block(), source.record_length);
     check_memory_budget(
-        estimate_memory(point_limit, 0, 0, options.spatial_divisions())?,
+        estimate_memory(
+            point_limit,
+            0,
+            0,
+            options.spatial_divisions(),
+            options.sample_grid(),
+        )?,
         options.max_memory_budget_bytes(),
     )?;
     // Ids are never reused; 0 is `SpoolId::SOURCE`. The counter is host state, not store I/O.
@@ -436,7 +530,10 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     point_limit: u64,
     spool_ids: &AtomicU64,
 ) -> Result<SpatialPlan, ConvertError> {
-    let root_bounds = cube_bounds(source.bounds);
+    let root_bounds = match &source.global {
+        Some(root) => root.bounds()?,
+        None => cube_bounds(source.bounds),
+    };
     let mut builder = SpatialBuilder {
         store,
         clock,
@@ -445,8 +542,13 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         point_limit,
         memory_budget: options.max_memory_budget_bytes(),
         spatial_divisions: options.spatial_divisions(),
+        sample_grid: options.sample_grid(),
         frame: source.frame,
         layout: SpoolLayout::source(source),
+        extras: source
+            .las_extra_bytes
+            .clone()
+            .unwrap_or_else(|| Vec::new().into()),
         node_records: Vec::new(),
         output_blocks: Vec::new(),
         next_block_id: 0,
@@ -478,6 +580,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         builder.node_records.len(),
         builder.output_blocks.len(),
         options.spatial_divisions(),
+        options.sample_grid(),
     )?
     .checked_add(
         (builder.workers_used.saturating_sub(1) as u64)
@@ -495,63 +598,152 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     )?;
     // Ranges were admitted against the budget; their working sets are only reported.
     let estimated_peak_memory_bytes = if builder.ranges_used > 1 {
-        let ranged = estimate_memory(point_limit, 0, 0, options.spatial_divisions())?
-            .checked_add(
-                (builder.ranges_used as u64 - 1)
-                    .checked_mul(range_memory_bytes(
-                        point_limit,
-                        options.spatial_divisions(),
-                    )?)
-                    .ok_or(ConvertError::SizeOverflow)?,
-            )
-            .ok_or(ConvertError::SizeOverflow)?;
+        let ranged = estimate_memory(
+            point_limit,
+            0,
+            0,
+            options.spatial_divisions(),
+            options.sample_grid(),
+        )?
+        .checked_add(
+            (builder.ranges_used as u64 - 1)
+                .checked_mul(range_memory_bytes(
+                    point_limit,
+                    options.spatial_divisions(),
+                    options.sample_grid(),
+                )?)
+                .ok_or(ConvertError::SizeOverflow)?,
+        )
+        .ok_or(ConvertError::SizeOverflow)?;
         estimated_peak_memory_bytes.max(ranged)
     } else {
         estimated_peak_memory_bytes
     };
 
-    let schema = source_schema(&source.point_format);
+    let schema = source.schema()?;
     crate::limits::check_reader_attribute_ranges(builder.node_records.len(), schema.len())?;
+    let global_frame = source
+        .global
+        .as_ref()
+        .map(|root| global_frame(source, root, &builder.node_records))
+        .transpose()?;
     let nodes = builder
         .node_records
         .iter()
         .map(|node| {
-            SpatialNode::new(
+            let bounds = match &global_frame {
+                Some(frame) => frame.node_bounds(
+                    node.level,
+                    global_prefix(frame.root_level(), frame.lattice_base(), node),
+                )?,
+                None => node.bounds,
+            };
+            Ok(SpatialNode::new(
                 node.id,
                 node.parent,
                 node.level,
-                node.bounds,
+                bounds,
                 node.point_count,
                 node.geometric_error,
                 node.blocks.clone(),
-            )
+            )?)
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, ConvertError>>()?;
     let hierarchy = SpatialHierarchy::new(nodes, schema, Some(source.point_count))?;
-    let metadata = FormatMetadata::new(
+    let sampling_policy = if global_frame.is_some() {
+        format!(
+            "sample-grid:{};leaf:{}",
+            options.sample_grid(),
+            crate::options::GLOBAL_LEAF_POINT_LIMIT
+        )
+    } else {
+        format!(
+            "adaptive {}x{}x{} spatial partition; full-resolution leaves; {}x{}x{} voxel-center LOD samples; color averaged per voxel; other attributes from nearest source point",
+            options.spatial_divisions(),
+            options.spatial_divisions(),
+            options.spatial_divisions(),
+            options.sample_grid(),
+            options.sample_grid(),
+            options.sample_grid()
+        )
+    };
+    let mut metadata = FormatMetadata::new(
         DatasetMetadata::new(source.frame, hierarchy),
         None,
-        Some(format!(
-            "adaptive {}x{}x{} spatial partition; full-resolution leaves; 8x8x8 voxel-center LOD samples; color averaged per voxel; other attributes from nearest source point",
-            options.spatial_divisions(),
-            options.spatial_divisions(),
-            options.spatial_divisions()
-        )),
+        Some(sampling_policy),
         Vec::new(),
     )?
     .with_visual_scale(crate::limits::visual_scale_for_bounds(source.bounds)?)?;
+    if let Some(extras) = &source.las_extra_bytes {
+        metadata = metadata.with_las_extra_bytes(extras.to_vec());
+    }
+    if let Some(frame) = global_frame {
+        metadata = metadata.with_global_frame(frame)?;
+    }
     Ok(SpatialPlan {
         metadata,
         blocks: builder.output_blocks,
         point_count: source.point_count,
         estimated_peak_memory_bytes,
-        omitted_dimensions: omitted_dimensions(&source.point_format, source.has_crs),
+        omitted_dimensions: source.omitted_dimensions(),
         spool_diagnostics: builder.spool_diagnostics,
         spatial_phases: builder.spatial_phases,
     })
 }
 
+/// Prefix of a node from its absolute cube: the top `a` bits of its minimum corner minus the
+/// lattice base (the flipped sign bit, or the frame origin of a local cloud).
+fn global_prefix(root_level: u32, base: [i64; 3], node: &NodeRecord) -> [u64; 3] {
+    let level = root_level + node.level;
+    let min = quanta(node.bounds.min());
+    std::array::from_fn(|axis| {
+        ((i128::from(min[axis]) - i128::from(base[axis])) as u64)
+            .checked_shr(64 - level)
+            .unwrap_or(0)
+    })
+}
+
+/// Node cells (prefix and spacing) and CRS of a `v7.4-pre` conversion. Internal nodes have
+/// spacing `side / 256`; leaves carry the measured value.
+fn global_frame(
+    source: &SourceInfo,
+    root: &crate::source::GlobalRoot,
+    records: &[NodeRecord],
+) -> Result<viewer_format::GlobalFrame, ConvertError> {
+    let parents: std::collections::BTreeSet<NodeId> =
+        records.iter().filter_map(|node| node.parent).collect();
+    let cells = records
+        .iter()
+        .map(|node| {
+            let level = root.level + node.level;
+            let spacing = if parents.contains(&node.id) {
+                2.0_f64.powi(41 - level as i32)
+            } else {
+                node.spacing
+            };
+            (
+                node.id,
+                viewer_format::NodeCell::new(
+                    global_prefix(root.level, root.lattice_base, node),
+                    spacing,
+                ),
+            )
+        })
+        .collect();
+    Ok(viewer_format::GlobalFrame::new(
+        root.level,
+        root.prefix,
+        root.frame_origin_quanta,
+        root.data_max_quanta,
+        source.crs.clone(),
+        source.scale_offset,
+        cells,
+    )?)
+}
+
 struct NodeRecord {
+    /// Measured leaf spacing of `v7.4-pre` in CRS units; 0 when not measured.
+    spacing: f64,
     id: NodeId,
     parent: Option<NodeId>,
     level: u32,
@@ -593,6 +785,21 @@ impl ChildSpool {
             self.flush(store)?;
         }
         write_point(&mut self.buffer, point, self.layout)?;
+        self.point_count += 1;
+        Ok(())
+    }
+
+    /// Appends an encoded record of the spool's layout unchanged.
+    #[inline]
+    pub fn write_record(
+        &mut self,
+        store: &impl SpoolStore,
+        record: &[u8],
+    ) -> Result<(), ConvertError> {
+        if self.buffer.len() + record.len() > CHILD_SPOOL_BUFFER_BYTES {
+            self.flush(store)?;
+        }
+        self.buffer.extend_from_slice(record);
         self.point_count += 1;
         Ok(())
     }
@@ -669,8 +876,10 @@ pub struct SpatialBuilder<'a, S: PlanStore, C: Clock, X> {
     point_limit: u64,
     memory_budget: u64,
     spatial_divisions: u8,
+    sample_grid: usize,
     frame: viewer_core::CoordinateFrame,
     layout: SpoolLayout,
+    extras: std::sync::Arc<[LasExtraByte]>,
     node_records: Vec<NodeRecord>,
     output_blocks: Vec<PlannedBlock>,
     next_block_id: u64,
@@ -852,6 +1061,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         JobContext {
             point_limit: self.point_limit,
             spatial_divisions: self.spatial_divisions,
+            sample_grid: self.sample_grid,
             frame: self.frame,
             layout: self.layout,
             collect_diagnostics: self.spool_diagnostics.is_some(),
@@ -896,8 +1106,15 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
     /// Admitted root ranges: the requested count, reduced so that the extra ranges fit in the
     /// budget left after the root's own working set (as `memory_limited_workers` does).
     fn admitted_root_ranges(&self) -> Result<usize, ConvertError> {
-        let base = estimate_memory(self.point_limit, 0, 0, self.spatial_divisions)?;
-        let per_range = range_memory_bytes(self.point_limit, self.spatial_divisions)?;
+        let base = estimate_memory(
+            self.point_limit,
+            0,
+            0,
+            self.spatial_divisions,
+            self.sample_grid,
+        )?;
+        let per_range =
+            range_memory_bytes(self.point_limit, self.spatial_divisions, self.sample_grid)?;
         let extra = self.memory_budget.saturating_sub(base) / per_range;
         Ok(self
             .root_ranges
@@ -1045,7 +1262,8 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         let lod_write_started = self.spatial_phases.as_ref().map(|_| self.clock.now());
         let sample_spool =
             SpoolId(first_output.0 + usize::from(self.spatial_divisions).pow(3) as u64);
-        let sample_count = write_lod(store, sample_spool, &partition.samples, bounds, self.layout)?;
+        let lod = write_lod(store, sample_spool, &partition.samples, bounds, self.layout)?;
+        let sample_count = lod.count;
         self.record_lod_write_elapsed(lod_write_started);
         let lod_bytes = (sample_count * self.layout.lod().record_bytes()) as u64;
         self.add_lod_spool_bytes(lod_bytes)?;
@@ -1054,18 +1272,17 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         }
         self.commit_node(
             NodeRecord {
+                spacing: 0.0,
                 id: root_id,
                 parent: None,
                 level: 0,
                 bounds,
                 point_count: sample_count as u64,
-                geometric_error: (3.0_f64).sqrt() * cube_side(bounds)
-                    / SAMPLE_GRID_SIZE as f64
-                    / 2.0
+                geometric_error: lod_sample_error(bounds, self.sample_grid, self.layout)
                     + center_rounding_error(bounds, self.frame),
                 blocks: Vec::new(),
             },
-            lod_blocks(sample_spool, sample_count),
+            lod_blocks(sample_spool, &lod),
         )?;
 
         if let Some(open) = open.as_mut() {
@@ -1155,6 +1372,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         self.hint_children(job.level, &children);
         self.commit_node(
             NodeRecord {
+                spacing: output.spacing,
                 id,
                 parent,
                 level: job.level,
@@ -1230,6 +1448,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                 } else {
                     self.layout.lod()
                 },
+                extras: self.extras.clone(),
                 is_source_points: plan.is_source_points,
                 final_block_in_spool: plan.final_block_in_spool,
             });
@@ -1304,6 +1523,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                 self.output_blocks.len(),
                 batch_count,
                 self.spatial_divisions,
+                self.sample_grid,
             )?;
             self.workers_used = self.workers_used.max(batch_count);
             let executor = self.executor;
@@ -1331,8 +1551,10 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             point_limit: self.point_limit,
             memory_budget,
             spatial_divisions: self.spatial_divisions,
+            sample_grid: self.sample_grid,
             frame: self.frame,
             layout: self.layout,
+            extras: self.extras.clone(),
             node_records: std::mem::take(&mut branch.node_records),
             output_blocks: std::mem::take(&mut branch.output_blocks),
             next_block_id: branch.next_block_id,
@@ -1488,6 +1710,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                 node_count,
                 block_count,
                 self.spatial_divisions,
+                self.sample_grid,
             )?,
             self.memory_budget,
         )
@@ -1507,56 +1730,150 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
     }
 }
 
-#[derive(Default)]
+/// Fixed-size source records of the nearest points of a sample grid, indexed by slot: a cell
+/// keeps a `u32` slot instead of a decoded `SpoolPoint` (about 180 bytes with its Extra Bytes
+/// array), which keeps accumulators small and avoids decoding and copying a full point per
+/// candidate.
+pub struct NearestRecords {
+    record_bytes: usize,
+    bytes: Vec<u8>,
+}
+
+impl NearestRecords {
+    pub fn new(layout: SpoolLayout, reserve_records: usize) -> Self {
+        let record_bytes = layout.record_bytes();
+        Self {
+            record_bytes,
+            bytes: Vec::with_capacity(reserve_records * record_bytes),
+        }
+    }
+
+    fn push(&mut self, record: &[u8]) -> u32 {
+        let slot = (self.bytes.len() / self.record_bytes) as u32;
+        self.bytes.extend_from_slice(record);
+        slot
+    }
+
+    fn set(&mut self, slot: u32, record: &[u8]) {
+        let start = slot as usize * self.record_bytes;
+        self.bytes[start..start + self.record_bytes].copy_from_slice(record);
+    }
+
+    fn get(&self, slot: u32) -> &[u8] {
+        let start = slot as usize * self.record_bytes;
+        &self.bytes[start..start + self.record_bytes]
+    }
+}
+
 pub struct SampleAccumulator {
     count: u64,
-    display_color: [u128; 3],
-    rgb: [u128; 3],
+    // `u64` sums hold `count * 65535` while `count < 2^48`, far above any point cloud; `u128`
+    // would double the size of every occupied cell of a large sample grid.
+    display_color: [u64; 3],
+    rgb: [u64; 3],
     nearest_distance_squared: f64,
-    nearest_point: Option<SpoolPoint>,
+    /// Slot of the nearest record in the grid's [`NearestRecords`]; `NO_SLOT` before the first.
+    slot: u32,
+}
+
+impl Default for SampleAccumulator {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            display_color: [0; 3],
+            rgb: [0; 3],
+            nearest_distance_squared: 0.0,
+            slot: Self::NO_SLOT,
+        }
+    }
 }
 
 impl SampleAccumulator {
+    const NO_SLOT: u32 = u32::MAX;
+
+    /// Adds the source record `record` (of `layout`) at `position`, which must be the position
+    /// `decode_position` returns for it.
     #[inline]
-    pub fn add(&mut self, point: &SpoolPoint, center: [f64; 3]) {
+    pub fn add(
+        &mut self,
+        records: &mut NearestRecords,
+        layout: SpoolLayout,
+        record: &[u8],
+        position: [f64; 3],
+        center: [f64; 3],
+    ) {
         self.count += 1;
+        let tail = record.len() - 3;
         for axis in 0..3 {
-            self.display_color[axis] += u128::from(point.display_color_component(axis));
-            self.rgb[axis] += u128::from(point.rgb[axis]);
+            self.display_color[axis] += u64::from(record[tail + axis]);
         }
-        let delta_x = point.position[0] - center[0];
-        let delta_y = point.position[1] - center[1];
-        let delta_z = point.position[2] - center[2];
+        if layout.has_color {
+            let offset = layout.rgb_offset();
+            for axis in 0..3 {
+                self.rgb[axis] += u64::from(u16::from_le_bytes([
+                    record[offset + 2 * axis],
+                    record[offset + 2 * axis + 1],
+                ]));
+            }
+        }
+        let delta_x = position[0] - center[0];
+        let delta_y = position[1] - center[1];
+        let delta_z = position[2] - center[2];
         let distance_squared = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
-        if self
-            .nearest_point
-            .is_none_or(|_| distance_squared < self.nearest_distance_squared)
-        {
+        if self.slot == Self::NO_SLOT {
+            self.slot = records.push(record);
             self.nearest_distance_squared = distance_squared;
-            self.nearest_point = Some(*point);
+        } else if distance_squared < self.nearest_distance_squared {
+            self.nearest_distance_squared = distance_squared;
+            records.set(self.slot, record);
         }
     }
 
     /// Folds in the accumulator of the points that follow this one's in the source order. The
     /// later nearest point wins only when strictly closer, as in `add`, so ties keep the earlier.
-    pub fn merge(&mut self, later: &Self) {
+    pub fn merge(
+        &mut self,
+        records: &mut NearestRecords,
+        later: &Self,
+        later_records: &NearestRecords,
+    ) {
         self.count += later.count;
         for axis in 0..3 {
             self.display_color[axis] += later.display_color[axis];
             self.rgb[axis] += later.rgb[axis];
         }
-        if let Some(point) = later.nearest_point
-            && self
-                .nearest_point
-                .is_none_or(|_| later.nearest_distance_squared < self.nearest_distance_squared)
-        {
+        if later.slot == Self::NO_SLOT {
+            return;
+        }
+        let record = later_records.get(later.slot);
+        if self.slot == Self::NO_SLOT {
+            self.slot = records.push(record);
             self.nearest_distance_squared = later.nearest_distance_squared;
-            self.nearest_point = Some(point);
+        } else if later.nearest_distance_squared < self.nearest_distance_squared {
+            self.nearest_distance_squared = later.nearest_distance_squared;
+            records.set(self.slot, record);
         }
     }
 
-    pub fn finish(&self, center: [f64; 3]) -> SpoolPoint {
-        let mut point = self.nearest_point.expect("sample has a source point");
+    fn nearest(&self, records: &NearestRecords, layout: SpoolLayout) -> SpoolPoint {
+        assert_ne!(self.slot, Self::NO_SLOT, "sample has a source point");
+        decode_point(records.get(self.slot), layout)
+    }
+
+    /// Sample placed at its nearest source point instead of the cell center: used where the cell
+    /// is so large (`a < 32`) that a center far from the data could not be held in `f32`.
+    pub fn finish_at_nearest(&self, records: &NearestRecords, layout: SpoolLayout) -> SpoolPoint {
+        let nearest = self.nearest(records, layout);
+        self.finish(records, layout, nearest.position)
+    }
+
+    pub fn finish(
+        &self,
+        records: &NearestRecords,
+        layout: SpoolLayout,
+        center: [f64; 3],
+    ) -> SpoolPoint {
+        let mut point = self.nearest(records, layout);
         point.position = center;
         point.display_color = ColorRgb::new(
             average(self.display_color[0], self.count) as u8,
@@ -1568,20 +1885,9 @@ impl SampleAccumulator {
     }
 }
 
-impl SpoolPoint {
-    #[inline]
-    fn display_color_component(self, axis: usize) -> u8 {
-        match axis {
-            0 => self.display_color.r,
-            1 => self.display_color.g,
-            _ => self.display_color.b,
-        }
-    }
-}
-
 #[inline]
-fn average(sum: u128, count: u64) -> u128 {
-    (sum + u128::from(count / 2)) / u128::from(count)
+fn average(sum: u64, count: u64) -> u64 {
+    (sum + count / 2) / count
 }
 
 /// Forwards `JobProgress::SourcePoints` of a job reading the source to the host callback.
@@ -1668,8 +1974,16 @@ pub fn visit_source_points(
         return Err(ConvertError::InvalidAttributeSchema);
     }
     let layout = SpoolLayout::source(source);
-    for (index, ((x, y), z)) in data.x_raw().zip(data.y_raw()).zip(data.z_raw()).enumerate() {
+    let records = data.raw_bytes().chunks_exact(data.record_len());
+    for (index, (((x, y), z), record)) in data
+        .x_raw()
+        .zip(data.y_raw())
+        .zip(data.z_raw())
+        .zip(records)
+        .enumerate()
+    {
         let raw_position = [x, y, z];
+        let exact = layout.exact_position(raw_position);
         let position = layout.position(raw_position);
         let local = std::array::from_fn(|axis| position[axis] - source.frame.origin()[axis]);
         if position.iter().any(|coordinate| !coordinate.is_finite())
@@ -1679,10 +1993,10 @@ pub fn visit_source_points(
                 viewer_core::CoordinateFrameError::PositionOutOfRange(local),
             ));
         }
-        if outside_header_bounds(position, source.bounds) {
+        if outside_header_bounds(exact, source.bounds) {
             return Err(ConvertError::PointOutsideHeaderBounds {
                 point_index: processed + index as u64,
-                position,
+                position: exact,
             });
         }
         let intensity = intensities
@@ -1732,6 +2046,14 @@ pub fn visit_source_points(
             let gray = (intensity >> 8) as u8;
             ColorRgb::new(gray, gray, gray)
         };
+        let mut extra = [0; MAX_EXTRA_BYTES_PER_POINT];
+        let extra_len = usize::from(layout.extra_len);
+        let las_flags = if layout.has_flags {
+            extra[..extra_len].copy_from_slice(&record[record.len() - extra_len..]);
+            las_flags_of_record(record, layout.is_extended)
+        } else {
+            0
+        };
         visitor(SpoolPoint {
             raw_position,
             position,
@@ -1745,6 +2067,8 @@ pub fn visit_source_points(
             gps_time,
             rgb,
             nir,
+            las_flags,
+            extra,
             display_color,
         })?;
     }
@@ -1827,6 +2151,10 @@ pub fn write_point(
     if layout.has_nir {
         append_bytes!(point.nir.to_le_bytes());
     }
+    if layout.has_flags {
+        append_bytes!([point.las_flags]);
+    }
+    append_bytes!(&point.extra[..usize::from(layout.extra_len)]);
     append_bytes!([
         point.display_color.r,
         point.display_color.g,
@@ -1918,6 +2246,16 @@ pub fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
     } else {
         0
     };
+    let las_flags = if layout.has_flags {
+        offset += 1;
+        bytes[offset - 1]
+    } else {
+        0
+    };
+    let mut extra = [0; MAX_EXTRA_BYTES_PER_POINT];
+    let extra_len = usize::from(layout.extra_len);
+    extra[..extra_len].copy_from_slice(&bytes[offset..offset + extra_len]);
+    offset += extra_len;
     let display_color = ColorRgb::new(bytes[offset], bytes[offset + 1], bytes[offset + 2]);
     SpoolPoint {
         raw_position,
@@ -1932,8 +2270,24 @@ pub fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
         gps_time,
         rgb,
         nir,
+        las_flags,
+        extra,
         display_color,
     }
+}
+
+/// Position of a source-layout record: the first half of [`decode_point`] without the rest.
+#[inline(always)]
+pub fn decode_position(bytes: &[u8], layout: SpoolLayout) -> [f64; 3] {
+    debug_assert!(layout.source_coordinates);
+    let raw = std::array::from_fn(|axis| {
+        i32::from_le_bytes(
+            bytes[4 * axis..4 * axis + 4]
+                .try_into()
+                .expect("fixed width"),
+        )
+    });
+    layout.position(raw)
 }
 
 #[inline]
@@ -1985,26 +2339,160 @@ fn child_bounds(bounds: SpatialBounds, child: usize, divisions: u8) -> SpatialBo
 }
 
 #[inline]
-pub fn sample_index(position: [f64; 3], bounds: SpatialBounds) -> usize {
+pub fn sample_index(position: [f64; 3], bounds: SpatialBounds, grid: usize) -> usize {
     let side = cube_side(bounds);
     let mut cell = [0_usize; 3];
     for axis in 0..3 {
-        let scaled =
-            ((position[axis] - bounds.min()[axis]) / side * SAMPLE_GRID_SIZE as f64).floor();
-        cell[axis] = (scaled as usize).min(SAMPLE_GRID_SIZE - 1);
+        let scaled = ((position[axis] - bounds.min()[axis]) / side * grid as f64).floor();
+        cell[axis] = (scaled as usize).min(grid - 1);
     }
-    (cell[0] * SAMPLE_GRID_SIZE + cell[1]) * SAMPLE_GRID_SIZE + cell[2]
+    (cell[0] * grid + cell[1]) * grid + cell[2]
+}
+
+/// `sample_index` and `voxel_center` of the same position in one pass: the cell coordinates are
+/// reused instead of divided back out of the index (same arithmetic, so identical results).
+#[inline]
+pub fn sample_cell(position: [f64; 3], bounds: SpatialBounds, grid: usize) -> (usize, [f64; 3]) {
+    let side = cube_side(bounds);
+    let cell_size = side / grid as f64;
+    let mut cell = [0_usize; 3];
+    for axis in 0..3 {
+        let scaled = ((position[axis] - bounds.min()[axis]) / side * grid as f64).floor();
+        cell[axis] = (scaled as usize).min(grid - 1);
+    }
+    let center =
+        std::array::from_fn(|axis| bounds.min()[axis] + (cell[axis] as f64 + 0.5) * cell_size);
+    ((cell[0] * grid + cell[1]) * grid + cell[2], center)
+}
+
+/// Exponent of a positive power-of-two side read from the `f64` bits (no `log2`).
+fn power_of_two_exponent(value: f64) -> i32 {
+    ((value.to_bits() >> 52) & 0x7ff) as i32 - 1023
+}
+
+/// Absolute level `a` of a `v7.4-pre` node from its cube (side `2^(49 - a)` CRS units).
+pub fn global_level(bounds: SpatialBounds) -> u32 {
+    (49 - power_of_two_exponent(cube_side(bounds))).clamp(0, 64) as u32
+}
+
+/// Side of a `v7.4-pre` node in quanta as a power-of-two exponent (`64 - a`).
+fn global_side_exponent(bounds: SpatialBounds) -> u32 {
+    64 - global_level(bounds)
+}
+
+fn quanta(position: [f64; 3]) -> [i64; 3] {
+    // Positions of a global conversion are on the grid and inside the coordinate limit.
+    // `as` saturates: a level-0 corner -2^48 units is exactly -2^63 quanta.
+    position.map(|value| viewer_format::round_to_quanta(value * 32_768.0))
+}
+
+/// Per-node constants of [`sample_cell_global`]: computed once instead of per point.
+#[derive(Clone, Copy)]
+pub struct GlobalCellFrame {
+    origin: [i64; 3],
+    shift: u32,
+    grid: usize,
+    /// Every cell center is an `i64`: the cube lies inside the coordinate domain, so the
+    /// centers need no `i128` arithmetic or conversion.
+    centers_fit: bool,
+}
+
+impl GlobalCellFrame {
+    pub fn new(bounds: SpatialBounds, grid: usize) -> Self {
+        let origin = quanta(bounds.min());
+        let side_exponent = global_side_exponent(bounds);
+        let centers_fit = origin
+            .iter()
+            .all(|&origin| (i128::from(origin) + (1_i128 << side_exponent)) <= 1_i128 << 63);
+        Self {
+            origin,
+            shift: side_exponent - grid.trailing_zeros(),
+            grid,
+            centers_fit,
+        }
+    }
+
+    #[inline]
+    fn center(&self, axis: usize, cell: usize) -> f64 {
+        if self.centers_fit {
+            let half = if self.shift == 0 {
+                0
+            } else {
+                1_u64 << (self.shift - 1)
+            };
+            // The true sum is an `i64`, so wrapping arithmetic yields it exactly.
+            let quanta = self.origin[axis]
+                .wrapping_add(((cell as u64) << self.shift) as i64)
+                .wrapping_add(half as i64);
+            quanta as f64 * viewer_format::quanta_to_units(1)
+        } else {
+            global_cell_center(self.origin[axis], cell, self.shift)
+        }
+    }
+
+    /// Cell index and center of `position`; see [`sample_cell_global`].
+    #[inline]
+    pub fn cell(&self, position: [f64; 3]) -> (usize, [f64; 3]) {
+        let q = quanta(position);
+        let grid = self.grid;
+        let mut cell = [0_usize; 3];
+        let mut center = [0.0_f64; 3];
+        for axis in 0..3 {
+            // The difference fits `i64` for any point inside a node below the root; wider
+            // ones take the `i128` path (same value, only slower).
+            cell[axis] = match q[axis].checked_sub(self.origin[axis]) {
+                Some(relative) => (relative >> self.shift).clamp(0, grid as i64 - 1) as usize,
+                None => ((i128::from(q[axis]) - i128::from(self.origin[axis])) >> self.shift)
+                    .clamp(0, grid as i128 - 1) as usize,
+            };
+            center[axis] = self.center(axis, cell[axis]);
+        }
+        ((cell[0] * grid + cell[1]) * grid + cell[2], center)
+    }
+}
+
+/// [`sample_cell`] on exact integers for a node of a global octree: the cell of `position` is
+/// `(q - origin) >> (side_exponent - log2(grid))` and the center is an integer number of quanta.
+#[inline]
+pub fn sample_cell_global(
+    position: [f64; 3],
+    bounds: SpatialBounds,
+    grid: usize,
+) -> (usize, [f64; 3]) {
+    GlobalCellFrame::new(bounds, grid).cell(position)
 }
 
 #[inline]
-pub fn voxel_center(index: usize, bounds: SpatialBounds) -> [f64; 3] {
-    let cell = [
-        index / (SAMPLE_GRID_SIZE * SAMPLE_GRID_SIZE),
-        (index / SAMPLE_GRID_SIZE) % SAMPLE_GRID_SIZE,
-        index % SAMPLE_GRID_SIZE,
-    ];
-    let cell_size = cube_side(bounds) / SAMPLE_GRID_SIZE as f64;
+fn global_cell_center(origin: i64, cell: usize, shift: u32) -> f64 {
+    let half = if shift == 0 { 0 } else { 1_i128 << (shift - 1) };
+    let center = i128::from(origin) + ((cell as i128) << shift) + half;
+    center as f64 * viewer_format::quanta_to_units(1)
+}
+
+#[inline]
+pub fn voxel_center_global(index: usize, bounds: SpatialBounds, grid: usize) -> [f64; 3] {
+    let shift = global_side_exponent(bounds) - grid.trailing_zeros();
+    let origin = quanta(bounds.min());
+    let cell = [index / (grid * grid), (index / grid) % grid, index % grid];
+    std::array::from_fn(|axis| global_cell_center(origin[axis], cell[axis], shift))
+}
+
+#[inline]
+pub fn voxel_center(index: usize, bounds: SpatialBounds, grid: usize) -> [f64; 3] {
+    let cell = [index / (grid * grid), (index / grid) % grid, index % grid];
+    let cell_size = cube_side(bounds) / grid as f64;
     std::array::from_fn(|axis| bounds.min()[axis] + (cell[axis] as f64 + 0.5) * cell_size)
+}
+
+/// Half the cell diagonal, or the whole diagonal where samples sit at their nearest point
+/// (`v7.4-pre` nodes with `a < 32`).
+pub fn lod_sample_error(bounds: SpatialBounds, grid: usize, layout: SpoolLayout) -> f64 {
+    let half_diagonal = (3.0_f64).sqrt() * (cube_side(bounds) / grid as f64) / 2.0;
+    if layout.is_global() && global_level(bounds) < 32 {
+        2.0 * half_diagonal
+    } else {
+        half_diagonal
+    }
 }
 
 pub fn center_rounding_error(bounds: SpatialBounds, frame: viewer_core::CoordinateFrame) -> f64 {
@@ -2039,6 +2527,7 @@ fn estimate_memory(
     node_count: usize,
     block_count: usize,
     spatial_divisions: u8,
+    sample_grid: usize,
 ) -> Result<u64, ConvertError> {
     let node_bytes = u64::try_from(node_count)
         .map_err(|_| ConvertError::SizeOverflow)?
@@ -2051,9 +2540,7 @@ fn estimate_memory(
     let working_bytes = point_limit
         .checked_mul(crate::options::ESTIMATED_WORKING_BYTES_PER_POINT)
         .ok_or(ConvertError::SizeOverflow)?;
-    let sample_accumulators = (SAMPLE_GRID_SIZE.pow(3) as u64)
-        .checked_mul(256)
-        .ok_or(ConvertError::SizeOverflow)?;
+    let sample_accumulators = sample_accumulator_bytes(sample_grid, point_limit)?;
     let child_spool_buffers = child_spool_buffer_bytes(spatial_divisions)?;
     working_bytes
         .checked_add(node_bytes)
@@ -2066,12 +2553,29 @@ fn estimate_memory(
 
 /// What each root range beyond the first adds to the root's working set: its decode batch, child
 /// buffers, sample accumulators and fixed overhead.
-fn range_memory_bytes(point_limit: u64, spatial_divisions: u8) -> Result<u64, ConvertError> {
+fn range_memory_bytes(
+    point_limit: u64,
+    spatial_divisions: u8,
+    sample_grid: usize,
+) -> Result<u64, ConvertError> {
     point_limit
         .checked_mul(crate::options::ESTIMATED_WORKING_BYTES_PER_POINT)
         .and_then(|bytes| bytes.checked_add(child_spool_buffer_bytes(spatial_divisions).ok()?))
-        .and_then(|bytes| bytes.checked_add((SAMPLE_GRID_SIZE.pow(3) as u64).checked_mul(256)?))
+        .and_then(|bytes| {
+            bytes.checked_add(sample_accumulator_bytes(sample_grid, point_limit).ok()?)
+        })
         .and_then(|bytes| bytes.checked_add(SPATIAL_WORKER_OVERHEAD_BYTES))
+        .ok_or(ConvertError::SizeOverflow)
+}
+
+/// The sample grid is sparse: at most one accumulator per occupied cell, and a node holds about
+/// `point_limit` points, so occupied cells are bounded by `min(g³, max(point_limit, 8³))`; the
+/// floor keeps the estimate of the default 8³ grid unchanged for small limits.
+fn sample_accumulator_bytes(sample_grid: usize, point_limit: u64) -> Result<u64, ConvertError> {
+    (sample_grid as u64)
+        .checked_pow(3)
+        .map(|cells| cells.min(point_limit.max(512)))
+        .and_then(|cells| cells.checked_mul(256))
         .ok_or(ConvertError::SizeOverflow)
 }
 
@@ -2089,13 +2593,15 @@ fn branch_memory_budget(
     completed_blocks: usize,
     worker_count: usize,
     spatial_divisions: u8,
+    sample_grid: usize,
 ) -> Result<u64, ConvertError> {
-    let base = estimate_memory(point_limit, 0, 0, spatial_divisions)?;
+    let base = estimate_memory(point_limit, 0, 0, spatial_divisions, sample_grid)?;
     let current = estimate_memory(
         point_limit,
         completed_nodes,
         completed_blocks,
         spatial_divisions,
+        sample_grid,
     )?;
     let current_index = current.saturating_sub(base);
     let workers = u64::try_from(worker_count).map_err(|_| ConvertError::SizeOverflow)?;
@@ -2170,6 +2676,11 @@ mod partition_tests {
             point_format: las::point::Format::new(format_id).unwrap(),
             transforms,
             has_crs: false,
+            crs: viewer_format::CrsRecord::local(),
+            scale_offset: None,
+            global: None,
+            extra_byte_vlrs: Vec::new(),
+            las_extra_bytes: None,
         };
         let point = SpoolPoint {
             raw_position,
@@ -2184,6 +2695,8 @@ mod partition_tests {
             gps_time: 123_456.789,
             rgb: [12_345, 23_456, 34_567],
             nir: 54_321,
+            las_flags: 0,
+            extra: [0; MAX_EXTRA_BYTES_PER_POINT],
             display_color: ColorRgb::new(71, 82, 93),
         };
         (source, point)
@@ -2299,15 +2812,25 @@ mod partition_tests {
     #[test]
     fn synthetic_lod_centers_preserve_f64_bits_outside_las_grid() {
         let (source, fixture) = spool_fixture(3);
-        let layout = SpoolLayout::source(&source).lod();
+        let source_layout = SpoolLayout::source(&source);
+        let layout = source_layout.lod();
         let center = [
             0.123_456_789_012_345,
             -1.234_567_890_123_456,
             987_654.321_098_765_4,
         ];
+        let mut record = Vec::new();
+        write_point(&mut record, &fixture, source_layout).unwrap();
+        let mut records = NearestRecords::new(source_layout, 1);
         let mut sample = SampleAccumulator::default();
-        sample.add(&fixture, center);
-        let synthetic = sample.finish(center);
+        sample.add(
+            &mut records,
+            source_layout,
+            &record,
+            fixture.position,
+            center,
+        );
+        let synthetic = sample.finish(&records, source_layout, center);
         let mut bytes = Vec::new();
         write_point(&mut bytes, &synthetic, layout).unwrap();
         assert_eq!(bytes.len(), 53);
@@ -2344,6 +2867,7 @@ mod partition_tests {
                     offset_points: 1,
                     point_count: 1,
                     layout,
+                    extras: Vec::new().into(),
                     is_source_points: layout.source_coordinates,
                     final_block_in_spool: true,
                 }

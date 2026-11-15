@@ -1,0 +1,12 @@
+57fb447e192b5fcf733dfcb516fed705e6032bf8aaab7c82cb43aa6c82289d60  crates/viewer_wasm/src/lod_cells_bench.rs
+75f14d96951c8ad92521f917131c6558201eb7ed440521360b37481670c72b8a  crates/viewer_wasm/src/lod_cells.rs
+7a90e5afb28e3a0135b37ecf4ff4adaeae73534798d3b74e4b9cdc6de64fc389  crates/viewer_wasm/src/lod_driver.rs
+4f3ce4bdd1df6352c0f6395a22cfd5425d994893115296a7d08b65b8d357a1e1  crates/viewer_render_wgpu/src/cell_pool.rs
+64d6f1d00e649846161e1a9e2f50cd97af87e476df8bee37b395f5a6023c0df5  crates/viewer_render_wgpu/src/cell_driver.rs
+f631b51743768b3a9d140c498d8753f92580b4a1e2ccf74e5bfeb29959668db7  crates/viewer_render_wgpu/src/cell_cut.rs
+101464e9152145270f525f3be6818e702aca5c8bd9456e133641d339c26ed148  target/render-data/belvedere-v75.oct
+269d5df1e6da8485a0fd5ded3798a0f79bdde61ff298f624e5497dba6b29f1b1  target/render-data/majadas-v75.oct
+base 1c0f9dbb4e1103b376d8d23b54ff95fbb1f737f1 on feat/r3-v75, no uncommitted code
+rustc 1.101.0-nightly (41089d07a 2026-10-27)
+model name	: AMD Ryzen AI 9 365 w/ Radeon 880M
+profile perf, native Linux, viewport 1280x720, no GPU (recording CellTarget)

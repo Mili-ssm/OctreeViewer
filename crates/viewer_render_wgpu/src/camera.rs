@@ -3,7 +3,7 @@ use viewer_core::{FrustumPlane, SpatialBounds, SpatialFrustum};
 
 use crate::{SceneBounds, VoxelBuildLimits};
 
-const VERTICAL_FOV: f64 = 45.0_f64.to_radians();
+pub(crate) const VERTICAL_FOV: f64 = 45.0_f64.to_radians();
 const MIN_PITCH: f64 = -89.0_f64.to_radians();
 const MAX_PITCH: f64 = 89.0_f64.to_radians();
 /// Largest far/near ratio of the render projection; keeps `Depth32Float` (non-reversed)
@@ -16,6 +16,15 @@ pub struct CameraFrame {
     pub view_projection: [[f32; 4]; 4],
     /// Local scene origin subtracted in the vertex shader before projection.
     pub render_origin: [f32; 4],
+}
+
+/// View-projection with the eye at the origin, for the eye-relative cell pool (Task 7).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EyeFrame {
+    /// Column-major, WebGPU depth range; it expects positions minus `eye`.
+    pub view_projection: [[f32; 4]; 4],
+    /// The camera eye in scaled local render units, in `f64`: the `PageFrame::eye_scaled` input.
+    pub eye: [f64; 3],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -376,6 +385,35 @@ impl OrbitCamera {
         })
     }
 
+    /// Same view and projection as [`Self::frame`] but looking from the origin towards `-offset`,
+    /// so a point is projected as `position - eye`. Cells keep their precision near the eye
+    /// because the subtraction happens in `f64` on the CPU, not in the matrix.
+    pub fn eye_frame(&self, viewport: [u32; 2]) -> Option<EyeFrame> {
+        if viewport[0] == 0 || viewport[1] == 0 {
+            return None;
+        }
+        let aspect = f64::from(viewport[0]) / f64::from(viewport[1]);
+        let offset = DVec3::new(
+            self.yaw.sin() * self.pitch.cos(),
+            self.yaw.cos() * self.pitch.cos(),
+            self.pitch.sin(),
+        ) * self.distance;
+        let (near, far) = self.clip_distances();
+        let view = dcamera::rh::view::look_at_mat4(DVec3::ZERO, -offset, DVec3::Z);
+        let projection = dcamera::rh::proj::directx::perspective(VERTICAL_FOV, aspect, near, far);
+        let matrix = (projection * view).as_mat4().to_cols_array_2d();
+        let eye = self.position();
+        if matrix.iter().flatten().any(|value| !value.is_finite())
+            || eye.iter().any(|value| !value.is_finite())
+        {
+            return None;
+        }
+        Some(EyeFrame {
+            view_projection: matrix,
+            eye,
+        })
+    }
+
     /// Builds the current view frustum in local render coordinates.
     pub fn spatial_frustum(&self, viewport: [u32; 2]) -> Option<SpatialFrustum> {
         self.spatial_frustum_with_near(viewport, self.clip_distances().0)
@@ -511,7 +549,7 @@ impl OrbitCamera {
             .max(0.001)
     }
 
-    fn clip_distances(&self) -> (f64, f64) {
+    pub(crate) fn clip_distances(&self) -> (f64, f64) {
         // Panning/recentering moves the orbit pivot, not the dataset bounds.
         let (position, forward, _, _) = self.basis();
         let center_depth = (self.scene_center - position).dot(forward);
@@ -754,6 +792,32 @@ mod tests {
         let center = eye + forward * ((near + far) * 0.5);
         assert!(project(center + up).y > 0.0);
         assert!(project(center + right).x > 0.0);
+    }
+
+    #[test]
+    fn eye_frame_projects_like_frame_with_the_eye_at_the_origin() {
+        let mut camera = OrbitCamera::default();
+        let viewport = [800, 600];
+        assert!(camera.fit(bounds(), viewport));
+        assert!(camera.orbit(0.7, 0.2));
+        let frame = Mat4::from_cols_array_2d(&camera.frame(viewport).unwrap().view_projection);
+        let eye_frame = camera.eye_frame(viewport).unwrap();
+        assert_eq!(eye_frame.eye, camera.position());
+        let eye_matrix = Mat4::from_cols_array_2d(&eye_frame.view_projection);
+        for point in [
+            DVec3::new(0.3, -0.2, 0.1),
+            DVec3::new(-1.0, 0.5, 0.25),
+            DVec3::new(0.0, 0.0, -0.4),
+        ] {
+            let from_target = frame * (point - camera.target).as_vec3().extend(1.0);
+            let from_eye = eye_matrix
+                * (point - DVec3::from_array(eye_frame.eye))
+                    .as_vec3()
+                    .extend(1.0);
+            let (a, b) = (from_target / from_target.w, from_eye / from_eye.w);
+            assert!((a - b).abs().max_element() < 1e-4, "{a} vs {b}");
+        }
+        assert!(camera.eye_frame([0, 600]).is_none());
     }
 
     #[test]

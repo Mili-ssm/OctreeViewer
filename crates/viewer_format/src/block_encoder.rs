@@ -95,8 +95,7 @@ mod tests {
         for version in [
             FormatVersion::V6,
             FormatVersion::V6Pre(NonZeroU32::new(5).unwrap()),
-            FormatVersion::V7,
-            FormatVersion::V7Pre(NonZeroU32::new(4).unwrap()),
+            FormatVersion::V7Pre(NonZeroU32::new(6).unwrap()),
             FormatVersion::Unknown {
                 major: 9,
                 revision: 7,

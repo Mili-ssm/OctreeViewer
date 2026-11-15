@@ -5,7 +5,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use viewer_format::{block_checkpoint_versions, crc32};
+use viewer_format::{RowOrder, block_checkpoint_versions, crc32};
 
 use crate::{
     CheckpointError, CheckpointMode, ConversionWorkerStats, ConvertOptions,
@@ -54,6 +54,13 @@ struct Options {
     workers_explicit: bool,
     divisions: u8,
     pipelined: bool,
+    // Journals written before the option existed were source order, hence the default; this
+    // keeps them resumable as source and rejects them as hybrid without a schema bump.
+    #[serde(default = "default_row_order")]
+    row_order: String,
+}
+fn default_row_order() -> String {
+    RowOrder::Source.as_str().into()
 }
 impl From<ConvertOptions> for Options {
     fn from(o: ConvertOptions) -> Self {
@@ -66,6 +73,7 @@ impl From<ConvertOptions> for Options {
             workers_explicit: o.spatial_workers_explicit(),
             divisions: o.spatial_divisions(),
             pipelined: o.pipelined_writes(),
+            row_order: o.row_order().as_str().into(),
         }
     }
 }
@@ -787,6 +795,34 @@ mod tests {
             writer_record: vec![1, 2],
         })
         .unwrap();
+    }
+    #[test]
+    fn resume_rejects_a_different_row_order() {
+        let tmp = dir();
+        let p = tmp.path().join("out");
+        let v7 = |order| {
+            ConvertOptions::default()
+                .with_format_version(FormatVersion::V7_PRE2)
+                .unwrap()
+                .with_row_order(order)
+                .unwrap()
+        };
+        let mut c = EptCheckpoint::open(&p, CheckpointMode::Create, v7(RowOrder::Source)).unwrap();
+        c.bind_source_files(src()).unwrap();
+        drop(c);
+        assert!(matches!(
+            EptCheckpoint::open(&p, CheckpointMode::Resume, v7(RowOrder::Hybrid)),
+            Err(CheckpointError::Mismatch)
+        ));
+        EptCheckpoint::open(&p, CheckpointMode::Resume, v7(RowOrder::Source)).unwrap();
+    }
+    #[test]
+    fn journals_without_row_order_resume_as_source_only() {
+        let old: Options = serde_json::from_str(
+            r#"{"version":"v7.1-pre","points_per_block":1,"quantization_bits":0,"memory":1,"workers":1,"workers_explicit":false,"divisions":1,"pipelined":false}"#,
+        )
+        .unwrap();
+        assert_eq!(old.row_order, "source");
     }
     #[test]
     fn option_and_source_mismatch() {

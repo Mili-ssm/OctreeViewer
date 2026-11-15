@@ -1,0 +1,21 @@
+{
+  "input": "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+  "leaf_count": 6721,
+  "leaf_points": 32000,
+  "max_level": 7,
+  "node_count": 8289,
+  "output_bytes": 1568536011,
+  "peak_rss_bytes": 158220288,
+  "points_per_leaf": {
+    "max": 31990.0,
+    "p50": 8672.0,
+    "p95": 29207.0
+  },
+  "sample_grid": 64,
+  "spacing_jump_levels": {
+    "max": 5.999999999999114,
+    "p50": 1.9999999999995568,
+    "p95": 3.0
+  },
+  "wall_seconds": 57.781896206
+}

@@ -1,0 +1,636 @@
+{
+  "schemaVersion": 1,
+  "probe": "probe-cells-smoke",
+  "startedAt": "2026-11-13T23:58:10.742Z",
+  "input": "target/render-data/belvedere-v75.oct",
+  "targetPixels": 4,
+  "timeoutMs": 120000,
+  "restMs": 5000,
+  "gttBaselineBytes": 42389504,
+  "gttAvailable": true,
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ],
+  "poses": [
+    {
+      "label": "fitted",
+      "pose": {
+        "position": [
+          412817.4521301963,
+          5089674.240005493,
+          8271.655413105644
+        ],
+        "target": [
+          416057.0599975586,
+          5089674.240005493,
+          2660.489990234375
+        ]
+      },
+      "timeOrigin": "open",
+      "poseApplied": true,
+      "trace": [
+        {
+          "t": 212,
+          "pendingBlockIds": {
+            "length": 3
+          },
+          "pendingPageAnchors": {
+            "length": 0
+          },
+          "builtNodes": 2,
+          "buildDeferred": 3,
+          "buildMs": 31.5,
+          "cutNodes": 4,
+          "maxGap": 0,
+          "gapsOverOne": 0,
+          "uncoveredNodes": 0,
+          "cpuCoarsened": 0,
+          "forgottenSelected": 0,
+          "forgottenWaiter": 0,
+          "forgottenAncestor": 0,
+          "rebuiltTotal": 0,
+          "selectionNodes": 5,
+          "selectedBuiltNotInCut": 0,
+          "selectedBuiltBlocksMissing": 0,
+          "cpuNeededBytes": 1418656,
+          "blockCacheBytes": 3764352,
+          "blockCacheLimitBytes": 268435456,
+          "blockEvictions": 0,
+          "buildCapped": true,
+          "cellPath": "enabled",
+          "cellsBusy": true,
+          "cellsNeedFrame": false,
+          "cutDigestAtRest": null,
+          "cutApply": "applied",
+          "viewEpoch": 4,
+          "cutEpochSent": 10,
+          "cutEpochApplied": 10,
+          "queuedNodeCells": 0,
+          "queuedNodeBytes": 0,
+          "cellsForgottenTotal": 0,
+          "cellCpuBytes": 1418656,
+          "poolStages": 0,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 120,
+          "poolUploadedBytes": 0,
+          "wasmLinearMemoryBytes": 7667712,
+          "poolDescendantTooFine": false,
+          "sceneDigest": null,
+          "attributeRange": null,
+          "cellsStuck": false,
+          "cellsStuckFrames": 0
+        }
+      ],
+      "reached": true,
+      "settled": true,
+      "timeToReachedMs": 853,
+      "arrivalFrames": {
+        "replies": 51,
+        "intervalMs": {
+          "count": 50,
+          "p50": 16.60009765625,
+          "p95": 20,
+          "max": 46.39990234375
+        },
+        "roundTripMs": {
+          "count": 51,
+          "p50": 1,
+          "p95": 3.9000000059604645,
+          "max": 6.199999988079071
+        },
+        "renderCallMs": {
+          "count": 51,
+          "p50": 0.5,
+          "p95": 3.2000000178813934,
+          "max": 5.700000017881393
+        }
+      },
+      "retained": {
+        "samples": 0,
+        "of": 7,
+        "streaks": 0,
+        "durationsMs": [],
+        "totalMs": 0
+      },
+      "statsAtReached": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "d7e5b19e6c7d5237",
+        "cellsBusy": false,
+        "viewEpoch": 4,
+        "cutEpochSent": 22,
+        "cutEpochApplied": 22,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "cpuCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 872,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 21007656,
+        "wasmLinearMemoryBytes": 28573696,
+        "cellPath": "enabled"
+      },
+      "gttAtReachedDeltaBytes": 436764672,
+      "rest": {
+        "windowMs": 5025,
+        "forgottenDelta": 0,
+        "stillAtRest": true,
+        "frames": {
+          "replies": 302,
+          "intervalMs": {
+            "count": 301,
+            "p50": 16.699951171875,
+            "p95": 17.60009765625,
+            "max": 18.89990234375
+          },
+          "roundTripMs": {
+            "count": 302,
+            "p50": 0.5,
+            "p95": 1.199999988079071,
+            "max": 2.899999976158142
+          },
+          "renderCallMs": {
+            "count": 302,
+            "p50": 0.20000001788139343,
+            "p95": 0.5,
+            "max": 0.9000000059604645
+          }
+        },
+        "gttDeltaBytes": 416501760
+      },
+      "statsAtRestEnd": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "d7e5b19e6c7d5237",
+        "cellsBusy": false,
+        "viewEpoch": 4,
+        "cutEpochSent": 22,
+        "cutEpochApplied": 22,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "cpuCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 872,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 21007656,
+        "wasmLinearMemoryBytes": 28573696,
+        "cellPath": "enabled"
+      },
+      "endedInRetainedStreak": false
+    },
+    {
+      "label": "orbit",
+      "pose": {
+        "position": [
+          413403.3285903141,
+          5087816.077269757,
+          8271.655413105644
+        ],
+        "target": [
+          416057.0599975586,
+          5089674.240005493,
+          2660.489990234375
+        ]
+      },
+      "timeOrigin": "request",
+      "poseApplied": true,
+      "trace": [
+        {
+          "t": 3,
+          "pendingBlockIds": {
+            "length": 1
+          },
+          "pendingPageAnchors": {
+            "length": 0
+          },
+          "builtNodes": 0,
+          "buildDeferred": 0,
+          "buildMs": 0,
+          "cutNodes": 12,
+          "maxGap": 0,
+          "gapsOverOne": 0,
+          "uncoveredNodes": 0,
+          "cpuCoarsened": 0,
+          "forgottenSelected": 0,
+          "forgottenWaiter": 0,
+          "forgottenAncestor": 0,
+          "rebuiltTotal": 0,
+          "selectionNodes": 12,
+          "selectedBuiltNotInCut": 0,
+          "selectedBuiltBlocksMissing": 0,
+          "cpuNeededBytes": 13444240,
+          "blockCacheBytes": 15165104,
+          "blockCacheLimitBytes": 268435456,
+          "blockEvictions": 0,
+          "buildCapped": false,
+          "cellPath": "enabled",
+          "cellsBusy": true,
+          "cellsNeedFrame": true,
+          "cutDigestAtRest": null,
+          "cutApply": "applied",
+          "viewEpoch": 5,
+          "cutEpochSent": 25,
+          "cutEpochApplied": 22,
+          "queuedNodeCells": 0,
+          "queuedNodeBytes": 0,
+          "cellsForgottenTotal": 0,
+          "cellCpuBytes": 21007656,
+          "poolStages": 0,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 872,
+          "poolUploadedBytes": 0,
+          "wasmLinearMemoryBytes": 28573696,
+          "poolDescendantTooFine": false,
+          "sceneDigest": null,
+          "attributeRange": null,
+          "cellsStuck": false,
+          "cellsStuckFrames": 0
+        }
+      ],
+      "reached": true,
+      "settled": true,
+      "timeToReachedMs": 217,
+      "arrivalFrames": {
+        "replies": 13,
+        "intervalMs": {
+          "count": 12,
+          "p50": 16.5,
+          "p95": 17.39990234375,
+          "max": 17.39990234375
+        },
+        "roundTripMs": {
+          "count": 13,
+          "p50": 0.5,
+          "p95": 2.5999999940395355,
+          "max": 2.5999999940395355
+        },
+        "renderCallMs": {
+          "count": 13,
+          "p50": 0.19999998807907104,
+          "p95": 2.4000000059604645,
+          "max": 2.4000000059604645
+        }
+      },
+      "retained": {
+        "samples": 0,
+        "of": 3,
+        "streaks": 0,
+        "durationsMs": [],
+        "totalMs": 0
+      },
+      "statsAtReached": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "a9080dd2b33529a1",
+        "cellsBusy": false,
+        "viewEpoch": 5,
+        "cutEpochSent": 26,
+        "cutEpochApplied": 26,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "cpuCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 972,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 21114880,
+        "wasmLinearMemoryBytes": 28573696,
+        "cellPath": "enabled"
+      },
+      "gttAtReachedDeltaBytes": 416501760,
+      "rest": {
+        "windowMs": 5032,
+        "forgottenDelta": 0,
+        "stillAtRest": true,
+        "frames": {
+          "replies": 302,
+          "intervalMs": {
+            "count": 301,
+            "p50": 16.699951171875,
+            "p95": 17.300048828125,
+            "max": 18.400146484375
+          },
+          "roundTripMs": {
+            "count": 302,
+            "p50": 0.5,
+            "p95": 1.2999999821186066,
+            "max": 1.7999999821186066
+          },
+          "renderCallMs": {
+            "count": 302,
+            "p50": 0.19999998807907104,
+            "p95": 0.4000000059604645,
+            "max": 0.9000000059604645
+          }
+        },
+        "gttDeltaBytes": 416501760
+      },
+      "statsAtRestEnd": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "a9080dd2b33529a1",
+        "cellsBusy": false,
+        "viewEpoch": 5,
+        "cutEpochSent": 26,
+        "cutEpochApplied": 26,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "cpuCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 972,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 21114880,
+        "wasmLinearMemoryBytes": 28573696,
+        "cellPath": "enabled"
+      },
+      "endedInRetainedStreak": false
+    },
+    {
+      "label": "jump",
+      "pose": {
+        "position": [
+          415733.0992108224,
+          5089674.240005493,
+          3221.606532521502
+        ],
+        "target": [
+          416057.0599975586,
+          5089674.240005493,
+          2660.489990234375
+        ]
+      },
+      "timeOrigin": "request",
+      "poseApplied": true,
+      "trace": [
+        {
+          "t": 5,
+          "pendingBlockIds": {
+            "length": 96
+          },
+          "pendingPageAnchors": {
+            "length": 12
+          },
+          "builtNodes": 0,
+          "buildDeferred": 0,
+          "buildMs": 0,
+          "cutNodes": 13,
+          "maxGap": 0,
+          "gapsOverOne": 0,
+          "uncoveredNodes": 0,
+          "cpuCoarsened": 0,
+          "forgottenSelected": 0,
+          "forgottenWaiter": 0,
+          "forgottenAncestor": 0,
+          "rebuiltTotal": 0,
+          "selectionNodes": 75,
+          "selectedBuiltNotInCut": 0,
+          "selectedBuiltBlocksMissing": 0,
+          "cpuNeededBytes": 19151856,
+          "blockCacheBytes": 15221232,
+          "blockCacheLimitBytes": 268435456,
+          "blockEvictions": 0,
+          "buildCapped": false,
+          "cellPath": "enabled",
+          "cellsBusy": true,
+          "cellsNeedFrame": true,
+          "cutDigestAtRest": null,
+          "cutApply": "applied",
+          "viewEpoch": 6,
+          "cutEpochSent": 29,
+          "cutEpochApplied": 27,
+          "queuedNodeCells": 0,
+          "queuedNodeBytes": 0,
+          "cellsForgottenTotal": 0,
+          "cellCpuBytes": 21114880,
+          "poolStages": 80,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 972,
+          "poolUploadedBytes": 0,
+          "wasmLinearMemoryBytes": 28573696,
+          "poolDescendantTooFine": false,
+          "sceneDigest": null,
+          "attributeRange": null,
+          "cellsStuck": false,
+          "cellsStuckFrames": 0
+        },
+        {
+          "t": 5094,
+          "pendingBlockIds": {
+            "length": 10
+          },
+          "pendingPageAnchors": {
+            "length": 0
+          },
+          "builtNodes": 2,
+          "buildDeferred": 10,
+          "buildMs": 13,
+          "cutNodes": 103,
+          "maxGap": 1,
+          "gapsOverOne": 0,
+          "uncoveredNodes": 0,
+          "cpuCoarsened": 0,
+          "forgottenSelected": 0,
+          "forgottenWaiter": 0,
+          "forgottenAncestor": 0,
+          "rebuiltTotal": 0,
+          "selectionNodes": 107,
+          "selectedBuiltNotInCut": 3,
+          "selectedBuiltBlocksMissing": 0,
+          "cpuNeededBytes": 149181576,
+          "blockCacheBytes": 158090048,
+          "blockCacheLimitBytes": 268435456,
+          "blockEvictions": 0,
+          "buildCapped": true,
+          "cellPath": "enabled",
+          "cellsBusy": true,
+          "cellsNeedFrame": false,
+          "cutDigestAtRest": null,
+          "cutApply": "applied",
+          "viewEpoch": 6,
+          "cutEpochSent": 97,
+          "cutEpochApplied": 97,
+          "queuedNodeCells": 0,
+          "queuedNodeBytes": 0,
+          "cellsForgottenTotal": 0,
+          "cellCpuBytes": 209325992,
+          "poolStages": 0,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 17366,
+          "poolUploadedBytes": 0,
+          "wasmLinearMemoryBytes": 215941120,
+          "poolDescendantTooFine": false,
+          "sceneDigest": null,
+          "attributeRange": null,
+          "cellsStuck": false,
+          "cellsStuckFrames": 0
+        }
+      ],
+      "reached": true,
+      "settled": true,
+      "timeToReachedMs": 5418,
+      "arrivalFrames": {
+        "replies": 325,
+        "intervalMs": {
+          "count": 324,
+          "p50": 16.599853515625,
+          "p95": 18.900146484375,
+          "max": 23.800048828125
+        },
+        "roundTripMs": {
+          "count": 325,
+          "p50": 1.2000000178813934,
+          "p95": 3.5,
+          "max": 8.699999988079071
+        },
+        "renderCallMs": {
+          "count": 325,
+          "p50": 0.6000000238418579,
+          "p95": 2.9000000059604645,
+          "max": 8.300000011920929
+        }
+      },
+      "retained": {
+        "samples": 0,
+        "of": 52,
+        "streaks": 0,
+        "durationsMs": [],
+        "totalMs": 0
+      },
+      "statsAtReached": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "54fb34ef3fec09fa",
+        "cellsBusy": false,
+        "viewEpoch": 6,
+        "cutEpochSent": 103,
+        "cutEpochApplied": 103,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "cpuCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 18331,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 217598736,
+        "wasmLinearMemoryBytes": 224591872,
+        "cellPath": "enabled"
+      },
+      "gttAtReachedDeltaBytes": 412307456,
+      "rest": {
+        "windowMs": 5050,
+        "forgottenDelta": 0,
+        "stillAtRest": true,
+        "frames": {
+          "replies": 303,
+          "intervalMs": {
+            "count": 302,
+            "p50": 16.699951171875,
+            "p95": 17.10009765625,
+            "max": 18.2001953125
+          },
+          "roundTripMs": {
+            "count": 303,
+            "p50": 0.4000000059604645,
+            "p95": 1.0999999940395355,
+            "max": 1.9000000059604645
+          },
+          "renderCallMs": {
+            "count": 303,
+            "p50": 0.19999998807907104,
+            "p95": 0.30000001192092896,
+            "max": 1.699999988079071
+          }
+        },
+        "gttDeltaBytes": 412307456
+      },
+      "statsAtRestEnd": {
+        "cutApply": "applied",
+        "cutDigestAtRest": "54fb34ef3fec09fa",
+        "cellsBusy": false,
+        "viewEpoch": 6,
+        "cutEpochSent": 103,
+        "cutEpochApplied": 103,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "cpuCoarsened": 0,
+        "poolOverflow": 0,
+        "poolDescendantTooFine": false,
+        "poolResidentPages": 18331,
+        "cellsForgottenTotal": 0,
+        "cellCpuBytes": 217598736,
+        "wasmLinearMemoryBytes": 224591872,
+        "cellPath": "enabled"
+      },
+      "endedInRetainedStreak": false
+    }
+  ],
+  "url": "http://127.0.0.1:8767/examples/web-host/index.html?cells=1&buildWorker=1",
+  "browserVersion": "157.0.8103.78",
+  "fittedPose": {
+    "position": [
+      412817.4521301963,
+      5089674.240005493,
+      8271.655413105644
+    ],
+    "target": [
+      416057.0599975586,
+      5089674.240005493,
+      2660.489990234375
+    ]
+  },
+  "metadata": {
+    "name": "belvedere-v75.oct",
+    "bytes": 815312074,
+    "nodeCount": 3941,
+    "boundsMin": [
+      413891.5100097656,
+      5086642.470001221,
+      1471.0199890136719
+    ],
+    "boundsMax": [
+      418222.60998535156,
+      5092706.010009766,
+      3849.959991455078
+    ],
+    "coordinateOrigin": [
+      413891.5100097656,
+      5086642.470001221,
+      1471.0199890136719
+    ]
+  },
+  "finalLod": {
+    "cutApply": "applied",
+    "cutDigestAtRest": "54fb34ef3fec09fa",
+    "cellsBusy": false,
+    "viewEpoch": 6,
+    "cutEpochSent": 103,
+    "cutEpochApplied": 103,
+    "poolStages": 0,
+    "poolNodesWithoutLevel": 0,
+    "poolCoarsened": 0,
+    "cpuCoarsened": 0,
+    "poolOverflow": 0,
+    "poolDescendantTooFine": false,
+    "poolResidentPages": 18331,
+    "cellsForgottenTotal": 0,
+    "cellCpuBytes": 217598736,
+    "wasmLinearMemoryBytes": 224591872,
+    "cellPath": "enabled"
+  },
+  "gttPeakDeltaBytes": 448040960
+}

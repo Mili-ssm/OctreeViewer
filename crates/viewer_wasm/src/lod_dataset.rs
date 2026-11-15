@@ -1,19 +1,32 @@
-use std::{collections::HashSet, sync::Arc};
+use crate::lod_pages::{PageInsert, PageRelease, PageResidency};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use thiserror::Error;
 use viewer_core::{
     BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult, CoordinateFrame,
     DEFAULT_LOD_PRIORITY_BYTES, DatasetMetadata, DecodedBlockCache, LodSelection,
     LodSelectionConfig, LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId,
-    PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy, SpatialNode,
+    PointBlock, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 use viewer_render_wgpu::{
-    GpuRendererError, OrbitCamera, SurfaceRenderer, ViewProjection, VoxelBuildMemoryStats,
-    VoxelScene, VoxelSceneBuildError, build_voxel_scene_with_limits,
+    CellCutError, GpuRendererError, NodeCellError, OrbitCamera, SurfaceRenderer, ViewProjection,
+    VoxelBuildMemoryStats, VoxelScene, VoxelSceneBuildError, build_voxel_scene_with_limits,
+};
+
+#[path = "lod_cells.rs"]
+mod cells;
+pub use cells::{
+    CellDraw, CellPlanStats, CellUpdate, CellUpdateConfig, CellUpdateStats, CutRestProbe,
+    LodCellUpdate, PoolAck, add_cell_nodes, draw_cell_cut,
 };
 
 /// Decoded blocks and resident spatial metadata for one open dataset.
 pub struct LodDataset {
     metadata: Arc<DatasetMetadata>,
+    // Immutable metadata lets each view score only pending owners without scanning the hierarchy.
+    block_owners: HashMap<BlockId, Vec<NodeId>>,
     visual_scale: f64,
     cache: DecodedBlockCache,
     planner: LodTransitionPlanner,
@@ -35,6 +48,18 @@ pub struct LodDataset {
     plan_memo: Option<PlanMemo>,
     /// Bumped on every cache or planner mutation; a plan is valid only for the epoch it saw.
     state_epoch: u64,
+    /// CRS identity (`EPSG:code`) of a `v7.4-pre` cloud; older formats carry none.
+    crs: Option<String>,
+    /// Reference spacing stored by the format (`v7.5-pre`); other formats compute it on demand.
+    stored_reference_spacing: Option<f64>,
+    /// Present when the hierarchy is paged (`v7.5-pre`): pages are grafted and evicted at run time.
+    pages: Option<PageResidency>,
+    /// The last `graft_page` failed on the page budget and no page has been grafted since.
+    page_budget_exhausted: bool,
+    /// The format has the global integer frame (`v7.4-pre`, `v7.5-pre`), which the cell path needs.
+    global_frame: bool,
+    /// Cells-mode bookkeeping, see `lod_cells.rs`.
+    cells: cells::CellState,
 }
 
 struct SelectionMemo {
@@ -174,9 +199,23 @@ pub struct LodViewStats {
     pub cache_bytes: usize,
     pub cache_budget_bytes: usize,
     pub pending_block_ids: Vec<BlockId>,
+    /// Anchors whose hierarchy page is missing and needed to refine the target, highest
+    /// projected error first. The stage must not advance while any is pending.
+    pub pending_page_anchors: Vec<NodeId>,
+    /// A needed page was fetched but could not be grafted because the pinned cut leaves no room
+    /// in the page budget: the anchors stay pending and the target cannot be reached.
+    pub page_budget_exhausted: bool,
     pub uncovered_nodes: usize,
     pub budget_omitted_nodes: usize,
     pub refinement_work: LodWorkStats,
+}
+
+impl LodViewStats {
+    /// Whether the stage must hold: a needed block or hierarchy page is still missing.
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn has_pending_loads(&self) -> bool {
+        !self.pending_block_ids.is_empty() || !self.pending_page_anchors.is_empty()
+    }
 }
 
 #[derive(Debug, Error)]
@@ -201,10 +240,39 @@ pub enum LodDatasetError {
     CacheCyclePaused,
     #[error("LOD selection failed: {0}")]
     Selection(#[from] LodSelectionError),
+    #[error("hierarchy page rejected: {0}")]
+    Page(#[from] viewer_core::SpatialError),
+    #[error(
+        "page budget exhausted: a {needed}-byte page does not fit in {budget} bytes with {pinned} bytes pinned by the cut"
+    )]
+    PageBudget {
+        needed: usize,
+        budget: usize,
+        pinned: usize,
+    },
     #[error("GPU cut update failed: {0}")]
     Gpu(#[from] GpuRendererError),
     #[error("voxel scene build failed: {0}")]
     VoxelScene(#[from] VoxelSceneBuildError),
+    #[error(
+        "the cell path needs a v7.4-pre, v7.5-pre or v7 dataset with replacement semantics (R3-Q5: older formats and additive clouds use the CPU path)"
+    )]
+    CellPathUnsupported,
+    #[error("cells of a node could not be built: {0}")]
+    NodeCells(#[from] NodeCellError),
+    #[error("cell cut rejected: {0}")]
+    CellCut(#[from] CellCutError),
+    #[error("cell driver failed: {0}")]
+    CellDriver(String),
+    #[error(
+        "node {descendant:?} lies {gap} levels below its cut ancestor {ancestor:?}; the mask holds {max}"
+    )]
+    CellCutGap {
+        ancestor: NodeId,
+        descendant: NodeId,
+        gap: u32,
+        max: u32,
+    },
 }
 
 impl LodDatasetError {
@@ -240,8 +308,10 @@ impl LodDataset {
         visual_scale: f64,
         cache_bytes: usize,
     ) -> Self {
+        let block_owners = index_block_owners(metadata.hierarchy());
         Self {
             metadata,
+            block_owners,
             visual_scale,
             cache: DecodedBlockCache::new(cache_bytes),
             planner: LodTransitionPlanner::new(),
@@ -257,7 +327,214 @@ impl LodDataset {
             selection_memo: None,
             plan_memo: None,
             state_epoch: 0,
+            crs: None,
+            stored_reference_spacing: None,
+            pages: None,
+            page_budget_exhausted: false,
+            global_frame: false,
+            cells: cells::CellState::default(),
         }
+    }
+
+    /// Makes the hierarchy paged: `unloaded` are the nodes whose pages are missing, `release` is
+    /// told about every evicted page, and resident pages account for at most `budget_bytes`.
+    pub fn with_pages(
+        mut self,
+        unloaded: &[NodeId],
+        release: PageRelease,
+        budget_bytes: usize,
+    ) -> Result<Self, LodDatasetError> {
+        let hierarchy = Arc::make_mut(&mut self.metadata).hierarchy_mut();
+        for id in unloaded {
+            hierarchy.mark_unloaded(*id)?;
+        }
+        self.pages = Some(PageResidency::new(release, budget_bytes));
+        Ok(self)
+    }
+
+    /// Whether pages are fetched on demand.
+    pub fn is_paged(&self) -> bool {
+        self.pages.is_some()
+    }
+
+    /// Resident hierarchy size, for the host's open report.
+    pub fn resident_node_count(&self) -> usize {
+        self.metadata.hierarchy().stats().node_count
+    }
+
+    pub fn resident_max_level(&self) -> u32 {
+        self.metadata.hierarchy().stats().max_level
+    }
+
+    /// Resident pages (excluding the root page), their accounted bytes and the evictions so far.
+    pub fn page_stats(&self) -> (usize, usize, u64) {
+        self.pages
+            .as_ref()
+            .map_or((0, 0, 0), |p| (p.pages(), p.used_bytes(), p.evictions()))
+    }
+
+    /// Nodes no page may drop: the retained cut, the visible cut and the last target.
+    fn pinned_nodes(&self) -> Vec<NodeId> {
+        let mut nodes: Vec<NodeId> = self.planner.retained_nodes().to_vec();
+        if let Some(plan) = &self.visible_plan {
+            nodes.extend_from_slice(plan.node_ids());
+        }
+        if let Some(memo) = &self.selection_memo {
+            nodes.extend_from_slice(memo.selection.node_ids());
+        }
+        // The pool keeps drawing these, also while it retains the previous cut.
+        self.cells.extend_pins(&mut nodes);
+        nodes
+    }
+
+    /// Grafts a fetched page, first evicting least-recently-used pages that carry no retained
+    /// node and no resident descendant page until it fits. Fails with `PageBudget` when the
+    /// pinned pages leave no room; the hierarchy is then unchanged.
+    pub fn graft_page(&mut self, page: PageInsert) -> Result<(), LodDatasetError> {
+        let Some(residency) = &self.pages else {
+            return Err(LodDatasetError::Page(
+                viewer_core::SpatialError::NotUnloadedAnchor(page.anchor),
+            ));
+        };
+        if !residency.fits(page.bytes)
+            && let Err(error) = self.evict_for(page.bytes, page.anchor)
+        {
+            if matches!(error, LodDatasetError::PageBudget { .. }) {
+                self.page_budget_exhausted = true;
+                // The reader registered the page when it read it; without this a retry would
+                // fail on duplicate block ids.
+                if let Some(residency) = &self.pages {
+                    residency.discard(page.anchor);
+                }
+            }
+            return Err(error);
+        }
+        let PageInsert {
+            anchor,
+            number,
+            nodes,
+            unloaded,
+            bytes,
+        } = page;
+        let blocks: Vec<(NodeId, Vec<BlockId>)> = nodes
+            .iter()
+            .map(|node| (node.id(), node.blocks().to_vec()))
+            .collect();
+        Arc::make_mut(&mut self.metadata)
+            .hierarchy_mut()
+            .graft_page(anchor, nodes, &unloaded)?;
+        for (id, node_blocks) in blocks {
+            for block in node_blocks {
+                self.block_owners.entry(block).or_default().push(id);
+            }
+        }
+        if let Some(residency) = &mut self.pages {
+            residency.insert(anchor, number, bytes);
+        }
+        self.page_budget_exhausted = false;
+        self.invalidate_selection();
+        Ok(())
+    }
+
+    /// Frees room for `needed` bytes. `incoming` is the anchor about to be grafted: the page that
+    /// holds it stays.
+    fn evict_for(&mut self, needed: usize, incoming: NodeId) -> Result<(), LodDatasetError> {
+        let mut pinned = Vec::new();
+        loop {
+            let Some(residency) = &self.pages else {
+                return Ok(());
+            };
+            if residency.fits(needed) {
+                return Ok(());
+            }
+            let retained = self.pinned_nodes();
+            let holder_page = incoming.get() >> 32;
+            let mut evicted = false;
+            for (anchor, number) in residency.lru() {
+                // The page that holds `incoming` is its ancestor: keep it.
+                if pinned.contains(&anchor) || u64::from(number) == holder_page {
+                    continue;
+                }
+                match Arc::make_mut(&mut self.metadata)
+                    .hierarchy_mut()
+                    .evict_page(anchor, &retained)
+                {
+                    Ok(_) => {
+                        let hierarchy = self.metadata.hierarchy();
+                        self.block_owners.retain(|_, owners| {
+                            owners.retain(|id| hierarchy.node(*id).is_some());
+                            !owners.is_empty()
+                        });
+                        if let Some(residency) = &mut self.pages {
+                            residency.remove(anchor);
+                        }
+                        self.invalidate_selection();
+                        evicted = true;
+                        break;
+                    }
+                    Err(_) => pinned.push(anchor),
+                }
+            }
+            if !evicted {
+                let residency = self.pages.as_ref().expect("checked above");
+                return Err(LodDatasetError::PageBudget {
+                    needed,
+                    budget: residency.budget_bytes(),
+                    pinned: residency.bytes_of(&pinned),
+                });
+            }
+        }
+    }
+
+    /// Marks pages holding `node_ids` as recently used so the cut in use is evicted last.
+    fn touch_pages(&mut self, node_ids: &[NodeId]) {
+        let Some(residency) = &mut self.pages else {
+            return;
+        };
+        let mut seen = HashSet::new();
+        for id in node_ids {
+            let number = (id.get() >> 32) as u32;
+            if number != 0 && seen.insert(number) {
+                residency.touch(number);
+            }
+        }
+    }
+
+    fn invalidate_selection(&mut self) {
+        self.selection_memo = None;
+        self.plan_memo = None;
+        self.state_epoch += 1;
+    }
+
+    /// Declares that the format has the global integer frame (`FormatVersion::uses_global_frame`),
+    /// the precondition of the cell path together with replacement semantics.
+    pub fn with_global_frame(mut self, global_frame: bool) -> Self {
+        self.global_frame = global_frame;
+        self
+    }
+
+    /// Records the CRS identity checked when another cloud is opened (RF-02).
+    pub fn with_crs(mut self, crs: Option<String>) -> Self {
+        self.crs = crs;
+        self
+    }
+
+    pub fn crs(&self) -> Option<&str> {
+        self.crs.as_deref()
+    }
+
+    /// Uses the reference spacing the format stores for the whole cloud (`v7.5-pre`), whose
+    /// hierarchy is never resident in full.
+    pub fn with_reference_spacing(mut self, spacing: f64) -> Self {
+        self.stored_reference_spacing = Some(spacing);
+        self
+    }
+
+    /// Per-cloud reference spacing (RF-05). Paged clouds report the stored value, so grafting or
+    /// evicting pages never changes it; the other formats compute it from all their leaves.
+    pub fn reference_spacing(&self) -> Option<f64> {
+        self.stored_reference_spacing
+            .or_else(|| self.metadata.hierarchy().reference_spacing())
     }
 
     /// Selects the target cut for a view, or returns the previous selection when camera,
@@ -458,7 +735,7 @@ impl LodDataset {
             return false;
         }
         renderer.fit_spatial_bounds(
-            self.metadata.hierarchy().stats().root_bounds,
+            self.metadata.hierarchy().stats().data_bounds,
             self.metadata.coordinate_frame().origin(),
         )
     }
@@ -485,6 +762,137 @@ impl LodDataset {
             None,
             load_block,
         )
+    }
+
+    /// Selects the target cut of `view` at `selection_error_pixels`. A base cut over budget also
+    /// resets the planner state (the caller releases the GPU cut on that error).
+    fn select_target(
+        &mut self,
+        view: &ViewProjection,
+        selection_error_pixels: f64,
+    ) -> Result<(SpatialFrustum, Arc<LodSelection>), LodDatasetError> {
+        let camera = view.camera();
+        let frustum = view
+            .spatial_frustum(self.metadata.coordinate_frame().origin())
+            .ok_or(LodDatasetError::CameraUnavailable)?;
+        let coordinate_origin = self.metadata.coordinate_frame().origin();
+        let selection = self.resolve_target(
+            &camera,
+            view.viewport(),
+            selection_error_pixels,
+            &frustum,
+            |node| {
+                // Camera and viewport remain immutable throughout this synchronous selection.
+                view.projected_error_pixels(
+                    node.bounds(),
+                    node.representative_spacing(),
+                    coordinate_origin,
+                )
+            },
+        );
+        let target = match selection {
+            Ok(target) => target,
+            Err(error @ LodSelectionError::BaseCutExceedsBudget { .. }) => {
+                // The caller releases the GPU cut on this error (`is_base_cut_exceeded`).
+                self.state_epoch += 1;
+                self.planner.reset(&mut self.cache);
+                self.visible_plan = None;
+                self.last_successful_build = None;
+                self.visible_scene_metrics = (0.0, 0.0, 0);
+                self.visible_voxel_memory = VoxelBuildMemoryStats::default();
+                self.visible_instances = 0;
+                return Err(LodDatasetError::Selection(error));
+            }
+            Err(error) => return Err(LodDatasetError::Selection(error)),
+        };
+        if !target.budget_limited().is_empty() {
+            return Err(LodDatasetError::SourceDetailBudgetExceeded(
+                target.budget_limited().len(),
+            ));
+        }
+        Ok((frustum, target))
+    }
+
+    /// The pending block to read next (uncovered owners first, then highest projected error).
+    /// With `async_priority_order` the whole order is reported for the host's prefetch.
+    fn next_block_to_load(
+        &mut self,
+        view: &ViewProjection,
+        frustum: &SpatialFrustum,
+        pending_blocks: &[BlockId],
+        uncovered_nodes: &[NodeId],
+        async_priority_order: Option<&mut Vec<BlockId>>,
+    ) -> Option<BlockId> {
+        let planning_started = WorkClock::start();
+        let coordinate_origin = self.metadata.coordinate_frame().origin();
+        let uncovered_blocks: HashSet<_> = uncovered_nodes
+            .iter()
+            .filter_map(|id| self.metadata.hierarchy().node(*id))
+            .flat_map(|node| node.blocks().iter().copied())
+            .filter(|id| pending_blocks.binary_search(id).is_ok())
+            .collect();
+        let project = |node: &SpatialNode| {
+            view.projected_error_pixels(
+                node.bounds(),
+                node.representative_spacing(),
+                coordinate_origin,
+            )
+        };
+        let next_block = if let Some(priority_order) = async_priority_order {
+            let ordered = prioritized_pending_blocks(
+                self.metadata.hierarchy(),
+                &self.block_owners,
+                pending_blocks,
+                &uncovered_blocks,
+                frustum,
+                project,
+            );
+            priority_order.clear();
+            priority_order.extend(ordered.iter().map(|(id, _)| *id));
+            ordered.first().map(|(id, _)| *id)
+        } else {
+            highest_priority_pending_block(
+                self.metadata.hierarchy(),
+                &self.block_owners,
+                pending_blocks,
+                &uncovered_blocks,
+                frustum,
+                project,
+            )
+        };
+        self.refinement_work.planning_ms += planning_started.elapsed_ms();
+        next_block
+    }
+
+    /// Reads `requested` and caches it; `Ok(false)` when the loader had nothing to give.
+    fn load_block_step(
+        &mut self,
+        requested: BlockId,
+        load_block: &mut impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+        evicted_blocks: &mut Vec<BlockId>,
+    ) -> Result<bool, LodDatasetError> {
+        self.refinement_work.block_load_calls += 1;
+        let load_started = WorkClock::start();
+        let loaded = load_block(requested);
+        self.refinement_work.block_load_ms += load_started.elapsed_ms();
+        let Some(block) = loaded.map_err(LodDatasetError::BlockRead)? else {
+            return Ok(false);
+        };
+        if block.id() != requested {
+            return Err(LodDatasetError::UnexpectedBlock {
+                requested,
+                actual: block.id(),
+            });
+        }
+        if let CacheInsertResult::Cached {
+            evicted_blocks: evicted,
+            ..
+        } = self.cache_block(block)?
+        {
+            evicted_blocks.extend(evicted);
+        }
+        self.refinement_work.loaded_blocks += 1;
+        Ok(true)
     }
 
     /// Selects, loads at most one block and rebuilds the scene when the cut or view changed.
@@ -518,102 +926,23 @@ impl LodDataset {
             return Err(LodDatasetError::CacheCyclePaused);
         }
         self.refinement_work.update_calls += 1;
-        let frustum = view
-            .spatial_frustum(self.metadata.coordinate_frame().origin())
-            .ok_or(LodDatasetError::CameraUnavailable)?;
         let coordinate_origin = self.metadata.coordinate_frame().origin();
-        let selection = self.resolve_target(
-            &build_context.camera,
-            build_context.viewport,
-            selection_error_pixels,
-            &frustum,
-            |node| {
-                // Camera and viewport remain immutable throughout this synchronous selection.
-                view.projected_error_pixels(
-                    node.bounds(),
-                    node_spacing(node.bounds()),
-                    coordinate_origin,
-                )
-            },
-        );
-        let target = match selection {
-            Ok(target) => target,
-            Err(error @ LodSelectionError::BaseCutExceedsBudget { .. }) => {
-                // The caller releases the GPU cut on this error (`is_base_cut_exceeded`).
-                self.state_epoch += 1;
-                self.planner.reset(&mut self.cache);
-                self.visible_plan = None;
-                self.last_successful_build = None;
-                self.visible_scene_metrics = (0.0, 0.0, 0);
-                self.visible_voxel_memory = VoxelBuildMemoryStats::default();
-                self.visible_instances = 0;
-                return Err(LodDatasetError::Selection(error));
-            }
-            Err(error) => return Err(LodDatasetError::Selection(error)),
-        };
-        if !target.budget_limited().is_empty() {
-            return Err(LodDatasetError::SourceDetailBudgetExceeded(
-                target.budget_limited().len(),
-            ));
-        }
+        let (frustum, target) = self.select_target(view, selection_error_pixels)?;
         let initial_plan = self.resolve_plan(&target);
-        let planning_started = WorkClock::start();
         let initial_epoch = self.state_epoch;
-        let next_block = if let Some(priority_order) = async_priority_order {
-            let ordered = prioritized_pending_blocks(
-                self.metadata.hierarchy(),
-                initial_plan.pending_blocks(),
-                &frustum,
-                |node| {
-                    view.projected_error_pixels(
-                        node.bounds(),
-                        node_spacing(node.bounds()),
-                        coordinate_origin,
-                    )
-                },
-            );
-            priority_order.clear();
-            priority_order.extend(ordered.iter().map(|(id, _)| *id));
-            ordered.first().map(|(id, _)| *id)
-        } else {
-            highest_priority_pending_block(
-                self.metadata.hierarchy(),
-                initial_plan.pending_blocks(),
-                &frustum,
-                |node| {
-                    view.projected_error_pixels(
-                        node.bounds(),
-                        node_spacing(node.bounds()),
-                        coordinate_origin,
-                    )
-                },
-            )
-        };
-        self.refinement_work.planning_ms += planning_started.elapsed_ms();
+        let next_block = self.next_block_to_load(
+            view,
+            &frustum,
+            initial_plan.pending_blocks(),
+            initial_plan.uncovered_nodes(),
+            async_priority_order,
+        );
         let mut evicted_blocks = std::mem::take(&mut self.arrival_evictions);
         let mut loaded_block = std::mem::take(&mut self.arrived_blocks) > 0;
-        if let Some(requested) = next_block {
-            self.refinement_work.block_load_calls += 1;
-            let load_started = WorkClock::start();
-            let loaded = load_block(requested);
-            self.refinement_work.block_load_ms += load_started.elapsed_ms();
-            if let Some(block) = loaded.map_err(LodDatasetError::BlockRead)? {
-                if block.id() != requested {
-                    return Err(LodDatasetError::UnexpectedBlock {
-                        requested,
-                        actual: block.id(),
-                    });
-                }
-                if let CacheInsertResult::Cached {
-                    evicted_blocks: evicted,
-                    ..
-                } = self.cache_block(block)?
-                {
-                    evicted_blocks.extend(evicted);
-                }
-                self.refinement_work.loaded_blocks += 1;
-                loaded_block = true;
-            }
+        if let Some(requested) = next_block
+            && self.load_block_step(requested, &mut load_block, &mut evicted_blocks)?
+        {
+            loaded_block = true;
         }
         let plan = self.replan_after_load(initial_plan, initial_epoch, &target);
         let evicted_pending_blocks = evicted_blocks
@@ -700,10 +1029,18 @@ impl LodDataset {
             // the planner's cache protection. Only voxel construction and upload are omitted.
             self.state_epoch += 1;
             self.planner.commit(&plan, &mut self.cache);
+            self.touch_pages(plan.node_ids());
             self.visible_plan = Some(plan.clone());
             self.last_successful_build = Some(build_context);
         }
         let visible_plan = self.visible_plan.as_ref().unwrap_or(&plan);
+        let pending_anchors = pending_page_anchors(self.metadata.hierarchy(), &target, |node| {
+            view.projected_error_pixels(
+                node.bounds(),
+                node.representative_spacing(),
+                coordinate_origin,
+            )
+        });
         let stats = LodViewStats {
             visible_blocks: visible_plan.block_ids().len(),
             visible_points: visible_plan.point_count(),
@@ -725,6 +1062,8 @@ impl LodDataset {
             cache_bytes: self.cache.used_bytes(),
             cache_budget_bytes: self.cache.max_bytes(),
             pending_block_ids: plan.pending_blocks().to_vec(),
+            page_budget_exhausted: self.page_budget_exhausted && !pending_anchors.is_empty(),
+            pending_page_anchors: pending_anchors,
             uncovered_nodes: plan.uncovered_nodes().len(),
             budget_omitted_nodes: plan.budget_omitted_nodes().len(),
             refinement_work: self.refinement_work.clone(),
@@ -753,7 +1092,7 @@ impl LodDataset {
             self.resolve_target(&camera, viewport, target_voxel_pixels, &frustum, |node| {
                 view.projected_error_pixels(
                     node.bounds(),
-                    node_spacing(node.bounds()),
+                    node.representative_spacing(),
                     coordinate_origin,
                 )
             })?;
@@ -840,12 +1179,8 @@ impl WorkClock {
     }
 }
 
-/// Representative spacing of a node: one eighth of its side, as the voxel builder subdivides it.
-fn node_spacing(bounds: SpatialBounds) -> f64 {
-    bounds_side(bounds) / 8.0
-}
-
-fn bounds_side(bounds: SpatialBounds) -> f64 {
+#[cfg(test)]
+fn bounds_side(bounds: viewer_core::SpatialBounds) -> f64 {
     (0..3)
         .map(|axis| bounds.max()[axis] - bounds.min()[axis])
         .fold(0.0, f64::max)
@@ -911,6 +1246,21 @@ fn prefix_extension_points(
     Some((retained, added))
 }
 
+/// Missing pages the target needs, ordered by projected error (larger first, then node id).
+fn pending_page_anchors(
+    hierarchy: &SpatialHierarchy,
+    target: &LodSelection,
+    project: impl Fn(&SpatialNode) -> f64,
+) -> Vec<NodeId> {
+    let mut anchors = target
+        .unloaded_anchors()
+        .iter()
+        .filter_map(|id| hierarchy.node(*id).map(|node| (*id, project(node))))
+        .collect::<Vec<_>>();
+    anchors.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    anchors.into_iter().map(|(id, _)| id).collect()
+}
+
 fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Option<u32> {
     node_ids
         .iter()
@@ -924,6 +1274,7 @@ fn resident_target_plan_is_complete(
     plan: &LodTransitionPlan,
 ) -> bool {
     target.budget_limited().is_empty()
+        && target.unloaded_anchors().is_empty()
         && plan.pending_blocks().is_empty()
         && plan.uncovered_nodes().is_empty()
         && plan.budget_omitted_nodes().is_empty()
@@ -955,61 +1306,97 @@ fn load_priority(error_pixels: f64, node: &SpatialNode) -> f64 {
     error_pixels / node.point_count().max(1) as f64
 }
 
-fn highest_priority_pending_block(
+fn index_block_owners(hierarchy: &SpatialHierarchy) -> HashMap<BlockId, Vec<NodeId>> {
+    let root = hierarchy
+        .node(hierarchy.root_id())
+        .expect("validated hierarchy root");
+    let mut owners = HashMap::<BlockId, Vec<NodeId>>::new();
+    for node in hierarchy.query(root.bounds()) {
+        for block in node.blocks() {
+            owners.entry(*block).or_default().push(node.id());
+        }
+    }
+    owners
+}
+
+fn pending_block_priorities(
     hierarchy: &SpatialHierarchy,
+    owners: &HashMap<BlockId, Vec<NodeId>>,
     pending: &[BlockId],
     frustum: &SpatialFrustum,
     projected_error_pixels: impl Fn(&SpatialNode) -> f64,
-) -> Option<BlockId> {
-    if pending.is_empty() {
-        return None;
-    }
-    let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
-    let mut best = None;
-    for node in hierarchy.query_frustum(frustum.clone()) {
-        let priority = load_priority(projected_error_pixels(node), node);
-        for block_id in node.blocks() {
-            if pending_ids.contains(block_id) {
-                let candidate = (*block_id, priority);
-                let is_better = best.is_none_or(|current| priority_precedes(candidate, current));
-                if is_better {
-                    best = Some(candidate);
+) -> HashMap<BlockId, f64> {
+    let mut node_scores = HashMap::<NodeId, Option<f64>>::new();
+    let mut priorities = HashMap::new();
+    for &block in pending {
+        if priorities.contains_key(&block) {
+            continue;
+        }
+        if let Some(block_owners) = owners.get(&block) {
+            for &id in block_owners {
+                let score = node_scores.entry(id).or_insert_with(|| {
+                    let node = hierarchy.node(id).expect("indexed hierarchy node");
+                    frustum
+                        .intersects(&node.bounds())
+                        .then(|| load_priority(projected_error_pixels(node), node))
+                });
+                if let Some(score) = *score {
+                    priorities
+                        .entry(block)
+                        .and_modify(|current: &mut f64| {
+                            if score.total_cmp(current).is_gt() {
+                                *current = score;
+                            }
+                        })
+                        .or_insert(score);
                 }
             }
         }
     }
-    best.map(|(block_id, _)| block_id)
+    priorities
+}
+
+fn highest_priority_pending_block(
+    hierarchy: &SpatialHierarchy,
+    owners: &HashMap<BlockId, Vec<NodeId>>,
+    pending: &[BlockId],
+    uncovered: &HashSet<BlockId>,
+    frustum: &SpatialFrustum,
+    projected_error_pixels: impl Fn(&SpatialNode) -> f64,
+) -> Option<BlockId> {
+    pending_block_priorities(hierarchy, owners, pending, frustum, projected_error_pixels)
+        .into_iter()
+        .reduce(|current, candidate| {
+            if (uncovered.contains(&candidate.0) && !uncovered.contains(&current.0))
+                || (uncovered.contains(&candidate.0) == uncovered.contains(&current.0)
+                    && priority_precedes(candidate, current))
+            {
+                candidate
+            } else {
+                current
+            }
+        })
+        .map(|(block, _)| block)
 }
 
 fn prioritized_pending_blocks(
     hierarchy: &SpatialHierarchy,
+    owners: &HashMap<BlockId, Vec<NodeId>>,
     pending: &[BlockId],
+    uncovered: &HashSet<BlockId>,
     frustum: &SpatialFrustum,
     projected_error_pixels: impl Fn(&SpatialNode) -> f64,
 ) -> Vec<(BlockId, f64)> {
-    if pending.is_empty() {
-        return Vec::new();
-    }
-    let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
-    let mut priorities = std::collections::HashMap::<BlockId, f64>::new();
-    for node in hierarchy.query_frustum(frustum.clone()) {
-        let priority = load_priority(projected_error_pixels(node), node);
-        for block_id in node.blocks() {
-            if pending_ids.contains(block_id) {
-                priorities
-                    .entry(*block_id)
-                    .and_modify(|current| {
-                        if priority.total_cmp(current).is_gt() {
-                            *current = priority;
-                        }
-                    })
-                    .or_insert(priority);
-            }
-        }
-    }
-    let mut ordered = priorities.into_iter().collect::<Vec<_>>();
+    let mut ordered =
+        pending_block_priorities(hierarchy, owners, pending, frustum, projected_error_pixels)
+            .into_iter()
+            .collect::<Vec<_>>();
     ordered.sort_unstable_by(|candidate, current| {
-        if candidate.1.total_cmp(&current.1).is_eq() {
+        if uncovered.contains(&candidate.0) != uncovered.contains(&current.0) {
+            uncovered
+                .contains(&current.0)
+                .cmp(&uncovered.contains(&candidate.0))
+        } else if candidate.1.total_cmp(&current.1).is_eq() {
             candidate.0.cmp(&current.0)
         } else {
             current.1.total_cmp(&candidate.1)
@@ -1026,3 +1413,11 @@ fn priority_precedes(candidate: (BlockId, f64), current: (BlockId, f64)) -> bool
 #[cfg(test)]
 #[path = "lod_dataset_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "lod_cells_tests.rs"]
+mod cells_tests;
+
+#[cfg(test)]
+#[path = "lod_cells_stream_tests.rs"]
+mod cells_stream_tests;

@@ -1,0 +1,121 @@
+# coverage_spike target/render-data/majadas-v75.oct
+# viewport 1280x720; root_side 2048; origin (262305.1880,4424149.7540,164.3530)
+# point budget (viewer) 18446744073709551615 from crates/viewer_wasm/src/lod_dataset.rs:517; budgets run: [18446744073709551615]
+# selector: select_lod_stable_projector as lod_dataset.rs:517-522; visual_scale 0.07882686703405224 (dataset metadata, bindings/lod.rs:240); voxel limits max_voxels 8000000 (min of voxel_grid.rs:64 and budget.rs:19-22, via gpu.rs:721), max_estimated_bytes 268435456 (voxel_grid.rs:65); RendererConfig defaults, the web host may override
+# pose orbit-0: position (80.7187,283.3858,283.3858) target (80.7187,80.7187,80.7187) (local coords x visual_scale)
+# pose orbit-90: position (-121.9484,80.7187,283.3858) target (80.7187,80.7187,80.7187) (local coords x visual_scale)
+# pose grazing: position (80.7187,366.2426,105.6988) target (80.7187,80.7187,80.7187) (local coords x visual_scale)
+# pose inside-leaf: position (48.9515,48.7938,12.2182) target (59.0413,48.7938,12.2182) (local coords x visual_scale)
+# inside-leaf: node 51539608302 with 63998 points, bounds SpatialBounds { min: [620.0, 618.0, 154.0], max: [622.0, 620.0, 156.0] }
+# grazing: eye 0.0873 rad above the horizontal plane through the root centre, looking down, fitted distance 286.6146
+# orbit-90: OrbitCamera::orbit(0.25, 0.0) (quarter turn in normalized units)
+# block case
+dataset_file	pose	target_px	budget	variant	cut_nodes	cut_points	cells_total	cells_on_screen	bytes12	bytes16	cpu_instances	ratio_on_screen_vs_cpu	stage_entries	build_ms	over_target_cells	over_target_frac	over_target_source_limited	cpu_oversized
+target/render-data/majadas-v75.oct	orbit-0	1	18446744073709551615	pyramid	11	111030	110078	110078	1320936	1761248	23982	4.590	0	17.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	1	18446744073709551615	tight	11	111030	54495	54495	653940	871920	23982	2.272	0	8.5	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	1	18446744073709551615	octant	11	111030	110064	110064	1320768	1761024	23982	4.589	0	17.2	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	1	18446744073709551615	octant_tight	11	111030	54495	54495	653940	871920	23982	2.272	0	8.6	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	2	18446744073709551615	pyramid	4	24978	24023	24023	288276	384368	8504	2.825	0	3.8	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	2	18446744073709551615	tight	4	24978	8578	8578	102936	137248	8504	1.009	0	1.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	2	18446744073709551615	octant	4	24978	24023	24023	288276	384368	8504	2.825	0	3.7	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	2	18446744073709551615	octant_tight	4	24978	8578	8578	102936	137248	8504	1.009	0	1.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	4	18446744073709551615	pyramid	4	24978	8578	8578	102936	137248	3872	2.215	0	1.4	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	4	18446744073709551615	tight	4	24978	3972	3972	47664	63552	3872	1.026	0	0.6	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	4	18446744073709551615	octant	4	24978	8578	8578	102936	137248	3872	2.215	0	1.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	4	18446744073709551615	octant_tight	4	24978	3921	3921	47052	62736	3872	1.013	0	0.6	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	8	18446744073709551615	pyramid	1	8504	8504	8504	102048	136064	1951	4.359	0	1.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	8	18446744073709551615	tight	1	8504	3872	3872	46464	61952	1951	1.985	0	0.6	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	8	18446744073709551615	octant	1	8504	3872	3872	46464	61952	1951	1.985	0	0.7	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-0	8	18446744073709551615	octant_tight	1	8504	1976	1976	23712	31616	1951	1.013	0	0.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	1	18446744073709551615	pyramid	11	111030	110078	110078	1320936	1761248	23987	4.589	0	17.9	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	1	18446744073709551615	tight	11	111030	68364	68364	820368	1093824	23987	2.850	0	11.2	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	1	18446744073709551615	octant	11	111030	110078	110078	1320936	1761248	23987	4.589	0	18.2	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	1	18446744073709551615	octant_tight	11	111030	54555	54555	654660	872880	23987	2.274	0	9.2	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	2	18446744073709551615	pyramid	4	24978	24023	24023	288276	384368	8507	2.824	0	3.9	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	2	18446744073709551615	tight	4	24978	24023	24023	288276	384368	8507	2.824	0	3.9	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	2	18446744073709551615	octant	4	24978	24023	24023	288276	384368	8507	2.824	0	3.9	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	2	18446744073709551615	octant_tight	4	24978	12664	12664	151968	202624	8507	1.489	0	2.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	4	18446744073709551615	pyramid	4	24978	8578	8578	102936	137248	3873	2.215	0	1.4	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	4	18446744073709551615	tight	4	24978	8578	8578	102936	137248	3873	2.215	0	1.4	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	4	18446744073709551615	octant	4	24978	8578	8578	102936	137248	3873	2.215	0	1.4	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	4	18446744073709551615	octant_tight	4	24978	5287	5287	63444	84592	3873	1.365	0	0.9	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	8	18446744073709551615	pyramid	1	8504	8504	8504	102048	136064	1951	4.359	0	1.4	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	8	18446744073709551615	tight	1	8504	3872	3872	46464	61952	1951	1.985	0	0.6	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	8	18446744073709551615	octant	1	8504	3872	3872	46464	61952	1951	1.985	0	0.7	0	0.0000	0	0
+target/render-data/majadas-v75.oct	orbit-90	8	18446744073709551615	octant_tight	1	8504	3845	3845	46140	61520	1951	1.971	0	0.7	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	1	18446744073709551615	pyramid	11	111030	110078	110078	1320936	1761248	23982	4.590	0	17.0	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	1	18446744073709551615	tight	11	111030	54495	54495	653940	871920	23982	2.272	0	8.5	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	1	18446744073709551615	octant	11	111030	110078	110078	1320936	1761248	23982	4.590	0	17.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	1	18446744073709551615	octant_tight	11	111030	54495	54495	653940	871920	23982	2.272	0	8.6	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	2	18446744073709551615	pyramid	4	24978	24023	24023	288276	384368	8504	2.825	0	3.7	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	2	18446744073709551615	tight	4	24978	8578	8578	102936	137248	8504	1.009	0	1.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	2	18446744073709551615	octant	4	24978	24023	24023	288276	384368	8504	2.825	0	3.8	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	2	18446744073709551615	octant_tight	4	24978	8578	8578	102936	137248	8504	1.009	0	1.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	4	18446744073709551615	pyramid	1	8504	8504	8504	102048	136064	3872	2.196	0	1.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	4	18446744073709551615	tight	1	8504	8504	8504	102048	136064	3872	2.196	0	1.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	4	18446744073709551615	octant	1	8504	8504	8504	102048	136064	3872	2.196	0	1.3	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	4	18446744073709551615	octant_tight	1	8504	3883	3883	46596	62128	3872	1.003	0	0.7	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	8	18446744073709551615	pyramid	1	8504	3872	3872	46464	61952	1951	1.985	0	0.6	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	8	18446744073709551615	tight	1	8504	3872	3872	46464	61952	1951	1.985	0	0.6	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	8	18446744073709551615	octant	1	8504	3872	3872	46464	61952	1951	1.985	0	0.6	0	0.0000	0	0
+target/render-data/majadas-v75.oct	grazing	8	18446744073709551615	octant_tight	1	8504	1976	1976	23712	31616	1951	1.013	0	0.4	0	0.0000	0	0
+target/render-data/majadas-v75.oct	inside-leaf	1	18446744073709551615	pyramid	814	23913885	23541667	20419347	282500004	376666672	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	3149.8	90784	0.0044	90784	NA
+target/render-data/majadas-v75.oct	inside-leaf	1	18446744073709551615	tight	814	23913885	20452521	17261079	245430252	327240336	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	2679.1	101048	0.0059	90784	NA
+target/render-data/majadas-v75.oct	inside-leaf	1	18446744073709551615	octant	814	23913885	23269331	20147011	279231972	372309296	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	3103.7	90784	0.0045	90784	NA
+target/render-data/majadas-v75.oct	inside-leaf	1	18446744073709551615	octant_tight	814	23913885	20296731	17117706	243560772	324747696	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	2661.3	92963	0.0054	90784	NA
+target/render-data/majadas-v75.oct	inside-leaf	2	18446744073709551615	pyramid	450	14276758	14183752	11321449	170205024	226940032	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1747.8	9472	0.0008	9472	NA
+target/render-data/majadas-v75.oct	inside-leaf	2	18446744073709551615	tight	450	14276758	12827066	9937643	153924792	205233056	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1537.2	18730	0.0019	9472	NA
+target/render-data/majadas-v75.oct	inside-leaf	2	18446744073709551615	octant	450	14276758	13830322	11017216	165963864	221285152	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1765.1	14157	0.0013	9472	NA
+target/render-data/majadas-v75.oct	inside-leaf	2	18446744073709551615	octant_tight	450	14276758	12374810	9494669	148497720	197996960	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1485.3	18414	0.0019	9472	NA
+target/render-data/majadas-v75.oct	inside-leaf	4	18446744073709551615	pyramid	232	8079250	7852800	5616882	94233600	125644800	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	919.7	35016	0.0062	34943	NA
+target/render-data/majadas-v75.oct	inside-leaf	4	18446744073709551615	tight	232	8079250	7476688	5219115	89720256	119627008	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	822.1	38769	0.0074	34943	NA
+target/render-data/majadas-v75.oct	inside-leaf	4	18446744073709551615	octant	232	8079250	7549555	5427550	90594660	120792880	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	854.4	35119	0.0065	34943	NA
+target/render-data/majadas-v75.oct	inside-leaf	4	18446744073709551615	octant_tight	232	8079250	6793731	4550968	81524772	108699696	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	741.5	40102	0.0088	34943	NA
+target/render-data/majadas-v75.oct	inside-leaf	8	18446744073709551615	pyramid	131	5761364	4197212	2493923	50366544	67155392	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	399.8	38087	0.0153	38087	NA
+target/render-data/majadas-v75.oct	inside-leaf	8	18446744073709551615	tight	131	5761364	4287440	2454314	51449280	68599040	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	398.8	38350	0.0156	38087	NA
+target/render-data/majadas-v75.oct	inside-leaf	8	18446744073709551615	octant	131	5761364	3943580	2278720	47322960	63097280	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	373.3	38140	0.0167	38087	NA
+target/render-data/majadas-v75.oct	inside-leaf	8	18446744073709551615	octant_tight	131	5761364	3653363	1852493	43840356	58453808	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	321.2	40017	0.0216	38087	NA
+# block transitions
+transition	budget	variant	prev_nodes	next_nodes	union_nodes	result	offending_pairs
+within orbit-0 8->4px	18446744073709551615	pyramid	1	4	5	ok	0
+within orbit-0 4->2px	18446744073709551615	pyramid	4	4	4	ok	0
+within orbit-0 2->1px	18446744073709551615	pyramid	4	11	12	ok	0
+within orbit-90 8->4px	18446744073709551615	pyramid	1	4	5	ok	0
+within orbit-90 4->2px	18446744073709551615	pyramid	4	4	4	ok	0
+within orbit-90 2->1px	18446744073709551615	pyramid	4	11	12	ok	0
+between orbit-0->orbit-90 1px	18446744073709551615	pyramid	11	11	11	ok	0
+between orbit-0->orbit-90 2px	18446744073709551615	pyramid	4	4	4	ok	0
+between orbit-0->orbit-90 4px	18446744073709551615	pyramid	4	4	4	ok	0
+between orbit-0->orbit-90 8px	18446744073709551615	pyramid	1	1	1	ok	0
+within grazing 8->4px	18446744073709551615	pyramid	1	1	1	ok	0
+within grazing 4->2px	18446744073709551615	pyramid	1	4	5	ok	0
+within grazing 2->1px	18446744073709551615	pyramid	4	11	12	ok	0
+between orbit-90->grazing 1px	18446744073709551615	pyramid	11	11	11	ok	0
+between orbit-90->grazing 2px	18446744073709551615	pyramid	4	4	4	ok	0
+between orbit-90->grazing 4px	18446744073709551615	pyramid	4	1	5	ok	0
+between orbit-90->grazing 8px	18446744073709551615	pyramid	1	1	1	ok	0
+within inside-leaf 8->4px	18446744073709551615	pyramid	131	232	262	ok	0
+within inside-leaf 4->2px	18446744073709551615	pyramid	232	450	509	ok	0
+within inside-leaf 2->1px	18446744073709551615	pyramid	450	814	909	ok	0
+between grazing->inside-leaf 1px	18446744073709551615	pyramid	11	814	820	DescendantTooFine	768
+between grazing->inside-leaf 2px	18446744073709551615	pyramid	4	450	451	DescendantTooFine	430
+between grazing->inside-leaf 4px	18446744073709551615	pyramid	1	232	233	DescendantTooFine	218
+between grazing->inside-leaf 8px	18446744073709551615	pyramid	1	131	132	DescendantTooFine	115
+# transitions evaluated per variant: 24 of 24 expected (the rest involve skipped cases)
+# pyramid: DescendantTooFine in 4/24 transitions (frequency 0.1667)
+#   fails: between grazing->inside-leaf 1px budget 18446744073709551615: 768 pairs
+#   fails: between grazing->inside-leaf 2px budget 18446744073709551615: 430 pairs
+#   fails: between grazing->inside-leaf 4px budget 18446744073709551615: 218 pairs
+#   fails: between grazing->inside-leaf 8px budget 18446744073709551615: 115 pairs
+# block stop_criteria
+FAIL	[pyramid] cut bytes (12 B) <= 256 MiB in every case: inside-leaf 1px budget 18446744073709551615: 282500004 B
+FAIL	[pyramid] on-screen instances <= 2x CPU instances in the grazing pose: 1px budget 18446744073709551615: on-screen 110078 vs CPU 23982; 2px budget 18446744073709551615: on-screen 24023 vs CPU 8504; 4px budget 18446744073709551615: on-screen 8504 vs CPU 3872
+PASS	[tight] cut bytes (12 B) <= 256 MiB in every case
+FAIL	[tight] on-screen instances <= 2x CPU instances in the grazing pose: 1px budget 18446744073709551615: on-screen 54495 vs CPU 23982; 4px budget 18446744073709551615: on-screen 8504 vs CPU 3872
+FAIL	[octant] cut bytes (12 B) <= 256 MiB in every case: inside-leaf 1px budget 18446744073709551615: 279231972 B
+FAIL	[octant] on-screen instances <= 2x CPU instances in the grazing pose: 1px budget 18446744073709551615: on-screen 110078 vs CPU 23982; 2px budget 18446744073709551615: on-screen 24023 vs CPU 8504; 4px budget 18446744073709551615: on-screen 8504 vs CPU 3872
+PASS	[octant_tight] cut bytes (12 B) <= 256 MiB in every case
+FAIL	[octant_tight] on-screen instances <= 2x CPU instances in the grazing pose: 1px budget 18446744073709551615: on-screen 54495 vs CPU 23982
+FAIL	DescendantTooFine in <= 5 % of cut updates (worst variant 0.1667)
+# cell cache: 1006 nodes, 858195456 bytes (nothing evicted, so peak = final)
+# nodes whose first stored level is coarser than their 8^3 grid: 3

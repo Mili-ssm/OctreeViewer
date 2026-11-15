@@ -12,7 +12,7 @@ use viewer_convert::{
     CheckpointMode, ConversionStage, ConvertOptions, convert_file_with_checkpoint,
     convert_file_with_progress,
 };
-use viewer_format::{FormatVersion, block_checkpoint_versions};
+use viewer_format::{FormatVersion, RowOrder, block_checkpoint_versions};
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -29,20 +29,25 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         print_help();
         return Ok(());
     }
+    if arguments.first().is_some_and(|word| word == "verify") && arguments.len() == 2 {
+        return verify(&PathBuf::from(&arguments[1]));
+    }
     if arguments.len() < 2 {
         print_help();
         return Err("expected input and output paths".into());
     }
     let input = PathBuf::from(&arguments[0]);
     let output = PathBuf::from(&arguments[1]);
-    let mut points_per_block = ConvertOptions::default().points_per_block();
+    let mut points_per_block = None;
     let mut max_error = ConvertOptions::default().max_quantization_error();
     let mut max_memory_bytes = ConvertOptions::default().max_memory_budget_bytes();
     let mut spatial_workers = None;
     let mut pipelined_writes = false;
-    let mut spatial_divisions = ConvertOptions::default().spatial_divisions();
+    let mut spatial_divisions = None;
     let mut checkpoint_mode = None;
-    let mut format_version = ConvertOptions::default().format_version();
+    let mut format_version = None;
+    let mut page_target_bytes = None;
+    let mut row_order: Option<RowOrder> = None;
     let mut index = 2;
     while index < arguments.len() {
         let flag = arguments[index].to_string_lossy();
@@ -65,8 +70,11 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         }
         let value = arguments.get(index + 1).ok_or("missing value for option")?;
         match flag.as_ref() {
-            "--format-version" => format_version = value.to_string_lossy().parse()?,
-            "--points-per-block" => points_per_block = value.to_string_lossy().parse()?,
+            "--format-version" => format_version = Some(value.to_string_lossy().parse()?),
+            "--row-order" => row_order = Some(value.to_string_lossy().parse()?),
+            // Hidden: tests and benchmarks that need several pages in a small file.
+            "--page-target-bytes" => page_target_bytes = Some(value.to_string_lossy().parse()?),
+            "--points-per-block" => points_per_block = Some(value.to_string_lossy().parse()?),
             "--max-error" => max_error = value.to_string_lossy().parse()?,
             "--max-memory-mib" => {
                 max_memory_bytes = value
@@ -76,17 +84,31 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
                     .ok_or("memory budget overflows bytes")?;
             }
             "--spatial-workers" => spatial_workers = Some(value.to_string_lossy().parse()?),
-            "--spatial-divisions" => spatial_divisions = value.to_string_lossy().parse()?,
+            "--spatial-divisions" => spatial_divisions = Some(value.to_string_lossy().parse()?),
             _ => return Err(format!("unknown option: {flag}").into()),
         }
         index += 2;
     }
 
-    let mut options =
-        ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?
-            .with_spatial_divisions(spatial_divisions)?
-            .with_format_version(format_version)?;
-    options = options.with_pipelined_writes(pipelined_writes);
+    // Only requested values are set: the format resolves and checks the rest, in any order.
+    let mut options = ConvertOptions::with_requested_points_per_block(
+        points_per_block,
+        max_error,
+        max_memory_bytes,
+    )?;
+    if let Some(version) = format_version {
+        options = options.with_format_version(version)?;
+    }
+    if let Some(divisions) = spatial_divisions {
+        options = options.with_spatial_divisions(divisions)?;
+    }
+    if let Some(order) = row_order {
+        options = options.with_row_order(order)?;
+    }
+    options = options.validate()?.with_pipelined_writes(pipelined_writes);
+    if let Some(bytes) = page_target_bytes {
+        options = options.with_page_target_bytes(bytes);
+    }
     if let Some(workers) = spatial_workers {
         options = options.with_spatial_workers(workers)?;
     }
@@ -163,6 +185,29 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
+/// `viewer_convert verify FILE.oct`: reads every page and runs the global checks.
+fn verify(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let report = viewer_convert::verify_file(path)
+        .map_err(|error| format!("verification of {} failed: {error}", path.display()))?;
+    match report.paged {
+        Some(paged) => println!(
+            "OK {}: {} nodes, {} blocks, {} pages (max {} B; by levels k=1..5: {:?}), index {} B",
+            report.version,
+            paged.nodes,
+            paged.blocks,
+            paged.pages,
+            paged.max_page_bytes,
+            paged.pages_by_levels,
+            paged.index_bytes
+        ),
+        None => println!(
+            "OK {}: {} blocks (the whole index is checked when the file is opened)",
+            report.version, report.block_count
+        ),
+    }
+    Ok(())
+}
+
 fn print_help() {
     let versions = FormatVersion::WRITABLE
         .map(|version| version.to_string())
@@ -173,11 +218,13 @@ fn print_help() {
         .join("/");
     let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
-        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
-         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both.\n\
-         Defaults: format {default_version}, 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
+        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--row-order source|hybrid] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
+         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both. Global-frame formats (v7.4-pre, v7.5-pre, v7) refuse EPT input, and the paged ones (v7.5-pre, v7) also refuse --checkpoint and --resume: pass --format-version v5 (EPT with checkpoints needs one of {checkpoint_versions}).\n\
+         viewer_convert verify FILE.oct reads every index page of a paged v7 file and runs the global checks (and the companion footer when FILE.octattrs exists); exit code 0 if valid, 1 otherwise.\n\
+         Defaults: format {default_version}, points per block 64000 (fixed by global-frame formats such as the default v7; 262144 for the others), maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
+         v7 fixes hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key) and rejects any other --row-order. --row-order hybrid needs a v7 format; v7.N-pre default to source (hybrid is for measurement); older formats keep source.\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget (LAS/LAZ only).\n\
          --checkpoint preserves completed phases; repeat with --resume to continue the same output. Checkpoint and resume flags are mutually exclusive.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. Local EPT JSON datasets with dataType=laszip preserve their additive hierarchy; remote datasets and other codecs are unsupported. Spatial repartition options apply only to LAS/LAZ inputs; EPT checkpoint/resume requires one of {checkpoint_versions}.\n\

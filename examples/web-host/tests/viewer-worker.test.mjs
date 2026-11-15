@@ -1,13 +1,43 @@
+import { readConcurrency } from "../http-range-source.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { test } from "node:test";
 
-const source = (await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"))
-    .replace(/^import .*\n/, "");
+import { WINDOW_MS, createPxController } from "../px-controller.mjs";
 
-async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null) {
+const source = (await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"))
+    .replace(/^import .*\n/gm, "");
+
+const BUILD_WORKER = { url: "build-worker.js", type: "module" };
+
+test("init enables the cells path by default when the build worker is available (R3-Q35)", async () => {
+    const worker = await runWorker(undefined, null, { initFields: { buildWorker: BUILD_WORKER } });
+    assert.deepEqual(worker.enableCellsCalls, [true]);
+});
+
+test("init with cells false keeps the CPU path even with a build worker", async () => {
+    const worker = await runWorker(undefined, null, { initFields: { buildWorker: BUILD_WORKER, cells: false } });
+    assert.deepEqual(worker.enableCellsCalls, []);
+    await worker.send("api", { operation: "getStats", requestId: 1 });
+    assert.equal(worker.messages.at(-1).value.lod?.cellPath, undefined);
+});
+
+test("default cells without a build worker run the CPU path and report needsBuildWorker (R3-Q24)", async () => {
+    const worker = await runWorker();
+    assert.deepEqual(worker.enableCellsCalls, []);
+    await worker.send("api", { operation: "getStats", requestId: 1 });
+    assert.equal(worker.messages.at(-1).value.lod.cellPath, "needsBuildWorker");
+});
+
+async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null, { skipInit = false, initFields = {}, resolveSource = async (spec) => spec } = {}) {
     const messages = [];
+    const enableCellsCalls = [];
+    class FakeBuildWorker {
+        addEventListener() {}
+        postMessage() {}
+        terminate() {}
+    }
     let receive;
     let now = 0;
     let colorMode = "rgb";
@@ -15,9 +45,17 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
     let targetVoxelPixels = 4;
     let pendingBlockIds = [];
     const insertedBlocks = [];
+    let pendingPageAnchors = [];
+    const graftedPages = [];
+    const budgets = [];
+    const timing = [];
+    const updateLodCalls = [];
+    let gpuFrameMs = null;
+    let holdStage = null; // while set, updateLod leaves the ladder on this coarse rung
     let lod = makeLod(targetVoxelPixels, targetVoxelPixels);
     const performance = { now: () => now };
     const viewer = {
+        enableCells(on) { enableCellsCalls.push(on); },
         resize() {},
         setColorMode(mode) {
             if (mode === "broken") {
@@ -39,6 +77,12 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         },
         nextAsyncLodBlock: () => pendingBlockIds[0] ?? null,
         pendingAsyncLodBlocks: () => [...pendingBlockIds],
+        pendingPageAnchors: () => [...pendingPageAnchors],
+        graftPage(page) {
+            if (page.failGraft) throw new Error(`graft of ${page.anchor} failed`);
+            graftedPages.push(page.anchor);
+            pendingPageAnchors = pendingPageAnchors.filter(anchor => anchor !== page.anchor);
+        },
         insertAsyncLodBlock(blockId) {
             insertedBlocks.push(blockId);
             pendingBlockIds = pendingBlockIds.filter(id => id !== String(blockId));
@@ -47,9 +91,12 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         pan() {},
         zoom() {},
         moveCamera() {},
+        setGpuFrameTiming(enabled) { timing.push(enabled); },
+        resetGpuFrameStats() { timing.push("reset"); },
         updateLod(pixels) {
+            updateLodCalls.push(pixels);
             targetVoxelPixels = pixels;
-            if (colorMode !== "intensity") lod = makeLod(pixels, pixels);
+            if (colorMode !== "intensity") lod = makeLod(holdStage ?? pixels, pixels);
             return lod;
         },
         lodStats: () => lod,
@@ -63,6 +110,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         gpuStats: () => ({
             visibleInstances: Number(lod.visiblePoints),
             requestedResources: { totalBytes: String(lod.lodStagePixels) },
+            gpuFrameMs,
         }),
         stats: () => ({ point_count: Number(lod.visiblePoints) }),
         viewportSize: () => [1, 1],
@@ -76,6 +124,9 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
             return {
                 coordinateOrigin: [0, 0, 0],
                 semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false,
                 attributeSchema: [],
@@ -84,8 +135,14 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         free() {}
     }
     class DefaultAsyncReadBudget {
-        constructor(limitBytes) { this.limitBytes = limitBytes; }
-        clone() { return new DefaultAsyncReadBudget(this.limitBytes); }
+        constructor(limit) { this.limit = limit; budgets.push(this); }
+        clone() {
+            const copy = new DefaultAsyncReadBudget(this.limit);
+            copy.cloned = true;
+            return copy;
+        }
+        limitBytes() { return String(this.limit); }
+        free() {}
     }
     class DefaultBlockRequestScheduler {
         constructor(limit) {
@@ -175,13 +232,21 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
             postMessage(message) { messages.push(message); },
         },
         performance,
+        resolveSource,
+        AbortController,
+        sumRangeStats: () => null,
+        readConcurrency,
+        isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
+        Worker: FakeBuildWorker,
         WasmAsyncReadBudget: DefaultAsyncReadBudget,
         WasmBlockRequestScheduler: DefaultBlockRequestScheduler,
         WasmAsyncFormatReader: AsyncFormatReader ?? DefaultAsyncFormatReader,
         Float64Array,
         setTimeout,
+        createPxController,
+        PX_WINDOW_MS: WINDOW_MS,
     });
 
     async function send(type, fields = {}) {
@@ -189,16 +254,26 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         await new Promise(setImmediate);
         await new Promise(setImmediate);
     }
-    await send("init", {
-        canvas: {}, width: 1, height: 1, colorMode: "rgb", depthShading: false,
-    });
+    if (!skipInit) {
+        await send("init", {
+            canvas: {}, width: 1, height: 1, colorMode: "rgb", depthShading: false, ...initFields,
+        });
+    }
     return {
         messages,
+        enableCellsCalls,
         send,
         setNow(value) { now = value; },
+        holdStage(stage) { holdStage = stage; lod = makeLod(stage ?? targetVoxelPixels, targetVoxelPixels); },
+        setGpuFrameMs(p95, samples = 60) { gpuFrameMs = p95 === null ? null : { p95, samples }; },
+        timing,
+        updateLodCalls,
         setPendingBlock(value) { pendingBlockIds = value === null ? [] : [String(value)]; },
         setPendingBlocks(values) { pendingBlockIds = values.map(String); },
+        setPendingPageAnchors(values) { pendingPageAnchors = [...values]; },
         insertedBlocks,
+        graftedPages,
+        budgetLimits: () => budgets.filter(budget => !budget.cloned).map(budget => budget.limit),
     };
 }
 
@@ -328,6 +403,9 @@ test("async Blob reads leave the message queue responsive and discard stale gene
         lodDatasetDescriptor() {
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false, attributeSchema: [],
             };
@@ -363,6 +441,156 @@ test("async Blob reads leave the message queue responsive and discard stale gene
     assert.deepEqual(worker.insertedBlocks, []);
 });
 
+test("a cancelled ticket aborts its range reads; the abort is a cancellation, not a failed block", async () => {
+    let signal = null;
+    let sourceArgs = null;
+    class AbortableReader {
+        static async open() { return new AbortableReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead() {
+            let view = null;
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                setSource: (...args) => { sourceArgs = args; view = args[0]; },
+                read: async () => {
+                    signal = view.signal;
+                    await new Promise((_, reject) => view.signal.addEventListener("abort", () => {
+                        reject(new DOMException("aborted", "AbortError"));
+                    }));
+                },
+                free() {},
+            };
+        }
+        free() {}
+    }
+    const range = {
+        size: 8,
+        withSignal: (signal) => ({ size: 8, signal }),
+    };
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), AbortableReader, {
+        resolveSource: async (spec) => (spec ? range : spec),
+    });
+    worker.setPendingBlock("7");
+    await worker.send("openFile", { file: { url: "http://x/a.oct" }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    assert.equal(signal.aborted, false);
+    assert.equal(sourceArgs[1], undefined, "no attributes source: the shared one stays");
+
+    worker.setPendingBlock(null);
+    await worker.send("frame", {
+        camera: { orbitX: 1, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 },
+    });
+    await new Promise(setImmediate);
+    assert.equal(signal.aborted, true);
+    assert.deepEqual(worker.messages.filter((message) => message.type === "error"), []);
+});
+
+test("a superseded open that resolves late does not replace the current dataset's range sources", async () => {
+    const tags = [];
+    class TaggedReader {
+        static async open() { return new TaggedReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead() {
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                setSource: (view) => tags.push(view.tag),
+                read: async () => new Promise(() => {}),
+                free() {},
+            };
+        }
+        free() {}
+    }
+    let releaseA;
+    const sources = {
+        A: new Promise((resolve) => { releaseA = () => resolve({ size: 8, withSignal: () => ({ tag: "A" }) }); }),
+        B: Promise.resolve({ size: 8, withSignal: () => ({ tag: "B" }) }),
+    };
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), TaggedReader, {
+        resolveSource: async (spec) => (spec ? sources[spec.id] : spec),
+    });
+    worker.setPendingBlock("7");
+    const opening = worker.send("openFile", { file: { id: "A", url: "a" }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    await worker.send("openFile", { file: { id: "B", url: "b" }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    releaseA();
+    await opening;
+    await new Promise(setImmediate);
+    assert.deepEqual(tags, ["B"]);
+});
+
+test("a genuine read failure is still reported", async () => {
+    class FailingReader {
+        static async open() { return new FailingReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead() {
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                read: async () => { throw new Error("HTTP 404"); },
+                free() {},
+            };
+        }
+        free() {}
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), FailingReader);
+    worker.setPendingBlock("7");
+    await worker.send("openFile", { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    assert.ok(worker.messages.some((message) => message.type === "error" && /HTTP 404/.test(message.message)));
+});
+
+test("remote sources take remoteReads (default 8) concurrent block reads, local ones keep 4", async () => {
+    const run = async (file) => {
+        const started = [];
+        class WideReader {
+            static async open() { return new WideReader(); }
+            lodDatasetDescriptor() {
+                return {
+                    coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                    dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+                    nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                    hasAttributes: false, attributeSchema: [],
+                };
+            }
+            planLodRead(blockId) {
+                return {
+                    cancelToken: () => ({ cancel() {} }),
+                    read: async () => {
+                        started.push(String(blockId));
+                        await new Promise(() => {});
+                    },
+                    free() {},
+                };
+            }
+            free() {}
+        }
+        const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), WideReader);
+        worker.setPendingBlocks(Array.from({ length: 20 }, (_, index) => String(index)));
+        await worker.send("openFile", { file, cacheBytes: 1024, targetVoxelPixels: 4 });
+        return started.length;
+    };
+    assert.equal(await run({ name: "a.oct", size: 8 }), 4);
+    assert.equal(await run({ url: "http://host/a.oct", name: "a.oct", size: 8, remoteReads: 12 }), 12);
+    assert.equal(await run({ url: "http://host/a.oct", name: "a.oct", size: 8 }), 8);
+});
+
 test("async worker overlaps reads and retries budget-deferred blocks after a result frees quota", async () => {
     const resolvers = new Map();
     const started = [];
@@ -372,6 +600,9 @@ test("async worker overlaps reads and retries budget-deferred blocks after a res
         lodDatasetDescriptor() {
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false, attributeSchema: [],
             };
@@ -423,6 +654,9 @@ test("replacing a dataset cancels multiple active tickets before scheduling its 
         lodDatasetDescriptor() {
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false, attributeSchema: [],
             };
@@ -475,6 +709,9 @@ test("async worker rejects a read plan larger than the configured logical read b
         lodDatasetDescriptor() {
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false, attributeSchema: [],
             };
@@ -493,6 +730,38 @@ test("async worker rejects a read plan larger than the configured logical read b
     const failure = worker.messages.find(message => message.operation === "asyncLodRead");
     assert.match(failure.message, /needs 1025 bytes/);
     assert.equal(reads, 0);
+});
+
+test("async worker reports a failed block read instead of throwing in its error path", async () => {
+    class FailingReadAsyncReader {
+        static async open() { return new FailingReadAsyncReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead() {
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                read: async () => { throw new Error("range read failed"); },
+                free() {},
+            };
+        }
+        free() {}
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), FailingReadAsyncReader);
+    worker.setPendingBlock("7");
+    await worker.send("openFile", {
+        file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
+    });
+    for (let index = 0; index < 4; index++) await new Promise(setImmediate);
+    const failure = worker.messages.find(message => message.operation === "asyncLodRead");
+    assert.match(failure?.message ?? "", /range read failed/);
 });
 
 test("metrics message reports busy time per message type, frame queue wait and the LOD log", async () => {
@@ -518,4 +787,208 @@ test("metrics message reports busy time per message type, frame queue wait and t
     const reset = worker.messages.filter(message => message.type === "metrics").at(-1).workerMetrics;
     assert.equal(Object.keys(reset.busyByMessage).length, 0);
     assert.equal(reset.lodLog.length, 0);
+});
+
+const pagedOpen = { file: { name: "paged.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 };
+
+// Minimal paged reader: one root node; subclasses define `loadPage`.
+class PagedReader {
+    static async open() { return new this(); }
+    lodDatasetDescriptor() {
+        return {
+            coordinateOrigin: [0, 0, 0], semantics: "replacement",
+            dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+            nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+            hasAttributes: false, attributeSchema: [],
+        };
+    }
+    free() {}
+}
+
+test("a page that fails to load is not requested again until an explicit refinement", async () => {
+    const loads = [];
+    class FailingPageReader extends PagedReader {
+        async loadPage(anchor) {
+            loads.push(anchor);
+            await new Promise(setImmediate);
+            throw new Error("network error");
+        }
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), FailingPageReader);
+    worker.setPendingPageAnchors(["a"]);
+    await worker.send("openFile", pagedOpen);
+    for (let i = 0; i < 5; i += 1) await worker.send("frame", { camera: {} });
+    assert.deepEqual(loads, ["a"]);
+    await worker.send("refine", { trigger: "retry", colorMode: "rgb", targetVoxelPixels: 4 });
+    for (let i = 0; i < 3; i += 1) await worker.send("frame", { camera: {} });
+    assert.deepEqual(loads, ["a", "a"]);
+});
+
+test("a page whose graft throws does not stop the next queued page from grafting", async () => {
+    class GraftReader extends PagedReader {
+        async loadPage(anchor) {
+            await new Promise(setImmediate);
+            return { anchor, failGraft: anchor === "a", free() {} };
+        }
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), GraftReader);
+    worker.setPendingPageAnchors(["a", "b"]);
+    await worker.send("openFile", pagedOpen);
+    for (let i = 0; i < 3; i += 1) await new Promise(setImmediate);
+    assert.deepEqual(worker.graftedPages, ["b"]);
+    assert.ok(worker.messages.some(message => message.type === "error" && message.operation === "asyncPageRead"));
+});
+
+test("a later dataset with another cacheBytes gets its own read budget", async () => {
+    const worker = await runWorker();
+    await worker.send("openFile", { ...pagedOpen, cacheBytes: 1024 });
+    await worker.send("openFile", { ...pagedOpen, cacheBytes: 1024 });
+    assert.deepEqual(worker.budgetLimits(), [1024]);
+    await worker.send("openFile", { ...pagedOpen, cacheBytes: 4096 });
+    assert.deepEqual(worker.budgetLimits(), [1024, 4096]);
+});
+
+test("a page that failed in one dataset is requested again after opening a new one", async () => {
+    const loads = [];
+    class FailingPageReader extends PagedReader {
+        async loadPage(anchor) {
+            loads.push(anchor);
+            await new Promise(setImmediate);
+            throw new Error("network error");
+        }
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), FailingPageReader);
+    worker.setPendingPageAnchors(["a"]);
+    await worker.send("openFile", pagedOpen);
+    await worker.send("frame", { camera: {} });
+    await worker.send("openFile", pagedOpen);
+    await worker.send("frame", { camera: {} });
+    assert.deepEqual(loads, ["a", "a"]);
+});
+
+const idleCamera = { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 };
+
+// Draws `count` frames `stepMs` apart, starting after the current time `from`.
+async function drawFrames(worker, from, count, stepMs) {
+    for (let i = 1; i <= count; i++) {
+        worker.setNow(from + i * stepMs);
+        await worker.send("frame", { camera: idleCamera });
+    }
+    return from + count * stepMs;
+}
+
+async function openedDynamicWorker() {
+    const worker = await runWorker();
+    await worker.send("openFile", { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    return worker;
+}
+
+test("pxMode is fixed by default: no timer, no controller, the host's target rules", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("refine", { trigger: "detail", colorMode: "rgb", targetVoxelPixels: 2 });
+    await drawFrames(worker, 0, 100, 50);
+    assert.deepEqual(worker.timing, []);
+    assert.equal(worker.updateLodCalls.at(-1), 2);
+    const px = worker.messages.filter(message => message.type === "stats").at(-1).px;
+    assert.deepEqual({ ...px }, { mode: "fixed", targetPx: 2, signalMs: null, signalSource: null });
+});
+
+test("dynamic mode enables the GPU timer, coarsens on overload and refines on headroom", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("api", { operation: "setPxMode", mode: "dynamic", requestId: 1 });
+    assert.deepEqual(worker.timing, [true, "reset"]);
+    assert.equal(worker.messages.find(message => message.requestId === 1).value.mode, "dynamic");
+    // 4 px at the start; a 25 ms GPU p95 coarsens to 8 px within the first window.
+    worker.setGpuFrameMs(25);
+    let t = await drawFrames(worker, 0, 25, 50);
+    assert.equal(worker.updateLodCalls.at(-1), 8);
+    // Headroom for two windows refines back, after the dwell.
+    worker.setGpuFrameMs(6);
+    t = await drawFrames(worker, t, 70, 50);
+    assert.equal(worker.updateLodCalls.at(-1), 4);
+    const px = (await (async () => {
+        await worker.send("api", { operation: "getStats", requestId: 2 });
+        return worker.messages.find(message => message.requestId === 2).value.px;
+    })());
+    assert.deepEqual({ ...px }, { mode: "dynamic", targetPx: 4, signalMs: 6, signalSource: "gpu" });
+    // The host's slider does not override the controller while dynamic.
+    await worker.send("refine", { trigger: "detail", colorMode: "rgb", targetVoxelPixels: 1 });
+    assert.equal(worker.updateLodCalls.at(-1), 4);
+    // Going back to fixed restores the host's last target and turns the timer off.
+    await worker.send("pxMode", { mode: "fixed" });
+    assert.equal(worker.updateLodCalls.at(-1), 1);
+    assert.equal(worker.timing.at(-1), false);
+});
+
+test("dynamic mode falls back to the frame interval when the GPU cannot time frames", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(null);
+    // 30 ms between frames (p95 over 20 ms) coarsens; the signal source is reported.
+    await drawFrames(worker, 0, 40, 30);
+    assert.equal(worker.updateLodCalls.at(-1), 8);
+    await worker.send("api", { operation: "getStats", requestId: 3 });
+    const px = worker.messages.find(message => message.requestId === 3).value.px;
+    assert.equal(px.signalSource, "interval");
+});
+
+test("an invalid pxMode is rejected", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "auto" });
+    assert.match(worker.messages.at(-1).message, /pxMode must be/);
+});
+
+test("frames on coarse rungs do not count toward a step until the ladder reaches the target", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(25);
+    worker.holdStage(16);
+    let t = await drawFrames(worker, 0, 100, 50);
+    assert.equal(worker.updateLodCalls.at(-1), 4, "5 s of overload on unsettled frames: no step");
+    worker.holdStage(null);
+    t = await drawFrames(worker, t, 60, 50);
+    assert.equal(worker.updateLodCalls.at(-1), 8, "settled, the overload counts");
+});
+
+test("a window that spans an idle gap is discarded", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(25);
+    let t = await drawFrames(worker, 0, 10, 50);
+    t = await drawFrames(worker, t + 5000, 5, 50); // idle, then resumes: the old window is dropped
+    assert.equal(worker.updateLodCalls.at(-1), 4);
+});
+
+test("dynamic mode leaves a host-enabled GPU timer on when going back to fixed", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("api", { operation: "setGpuFrameTiming", enabled: true, requestId: 5 });
+    await worker.send("pxMode", { mode: "dynamic" });
+    await worker.send("pxMode", { mode: "fixed" });
+    assert.equal(worker.timing.filter(value => value === false).length, 0);
+});
+
+test("choosing dynamic before the viewer exists is rejected and the mode stays fixed", async () => {
+    const worker = await runWorker(undefined, null, { skipInit: true });
+    await worker.send("pxMode", { mode: "dynamic" });
+    assert.match(worker.messages.at(-1).message, /not ready/);
+});
+
+test("a new dataset keeps the mode and restarts the window and dwell", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(25);
+    let t = await drawFrames(worker, 0, 15, 50);
+    await worker.send("openFile", { file: { name: "b.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    await worker.send("api", { operation: "getStats", requestId: 7 });
+    const px = worker.messages.find(message => message.requestId === 7).value.px;
+    assert.equal(px.mode, "dynamic");
+    assert.equal(px.signalSource, null, "the last window's signal is gone");
+});
+
+test("frames slower than 500 ms under GPU overload still coarsen after the dwell", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(30);
+    await drawFrames(worker, 0, 12, 700);
+    assert.equal(worker.updateLodCalls.at(-1), 8);
 });

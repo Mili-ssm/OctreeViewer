@@ -4,7 +4,7 @@ use viewer_core::{
     AttributeValues, BlockId, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy,
 };
 
-use crate::geometry::{GeometryEncoding, encode_delta};
+use crate::geometry::{GeometryEncoding, encode_delta, encode_delta_iter};
 use crate::layout::{
     PayloadDirectoryEntry, StorageLayout, attribute_payload_size, block_payload_size,
 };
@@ -50,6 +50,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
     collect_codec_diagnostics: bool,
 ) -> Result<(PreparedPointBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
     let layout = StorageLayout::from_version(version)?;
+    let row_order = options.resolved_row_order(version)?;
     let point_count = block.positions_local().len();
     if block.colors().len() != point_count {
         return Err(FormatError::ColorCountMismatch {
@@ -71,9 +72,27 @@ pub(crate) fn prepare_point_block_for_version_impl(
             limit: options.max_uncompressed_block_bytes,
         });
     }
-    let quantized =
-        quantize_local_positions(block.positions_local(), options.max_quantization_error)?;
-    let world_bounds = block_world_bounds(block.positions_local(), &quantized, metadata.dataset())?;
+    ensure_global_frame_matches(layout, metadata)?;
+    let (quantized, origin_quanta, world_bounds) = if layout.uses_global_frame() {
+        let frame = metadata.global_frame().expect("checked above");
+        let cell = frame
+            .block_box(block.id())
+            .ok_or(FormatError::UnreferencedBlock(block.id()))?;
+        let (quantized, origin) = crate::quantization::quantize_global_positions(
+            block.positions_local(),
+            metadata.dataset().coordinate_frame().origin(),
+            frame.frame_origin_quanta(),
+            cell,
+            options.max_quantization_error,
+        )?;
+        (quantized, origin, None)
+    } else {
+        let quantized =
+            quantize_local_positions(block.positions_local(), options.max_quantization_error)?;
+        let world_bounds =
+            block_world_bounds(block.positions_local(), &quantized, metadata.dataset())?;
+        (quantized, [0; 3], world_bounds)
+    };
     let transform = quantized.transform();
     let quantization_error = quantized.max_error();
     let geometry_length = usize::try_from(
@@ -311,6 +330,49 @@ pub(crate) fn prepare_point_block_for_version_impl(
             }
         }
     }
+    // Hybrid writer (ADR 0041/0042): a block whose source-order winner is CompactOccupied is
+    // retried with its rows sorted by Morton key and DeltaVarint; ties keep source order.
+    let mut row_permutation: Option<Vec<u32>> = None;
+    if row_order == RowOrder::Hybrid
+        && layout.is_v7()
+        && geometry_encoding == GeometryEncoding::CompactOccupied
+        && u32::try_from(point_count).is_ok()
+    {
+        let morton_started = collect_codec_diagnostics.then(std::time::Instant::now);
+        let permutation = morton_permutation(quantized.coordinates());
+        let coordinates = quantized.coordinates();
+        let delta = encode_delta_iter(
+            permutation.iter().map(|&row| coordinates[row as usize]),
+            coordinates.len(),
+        )?;
+        let other_raw_size = uncompressed_size
+            .checked_sub(geometry_length as u64)
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        let delta_total = other_raw_size
+            .checked_add(delta.len() as u64)
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        if delta_total <= options.max_uncompressed_block_bytes {
+            let encoding_ns = morton_started.map_or(0, |started| started.elapsed().as_nanos());
+            let compression_started = collect_codec_diagnostics.then(std::time::Instant::now);
+            let encoded = compress_block(&delta);
+            if codec_diagnostics.is_some() {
+                candidates.push(candidate_metric(
+                    crate::GeometryCandidateKind::DeltaMorton,
+                    encoding_ns,
+                    compression_started.map_or(0, |started| started.elapsed().as_nanos()),
+                    delta.len(),
+                    encoded.bytes().len(),
+                ));
+            }
+            if encoded.bytes().len() < encoded_geometry.bytes().len() {
+                geometry_encoding = GeometryEncoding::DeltaVarint;
+                selected_candidate = crate::GeometryCandidateKind::DeltaMorton;
+                geometry_raw_length = delta.len();
+                encoded_geometry = encoded;
+                row_permutation = Some(permutation);
+            }
+        }
+    }
     if let Some(diagnostics) = codec_diagnostics.as_mut() {
         for candidate in &mut candidates {
             if candidate.kind == selected_candidate {
@@ -330,6 +392,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
         .try_reserve_exact(schema.len() + 2)
         .map_err(|_| FormatError::AllocationFailed(schema.len() + 2))?;
     let mut raw = raw_geometry;
+    let mut scratch = Vec::new();
     append_encoded_payload(
         encoded_geometry,
         geometry_raw_length,
@@ -340,6 +403,10 @@ pub(crate) fn prepare_point_block_for_version_impl(
     for color in block.colors() {
         raw.extend_from_slice(&[color.r, color.g, color.b]);
     }
+    if let Some(permutation) = &row_permutation {
+        permute_rows(&raw, permutation, 3, &mut scratch);
+        std::mem::swap(&mut raw, &mut scratch);
+    }
     append_payload(&raw, &mut bytes, &mut payloads, layout, 3)?;
     for column in attributes {
         let length = attribute_payload_size(point_count as u64, column.descriptor())?;
@@ -349,6 +416,10 @@ pub(crate) fn prepare_point_block_for_version_impl(
             .map_err(|_| FormatError::AllocationFailed(length))?;
         encode_values(column.values(), &mut raw);
         let width = crate::layout::attribute_tuple_width(column.descriptor())?;
+        if let Some(permutation) = &row_permutation {
+            permute_rows(&raw, permutation, width, &mut scratch);
+            std::mem::swap(&mut raw, &mut scratch);
+        }
         append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
     }
     Ok((
@@ -361,6 +432,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
             quantization_error,
             origin: transform.origin(),
             scale: transform.scale(),
+            origin_quanta,
             world_bounds,
             bytes,
             payloads,
@@ -368,6 +440,118 @@ pub(crate) fn prepare_point_block_for_version_impl(
         },
         codec_diagnostics,
     ))
+}
+
+/// Row order chosen by the writer. V7 rows of a block may be in any order (ADR 0041).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RowOrder {
+    /// Rows stay in the order of the source block.
+    #[default]
+    Source,
+    /// Blocks whose best source-order geometry is `CompactOccupied` are re-encoded sorted by
+    /// Morton key with `DeltaVarint` when that is strictly smaller (ADR 0042).
+    Hybrid,
+}
+
+impl RowOrder {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Hybrid => "hybrid",
+        }
+    }
+}
+
+impl std::str::FromStr for RowOrder {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "source" => Ok(Self::Source),
+            "hybrid" => Ok(Self::Hybrid),
+            other => Err(format!(
+                "unknown row order {other:?} (expected source or hybrid)"
+            )),
+        }
+    }
+}
+
+/// Interleaves the 32 bits of each coordinate into a 96-bit Morton key (no truncation), x in the
+/// high bit of each triple like the cell builder (`viewer_render_wgpu` `node_cells::morton`).
+fn morton_key(coordinate: [u32; 3]) -> u128 {
+    // Bit i of axis a goes to 3*i + (2 - a): the low 21 bits fill bits 0..63, the high 11 bits
+    // fill bits 63..96. Magic-mask spreading instead of a 96-step loop (the key is computed for
+    // every point of every dense block).
+    let interleave = |part: fn(u32) -> u64| {
+        (spread_by_3(part(coordinate[0])) << 2)
+            | (spread_by_3(part(coordinate[1])) << 1)
+            | spread_by_3(part(coordinate[2]))
+    };
+    let low = interleave(|value| u64::from(value & 0x1f_ffff));
+    let high = interleave(|value| u64::from(value >> 21));
+    u128::from(low) | (u128::from(high) << 63)
+}
+
+/// Spreads the low 21 bits of `value` so that bit i lands on bit 3*i.
+fn spread_by_3(value: u64) -> u64 {
+    let mut x = value & 0x1f_ffff;
+    x = (x | (x << 32)) & 0x001f_0000_0000_ffff;
+    x = (x | (x << 16)) & 0x001f_0000_ff00_00ff;
+    x = (x | (x << 8)) & 0x100f_00f0_0f00_f00f;
+    x = (x | (x << 4)) & 0x10c3_0c30_c30c_30c3;
+    x = (x | (x << 2)) & 0x1249_2492_4924_9249;
+    x
+}
+
+/// Source row indices ordered by (Morton key, source row): a deterministic total order.
+fn morton_permutation(coordinates: &[[u32; 3]]) -> Vec<u32> {
+    // Stable LSD radix sort of the rows by key: equal keys keep source row order, so the result
+    // is the (key, row) order. Only the bits where the block's keys differ are visited (at most
+    // nine 11-bit passes). The caller guarantees the row count fits in u32.
+    const BITS: u32 = 11;
+    const MASK: u128 = (1 << BITS) - 1;
+    let keys: Vec<u128> = coordinates.iter().map(|c| morton_key(*c)).collect();
+    let mut order: Vec<u32> = (0..keys.len() as u32).collect();
+    let Some(&first) = keys.first() else {
+        return order;
+    };
+    let varying = keys.iter().fold(0, |acc, key| acc | (key ^ first));
+    if varying == 0 {
+        return order;
+    }
+    let end = 128 - varying.leading_zeros();
+    let mut shift = varying.trailing_zeros();
+    let mut scratch = vec![0_u32; order.len()];
+    while shift < end {
+        let mut counts = [0_usize; 1 << BITS];
+        for &row in &order {
+            counts[((keys[row as usize] >> shift) & MASK) as usize] += 1;
+        }
+        let mut start = 0;
+        for count in &mut counts {
+            let n = *count;
+            *count = start;
+            start += n;
+        }
+        for &row in &order {
+            let digit = ((keys[row as usize] >> shift) & MASK) as usize;
+            scratch[counts[digit]] = row;
+            counts[digit] += 1;
+        }
+        std::mem::swap(&mut order, &mut scratch);
+        shift += BITS;
+    }
+    order
+}
+
+/// Row `i` of the result is row `permutation[i]` of `raw`, whose rows are `width` bytes.
+fn permute_rows(raw: &[u8], permutation: &[u32], width: usize, out: &mut Vec<u8>) {
+    out.clear();
+    out.reserve(raw.len());
+    for &row in permutation {
+        let start = row as usize * width;
+        out.extend_from_slice(&raw[start..start + width]);
+    }
 }
 
 pub(crate) fn candidate_metric(
@@ -415,9 +599,27 @@ pub(crate) struct BlockRecord {
     pub(crate) quantization_error: f64,
     pub(crate) origin: [f64; 3],
     pub(crate) scale: [f64; 3],
+    /// Block origin in quanta (`v7.4-pre`); zero in older layouts.
+    pub(crate) origin_quanta: [i64; 3],
     pub(crate) world_bounds: Option<SpatialBounds>,
     pub(crate) payloads: Vec<PayloadDirectoryEntry>,
     pub(crate) ranges: Vec<crate::NodeAttributeRange>,
+}
+
+/// The global frame belongs to `v7.4-pre` and to no other layout.
+pub(crate) fn ensure_global_frame_matches(
+    layout: StorageLayout,
+    metadata: &FormatMetadata,
+) -> Result<(), FormatError> {
+    match (layout.uses_global_frame(), metadata.global_frame()) {
+        (true, None) => Err(FormatError::InvalidMetadata(
+            "v7.4-pre needs a global frame in the metadata",
+        )),
+        (false, Some(_)) => Err(FormatError::InvalidMetadata(
+            "a global frame is only written by v7.4-pre",
+        )),
+        _ => Ok(()),
+    }
 }
 
 pub(crate) fn build_block_nodes(
@@ -660,6 +862,9 @@ impl BoundsAccumulator {
 pub struct FormatWriterOptions {
     max_quantization_error: f64,
     max_uncompressed_block_bytes: u64,
+    page_target_bytes: usize,
+    /// `None` takes the format's fixed order or `Source`.
+    row_order: Option<RowOrder>,
 }
 
 impl FormatWriterOptions {
@@ -678,7 +883,39 @@ impl FormatWriterOptions {
         Ok(Self {
             max_quantization_error,
             max_uncompressed_block_bytes,
+            page_target_bytes: crate::TARGET_PAGE_BYTES,
+            row_order: None,
         })
+    }
+
+    /// `v7.5-pre` only: the size a page may reach before the writer lowers its level count `k`
+    /// (default [`crate::TARGET_PAGE_BYTES`]). A page never has fewer than one level.
+    pub fn with_page_target_bytes(mut self, bytes: usize) -> Self {
+        self.page_target_bytes = bytes;
+        self
+    }
+
+    /// Requests a row order of each block. Unset, the format's fixed order applies (`v7` is
+    /// always hybrid) or else [`RowOrder::Source`]; a different explicit order for a format
+    /// that fixes one fails when blocks are prepared.
+    pub fn with_row_order(mut self, row_order: RowOrder) -> Self {
+        self.row_order = Some(row_order);
+        self
+    }
+
+    /// Row order that blocks of `version` are written with.
+    pub fn resolved_row_order(&self, version: FormatVersion) -> Result<RowOrder, FormatError> {
+        match (version.fixed_row_order(), self.row_order) {
+            (Some(fixed), Some(requested)) if fixed != requested => {
+                Err(FormatError::RowOrderFixedByFormat(version))
+            }
+            (Some(fixed), _) => Ok(fixed),
+            (None, requested) => Ok(requested.unwrap_or(RowOrder::Source)),
+        }
+    }
+
+    pub(crate) fn page_target_bytes(&self) -> usize {
+        self.page_target_bytes
     }
 }
 
@@ -691,6 +928,7 @@ pub struct PreparedPointBlock {
     pub(crate) quantization_error: f64,
     pub(crate) origin: [f64; 3],
     pub(crate) scale: [f64; 3],
+    pub(crate) origin_quanta: [i64; 3],
     pub(crate) world_bounds: Option<SpatialBounds>,
     pub(crate) bytes: Vec<u8>,
     pub(crate) payloads: Vec<PayloadDirectoryEntry>,
@@ -703,3 +941,7 @@ impl PreparedPointBlock {
         self.bytes.capacity()
     }
 }
+
+#[cfg(test)]
+#[path = "row_order_tests.rs"]
+mod row_order_tests;

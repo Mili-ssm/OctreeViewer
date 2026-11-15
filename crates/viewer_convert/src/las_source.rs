@@ -1,7 +1,8 @@
 use std::{
+    collections::BTreeMap,
     fs::{self, File, OpenOptions},
     path::{Path, PathBuf},
-    sync::mpsc,
+    sync::{Condvar, Mutex, MutexGuard, PoisonError},
     thread,
     time::Instant,
 };
@@ -89,7 +90,7 @@ pub(crate) fn plan_sample_blocks(
     lod_count: usize,
 ) -> Result<Vec<viewer_format::SourcePointBlock>, ConvertError> {
     let (reader, len) = open_las_reader_with_len(input_path)?;
-    let source = inspect_source(&reader)?;
+    let source = inspect_source(&reader)?.for_options(options)?;
     let workspace = Workspace::create(workspace_anchor)?;
     let store = FileSpoolStore::new(workspace.root(), false);
     let factory = LasFactory::new(FileBytes {
@@ -131,6 +132,8 @@ pub(crate) fn convert_file_inner(
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
+    let options = options.validate()?;
+    crate::allocator::limit_retention();
     if output_path == output_attributes_path(output_path) {
         return Err(ConvertError::ConflictingOutputPaths);
     }
@@ -143,6 +146,12 @@ pub(crate) fn convert_file_inner(
             on_progress,
             diagnostics.as_deref_mut(),
         );
+    }
+    if checkpoint_mode.is_some() && options.format_version().uses_pages() {
+        return Err(ConvertError::UnsupportedForPagedFormat {
+            what: "a checkpointed or resumed conversion",
+            version: options.format_version(),
+        });
     }
     let requested_attributes_path = output_attributes_path(output_path);
     if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
@@ -165,7 +174,7 @@ pub(crate) fn convert_file_inner(
         0,
     )?;
     let (mut reader, len) = open_las_reader_with_len(input_path)?;
-    let source = inspect_source(&reader)?;
+    let source = inspect_source(&reader)?.for_options(options)?;
     let expected_visual_scale = visual_scale_for_bounds(source.bounds)?;
     let mut checkpoint = if let Some(mode) = checkpoint_mode {
         let source_fingerprint = fingerprint_file(input_path)?;
@@ -275,7 +284,7 @@ pub(crate) fn convert_file_inner(
             block_count,
             output_bytes,
             estimated_peak_memory_bytes: estimated_memory_bytes,
-            omitted_dimensions: omitted_dimensions(&source.point_format, source.has_crs),
+            omitted_dimensions: source.omitted_dimensions(),
             block_preparation: None,
             output_validation,
         });
@@ -465,11 +474,19 @@ pub(crate) fn convert_file_inner(
             plan.estimated_peak_memory_bytes,
         )?;
     }
-    let output_block_ids = plan.blocks.iter().map(|block| block.id).collect::<Vec<_>>();
+    // `v7.5-pre` numbers blocks by page when it writes them, so read the ids back from the file.
+    let (output_block_ids, source_block_ids) = if options.format_version().uses_pages() {
+        crate::publish::output_block_ids(&temporary_path)?
+    } else {
+        (
+            plan.blocks.iter().map(|block| block.id).collect::<Vec<_>>(),
+            plan.source_block_ids.clone(),
+        )
+    };
     let validation = OutputValidation {
         total_points: plan.point_count,
         block_ids: &output_block_ids,
-        source_block_ids: &plan.source_block_ids,
+        source_block_ids: &source_block_ids,
         file_length,
         attributes_length,
         requested_workers: options.spatial_workers(),
@@ -652,7 +669,7 @@ where
             block_preparation_ns = block_preparation_ns.saturating_add(batch_preparation_ns);
             let write_started = Instant::now();
             for (block, prepared) in batch.iter().zip(prepared) {
-                // The whole batch has finished reading before any shared spool is removed.
+                // Blocks are written in plan order, so every other reader of a shared spool is done.
                 write_prepared(writer, block, prepared, store)?;
                 if block.is_source_points {
                     processed += block.point_count() as u64;
@@ -689,8 +706,12 @@ where
     })
 }
 
-/// A zero-capacity channel bounds overlap to two batches. Dropping the receiver
-/// on cancellation/error wakes the producer before the scoped thread is joined.
+/// Prepares items on `width` threads and consumes them strictly in order. A sliding window
+/// bounds the items prepared but not yet consumed (`2 * width`, or 1 when `width == 1` and
+/// `!pipeline`, where the memory budget admits a single block), so one slow item delays only
+/// the window instead of a whole batch. In-order consumption means a spool shared by several
+/// items is released (by its final item) only after all its other readers were consumed.
+/// An error or panic stops the workers before the scope joins them.
 pub(crate) fn process_batches<T: Sync, P: Send>(
     items: &[T],
     width: usize,
@@ -698,26 +719,102 @@ pub(crate) fn process_batches<T: Sync, P: Send>(
     prepare: impl Fn(&[T]) -> Result<P, ConvertError> + Sync,
     mut consume: impl FnMut(&[T], P) -> Result<(), ConvertError>,
 ) -> Result<(), ConvertError> {
-    if !pipeline {
-        for batch in items.chunks(width) {
-            consume(batch, prepare(batch)?)?;
+    let width = width.max(1);
+    let window = if pipeline || width > 1 { 2 * width } else { 1 };
+    if window == 1 {
+        for index in 0..items.len() {
+            let item = &items[index..=index];
+            consume(item, prepare(item)?)?;
         }
         return Ok(());
     }
-    thread::scope(|scope| {
-        let (sender, receiver) = mpsc::sync_channel(0);
-        let prepare = &prepare;
-        scope.spawn(move || {
-            for batch in items.chunks(width) {
-                let result = prepare(batch);
-                let failed = result.is_err();
-                if sender.send(result).is_err() || failed {
-                    break;
-                }
+    struct State<P> {
+        next: usize,
+        consumed: usize,
+        stop: bool,
+        ready: BTreeMap<usize, Result<P, ConvertError>>,
+    }
+    struct Shared<P> {
+        state: Mutex<State<P>>,
+        changed: Condvar,
+    }
+    impl<P> Shared<P> {
+        fn lock(&self) -> MutexGuard<'_, State<P>> {
+            self.state.lock().unwrap_or_else(PoisonError::into_inner)
+        }
+        fn stop(&self) {
+            self.lock().stop = true;
+            self.changed.notify_all();
+        }
+    }
+    // Stops the workers when the consumer returns early, and the consumer when a worker panics.
+    struct StopOnDrop<'a, P>(&'a Shared<P>, bool);
+    impl<P> Drop for StopOnDrop<'_, P> {
+        fn drop(&mut self) {
+            if self.1 || thread::panicking() {
+                self.0.stop();
             }
-        });
-        for (batch, prepared) in items.chunks(width).zip(receiver) {
-            consume(batch, prepared?)?;
+        }
+    }
+    let shared = Shared {
+        state: Mutex::new(State {
+            next: 0,
+            consumed: 0,
+            stop: false,
+            ready: BTreeMap::new(),
+        }),
+        changed: Condvar::new(),
+    };
+    thread::scope(|scope| {
+        for _ in 0..width.min(items.len()) {
+            let (shared, prepare) = (&shared, &prepare);
+            scope.spawn(move || {
+                let _guard = StopOnDrop(shared, false);
+                loop {
+                    let index = {
+                        let mut state = shared.lock();
+                        while !state.stop
+                            && state.next < items.len()
+                            && state.next >= state.consumed + window
+                        {
+                            state = shared
+                                .changed
+                                .wait(state)
+                                .unwrap_or_else(PoisonError::into_inner);
+                        }
+                        if state.stop || state.next >= items.len() {
+                            return;
+                        }
+                        state.next += 1;
+                        state.next - 1
+                    };
+                    let result = prepare(&items[index..=index]);
+                    shared.lock().ready.insert(index, result);
+                    shared.changed.notify_all();
+                }
+            });
+        }
+        let _guard = StopOnDrop(&shared, true);
+        for index in 0..items.len() {
+            let prepared = {
+                let mut state = shared.lock();
+                loop {
+                    if let Some(result) = state.ready.remove(&index) {
+                        break result;
+                    }
+                    if state.stop {
+                        // A worker panicked; the scope re-raises it when it joins.
+                        return Ok(());
+                    }
+                    state = shared
+                        .changed
+                        .wait(state)
+                        .unwrap_or_else(PoisonError::into_inner);
+                }
+            };
+            consume(&items[index..=index], prepared?)?;
+            shared.lock().consumed = index + 1;
+            shared.changed.notify_all();
         }
         Ok(())
     })

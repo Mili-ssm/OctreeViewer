@@ -1,0 +1,386 @@
+diff --git a/.gitattributes b/.gitattributes
+new file mode 100644
+index 0000000..a9b631e
+--- /dev/null
++++ b/.gitattributes
+@@ -0,0 +1,3 @@
++# Preserve captured evidence bytes, including unified-diff context markers.
++docs/records/benchmarks/data/r3-t0-04-11-2026/environment.txt -text -whitespace
++docs/records/benchmarks/data/r3-t0-04-11-2026/source-code-after-fixtures.patch -text -whitespace
+diff --git a/crates/viewer_format/tests/v7_5.rs b/crates/viewer_format/tests/v7_5.rs
+index e8f8abf..b08cadc 100644
+--- a/crates/viewer_format/tests/v7_5.rs
++++ b/crates/viewer_format/tests/v7_5.rs
+@@ -102,11 +102,23 @@ fn dataset_at(
+     tree: &[TreeNode],
+     root_level: u32,
+     root_prefix: [u64; 3],
++) -> (FormatMetadata, Vec<SourcePointBlock>) {
++    dataset_for_fixture(tree, root_level, root_prefix, wkt_crs(), false)
++}
++
++fn dataset_for_fixture(
++    tree: &[TreeNode],
++    root_level: u32,
++    root_prefix: [u64; 3],
++    crs: CrsRecord,
++    depth_16_leaf: bool,
+ ) -> (FormatMetadata, Vec<SourcePointBlock>) {
+     let cells: Vec<_> = tree
+         .iter()
+         .map(|n| {
+-            let spacing = if n.has_children {
++            let spacing = if depth_16_leaf && !n.has_children {
++                2.0_f64.powi(33 - root_level as i32)
++            } else if n.has_children {
+                 2.0_f64.powi(41 - (root_level + n.depth) as i32)
+             } else {
+                 2.0_f64.powi((49 - (root_level + n.depth) as i32).min(-5))
+@@ -115,7 +127,7 @@ fn dataset_at(
+         })
+         .collect();
+     // A level-0 root has its corner 2^48 units away; the frame origin sits at the cloud instead.
+-    let origin = if root_level == 0 {
++    let origin = if root_level == 0 || crs.is_local() {
+         [0; 3]
+     } else {
+         root_origin(root_level, root_prefix)
+@@ -125,7 +137,7 @@ fn dataset_at(
+         root_prefix,
+         origin,
+         origin.map(|q| q + 100 * 32_768),
+-        wkt_crs(),
++        crs,
+         None,
+         cells,
+     )
+@@ -271,6 +283,102 @@ fn all_pages(
+     pages
+ }
+ 
++#[test]
++fn r3_small_fixtures_open_with_expected_relative_depths() {
++    for (name, root_level, root_prefix, crs) in [
++        ("crs-root0", 0, [0; 3], wkt_crs()),
++        ("crs", ROOT_LEVEL, ROOT_PREFIX, wkt_crs()),
++        ("local", ROOT_LEVEL, [0; 3], CrsRecord::local()),
++    ] {
++        let tree: Vec<_> = (0..=2_u32)
++            .map(|depth| TreeNode {
++                id: u64::from(depth),
++                parent: depth.checked_sub(1).map(u64::from),
++                depth,
++                prefix: if root_level == 0 && depth > 0 {
++                    [1_u64 << (depth - 1); 3]
++                } else {
++                    root_prefix.map(|p| p << depth)
++                },
++                has_children: depth < 2,
++            })
++            .collect();
++        for version in [V74, V75] {
++            let (metadata, blocks) =
++                dataset_for_fixture(&tree, root_level, root_prefix, crs.clone(), true);
++            let options = FormatWriterOptions::new(0.01, 1 << 24)
++                .unwrap()
++                .with_page_target_bytes(1);
++            let mut writer = FormatWriter::new_split_for_version(
++                version,
++                Cursor::new(Vec::new()),
++                Cursor::new(Vec::new()),
++                metadata,
++                options,
++            )
++            .unwrap();
++            for block in blocks {
++                writer.write_block(block).unwrap();
++            }
++            let (primary, attributes) = writer.finish_pair().unwrap();
++            let primary = primary.into_inner();
++            let attributes = attributes.unwrap().into_inner();
++            let reader = open_pair(primary.clone(), attributes.clone());
++            let metadata = reader.format_metadata();
++            let frame = metadata.global_frame().unwrap();
++            assert_eq!(frame.root_level(), root_level);
++            assert_eq!(frame.crs(), &crs);
++            let hierarchy = metadata.dataset().hierarchy();
++            let nodes: Vec<_> = hierarchy
++                .query(hierarchy.node(hierarchy.root_id()).unwrap().bounds())
++                .collect();
++            let root = nodes.iter().find(|node| node.level() == 0).unwrap();
++            let leaf = nodes.iter().find(|node| node.level() == 2).unwrap();
++            let side = |node: &SpatialNode| node.bounds().max()[0] - node.bounds().min()[0];
++            assert_eq!(side(root) / side(leaf), 4.0);
++            let spacing = frame.node_cell(leaf.id()).unwrap().spacing();
++            assert_eq!(side(root) / spacing, 2_f64.powi(16));
++            assert_eq!(side(leaf) / spacing, 2_f64.powi(14));
++            assert!(16 - leaf.level() <= 21);
++            let mut anchor = None;
++            let mut child_block = None;
++            if version == V75 {
++                let mut paged = PagedReader::open(Cursor::new(primary.clone())).unwrap();
++                anchor = Some(
++                    paged
++                        .root_page()
++                        .child_pages()
++                        .next()
++                        .unwrap()
++                        .1
++                        .anchor_node
++                        .get(),
++                );
++                let pages = all_pages(&mut paged);
++                assert!(pages.len() > 1);
++                child_block = Some(pages[1].0.nodes()[0].blocks()[0].id().get());
++                assert_eq!(pages.iter().map(|(p, _)| p.nodes().len()).sum::<usize>(), 3);
++            }
++            if let Some(dir) = std::env::var_os("R3_FIXTURE_DIR") {
++                let dir = std::path::Path::new(&dir);
++                std::fs::create_dir_all(dir).unwrap();
++                let revision = if version == V75 { "v75" } else { "v74" };
++                let stem = format!("{name}-{revision}");
++                std::fs::write(dir.join(format!("{stem}.oct")), &primary).unwrap();
++                std::fs::write(dir.join(format!("{stem}.octattrs")), &attributes).unwrap();
++                if let Some(anchor) = anchor {
++                    std::fs::write(dir.join(format!("{stem}.anchor")), anchor.to_string()).unwrap();
++                    std::fs::write(
++                        dir.join(format!("{stem}.block")),
++                        child_block.unwrap().to_string(),
++                    )
++                    .unwrap();
++                }
++            }
++        }
++    }
++}
++
+ #[test]
+ fn v7_5_is_writable_and_v5_stays_the_default() {
+     assert!(FormatVersion::WRITABLE.contains(&V75));
+@@ -1018,6 +1126,22 @@ fn reference_spacing_is_stored_and_stable_while_pages_are_grafted() {
+     let expected = viewer_core::reference_spacing(leaves).unwrap();
+     assert_eq!(eager.reference_spacing(), Some(expected));
+ 
++    // The browser's async Blob reader opens the same metadata via externally fetched ranges.
++    let footer = &primary[primary.len() - 40..];
++    let limits = FormatReaderLimits::default();
++    let location =
++        viewer_format::PagedCore::locate_index(primary.len() as u64, footer, &limits).unwrap();
++    let start = location.offset as usize;
++    let end = start + location.length as usize;
++    let external =
++        FormatReader::paged_external(primary.len() as u64, footer, &primary[start..end], limits)
++            .unwrap();
++    assert_eq!(external.reference_spacing(), eager.reference_spacing());
++    assert_eq!(
++        external.page_source().unwrap().reference_spacing(),
++        expected
++    );
++
+     let mut lazy =
+         FormatReader::open_lazy(Cursor::new(primary), FormatReaderLimits::default()).unwrap();
+     let source = std::sync::Arc::clone(lazy.page_source().unwrap());
+@@ -1064,6 +1188,13 @@ fn reference_spacing_is_validated_and_checked_against_the_leaves() {
+     let mut bytes = primary;
+     patch_reference_spacing(&mut bytes, stored * 2.0);
+     assert!(PagedReader::open(Cursor::new(bytes.clone())).is_ok());
++    assert!(matches!(
++        viewer_format::verify_paged(
++            &mut Cursor::new(bytes.clone()),
++            &FormatReaderLimits::default()
++        ),
++        Err(FormatError::MalformedIndex(_))
++    ));
+     assert!(matches!(
+         FormatReader::new(Cursor::new(bytes)),
+         Err(FormatError::MalformedIndex(_))
+diff --git a/crates/viewer_wasm/Cargo.toml b/crates/viewer_wasm/Cargo.toml
+index a0e2fd7..25c60b6 100644
+--- a/crates/viewer_wasm/Cargo.toml
++++ b/crates/viewer_wasm/Cargo.toml
+@@ -8,6 +8,9 @@ readme = "README.md"
+ [lib]
+ crate-type = ["cdylib", "rlib"]
+ 
++[features]
++test-reference-spacing = []
++
+ [dependencies]
+ serde.workspace = true
+ thiserror.workspace = true
+diff --git a/crates/viewer_wasm/src/bindings/mod.rs b/crates/viewer_wasm/src/bindings/mod.rs
+index 055153d..25e4e98 100644
+--- a/crates/viewer_wasm/src/bindings/mod.rs
++++ b/crates/viewer_wasm/src/bindings/mod.rs
+@@ -22,6 +22,9 @@ mod js_marshal;
+ mod js_stats;
+ mod lod;
+ mod points;
++#[cfg(feature = "test-reference-spacing")]
++#[path = "../../tests/support/reference_spacing_probe.rs"]
++mod reference_spacing_probe;
+ mod render;
+ 
+ #[wasm_bindgen]
+diff --git a/crates/viewer_wasm/tests/support/reference_spacing_probe.rs b/crates/viewer_wasm/tests/support/reference_spacing_probe.rs
+new file mode 100644
+index 0000000..ba10bed
+--- /dev/null
++++ b/crates/viewer_wasm/tests/support/reference_spacing_probe.rs
+@@ -0,0 +1,16 @@
++//! Test-only access to the actual viewer session; absent from normal builds.
++use wasm_bindgen::prelude::*;
++
++use super::WasmVoxelViewer;
++use crate::lod_session::LodSession;
++
++#[wasm_bindgen]
++impl WasmVoxelViewer {
++    #[wasm_bindgen(js_name = testReferenceSpacing)]
++    pub fn test_reference_spacing(&self) -> Option<f64> {
++        self.lod_session
++            .as_ref()
++            .map(LodSession::dataset)
++            .and_then(|dataset| dataset.reference_spacing())
++    }
++}
+diff --git a/examples/web-host/tests/r3-fixtures.browser.mjs b/examples/web-host/tests/r3-fixtures.browser.mjs
+new file mode 100644
+index 0000000..e2844b3
+--- /dev/null
++++ b/examples/web-host/tests/r3-fixtures.browser.mjs
+@@ -0,0 +1,73 @@
++// Generate the six fixtures and the root-page anchor files:
++// R3_FIXTURE_DIR="$PWD/target/r3-fixtures" cargo test --offline -p viewer_format --test v7_5 r3_small_fixtures_open_with_expected_relative_depths
++// cargo build --offline -p viewer_wasm --target wasm32-unknown-unknown
++// wasm-bindgen --target web --out-dir target/r3-fixtures/pkg target/wasm32-unknown-unknown/debug/viewer_wasm.wasm
++// Serve the repository root, then import this module in a browser and call probe().
++// No GPU adapter or rendering is required.
++import init, { WasmAsyncFormatReader, WasmVoxelViewer } from '../../../target/r3-fixtures/pkg/viewer_wasm.js';
++
++function assert(condition, message) {
++    if (!condition) throw new Error(message);
++}
++
++async function fetchFile(name, kind) {
++    const response = await fetch(`/target/r3-fixtures/${name}.${kind}`);
++    assert(response.ok, `cannot fetch ${name}.${kind}: ${response.status}`);
++    return response;
++}
++
++export async function probe() {
++    await init();
++    const results = [];
++    for (const name of ['crs-root0', 'crs', 'local']) {
++        for (const revision of ['v74', 'v75']) {
++            const stem = `${name}-${revision}`;
++            const primary = await (await fetchFile(stem, 'oct')).blob();
++            const attributes = await (await fetchFile(stem, 'octattrs')).blob();
++            const reader = await WasmAsyncFormatReader.open(primary, attributes);
++            const viewer = new WasmVoxelViewer(0.6);
++            try {
++                const descriptor = reader.lodDatasetDescriptor(1024 * 1024);
++                assert(descriptor.nodeCount === 3, `${stem}: wrong node count`);
++                assert(descriptor.paged === (revision === 'v75'), `${stem}: wrong route`);
++                assert((descriptor.crs === 'EPSG:32632') === (name !== 'local'), `${stem}: wrong CRS`);
++                let opened;
++                let anchor = null;
++                if (descriptor.paged) {
++                    // The exported anchor is taken from the root page's child pointer, so it
++                    // identifies an unloaded page before this load and graft.
++                    assert(descriptor.maxLevel < 2, `${stem}: leaf already resident`);
++                    opened = viewer.openPagedLodDataset(reader, 1024 * 1024);
++                    anchor = (await (await fetchFile(stem, 'anchor')).text()).trim();
++                    assert(/^\d+$/.test(anchor), `${stem}: invalid page anchor`);
++                    const block = (await (await fetchFile(stem, 'block')).text()).trim();
++                    assert(/^\d+$/.test(block), `${stem}: invalid child block`);
++                    let unavailable = false;
++                    try {
++                        reader.planLodRead(BigInt(block), 'geometry');
++                    } catch {
++                        unavailable = true;
++                    }
++                    assert(unavailable, `${stem}: child block already resident`);
++                    const page = await reader.loadPage(anchor);
++                    viewer.graftPage(page);
++                    const request = reader.planLodRead(BigInt(block), 'geometry');
++                    assert(request, `${stem}: child block unavailable after page load`);
++                    const result = await request.read();
++                    assert(result.value.positions.length > 0, `${stem}: child block is empty`);
++                    result.release();
++                } else {
++                    assert(descriptor.maxLevel === 2 && descriptor.nodes.length === 3,
++                        `${stem}: incomplete resident hierarchy`);
++                    opened = viewer.openLodDataset(descriptor);
++                }
++                assert(opened.status === 'metadata_ready', `${stem}: viewer did not open`);
++                results.push({ stem, paged: descriptor.paged, anchor });
++            } finally {
++                viewer.free();
++                reader.free();
++            }
++        }
++    }
++    return results;
++}
+diff --git a/examples/web-host/tests/reference-spacing.browser.mjs b/examples/web-host/tests/reference-spacing.browser.mjs
+new file mode 100644
+index 0000000..069a08d
+--- /dev/null
++++ b/examples/web-host/tests/reference-spacing.browser.mjs
+@@ -0,0 +1,33 @@
++// Load the actual paged viewer binding and compare its stored value before and after a graft.
++// From the repository root (requires wasm32 target, matching wasm-bindgen CLI and playwright-cli):
++// cargo run --offline -q -p format_parity --bin reference_spacing -- fuzz/corpus/fuzz_format_reader/seed-sample-paged-chain-k1
++// The fixture must print `0.03125 1` (native spacing and unloaded anchor).
++// cargo build --offline -p viewer_wasm --target wasm32-unknown-unknown --features test-reference-spacing
++// wasm-bindgen --target web --out-dir target/reference-spacing/pkg target/wasm32-unknown-unknown/debug/viewer_wasm.wasm
++// Run the browser probe in a subshell so its server and browser session are closed on exit:
++// (
++//   set -e
++//   python3 -m http.server 18765 --bind 127.0.0.1 & server_pid=$!
++//   trap 'playwright-cli -s=r3-spacing close; kill "$server_pid" 2>/dev/null || true' EXIT
++//   sleep 1; kill -0 "$server_pid"
++//   playwright-cli -s=r3-spacing open http://127.0.0.1:18765/
++//   playwright-cli -s=r3-spacing eval "async () => { const m = await import('/examples/web-host/tests/reference-spacing.browser.mjs'); const b = await fetch('/fuzz/corpus/fuzz_format_reader/seed-sample-paged-chain-k1').then(r => r.blob()); return await m.probe(b, 0.03125, '1'); }"
++// )
++// A pass reports native, before and after all equal to 0.03125, with anchor "1".
++import init, { WasmAsyncFormatReader, WasmVoxelViewer } from '../../../target/reference-spacing/pkg/viewer_wasm.js';
++
++export async function probe(primary, expected, anchor) {
++    await init();
++    const reader = await WasmAsyncFormatReader.open(primary);
++    const viewer = new WasmVoxelViewer(0.6);
++    viewer.openPagedLodDataset(reader, 1024 * 1024);
++    const before = viewer.testReferenceSpacing();
++    viewer.graftPage(await reader.loadPage(anchor));
++    const after = viewer.testReferenceSpacing();
++    viewer.free();
++    reader.free();
++    if (before !== expected || after !== expected) {
++        throw new Error(`reference spacing mismatch: native=${expected}, before=${before}, after=${after}`);
++    }
++    return { native: expected, before, after, anchor };
++}
+diff --git a/tools/format_parity/src/bin/reference_spacing.rs b/tools/format_parity/src/bin/reference_spacing.rs
+new file mode 100644
+index 0000000..2bcc297
+--- /dev/null
++++ b/tools/format_parity/src/bin/reference_spacing.rs
+@@ -0,0 +1,16 @@
++use std::{env, fs::File};
++use viewer_format::{FormatReader, FormatReaderLimits};
++
++fn main() {
++    let path = env::args().nth(1).expect("expected primary file path");
++    let eager = FormatReader::new(File::open(&path).unwrap()).unwrap();
++    let lazy =
++        FormatReader::open_lazy(File::open(path).unwrap(), FormatReaderLimits::default()).unwrap();
++    let anchor = lazy
++        .page_source()
++        .unwrap()
++        .root_unloaded()
++        .first()
++        .expect("fixture must have a child page");
++    println!("{} {}", eager.reference_spacing().unwrap(), anchor.get());
++}

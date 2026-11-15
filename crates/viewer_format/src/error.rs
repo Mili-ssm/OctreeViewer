@@ -19,6 +19,8 @@ pub enum FormatError {
     UnsupportedVersion(u16),
     #[error("format version {0} is recognized but has no supported decoder")]
     UnsupportedFormatVersion(crate::FormatVersion),
+    #[error("format version {0} fixes its row order; another order cannot be requested")]
+    RowOrderFixedByFormat(crate::FormatVersion),
     #[error("prepared block version {block} does not match writer version {writer}")]
     PreparedVersionMismatch {
         writer: crate::FormatVersion,
@@ -34,6 +36,8 @@ pub enum FormatError {
     InvalidReaderLimits,
     #[error("format index needs {requested} bytes, exceeding limit {limit}")]
     IndexExceedsLimit { requested: u64, limit: u64 },
+    #[error("format page has {requested} bytes, exceeding limit {limit}")]
+    PageExceedsLimit { requested: u64, limit: u64 },
     #[error("format count for {kind} is {requested}, exceeding limit {limit}")]
     CountLimit {
         kind: &'static str,
@@ -84,6 +88,8 @@ pub enum FormatError {
     StringTooLong(usize),
     #[error("attribute schema has too many entries")]
     SchemaTooLarge,
+    #[error("attribute schema has {count} columns, above the writer limit of {limit}")]
+    TooManyAttributes { count: usize, limit: usize },
     #[error("hierarchy has too many nodes")]
     TooManyNodes,
     #[error("format contains too many blocks")]

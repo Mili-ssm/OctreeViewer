@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry};
 
 use viewer_core::{NodeId, PointBlock, ResidentBlockSource, SpatialBounds, SpatialHierarchy};
 
-use crate::{InstanceRaw, RenderScene, attributes::ScalarAttribute};
+use crate::{CellGrid, InstanceRaw, RenderScene, attributes::ScalarAttribute};
 
 /// A global dyadic cell identity; source representatives can bound its finest resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -83,8 +83,9 @@ struct AdaptiveVoxelGrid {
     side: f64,
     target_pixels: f64,
     max_depth: u8,
-    // Sorted source regions whose 8^3 representative cells must not be refined.
-    representative_regions: Vec<VoxelKey>,
+    // Sorted source regions whose representative cells must not be refined, grouped by log2 of
+    // the representatives per axis (3 for the fixed 8, more for a stored `v7.4-pre` spacing).
+    representative_regions: Vec<(u8, Vec<VoxelKey>)>,
     projected_edge_cache_limit: usize,
     projected_edges: BTreeMap<VoxelKey, f64>,
     projected_edge_order: VecDeque<VoxelKey>,
@@ -171,15 +172,15 @@ impl AdaptiveVoxelGrid {
                 return Ok(None);
             }
             // Beyond 24 levels f32 cannot reliably distinguish adjacent local cell faces.
-            let representative_cell = key.depth >= 3
-                && !self.representative_regions.is_empty()
-                && self
-                    .representative_regions
-                    .binary_search(&VoxelKey {
-                        depth: key.depth - 3,
-                        coord: key.coord.map(|coord| coord >> 3),
-                    })
-                    .is_ok();
+            let representative_cell = self.representative_regions.iter().any(|(shift, regions)| {
+                key.depth >= *shift
+                    && regions
+                        .binary_search(&VoxelKey {
+                            depth: key.depth - shift,
+                            coord: key.coord.map(|coord| coord >> shift),
+                        })
+                        .is_ok()
+            });
             if (edge <= self.target_pixels && key.depth >= min_depth)
                 || key.depth >= max_depth
                 || (representative_cell && key.depth >= min_depth)
@@ -549,6 +550,27 @@ pub fn build_voxel_scene_with_limits(
     project: &dyn Fn(SpatialBounds) -> f64,
     limits: VoxelBuildLimits,
 ) -> Result<VoxelScene, VoxelSceneBuildError> {
+    prepare_voxel_builder(
+        hierarchy,
+        node_ids,
+        cache,
+        coordinate_origin,
+        target_pixels,
+        project,
+        limits,
+    )?
+    .try_finish(project)
+}
+
+fn prepare_voxel_builder(
+    hierarchy: &SpatialHierarchy,
+    node_ids: &[NodeId],
+    cache: &dyn ResidentBlockSource,
+    coordinate_origin: [f64; 3],
+    target_pixels: f64,
+    project: &dyn Fn(SpatialBounds) -> f64,
+    limits: VoxelBuildLimits,
+) -> Result<VoxelSceneBuilder, VoxelSceneBuildError> {
     let selected =
         (hierarchy.semantics() == viewer_core::HierarchySemantics::Replacement).then(|| {
             node_ids
@@ -613,7 +635,7 @@ pub fn build_voxel_scene_with_limits(
             return Err(VoxelSceneBuildError::MixedCutNotAligned);
         }
         let source_depth_limit =
-            (!excluded.is_empty()).then(|| representative_depth(&builder.grid, node.bounds()));
+            (!excluded.is_empty()).then(|| representative_depth(&builder.grid, node));
         for block_id in node.blocks() {
             let Some(block) = cache.peek(*block_id) else {
                 continue;
@@ -628,7 +650,71 @@ pub fn build_voxel_scene_with_limits(
             )?;
         }
     }
-    builder.try_finish(project)
+    Ok(builder)
+}
+
+/// One occupied CPU voxel with its exact accumulators, for refinement tests.
+#[cfg(test)]
+pub(crate) struct ExactVoxel {
+    pub depth: u8,
+    pub coord: [u32; 3],
+    pub rgb: [u64; 3],
+    pub count: u64,
+    pub intensity_count: u64,
+    pub projected_edge: f64,
+}
+
+/// The voxels `try_finish` would keep (`project > 0`), before color averaging, plus the grid.
+#[cfg(test)]
+pub(crate) struct ExactVoxels {
+    pub origin: [f64; 3],
+    pub side: f64,
+    pub voxels: Vec<ExactVoxel>,
+}
+
+#[cfg(test)]
+pub(crate) fn exact_voxels_with_limits(
+    hierarchy: &SpatialHierarchy,
+    node_ids: &[NodeId],
+    cache: &dyn ResidentBlockSource,
+    coordinate_origin: [f64; 3],
+    target_pixels: f64,
+    project: &dyn Fn(SpatialBounds) -> f64,
+    limits: VoxelBuildLimits,
+) -> Result<ExactVoxels, VoxelSceneBuildError> {
+    let builder = prepare_voxel_builder(
+        hierarchy,
+        node_ids,
+        cache,
+        coordinate_origin,
+        target_pixels,
+        project,
+        limits,
+    )?;
+    if let Some(error) = builder.error {
+        return Err(error);
+    }
+    let grid = builder.grid;
+    let voxels = builder
+        .voxels
+        .into_iter()
+        .filter_map(|(key, accumulator)| {
+            let projected_edge = project(grid.bounds(key));
+            (projected_edge > 0.0).then_some(ExactVoxel {
+                depth: key.depth,
+                coord: key.coord,
+                rgb: accumulator.rgb,
+                count: accumulator.count,
+                intensity_count: accumulator.intensity_count,
+                projected_edge,
+            })
+        })
+        .collect();
+    Ok(ExactVoxels {
+        origin: grid.origin,
+        side: grid.side,
+        voxels,
+    })
 }
 
 fn validate_mixed_cut(
@@ -641,7 +727,7 @@ fn validate_mixed_cut(
         let Some(parent) = hierarchy.node(*parent_id) else {
             continue;
         };
-        let depth = representative_depth(grid, parent.bounds());
+        let depth = representative_depth(grid, parent);
         let parent_min: [f64; 3] =
             std::array::from_fn(|axis| parent.bounds().min()[axis] - coordinate_origin[axis]);
         let parent_max: [f64; 3] =
@@ -741,9 +827,9 @@ fn configure_representative_regions(
     let mut regional = true;
     let mut count = 0_usize;
     for node in coarse_nodes() {
-        global_depth = global_depth.min(representative_depth(&builder.grid, node.bounds()));
+        global_depth = global_depth.min(representative_depth(&builder.grid, node));
         if regional {
-            if let Some((_, length)) = representative_regions(&builder.grid, node, cache) {
+            if let Some((_, _, length)) = representative_regions(&builder.grid, node, cache) {
                 count = count
                     .checked_add(length)
                     .ok_or(VoxelSceneBuildError::SizeOverflow)?;
@@ -769,17 +855,24 @@ fn configure_representative_regions(
         .try_reserve_exact(count)
         .map_err(|_| VoxelSceneBuildError::AllocationFailed { requested_bytes })?;
     for node in coarse_nodes() {
-        let (keys, length) = representative_regions(&builder.grid, node, cache)
+        let (shift, keys, length) = representative_regions(&builder.grid, node, cache)
             .expect("coarse regions were validated before allocation");
-        regions.extend_from_slice(&keys[..length]);
+        regions.extend(keys[..length].iter().map(|key| (shift, *key)));
     }
     regions.sort_unstable();
     regions.dedup();
+    let mut grouped: Vec<(u8, Vec<VoxelKey>)> = Vec::new();
+    for (shift, key) in regions {
+        match grouped.last_mut() {
+            Some((last, keys)) if *last == shift => keys.push(key),
+            _ => grouped.push((shift, vec![key])),
+        }
+    }
     // The region vector and projection cache are freed before instance allocation at finish.
     builder.working_reservation_bytes = builder
         .working_reservation_bytes
         .checked_add(checked_charge(
-            regions.capacity(),
+            count,
             std::mem::size_of::<VoxelKey>() as u64,
         )?)
         .ok_or(VoxelSceneBuildError::SizeOverflow)?;
@@ -787,15 +880,31 @@ fn configure_representative_regions(
         builder.working_reservation_bytes,
         builder.limits.max_estimated_bytes,
     )?;
-    builder.grid.representative_regions = regions;
+    builder.grid.representative_regions = grouped;
     Ok(())
 }
 
-fn representative_depth(grid: &AdaptiveVoxelGrid, bounds: SpatialBounds) -> u8 {
-    (grid.side / (bounds_side(bounds) / 8.0))
-        .log2()
-        .floor()
-        .clamp(0.0, 24.0) as u8
+/// Depth of a node's representative cells: 8 per axis, or its stored spacing (`v7.4-pre`).
+fn representative_depth(grid: &AdaptiveVoxelGrid, node: &viewer_core::SpatialNode) -> u8 {
+    crate::representative_depth_for_spacing(
+        &CellGrid {
+            root_min: grid.origin,
+            root_side: grid.side,
+        },
+        node.representative_spacing(),
+    )
+}
+
+/// log2 of the representatives per axis: 3 for the fixed 8, derived from the spacing otherwise.
+fn representatives_per_axis_log2(node: &viewer_core::SpatialNode) -> u8 {
+    let Some(spacing) = node.spacing() else {
+        return 3;
+    };
+    let bounds = node.bounds();
+    let side = (0..3)
+        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
+        .fold(0.0, f64::max);
+    (side / spacing).log2().round().clamp(0.0, 24.0) as u8
 }
 
 /// Up to eight occupied regions per source node bound setup work and retained metadata.
@@ -804,17 +913,18 @@ fn representative_regions(
     grid: &AdaptiveVoxelGrid,
     node: &viewer_core::SpatialNode,
     cache: &dyn ResidentBlockSource,
-) -> Option<([VoxelKey; 8], usize)> {
-    let depth = representative_depth(grid, node.bounds());
+) -> Option<(u8, [VoxelKey; 8], usize)> {
+    let depth = representative_depth(grid, node);
+    let shift = representatives_per_axis_log2(node);
     let mut keys = [VoxelKey {
         depth: 0,
         coord: [0; 3],
     }; 8];
     let mut length = 0;
     if depth == 24 {
-        return Some((keys, length));
+        return Some((shift, keys, length));
     }
-    let region_depth = depth.checked_sub(3)?;
+    let region_depth = depth.checked_sub(shift)?;
     for block in node.blocks().iter().filter_map(|id| cache.peek(*id)) {
         for point in block.points().points() {
             if point.position.iter().any(|v| !v.is_finite()) {
@@ -830,7 +940,7 @@ fn representative_regions(
             }
         }
     }
-    Some((keys, length))
+    Some((shift, keys, length))
 }
 
 fn accumulate_block(

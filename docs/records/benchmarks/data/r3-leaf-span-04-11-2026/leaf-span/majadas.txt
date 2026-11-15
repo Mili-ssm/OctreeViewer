@@ -1,0 +1,6 @@
+SUMMARY path="target/render-data/majadas-v75.oct" authoritative_nodes=24091 leaves=19526 leaf_metadata_points=415465882 initial_span_over21_nodes=0 candidate_metadata_points=0 scanned_points=0 finite=0 nonfinite=0 actual_over21_nodes=0 actual_over21_points=0 skipped_nodes=0
+candidate_points_hist={}
+span_bits_hist={}
+actual_max_bits_hist={}
+unique_positions_hist={}
+absolute_depth_hist={}

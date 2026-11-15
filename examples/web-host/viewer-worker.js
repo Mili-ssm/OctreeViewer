@@ -1,4 +1,6 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
+import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./http-range-source.mjs";
+import { WINDOW_MS as PX_WINDOW_MS, createPxController } from "./px-controller.mjs";
 
 let viewer = null;
 let wasmExports = null;
@@ -14,7 +16,8 @@ let currentMetadata = null;
 let sceneGeneration = 0;
 let datasetGeneration = 0;
 let asyncFormatReader = null;
-const MAX_ASYNC_LOD_READS = 4;
+// Per dataset: remote sources may take more reads in flight than local ones (`readConcurrency`).
+let maxAsyncLodReads = 4;
 const asyncReadTasks = new Map();
 const failedAsyncBlocks = new Set();
 let asyncLodScheduler = null;
@@ -27,7 +30,7 @@ const FRAME_SAMPLE_CAPACITY = 4096;
 let frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
 let frameRenderSampleCount = 0;
 let nextFrameRenderSample = 0;
-const coalescedCommands = new Set(["resize", "refine", "depthShading", "fit", "birdView"]);
+const coalescedCommands = new Set(["resize", "refine", "depthShading", "continuity", "fit", "birdView"]);
 
 // Benchmark instrumentation (render plan R0, E2/E3/E5). Aggregates only; read with the "metrics"
 // message. Self-contained on purpose: package-local.py embeds this worker without module imports.
@@ -48,9 +51,51 @@ let buildOptions = null;
 let buildWorker = null;
 let buildWorkerUsed = false;
 let buildOpened = false;
+// GPU device loss (R3-Q26): what recreating the viewer on the same canvas needs besides the camera.
+const DEVICE_LOSS_POLL_MS = 500;
+const DEVICE_RECOVERY_BACKOFF_MS = [100, 500, 2000];
+let renderCanvas = null;
+let framebufferSize = [1, 1];
+let depthShadingOn = true;
+let continuitySetting = null;
+let cellNodeBytes = 0;
+let builtOpened = null;
+let lastScene = null;
+let asyncCacheBytes = 0;
+let deviceRecoveryBackoff = DEVICE_RECOVERY_BACKOFF_MS;
+let lossReportedFor = null;
+// The host swaps the canvas on a loss (R3-Q34) and says so with `replaceCanvas`; that message is
+// handled outside `messageQueue`, which the recovery itself is blocking.
+const CANVAS_WAIT_MS = 2000;
+let canvasReplacementOffered = false;
+let canvasArrival = null;
+let resolveCanvasArrival = null;
+let canvasWaitTimer = 0;
+let canvasWaitTimedOut = false;
+let canvasRecreatedOn = null;
+// A dataset was asked for (opening or open): recovery must not replace it with the demo sample.
+let datasetRequested = false;
+let deviceDestroyed = false;
+let deviceUnrecoverable = false;
 let pendingOpen = null;
 let appliedEpoch = 0;
 let viewEpoch = 0;
+// Cells path (R3, default; `init.cells === false` opts out, R3-Q35). `cellsRemote`: the build worker's builder produces the
+// cells and the viewer's driver lives here. See build-worker.js for the messages.
+let cellsRequested = false;
+let cellsRemote = false;
+// R3-Q24: cells run only with the build worker. Set when they were requested without one; the CPU
+// path then runs and the LOD stats report this as `cellPath`.
+let cellGate = null;
+let pendingCellCut = null;
+let appliedCutEpoch = 0;
+let lastOpenRequest = null;
+// Frames in a row with cells busy and no progress after which the driver counts as stuck: the busy
+// flag is then reported false (the host's frame loop ends) and `cellsStuck` is set.
+const CELLS_STUCK_FRAME_LIMIT = 600;
+let cellsStuckKey = null;
+let cellsStuckFrames = 0;
+const cellCounters = { nodeCellMessages: 0, nodeCells: 0, nodeCellBytes: 0, cellCuts: 0, cellCutsSuperseded: 0, strayScenes: 0, messagesSent: 0 };
 let remoteVisualScale = 1;
 let lastSentView = null;
 let currentLod = null;
@@ -127,17 +172,40 @@ function recordBuildSample(name, value) {
     if (samples.length < BUILD_SAMPLE_CAPACITY) samples.push(value);
 }
 
+// Range sources of the open dataset (empty for local Blobs): their stats are the `remote` metrics.
+let remoteSources = [];
+
+// Real cancellation of a ticket: besides the logical flag, aborting the controller cancels the HTTP
+// request(s) that only this ticket needs (`HttpRangeSource.withSignal`). Local Blobs keep the flag only.
+function bindTicketAbort(request) {
+    const token = request.cancelToken();
+    const [file, attributes] = remoteSources;
+    if (typeof file?.withSignal !== "function" || typeof request.setSource !== "function") return token;
+    const controller = new AbortController();
+    request.setSource(file.withSignal(controller.signal), attributes?.withSignal?.(controller.signal));
+    return { cancel() { token.cancel(); controller.abort(); } };
+}
+
+
 function workerMetricsSnapshot(buildMetrics = null) {
     const snapshot = {
         timeOrigin: performance.timeOrigin ?? null,
         busyByMessage: Object.fromEntries(workKinds),
         frameQueueWaitMs: summarizeSamples(frameQueueWaits),
         asyncBlocks: { ...asyncBlockTotals },
+        remote: sumRangeStats(remoteSources),
         lodLog: [...lodLog],
         lodLogDropped,
         buildWorkerEnabled: buildOptions !== null,
         sceneDigest: currentSceneDigest(),
     };
+    // Absent with cells off, so the shape consumers read does not change.
+    if (cellsRequested) {
+        snapshot.cutDigestAtRest = (buildOptions ? currentLodStats() : viewer?.lodStats?.())?.cutDigestAtRest ?? null;
+        snapshot.cellStats = viewer?.cellStats?.() ?? null;
+        snapshot.cellCounters = { ...cellCounters, cellsStuckFrames };
+    }
+    if (cellGate) snapshot.cellPath = cellGate;
     if (buildOptions === null) return snapshot;
     // The build worker owns reads and decoding, so its totals replace this worker's empty ones.
     if (buildMetrics) snapshot.asyncBlocks = { ...buildMetrics.asyncBlocks };
@@ -164,6 +232,7 @@ function workerMetricsSnapshot(buildMetrics = null) {
 
 function resetWorkerMetrics() {
     workKinds.clear();
+    for (const source of remoteSources) source?.resetStats?.();
     frameQueueWaits.length = 0;
     lodLog.length = 0;
     lodLogDropped = 0;
@@ -172,6 +241,7 @@ function resetWorkerMetrics() {
     });
     for (const samples of Object.values(buildSamples)) samples.length = 0;
     Object.assign(buildCounters, { viewsSent: 0, scenesApplied: 0, scenesDropped: 0, spawns: 0 });
+    for (const key of Object.keys(cellCounters)) cellCounters[key] = 0;
     buildWorker?.postMessage({ type: "metrics", reset: true });
 }
 
@@ -214,6 +284,101 @@ function samplePointCloud() {
         positions: new Float32Array(positions),
         colors: new Uint8Array(colors),
     };
+}
+
+// RF-06/RF-07 px modes. "fixed" (default) uses the host's target; "dynamic" lets the controller
+// (px-controller.mjs) pick it from GPU frame time (or frame intervals) in 1 s windows. Fixed mode
+// has no controller, so tickPxController returns at once and nothing changes.
+const PX_MIN_SAMPLES = 5;
+let pxMode = "fixed";
+let pxController = null;
+let fixedTargetPx = 4;
+let hostGpuTiming = false; // the host asked for the GPU timer itself; dynamic mode must not turn that off
+let pxWindow = { startMs: 0, lastFrameMs: null, intervals: [], dirty: false };
+
+function pxStats() {
+    return {
+        mode: pxMode,
+        targetPx: targetVoxelPixels,
+        signalMs: pxController?.last.signalMs ?? null,
+        signalSource: pxController?.last.source ?? null,
+    };
+}
+
+function setPxMode(mode, now = performance.now()) {
+    if (mode !== "fixed" && mode !== "dynamic") throw new TypeError("pxMode must be 'fixed' or 'dynamic'");
+    if (!viewer) throw new Error("the viewer is not ready: choose the px mode after init");
+    if (mode === pxMode) return;
+    pxMode = mode;
+    if (mode === "dynamic") {
+        fixedTargetPx = targetVoxelPixels;
+        pxController = createPxController({ initialPx: targetVoxelPixels, startMs: now });
+        viewer.setGpuFrameTiming(true);
+        restartPxWindow(now);
+        targetVoxelPixels = pxController.targetPx;
+    } else {
+        pxController = null;
+        if (!hostGpuTiming) viewer.setGpuFrameTiming(false);
+        targetVoxelPixels = fixedTargetPx;
+    }
+    self.postMessage({ type: "pxMode", mode });
+    advanceSceneGeneration();
+    requestLodUpdate();
+}
+
+function restartPxWindow(now) {
+    viewer.resetGpuFrameStats();
+    pxWindow = { startMs: now, lastFrameMs: null, intervals: [], dirty: false };
+}
+
+// A new dataset keeps the chosen mode and rung but starts a fresh window, streak and dwell.
+function restartPxController(now) {
+    if (!pxController) return;
+    pxController = createPxController({ initialPx: pxController.targetPx, startMs: now });
+    restartPxWindow(now);
+}
+
+// The target a load or refine asks for, unless the dynamic controller owns it.
+function requestedTargetPixels(requested) {
+    fixedTargetPx = requested;
+    return pxController ? pxController.targetPx : requested;
+}
+
+function percentile95(values) {
+    const ordered = [...values].sort((left, right) => left - right);
+    return ordered[Math.ceil(ordered.length * 0.95) - 1];
+}
+
+// Called once per drawn frame; closes a window every PX_WINDOW_MS and applies the controller's step.
+function tickPxController(now) {
+    if (!pxController) return;
+    const { lastFrameMs, intervals } = pxWindow;
+    // Frames drawn while the ladder is still on coarser rungs than the target say nothing about the
+    // target's cost, and neither do samples from before an idle gap: start the window over.
+    const lod = currentLodStats();
+    const settled = !lod || !(lod.lodStagePixels > targetVoxelPixels);
+    // Longer than two windows is an idle scene; a slow frame under overload stays below it.
+    const idle = lastFrameMs !== null && now - lastFrameMs > 2 * PX_WINDOW_MS;
+    if (!settled || idle) {
+        pxWindow = { startMs: now, lastFrameMs: now, intervals: [], dirty: true };
+        return;
+    }
+    if (pxWindow.dirty) restartPxWindow(now);
+    if (lastFrameMs !== null) intervals.push(now - lastFrameMs);
+    pxWindow.lastFrameMs = now;
+    if (now - pxWindow.startMs < PX_WINDOW_MS) return;
+    const gpu = viewer.gpuStats()?.gpuFrameMs;
+    const next = pxController.update(now, {
+        gpuP95Ms: gpu && gpu.samples >= PX_MIN_SAMPLES && Number.isFinite(gpu.p95) ? gpu.p95 : null,
+        intervalP95Ms: intervals.length >= PX_MIN_SAMPLES ? percentile95(intervals) : null,
+    });
+    restartPxWindow(now);
+    pxWindow.lastFrameMs = now;
+    if (next !== null) {
+        targetVoxelPixels = next;
+        advanceSceneGeneration();
+        requestLodUpdate();
+    }
 }
 
 function resetFrameRenderSamples() {
@@ -274,9 +439,71 @@ function memoryStats() {
     };
 }
 
+function withCellGate(lod) {
+    return lod && cellGate ? { ...lod, cellPath: cellGate } : lod;
+}
+
 // Stats of the last LOD update: the renderer's own, or the build worker's in build-worker mode.
 function currentLodStats() {
-    return buildOptions ? currentLod : viewer.lodStats();
+    return buildOptions ? withRenderCellStats(currentLod) : withStuckGuard(withCellGate(viewer.lodStats()));
+}
+
+// Counts frames that left the cells busy without progress (cut applied, queue, upload, cut sent).
+function trackCellsStuck() {
+    const cells = cellsRequested ? viewer.cellStats?.() : null;
+    if (!cells?.cellsBusy) {
+        cellsStuckKey = null;
+        cellsStuckFrames = 0;
+        return;
+    }
+    const key = [cells.cutEpochSent, cells.cutEpochApplied, cells.queuedNodeCells, cells.poolUploadedBytes].join(":");
+    if (key === cellsStuckKey) {
+        cellsStuckFrames += 1;
+    } else {
+        cellsStuckKey = key;
+        cellsStuckFrames = 0;
+    }
+}
+
+// A driver that stays busy without progress must not keep the host's frames running forever.
+function withStuckGuard(lod) {
+    if (!lod || !cellsRequested) return lod;
+    if (lod.cellsBusy && cellsStuckFrames >= CELLS_STUCK_FRAME_LIMIT) {
+        return { ...lod, cellsBusy: false, cellsStuck: true, cellsStuckFrames };
+    }
+    return { ...lod, cellsStuck: false, cellsStuckFrames };
+}
+
+// With a build worker the LOD stats come from the builder, but the driver is here: its busy flag and
+// resting digest replace the builder's, so "still loading" covers the cells not yet drawn.
+function withRenderCellStats(lod) {
+    if (!lod || !cellsRemote) return lod;
+    const cells = viewer.cellStats();
+    if (!cells) return lod;
+    return withStuckGuard({ ...lod, ...cells, cellsBusy: Boolean(lod.cellsBusy || cells.cellsBusy) });
+}
+
+// Draws a frame and sends the build worker what its driver owes it (acks, evictions, resets).
+function renderViewerFrame() {
+    const status = viewer.renderFrame();
+    forwardCellMessages();
+    return status;
+}
+
+// `takeCellMessages` is in the order the builder needs; the channel keeps it. `evict` and the resets
+// are never merged. Only the ack is a state, and the build worker keeps the last.
+function forwardCellMessages() {
+    if (!cellsRemote || !buildWorker) return;
+    const messages = viewer.takeCellMessages();
+    const gen = datasetGeneration;
+    if (messages.driverReplaced) buildWorker.postMessage({ type: "driverReplaced", gen });
+    if (messages.poolReset) buildWorker.postMessage({ type: "poolReset", gen });
+    if (messages.evict.length > 0) {
+        buildWorker.postMessage({ type: "evict", gen, nodes: messages.evict }, [messages.evict.buffer]);
+    }
+    if (messages.poolAck) buildWorker.postMessage({ type: "poolAck", gen, ...messages.poolAck });
+    cellCounters.messagesSent += Number(Boolean(messages.driverReplaced)) + Number(Boolean(messages.poolReset))
+        + Number(messages.evict.length > 0) + Number(Boolean(messages.poolAck));
 }
 
 // Hex digest of the scene on screen (`null` while nothing is displayed), identical in both modes.
@@ -314,10 +541,24 @@ function postStats(frameStatus = null) {
         frameStatus,
         frameRenderMs: frameRenderPercentiles(),
         gpu: viewer.gpuStats(),
+        px: pxStats(),
         lod: currentLodStats(),
         viewer: viewer.stats(),
         memory: memoryStats(),
     });
+}
+
+// Re-runs the LOD update for the current `targetVoxelPixels` (a refine or a dynamic step).
+function requestLodUpdate() {
+    if (buildOptions) {
+        syncBuildView(true, true);
+    } else if (viewer.lodStats()) {
+        const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
+        self.postMessage({ type: "lod", lod });
+        recordLodMessage("refine", lod);
+        postLodProgress(lod);
+        scheduleAsyncLodRead(true);
+    }
 }
 
 function pickFramebufferCoordinates(cssX, cssY, cssWidth, cssHeight) {
@@ -334,9 +575,16 @@ function postLodProgress(lod, afterRenderFrame = false) {
     if (afterRenderFrame && firstCoarseMs === null && hasVisiblePoints) {
         firstCoarseMs = now - targetLodStartedAt;
     }
-    const targetReached = lod.coverageComplete
+    // Cells path: the T11 definition replaces coverageComplete (self-contained copy of cellsTargetReached).
+    const covered = lod.cellPath === "enabled"
+        ? lod.cutApply === "applied" && lod.cutDigestAtRest != null && lod.poolNodesWithoutLevel === 0
+            && lod.poolCoarsened === 0 && lod.poolStages === 0 && lod.cpuCoarsened === 0 && lod.gpuCoarsened === 0
+        : lod.coverageComplete;
+    const targetReached = covered
         && lod.pendingBlockIds.length === 0
-        && lod.lodStagePixels <= lod.targetVoxelPixels;
+        && (lod.pendingPageAnchors?.length ?? 0) === 0
+        && lod.lodStagePixels <= lod.targetVoxelPixels
+        && !lod.cellsBusy;
     if (afterRenderFrame && targetLodMs === null && targetReached) {
         targetLodMs = now - targetLodStartedAt;
     }
@@ -349,6 +597,9 @@ function postLodProgress(lod, afterRenderFrame = false) {
         lod.lodError,
         firstCoarseMs,
         targetLodMs,
+        lod.cellsBusy ?? "",
+        lod.cellsStuck ?? "",
+        lod.cutDigestAtRest ?? "",
     ].join(":");
     if (key === lastLodProgressKey) return;
     lastLodProgressKey = key;
@@ -370,7 +621,49 @@ function postLodProgress(lod, afterRenderFrame = false) {
     });
 }
 
+// Hierarchy pages of a paged format load like blocks: the LOD names the anchors it lacks.
+const pageReads = new Set();
+// Like failed blocks, a failed page waits for an explicit refinement or a new dataset; otherwise the
+// `finally` below would request it again at once, in a loop.
+const failedPageAnchors = new Set();
+function schedulePageReads(retryFailed = false) {
+    if (retryFailed) failedPageAnchors.clear();
+    if (!asyncFormatReader || !viewer || typeof viewer.pendingPageAnchors !== "function") return;
+    const reader = asyncFormatReader;
+    const generation = datasetGeneration;
+    for (const anchor of viewer.pendingPageAnchors()) {
+        if (pageReads.size >= maxAsyncLodReads) break;
+        if (pageReads.has(anchor) || failedPageAnchors.has(anchor)) continue;
+        pageReads.add(anchor);
+        void reader.loadPage(anchor).then((page) => {
+            const graft = messageQueue.then(() => {
+                if (generation !== datasetGeneration || reader !== asyncFormatReader) {
+                    page.free();
+                    return;
+                }
+                viewer.graftPage(page);
+                const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
+                self.postMessage({ type: "lod", lod });
+                recordLodMessage("asyncPage", lod);
+                postLodProgress(lod);
+            });
+            // A failed graft is reported below; it must not reject the queue and skip later tasks.
+            messageQueue = graft.catch(() => {});
+            return graft;
+        }).catch((error) => {
+            if (generation === datasetGeneration) {
+                failedPageAnchors.add(anchor);
+                self.postMessage({ type: "error", operation: "asyncPageRead", message: String(error) });
+            }
+        }).finally(() => {
+            pageReads.delete(anchor);
+            if (generation === datasetGeneration) scheduleAsyncLodRead();
+        });
+    }
+}
+
 function scheduleAsyncLodRead(retryFailed = false) {
+    schedulePageReads(retryFailed);
     if (!asyncFormatReader || !viewer || !asyncLodScheduler) return;
     const pending = typeof viewer.pendingAsyncLodBlocks === "function"
         ? viewer.pendingAsyncLodBlocks()
@@ -392,7 +685,7 @@ function scheduleAsyncLodRead(retryFailed = false) {
     const generation = datasetGeneration;
     const ticketScheduler = asyncLodScheduler;
     for (const blockId of ticketScheduler.pendingBlocks()) {
-        if (ticketScheduler.inFlightCount() >= MAX_ASYNC_LOD_READS) break;
+        if (ticketScheduler.inFlightCount() >= maxAsyncLodReads) break;
         if (asyncReadTasks.has(String(blockId))) continue;
 
         const colorMode = currentColorMode;
@@ -425,7 +718,7 @@ function scheduleAsyncLodRead(retryFailed = false) {
             break;
         }
         const ticket = String(scheduled.ticket);
-        const cancelToken = request.cancelToken();
+        const cancelToken = bindTicketAbort(request);
         asyncReadCancelTokens.add(cancelToken);
         asyncReadTasks.set(String(blockId), { generation, reader, request, cancelToken, ticket });
 
@@ -456,7 +749,7 @@ function scheduleAsyncLodRead(retryFailed = false) {
                     );
                     ticketScheduler.complete(ticket, String(blockId), true);
                     ticketCompleted = true;
-                    const lod = viewer.updateLod(targetVoxelPixels);
+                    const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
                     const insertMs = performance.now() - insertStartedAt;
                     asyncBlockTotals.blocks += 1;
                     asyncBlockTotals.readMs += readMs;
@@ -479,12 +772,14 @@ function scheduleAsyncLodRead(retryFailed = false) {
                 }));
             } catch (error) {
                 await (messageQueue = messageQueue.then(() => {
+                    let outcome = null;
                     if (!ticketCompleted) {
-                        const outcome = ticketScheduler.complete(ticket, String(blockId), false);
+                        outcome = ticketScheduler.complete(ticket, String(blockId), false);
                         ticketCompleted = true;
-                        if (outcome === "failed") failedAsyncBlocks.add(String(blockId));
+                        if (outcome === "failed" && !isAbortError(error)) failedAsyncBlocks.add(String(blockId));
                     }
-                    if (generation === datasetGeneration && outcome !== "discarded") {
+                    // An abort is a cancellation (the ticket left the plan), never a failure to report or retry.
+                    if (generation === datasetGeneration && outcome !== "discarded" && !isAbortError(error)) {
                         self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
                     }
                 }));
@@ -503,12 +798,20 @@ function scheduleAsyncLodRead(retryFailed = false) {
 
 // Nested workers are not available everywhere (a Blob worker created from another Blob worker is
 // refused on file:// in Chrome). The option then turns itself off and the in-worker path runs.
+function gateCellsWithoutBuildWorker() {
+    if (!cellsRequested) return;
+    cellsRequested = false;
+    cellGate = "needsBuildWorker";
+    viewer.enableCells(false);
+}
+
 function disableBuildWorker(error) {
     const message = String(error?.message ?? error);
     console.warn(`build worker unavailable, building scenes in the render worker: ${message}`);
     buildWorker?.terminate();
     buildWorker = null;
     buildOptions = null;
+    gateCellsWithoutBuildWorker();
     self.postMessage({ type: "buildWorkerUnavailable", message });
 }
 
@@ -534,6 +837,7 @@ function spawnBuildWorker() {
     // The packaged file:// worker has the WASM bytes inline; hand them over instead of embedding twice.
     worker.postMessage({
         type: "init",
+        cells: cellsRequested,
         wasmBytes: typeof __VIEWER_WASM_BYTES__ !== "undefined" ? __VIEWER_WASM_BYTES__ : undefined,
     });
     buildWorker = worker;
@@ -560,22 +864,32 @@ function startBuiltDataset(data, requestId = null) {
         startAsyncDataset(data, requestId);
         return;
     }
+    datasetRequested = true;
     advanceSceneGeneration();
     datasetGeneration += 1;
-    targetVoxelPixels = data.targetVoxelPixels;
+    lastOpenRequest = { data, requestId };
+    cellsRemote = false;
+    pendingCellCut = null;
+    appliedCutEpoch = 0;
+    cellsStuckKey = null;
+    cellsStuckFrames = 0;
+    targetVoxelPixels = requestedTargetPixels(data.targetVoxelPixels);
     datasetOpenedAt = performance.now();
+    restartPxController(datasetOpenedAt);
     currentColorMode = "rgb";
     confirmedColorMode = "rgb";
     buildAttributeRange = null;
     appliedSceneDigest = null;
     appliedEpoch = 0;
     buildOpened = false;
+    builtOpened = null;
+    lastScene = null;
     lastSentView = null;
     currentLod = null;
     viewSentAt.clear();
     beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
     const name = data.name ?? data.file.name;
-    pendingOpen = { requestId, name, bytes: data.file.size, opened: null };
+    pendingOpen = { requestId, name, bytes: data.file.size ?? null, opened: null };
     self.postMessage({ type: "status", message: `Opening ${name}…` });
     const [maxVoxels, maxEstimatedBytes] = viewer.voxelBuildLimits();
     worker.postMessage({
@@ -585,6 +899,9 @@ function startBuiltDataset(data, requestId = null) {
         attributes: data.attributes,
         cacheBytes: data.cacheBytes,
         limits: [Math.min(maxVoxels, 0xFFFFFFFF), Math.min(maxEstimatedBytes, 0xFFFFFFFF)],
+        cells: cellsRequested,
+        // The build side fits the cut to the pool this device runs (ADR 0040).
+        cellPoolPages: cellsRequested ? viewer.cellPoolPages() : 0,
     });
 }
 
@@ -601,6 +918,8 @@ function sameValues(left, right) {
 function syncBuildView(force = false, retryFailed = false) {
     if (!buildWorker || !buildOpened) return;
     const camera = viewer.cameraTransport();
+    // Read together with the camera: the viewer's epoch is the one the cells cut is judged against.
+    const cellViewEpoch = cellsRemote ? viewer.viewEpoch() : undefined;
     const viewport = Array.from(viewer.viewportSize());
     if (!force && lastSentView && lastSentView.targetPx === targetVoxelPixels
         && sameValues(lastSentView.viewport, viewport) && sameValues(lastSentView.camera, camera)) return;
@@ -613,6 +932,7 @@ function syncBuildView(force = false, retryFailed = false) {
         type: "view",
         gen: datasetGeneration,
         epoch: viewEpoch,
+        viewEpoch: cellViewEpoch,
         camera,
         viewport,
         visualScale: remoteVisualScale,
@@ -621,14 +941,17 @@ function syncBuildView(force = false, retryFailed = false) {
     });
 }
 
+// Self-contained on purpose (workers import nothing); a test runs this copy.
 function lodStillLoading(lod) {
-    return !lod.lodError && (lod.pendingBlockIds.length > 0 || lod.lodStagePixels > lod.targetVoxelPixels);
+    if (lod.cellsBusy) return true;
+    return !lod.lodError && !lod.pageBudgetExhausted && (lod.pendingBlockIds.length > 0 || (lod.pendingPageAnchors?.length ?? 0) > 0 || lod.lodStagePixels > lod.targetVoxelPixels);
 }
 
 function applyBuiltLod(lod, source) {
     lod.sceneDigest = appliedSceneDigest;
     lod.attributeRange = buildAttributeRange;
     currentLod = lod;
+    lod = withRenderCellStats(lod);
     if (pendingOpen) {
         const { requestId, name, opened } = pendingOpen;
         pendingOpen = null;
@@ -647,6 +970,7 @@ function applyBuiltLod(lod, source) {
 
 function onBuildMessage(worker, data) {
     if (worker !== buildWorker) return;
+    if (data.type === "cellCut" && data.gen === datasetGeneration) pendingCellCut = data;
     if (data.type === "metrics") {
         const waiting = pendingBuildMetrics;
         pendingBuildMetrics = [];
@@ -658,9 +982,32 @@ function onBuildMessage(worker, data) {
     void (messageQueue = messageQueue.then(task, task));
 }
 
+// The builder emits cells while the device cannot draw them (no support on the render side): reopen
+// the dataset on the CPU path, which both sides then keep until the viewer is recreated.
+function beginCells(opened) {
+    const info = opened.cellsInfo;
+    const path = info ? viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing) : "off";
+    if (path === "enabled") {
+        cellsRemote = true;
+        forwardCellMessages();
+        return true;
+    }
+    console.warn(`cells path unavailable in the render worker (${path}); reopening on the CPU path`);
+    cellsRequested = false;
+    viewer.enableCells(false);
+    const { data, requestId } = lastOpenRequest;
+    startBuiltDataset(data, requestId);
+    return false;
+}
+
 function handleBuildMessage(data) {
     if (data.gen !== datasetGeneration) {
         if (data.type === "scene") buildCounters.scenesDropped += 1;
+        return;
+    }
+    if (data.type === "cellCut" && pendingCellCut !== data) {
+        // A later cut is queued behind this one: only the last of a run is applied.
+        cellCounters.cellCutsSuperseded += 1;
         return;
     }
     try {
@@ -672,11 +1019,50 @@ function handleBuildMessage(data) {
             );
             const { name, bytes } = pendingOpen;
             pendingOpen.opened = opened;
+            builtOpened = opened;
+            lastScene = null;
             currentMetadata = { ...opened, name, bytes, hasAttributes: opened.hasAttributes };
+            if (opened.cellPath === "enabled" && !beginCells(opened)) return;
             buildOpened = true;
             if (pendingOpen.requestId === null) self.postMessage({ type: "datasetOpened", opened, name });
             syncBuildView(true);
+        } else if (data.type === "nodeCells") {
+            // Never dropped by epoch: a node lost here is a hole the builder believes it filled.
+            // A refused node does not stop the rest of the message; the first error is reported.
+            let failure = null;
+            for (const buffer of data.buffers) {
+                try {
+                    viewer.addCellNode(data.generation, new Uint8Array(buffer));
+                    cellCounters.nodeCells += 1;
+                    cellCounters.nodeCellBytes += buffer.byteLength;
+                } catch (error) {
+                    failure ??= error;
+                }
+            }
+            cellCounters.nodeCellMessages += 1;
+            if (failure) throw failure;
+        } else if (data.type === "cellCut") {
+            pendingCellCut = null;
+            cellCounters.cellCuts += 1;
+            viewer.setCellCut(data);
+        } else if (data.type === "cellLod") {
+            if (data.cutEpoch <= appliedCutEpoch) return;
+            appliedCutEpoch = data.cutEpoch;
+            for (const key of viewSentAt.keys()) {
+                if (key <= data.viewEpoch) viewSentAt.delete(key);
+            }
+            applyBuiltLod(data.lod, "cellLod");
+            if (!lodStillLoading(currentLodStats())) {
+                renderViewerFrame();
+                postLodProgress(currentLodStats(), true);
+            }
         } else if (data.type === "scene" || data.type === "lod") {
+            if (data.type === "scene" && cellsRemote) {
+                // The builder sends no scene in cells mode, and one would drop the pool.
+                cellCounters.strayScenes += 1;
+                console.error?.("build worker sent a scene while the cells path is active");
+                return;
+            }
             if (data.epoch <= appliedEpoch) {
                 if (data.type === "scene") buildCounters.scenesDropped += 1;
                 return;
@@ -686,6 +1072,7 @@ function handleBuildMessage(data) {
                 const startedAt = performance.now();
                 viewer.uploadSceneInstances(new Uint8Array(data.buf), data.blockIds);
                 appliedSceneDigest = data.digest ?? null;
+                lastScene = { buf: data.buf, blockIds: data.blockIds };
                 advanceSceneGeneration();
                 const sentAt = viewSentAt.get(data.viewEpoch);
                 recordBuildSample("sceneApplyMs", performance.now() - startedAt);
@@ -699,10 +1086,14 @@ function handleBuildMessage(data) {
             }
             applyBuiltLod(data.lod, data.type === "scene" ? "scene" : "lod");
             // The host stops requesting frames once the LOD is complete: draw the final scene.
-            if (data.type === "scene" && !lodStillLoading(data.lod)) {
-                viewer.renderFrame();
-                // No host frame follows, so this is where the first-frame and target milestones land.
-                postLodProgress(data.lod, true);
+            if (data.type === "scene") {
+                // The merged stats: the cells driver (if any) may still be busy.
+                const merged = currentLodStats();
+                if (!lodStillLoading(merged)) {
+                    renderViewerFrame();
+                    // No host frame follows, so this is where the first-frame and target milestones land.
+                    postLodProgress(merged, true);
+                }
             }
         } else if (data.type === "colorMode") {
             confirmedColorMode = data.mode;
@@ -725,37 +1116,60 @@ function handleBuildMessage(data) {
 }
 
 function startAsyncDataset(data, requestId = null) {
+    datasetRequested = true;
+    cellsRemote = false;
+    cellsStuckKey = null;
+    cellsStuckFrames = 0;
     advanceSceneGeneration();
     cancelAllAsyncReads();
     datasetGeneration += 1;
     const generation = datasetGeneration;
-    asyncLodScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
-    targetVoxelPixels = data.targetVoxelPixels;
+    maxAsyncLodReads = readConcurrency(data.file);
+    asyncLodScheduler = new WasmBlockRequestScheduler(maxAsyncLodReads);
+    targetVoxelPixels = requestedTargetPixels(data.targetVoxelPixels);
     datasetOpenedAt = performance.now();
+    restartPxController(datasetOpenedAt);
     currentColorMode = "rgb";
     asyncFormatReader = null;
+    asyncCacheBytes = data.cacheBytes;
     asyncHasAttributes = false;
     asyncAttributeIndices = new Map();
     failedAsyncBlocks.clear();
+    failedPageAnchors.clear();
     beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
     const name = data.name ?? data.file.name;
     self.postMessage({ type: "status", message: `Opening ${name}…` });
-    asyncReadBudget ??= new WasmAsyncReadBudget(data.cacheBytes);
-    void WasmAsyncFormatReader.open(data.file, data.attributes, asyncReadBudget.clone()).then((reader) => {
+    // One budget per worker, shared by successive readers; a different cacheBytes replaces it.
+    if (asyncReadBudget === null || asyncReadBudget.limitBytes() !== String(data.cacheBytes)) {
+        const previous = asyncReadBudget;
+        asyncReadBudget = new WasmAsyncReadBudget(data.cacheBytes);
+        previous?.free();
+    }
+    // A remote file is `{ url }`: each worker opens its own range source (it cannot be cloned).
+    let fileBytes = data.file.size ?? null;
+    let openedSources = [];
+    void Promise.all([resolveSource(data.file), resolveSource(data.attributes, { tailBytes: 40, headBytes: 24 })]).then(([file, attributes]) => {
+        fileBytes = file.size;
+        openedSources = [file, attributes];
+        return WasmAsyncFormatReader.open(file, attributes, asyncReadBudget.clone());
+    }).then((reader) => {
         messageQueue = messageQueue.then(timed("asyncOpen", () => {
             if (generation !== datasetGeneration) {
                 reader.free();
                 return;
             }
+            remoteSources = openedSources; // only for the current open: a superseded one must not replace them
             const descriptor = reader.lodDatasetDescriptor(data.cacheBytes);
-            const root = descriptor.nodes.find(node => node.parent === null);
             const opened = {
-                ...viewer.openLodDataset(descriptor),
-                nodeCount: descriptor.nodes.length,
-                maxLevel: descriptor.nodes.reduce((max, node) => Math.max(max, node.level), 0),
+                ...(descriptor.paged
+                    ? viewer.openPagedLodDataset(reader, data.cacheBytes)
+                    : viewer.openLodDataset(descriptor)),
+                nodeCount: descriptor.nodeCount,
+                maxLevel: descriptor.maxLevel,
+                paged: descriptor.paged,
                 coordinateOrigin: new Float64Array(descriptor.coordinateOrigin),
-                boundsMin: new Float64Array(root.min),
-                boundsMax: new Float64Array(root.max),
+                boundsMin: new Float64Array(descriptor.dataMin),
+                boundsMax: new Float64Array(descriptor.dataMax),
                 semantics: descriptor.semantics,
                 attributeSchema: descriptor.attributeSchema,
                 hasAttributes: descriptor.hasAttributes,
@@ -767,8 +1181,8 @@ function startAsyncDataset(data, requestId = null) {
                 (attribute, index) => [attribute.name, index],
             ));
             viewer.fitScene();
-            const lod = viewer.updateLod(targetVoxelPixels);
-            currentMetadata = { ...opened, name, bytes: data.file.size, hasAttributes: descriptor.hasAttributes };
+            const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
+            currentMetadata = { ...opened, name, bytes: fileBytes, hasAttributes: descriptor.hasAttributes };
             if (requestId !== null) {
                 self.postMessage({ type: "apiResult", requestId, value: { opened, lod, name } });
             } else {
@@ -790,12 +1204,165 @@ function startAsyncDataset(data, requestId = null) {
     });
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Reports a loss once and, unless the device was destroyed on purpose, recovers from it. Resolves
+// true when a recovery ran, whatever its outcome (the host is told either way).
+async function pollDeviceLoss() {
+    if (!viewer || deviceUnrecoverable || deviceDestroyed || typeof viewer.deviceLost !== "function") return false;
+    const loss = viewer.deviceLost();
+    if (!loss) return false;
+    if (lossReportedFor !== viewer) {
+        lossReportedFor = viewer;
+        if (canvasReplacementOffered && loss.reason !== "destroyed") {
+            canvasWaitTimedOut = false;
+            canvasArrival = new Promise((resolve) => {
+                resolveCanvasArrival = resolve;
+                canvasWaitTimer = setTimeout(() => {
+                    canvasWaitTimedOut = true;
+                    resolve();
+                }, CANVAS_WAIT_MS);
+            });
+        }
+        self.postMessage({ type: "deviceLost", reason: loss.reason, message: loss.message });
+    }
+    if (loss.reason === "destroyed") {
+        // R3-Q26: not recovered, and nothing left to watch.
+        deviceDestroyed = true;
+        return false;
+    }
+    return (await recoverFromDeviceLoss(loss)) ? true : "failed";
+}
+
+// The loss callback runs after the failing call, so give it a moment before blaming the error.
+async function deviceLostAfter() {
+    if (typeof viewer?.deviceLost !== "function") return false;
+    for (let waited = 0; waited <= 400; waited += 50) {
+        if (waited > 0) await sleep(50);
+        const outcome = await pollDeviceLoss();
+        if (outcome) return outcome;
+        if (deviceUnrecoverable) return "failed";
+    }
+    return false;
+}
+
+// The idle viewer draws nothing, so the loss would go unnoticed until the next interaction.
+function scheduleDeviceLossWatch() {
+    const timer = setTimeout(() => {
+        messageQueue = messageQueue.then(pollDeviceLoss).catch(() => {}).then(() => {
+            if (!deviceUnrecoverable && !deviceDestroyed) scheduleDeviceLossWatch();
+        });
+    }, DEVICE_LOSS_POLL_MS);
+    timer.unref?.();
+}
+
+async function recoverFromDeviceLoss(loss) {
+    let pose = null;
+    try {
+        pose = viewer.cameraPose();
+    } catch {
+        // The camera lives on the CPU; without a pose the new viewer starts from the fitted view.
+    }
+    let failure = null;
+    for (let attempt = 1; attempt <= deviceRecoveryBackoff.length; attempt += 1) {
+        self.postMessage({ type: "deviceRecovery", state: "started", attempt, reason: loss.reason });
+        await sleep(deviceRecoveryBackoff[attempt - 1]);
+        try {
+            await recreateViewer(pose);
+            self.postMessage({ type: "deviceRecovery", state: "recovered", attempt, reason: loss.reason });
+            return true;
+        } catch (error) {
+            failure = error;
+        }
+    }
+    deviceUnrecoverable = true;
+    self.postMessage({
+        type: "error",
+        operation: "deviceLost",
+        message: `GPU device lost (${loss.reason}: ${loss.message}); recovery failed after `
+            + `${deviceRecoveryBackoff.length} attempts: ${failure}`,
+    });
+    return false;
+}
+
+// New adapter, device and surface on the same canvas, then the open dataset again without reading
+// the file anew: the build worker resends cells (driverReplaced) or the last scene is uploaded.
+async function recreateViewer(pose) {
+    try {
+        viewer.free();
+    } catch {
+        // Freeing a renderer whose device is gone may fail; the canvas is what matters.
+    }
+    if (canvasArrival) {
+        await canvasArrival;
+        canvasArrival = null;
+    }
+    canvasRecreatedOn = renderCanvas;
+    viewer = await WasmVoxelViewer.createOffscreen(renderCanvas, 0.6);
+    viewer.resize(framebufferSize[0], framebufferSize[1]);
+    viewer.setDepthShading(depthShadingOn);
+    if (continuitySetting) viewer.setContinuity(...continuitySetting);
+    viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
+    advanceSceneGeneration();
+    if (buildOptions && buildOpened && builtOpened) {
+        viewer.setPresentationColorMode(currentColorMode);
+        const opened = builtOpened;
+        viewer.beginRemoteDataset(opened.visualScale, opened.coordinateOrigin, opened.boundsMin, opened.boundsMax);
+        if (cellsRemote) {
+            viewer.enableCells(true);
+            if (cellNodeBytes) viewer.setCellNodeBytesPerFrame(cellNodeBytes);
+            const info = opened.cellsInfo;
+            const path = viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing);
+            if (path !== "enabled") throw new Error(`the new device cannot draw cells (${path})`);
+            pendingCellCut = null;
+            appliedCutEpoch = 0;
+            forwardCellMessages();
+        } else if (lastScene) {
+            viewer.uploadSceneInstances(new Uint8Array(lastScene.buf), lastScene.blockIds);
+        }
+        if (pose) viewer.setCameraPose(new Float64Array(pose.position), new Float64Array(pose.target));
+        lastSentView = null;
+        syncBuildView(true);
+    } else if (!buildOptions && asyncFormatReader) {
+        const descriptor = asyncFormatReader.lodDatasetDescriptor(asyncCacheBytes);
+        if (descriptor.paged) viewer.openPagedLodDataset(asyncFormatReader, asyncCacheBytes);
+        else viewer.openLodDataset(descriptor);
+        viewer.setColorMode(currentColorMode);
+        viewer.fitScene();
+        if (pose) viewer.setCameraPose(new Float64Array(pose.position), new Float64Array(pose.target));
+        cancelAllAsyncReads();
+        asyncLodScheduler = new WasmBlockRequestScheduler(maxAsyncLodReads);
+        const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
+        self.postMessage({ type: "lod", lod });
+        scheduleAsyncLodRead(true);
+    } else if (datasetRequested) {
+        // The dataset is still opening: its `opened` (or the async open) lands on this viewer.
+        viewer.setColorMode(currentColorMode);
+    } else {
+        viewer.setColorMode(currentColorMode);
+        const sample = samplePointCloud();
+        viewer.replacePoints(sample.positions, sample.colors);
+        viewer.fitScene();
+        if (pose) viewer.setCameraPose(new Float64Array(pose.position), new Float64Array(pose.target));
+    }
+    lossReportedFor = null;
+    lastLodProgressKey = "";
+    renderViewerFrame();
+    postLodProgress(currentLodStats(), true);
+}
+
 async function handleMessage({ data }, queuedAt = performance.now()) {
     const startedAt = performance.now();
     try {
         switch (data.type) {
             case "init": {
                 wasmExports = await init();
+                renderCanvas = data.canvas;
+                framebufferSize = [data.width, data.height];
+                depthShadingOn = data.depthShading;
+                cellNodeBytes = data.cellNodeBytesPerFrame ?? 0;
+                canvasReplacementOffered = Boolean(data.canvasReplacement);
+                if (data.deviceRecoveryBackoffMs) deviceRecoveryBackoff = data.deviceRecoveryBackoffMs;
                 viewer = await WasmVoxelViewer.createOffscreen(data.canvas, 0.6);
                 viewer.resize(data.width, data.height);
                 viewer.setColorMode(data.colorMode);
@@ -803,9 +1370,19 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 const sample = samplePointCloud();
                 viewer.replacePoints(sample.positions, sample.colors);
                 viewer.fitScene();
+                cellsRequested = data.cells !== false;
+                cellGate = null;
                 buildOptions = data.buildWorker ?? null;
+                if (cellsRequested && !buildOptions) {
+                    cellsRequested = false;
+                    cellGate = "needsBuildWorker";
+                } else if (cellsRequested) {
+                    viewer.enableCells(true);
+                    if (data.cellNodeBytesPerFrame) viewer.setCellNodeBytesPerFrame(data.cellNodeBytesPerFrame);
+                }
                 // Compile the build worker's WASM now so the first dataset does not wait for it.
                 if (buildOptions) spawnBuildWorker();
+                scheduleDeviceLossWatch();
                 self.postMessage({ type: "ready" });
                 break;
             }
@@ -824,7 +1401,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         value = viewer.fitScene();
                         break;
                     case "renderOnce":
-                        value = viewer.renderFrame();
+                        value = renderViewerFrame();
                         postLodProgress(currentLodStats(), true);
                         break;
                     case "getCamera":
@@ -847,7 +1424,20 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         value = sceneInputs();
                         break;
                     case "getStats":
-                        value = { lod: currentLodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats(), memory: memoryStats() };
+                        value = { lod: currentLodStats(), gpu: viewer.gpuStats(), px: pxStats(), viewer: viewer.stats(), memory: memoryStats() };
+                        break;
+                    case "setPxMode":
+                        setPxMode(data.mode);
+                        value = pxStats();
+                        break;
+                    case "setGpuFrameTiming":
+                        hostGpuTiming = Boolean(data.enabled);
+                        viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
+                        value = true;
+                        break;
+                    case "resetGpuFrameStats":
+                        viewer.resetGpuFrameStats();
+                        value = true;
                         break;
                     case "moveCamera":
                         advanceSceneGeneration();
@@ -867,7 +1457,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         if (hit && data.recenter) {
                             viewer.setOrbitTarget(hit.voxelCenter);
                             advanceSceneGeneration();
-                            viewer.renderFrame();
+                            renderViewerFrame();
                         }
                         value = { hit, sceneGeneration: pickedGeneration };
                         break;
@@ -879,6 +1469,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 break;
             }
             case "resize":
+                framebufferSize = [data.width, data.height];
                 advanceSceneGeneration();
                 viewer.resize(data.width, data.height);
                 break;
@@ -896,21 +1487,23 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                     }
                 }
                 currentColorMode = data.colorMode;
-                targetVoxelPixels = data.targetVoxelPixels;
+                targetVoxelPixels = requestedTargetPixels(data.targetVoxelPixels);
                 beginRefinement(data.trigger, data.refinementId ?? 0, data.colorMode, startedAt);
-                if (buildOptions) {
-                    syncBuildView(true, true);
-                } else if (viewer.lodStats()) {
-                    const lod = viewer.updateLod(targetVoxelPixels);
-                    self.postMessage({ type: "lod", lod });
-                    recordLodMessage("refine", lod);
-                    postLodProgress(lod);
-                    scheduleAsyncLodRead(true);
-                }
+                requestLodUpdate();
                 break;
             }
+            case "pxMode":
+                setPxMode(data.mode);
+                break;
             case "depthShading":
+                depthShadingOn = data.value;
                 viewer.setDepthShading(data.value);
+                break;
+            case "continuity":
+                // RF-05: only changes which cell level each octant draws; nothing is rebuilt.
+                continuitySetting = [Boolean(data.enabled), data.factor ?? undefined];
+                viewer.setContinuity(...continuitySetting);
+                advanceSceneGeneration();
                 break;
             case "metrics":
                 if (data.reset) resetWorkerMetrics();
@@ -957,9 +1550,17 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 }
                 syncBuildView();
                 const startedAt = performance.now();
-                const frameStatus = viewer.renderFrame();
+                const frameStatus = renderViewerFrame();
+                const lossOutcome = await pollDeviceLoss();
+                if (lossOutcome) {
+                    // After a failed recovery only the error goes out.
+                    if (lossOutcome === true) self.postMessage({ type: "frame", frameStatus: "deviceRecovered", renderCallMs: 0 });
+                    break;
+                }
                 const renderCallMs = performance.now() - startedAt;
                 recordFrameRenderSample(renderCallMs);
+                tickPxController(startedAt + renderCallMs);
+                trackCellsStuck();
                 postLodProgress(currentLodStats(), true);
                 if (!buildOptions) scheduleAsyncLodRead();
                 renderedFrames += 1;
@@ -975,7 +1576,13 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
         }
         syncBuildView();
     } catch (error) {
-        self.postMessage({ type: "error", operation: data.type, requestId: data.requestId, message: String(error) });
+        // A frame that fails because the GPU went away is not an error for the host: recover instead.
+        const lossOutcome = data.type === "frame" ? await deviceLostAfter() : false;
+        if (lossOutcome) {
+            if (lossOutcome === true) self.postMessage({ type: "frame", frameStatus: "deviceRecovered", renderCallMs: 0 });
+        } else {
+            self.postMessage({ type: "error", operation: data.type, requestId: data.requestId, message: String(error) });
+        }
     } finally {
         if (coalescedCommands.has(data.type)) {
             self.postMessage({ type: "commandAck", command: data.type });
@@ -991,6 +1598,20 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
 
 let messageQueue = Promise.resolve();
 self.addEventListener("message", (event) => {
+    if (event.data.type === "replaceCanvas") {
+        // `canvas: null`: the host could not replace its element; recover on the current one.
+        if (event.data.canvas) renderCanvas = event.data.canvas;
+        clearTimeout(canvasWaitTimer);
+        resolveCanvasArrival?.();
+        resolveCanvasArrival = null;
+        if (event.data.canvas && canvasWaitTimedOut && canvasRecreatedOn !== renderCanvas) {
+            // Too late for the recovery that ran: recreate once more on the canvas that now presents.
+            canvasWaitTimedOut = false;
+            const late = { reason: "unknown", message: "the host's canvas arrived after the wait" };
+            messageQueue = messageQueue.then(() => recoverFromDeviceLoss(late)).catch(() => {});
+        }
+        return;
+    }
     const queuedAt = performance.now();
     messageQueue = messageQueue.then(() => handleMessage(event, queuedAt), () => handleMessage(event, queuedAt));
 });

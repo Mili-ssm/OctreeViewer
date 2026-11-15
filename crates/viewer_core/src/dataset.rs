@@ -26,6 +26,11 @@ impl DatasetMetadata {
     pub const fn hierarchy(&self) -> &SpatialHierarchy {
         &self.hierarchy
     }
+
+    /// Grows or shrinks the hierarchy as pages arrive or are evicted.
+    pub const fn hierarchy_mut(&mut self) -> &mut SpatialHierarchy {
+        &mut self.hierarchy
+    }
 }
 
 /// Typed values for one attribute column, stored compactly in its declared type.
@@ -322,13 +327,24 @@ impl PointBlock {
 ///
 /// Queries must not change residency, recency or activity counters. A returned block
 /// must have the requested ID. Presence and payload must remain consistent throughout
-/// a consumer operation; `contains` overrides must agree with `peek`.
+/// a consumer operation. `contains` is the residency predicate; by default it means `peek` returns
+/// a block. A source for the planner in cells mode (ADR 0038) overrides it to mean "resident for
+/// planning", which may hold while `peek` is `None`: only the planner (`contains` and
+/// `budget_points`) may be given such a source, and any consumer that needs the payload must
+/// handle a `None` from `peek`.
 /// No thread-safety bounds are imposed on implementations.
 pub trait ResidentBlockSource {
     fn peek(&self, id: BlockId) -> Option<&PointBlock>;
 
     fn contains(&self, id: BlockId) -> bool {
         self.peek(id).is_some()
+    }
+
+    /// Points the planner charges to its budget for a resident block. A source whose residency
+    /// does not mean decoded points (cells mode, ADR 0038) may charge less and has its own budget.
+    fn budget_points(&self, id: BlockId) -> Option<u64> {
+        self.peek(id)
+            .map(|block| u64::try_from(block.points().len()).unwrap_or(u64::MAX))
     }
 }
 

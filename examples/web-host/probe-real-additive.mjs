@@ -19,7 +19,7 @@ export async function probeRealAdditive(inputUrl = "/target/additive-real-v5.oct
         throw new Error("Real Additive sample did not reach 4 px");
     }
     try {
-        viewer = createViewer(canvas);
+        viewer = createViewer(canvas, { cells: false });
         await viewer.ready;
         const response = await fetch(inputUrl);
         if (!response.ok) throw new Error(`Fixture HTTP status: ${response.status}`);

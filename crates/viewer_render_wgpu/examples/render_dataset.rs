@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if attributes.exists() {
         reader.attach_attributes(File::open(attributes)?)?;
     }
-    let metadata = reader.format_metadata().dataset().clone();
+    let metadata = (*reader.format_metadata().viewer_dataset()?).clone();
     let hierarchy = metadata.hierarchy();
     let origin = metadata.coordinate_frame().origin();
     let root = hierarchy.stats().root_bounds;
@@ -92,10 +92,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             LodSelectionConfig::new(target, u64::MAX)?,
             |node| {
                 let bounds = node.bounds();
-                let side = (0..3)
-                    .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-                    .fold(0.0_f64, f64::max);
-                camera.projected_error_pixels(bounds, side / 8.0, origin, viewport)
+                let spacing = node.representative_spacing();
+                camera.projected_error_pixels(bounds, spacing, origin, viewport)
             },
         )?;
         if !cut.budget_limited().is_empty() {

@@ -8,8 +8,8 @@ Estado: activo · 30-10-2026
 **Progreso (30-10-2026):** plan redactado tras la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md)
 y enmendado tras su pre-mortem (abajo). R0 hecha; R1 parcial (T0, T3a, T4 y T5 hechas); R2 hecha, con el worker de
 construcción encendido por defecto desde esta rama (`?buildWorker=0` / `buildWorker: false` lo apagan, [ADR 0018](../adr/0018-worker-de-construccion-por-defecto.md)).
-Preguntas P1–P8 resueltas el 30-10-2026 ([requisitos](../requirements.md)). Orden acordado: resto de R1 → R3 → R4 → R5 → V7 final.
-Nada de R3–R5 está implementado: las decisiones están registradas, el código no ha cambiado.
+Preguntas P1–P8 resueltas el 30-10-2026 ([requisitos](../requirements.md)). Orden acordado: resto de R1 → R4 → R3 ([ADR 0028](../adr/0028-r4-antes-que-r3.md)) → R5 → V7 final.
+Estado (02-11-2026): R4 y R5 están completados (`v7.4-pre`, `v7.5-pre`; R5 en la rama `feat/r5-paged-hierarchy`, pendiente de integración); R3 sigue en pausa ([ADR 0028](../adr/0028-r4-antes-que-r3.md)).
 
 **Objetivo (propietario, 30-10-2026):** cargar nubes de cientos de GB y dibujarlas con vóxeles de
 1–8 px en pantalla, con una carga que se perciba continua: sin saltos a grueso al mover la cámara,
@@ -116,9 +116,9 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 ### R1-T1a: no reiniciar la etapa al mover (Q1, E6)
 
-**Archivos:** `crates/viewer_wasm/src/bindings/{camera.rs, lod.rs}`, `crates/viewer_wasm/src/lod_dataset.rs`.
+**Archivos:** `crates/viewer_wasm/src/bindings/camera.rs`, `crates/viewer_wasm/src/{lod_dataset.rs, scene_builder.rs}` y tests.
 
-- [ ] Función pura (p. ej. `next_lod_stage`) con tests: tras órbitas con el objetivo no residente, la etapa publicada nunca sube; las regiones sin cubrir tienen prioridad de carga. Sin histéresis (eso es T1b).
+- [x] **01-11-2026:** viewer y worker de construcción conservan la etapa al mover; regiones sin cubrir primero, sin histéresis. Regresiones nativas antes/después, probes Chrome y humo Majadas en ambas rutas; `check.sh` 24/24. [Evidencia y límites](../records/benchmarks/RENDER_R1_T1A_01-11-2026.md).
 
 ### R1-T2: menos reconstrucciones y bordes cubiertos (Q2, E7) — cancelada por el propietario (30-10-2026)
 
@@ -130,8 +130,8 @@ Con el worker de construcción, la coalescencia «gana la última» ya agrupa ll
 
 ### R1-T3b: prioridad solo sobre pendientes (Q4)
 
-- [x] **Reordenación hecha en `d4604b7`** (error por punto fuente; medida aparte en vivo). Pendiente: calcular la prioridad solo sobre bloques pendientes (coste O(pendientes)).
-- [ ] Reordenación intencional (métrica de selección, cálculo solo sobre bloques pendientes) medida por separado: tiempo hasta el objetivo y expulsiones de pendientes.
+- [x] **Reordenación hecha en `d4604b7`** (error por punto fuente; medida aparte en vivo).
+- [x] **01-11-2026:** índice de propietarios por bloque; puntuación solo sobre propietarios pendientes, con el mismo orden. Regresión de 10.004 a 2 proyecciones; humo Majadas antes/después sin empeorar cobertura, expulsiones ni digest, sin mejora temporal demostrada. [Costes, verificación y límites](../records/benchmarks/RENDER_R1_T3B_01-11-2026.md).
 
 ### R1-T6: jerarquía construida en wasm desde el reader (Q7, B6 parcial) — movida a R5 (jerarquía paginada)
 
@@ -145,7 +145,7 @@ Con el worker de construcción, la coalescencia «gana la última» ya agrupa ll
 
 ### R1-T7: medida después de R1
 
-- [ ] Matriz completa de R0 con el mismo arnés; registro con la comparación y los criterios de éxito; commit.
+- [x] **01-11-2026:** matriz R0 en `135c147`: respuestas p95 ≤ 17,6 ms y máx ≤ 19,2 ms; objetivo Majadas 18,8 → 10,8 s y Belvedere 8 px 66,8 → 48,8 s; nodos sin cubrir finales 0; expulsiones menores que en las revisiones de control anteriores a T1a/T3b. Edad de escena p95 en Belvedere 8 px 120 → 2932 ms: coste aceptado de T1a (cada vista exige una construcción en la etapa fina); lo resuelve R3 ([diagnóstico](../records/benchmarks/RENDER_R1_T7_SCENE_AGE_01-11-2026.md)). [Registro](../records/benchmarks/RENDER_R1_T7_01-11-2026.md).
 
 ## Fase R2: worker de construcción (B1, B4; decidido por E13)
 
