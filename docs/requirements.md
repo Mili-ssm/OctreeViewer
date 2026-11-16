@@ -161,7 +161,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | --- | --- | --- |
 | GPU mínima | GPU o iGPU con ≥ 4 GB disponibles para WebGPU; sustituye a P2. | [ADR 0033](adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), EQ-REF |
 | R3: hojas, claves e instancia | Continuación adaptativa de hojas, clave regional más allá de 21 bits e instancia de 12 B. | ADR 0032, R3-Q7 y R3-Q8 |
-| R3: hoja separada | No se refina más; entra en la excepción «densidad de la fuente» de RQ-09. **Cambia (propietario, 15-11-2026):** el render sigue refinando por debajo del espaciado ([ADR 0048](adr/0048-el-render-dibuja-el-nivel-pedido.md), pendiente de implementar). | R3-Q9 |
+| R3: hoja separada | No se refina más; entra en la excepción «densidad de la fuente» de RQ-09. **Cambia (propietario, 15-11-2026):** el render sigue refinando por debajo del espaciado ([ADR 0048](adr/0048-el-render-dibuja-el-nivel-pedido.md), implementado en la fase 1, 16-11-2026). | R3-Q9 |
 | R3: saltos de pose | Con `DescendantTooFine` se retiene el corte anterior hasta completar el nuevo. | ADR 0033, R3-Q10 |
 | R3: corte mayor que el pool | Los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que el corte quepa. **Con el LOD por celda:** sube el objetivo de px efectivo de toda la nube, para que siga homogénea ([ADR 0052](adr/0052-retencion-y-ajuste-al-pool-por-celda.md)). | ADR 0033, R3-Q11 |
 | R3: error proyectado | Nivel por octante con la arista proyectada real; ≤ 2× la CPU a 2–8 px y ≤ 2,5× a 1 px en la pose rasante. | ADR 0034, R3-Q12 |

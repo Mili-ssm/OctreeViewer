@@ -10,10 +10,10 @@ octant borders; one Rust twin of the decision serves the cut, picking, simulatio
 
 **Architecture:** the CPU keeps choosing *which levels are active* per node (in cell mode: the closest resident to
 each depth the octants want, measured with the same metric as the GPU); the slot pass draws a cell at depth `d` iff
-it is not masked, it does not refine or no finer level is active, and its ancestor at the previous active depth
-refines. The refine test uses integer cell coordinates relative to the node corner, so a cell and its children
-evaluate the ancestor identically, and a monotone metric makes "exactly one drawn cell per point" hold by
-construction. The CPU half (twin, measurement, cut, simulations) lands before any GPU change. Residency (D4) and the
+it is not masked, it does not refine or no finer level is active, and its ancestors at all coarser active depths
+refine (E4). The refine test uses integer cell coordinates relative to the node corner, so a cell and its children
+evaluate the ancestor identically, and the E4 rule makes "exactly one drawn cell per point" hold by
+construction, with or without a monotone metric. The CPU half (twin, measurement, cut, simulations) lands before any GPU change. Residency (D4) and the
 per-node wanted set are phase 2b.
 
 **Tech Stack:** Rust (`viewer_render_wgpu`, `viewer_wasm`), WGSL in Rust string constants, wgpu headless tests,

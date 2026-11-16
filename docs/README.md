@@ -1,6 +1,6 @@
 # Índice de documentación
 
-Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [estado y prioridades](estado.md); lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues)). Marcas:
+Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [estado y prioridades](estado.md); lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues). Marcas:
 **vivo** = se mantiene con el código; **histórico** = registro fechado, no se edita ([política](../CONTRIBUTING.md#convenciones)).
 
 ## Requisitos
@@ -29,11 +29,11 @@ trabajo nuevo va en un plan nuevo.
 | --- | --- | --- |
 | [Plan V7](plans/format-v7-plan.md) | Contrato, recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | activo |
 | [Render y carga a escala](plans/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | activo |
-| [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho, siguen el PR a `main` y D4) |
+| [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho y fusionado en `main`, sigue D4) |
 | [D3c: congelado de V7 final](plans/d3c-congelado-v7-final.md) | Identidad final V7 sobre v7.5-pre con el escritor híbrido, salida predeterminada y regeneración de datasets y referencias (ADR 0044). | completado |
 | [Publicación del repositorio](plans/publicacion-del-repositorio.md) | Repositorio público: portada, documentación, demo experimental en GitHub Pages y ajustes de GitHub (ADR 0045). | completado |
 | [Muestra de la demo en V7](plans/muestra-de-la-demo-en-v7.md) | La muestra integrada pasa a V7 y a 589.824 puntos; V5 queda como heredado hasta V8 (ADR 0047). | completado |
-| [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050); fase 0a de medida antes de la GPU. | en curso |
+| [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050, 0052 y 0053); fase 1 hecha, fase 2a en curso. | en curso |
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
 | [Fase 2a: LOD por celda en la GPU](plans/fase-2a-lod-por-celda-en-gpu.md) | Plan detallado de la fase 2a (#44): gemelo Rust de la decisión por celda, medida de la métrica, corte en modo celda, decisión en el paso de ranuras y opción `cellLod`. | en curso |
 | [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | completado |

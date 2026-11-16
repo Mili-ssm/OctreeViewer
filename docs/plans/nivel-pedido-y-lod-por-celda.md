@@ -1,13 +1,14 @@
 # Nivel pedido, LOD por celda y tamaño mínimo del cubo
 
-Estado: en curso · 15-11-2026 · aprobado por el propietario (pre-mortem aplicado)
+Estado: en curso · 16-11-2026 · aprobado por el propietario (pre-mortem aplicado); fase 1 hecha salvo el p95 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)), fase 2a en la rama `feat/cell-lod`
 
 **Objetivo:** que el render dibuje en cada celda el nivel que pide su distancia, construyendo a demanda los niveles
 que la cadena podada no guarda, con transiciones graduales en bandas alrededor del ojo, y que el usuario elija el
 tamaño mínimo del cubo en px y en longitud (m/cm/mm o el espaciado de la nube) a la vez, ganando el mayor en cada celda.
 
 **Decisiones de partida:** [ADR 0048](../adr/0048-el-render-dibuja-el-nivel-pedido.md) (#35),
-[ADR 0050](../adr/0050-nivel-por-celda-segun-distancia.md) (#44) y [ADR 0049](../adr/0049-tamano-minimo-del-voxel.md).
+[ADR 0050](../adr/0050-nivel-por-celda-segun-distancia.md) (#44), [ADR 0049](../adr/0049-tamano-minimo-del-voxel.md),
+[ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md) y [ADR 0053](../adr/0053-transiciones-de-un-nivel.md).
 El tamaño de hoja ([ADR 0051](../adr/0051-granularidad-de-hojas-configurable.md), #46) va después y no entra aquí.
 
 **Evidencia (15-11-2026, lectura de código):** las celdas se dibujan con un único `drawIndexedIndirect`; un paso de
@@ -23,8 +24,8 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
 | --- | --- | --- |
 | D1 | El nivel pedido es cualquier profundidad; uno que falta se pide al worker de construcción (`levelRequests` → `nodeLevels`), que lo construye desde los bloques del nodo con la agregación de `build_level_keyed`. Implementado en la fase 1 así: la petición (`levelRequests{gen, nodes, depths}`) es el conjunto completo en orden de prioridad y sustituye al anterior; `gen` descarta los conjuntos viejos (`cutEpoch` y la generación de color se descartaron por no hacer falta); un fallo de caché programa la lectura de bloques; las peticiones tienen presupuesto propio, aparte de las 2 construcciones por actualización; los niveles a demanda cuentan en el presupuesto de CPU (los de nodos del corte no esperan al freno de admisión) y se reconstruyen con el color nuevo al recolorear; las peticiones pendientes sobreviven al recoloreo | ADR 0048; sin cancelación ni prioridad las peticiones se acumulan durante un zoom |
 | D2 | Selección por celda en `slot_state`, **sobre coordenadas enteras relativas al nodo**: la página lleva su origen relativo al nodo (u32×3) y cada nodo un ancla f32 relativa al ojo. El ancestro es `(rel_página + rel) >> (d − d_prev)`. Una sola función WGSL `refines(nodo, prof, coord)` sirve para la celda y para su madre, con un gemelo Rust bit a bit para picking, métricas y dorados. La prueba va antes de la separación de fases de oclusión, para que las dos fases usen el mismo predicado | Sin coordenadas enteras, madre e hija redondean distinto: dobles cubos o huecos |
-| D3 | Regla monótona: `refina(c) := lado(c) > max(lado_mín, px_objetivo · max(dist(punto de c más cercano al ojo, ojo), cerca) / focal)`. El uniforme del frame gana objetivo de px, focal y lado mínimo; la página gana los niveles residentes vecinos (la entrada probablemente pasa de 32 a 48 B) | Sin monotonía, un nivel intermedio y uno fino se dibujan a la vez |
-| D4 | Residencia acotada (aprobada por el propietario, 16-11-2026, tras la fase 0a): cada nodo mantiene las profundidades que dibuja más la siguiente más fina (R2: 294 MiB en Majadas a 1 px dentro de una hoja, frente a 531 MiB con el rango contiguo). Mantener siempre también la más gruesa (R3c) da 522 MiB a 1 px, por encima de 512, así que se mantiene **solo si cabe** (aceptado por el propietario, 16-11-2026): es lo primero que se suelta con presión de memoria. Al alejarse sin el nivel grueso residente, los hijos no se sueltan hasta que el grueso está listo: se construye mientras tanto (a demanda, D1) o se regenera antes de soltar los hijos, así que nunca queda un hueco ([registro](../records/benchmarks/R3_CELL_LOD_0A_15-11-2026.md)). La distancia cercana se limita al plano cercano. Si el corte no cabe, sube el objetivo de px efectivo de toda la nube ([ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md), R3-Q11) | Desde dentro de un nodo, el rango contiguo superaba los 512 MiB; la nube debe verse homogénea |
+| D3 | Regla de refinado: `refina(c) := lado(c) > lado_mín ∧ arista_px(c) > px_objetivo`, con `arista_px` la arista proyectada real de la celda (`projected_voxel_edge_pixels`: la mayor de las 12 aristas en pantalla; `+inf` si una esquina queda tras el ojo). Es el filtro doble del ADR 0049: el lado dibujado no baja de `max(lado_mín, lado que da el objetivo de px)`. El uniforme del frame gana objetivo de px, focal, base de cámara y lado mínimo; la entrada de página pasa de 32 a 48 B (fase 2a, E1 y E8) | Medido en la fase 2a ([registro](../records/benchmarks/R3_FASE2A_METRICA_16-11-2026.md)): la cota `lado·focal·dmax/max(zmin, cerca)²` falla RQ-09 (0,596 % de celdas sobre el objetivo en Majadas a 8 px) y la distancia de la fase 0a deja entre el 1,6 % y el 13 %; la arista real deja ≤ 0,006 % dentro del dataset, con las menos instancias. No es monótona por prueba (0 pares no monótonos medidos), así que la regla de dibujo E4 de la fase 2a da una sola celda por punto sin exigirlo |
+| D4 | Residencia acotada (aprobada por el propietario, 16-11-2026, tras la fase 0a): cada nodo mantiene las profundidades que dibuja más la siguiente más fina (R2: 294 MiB en Majadas a 1 px dentro de una hoja, frente a 531 MiB con el rango contiguo). Mantener siempre también la más gruesa (R3c) da 522 MiB a 1 px, por encima de 512, así que se mantiene **solo si cabe** (aceptado por el propietario, 16-11-2026): es lo primero que se suelta con presión de memoria. Al alejarse sin el nivel grueso residente, los hijos no se sueltan hasta que el grueso está listo: se construye mientras tanto (a demanda, D1) o se regenera antes de soltar los hijos, así que nunca queda un hueco ([registro](../records/benchmarks/R3_CELL_LOD_0A_15-11-2026.md)). El [ADR 0053](../adr/0053-transiciones-de-un-nivel.md) (16-11-2026) precisa el conjunto: en la fase 2b es contiguo entre el nivel más grueso y el más fino dibujado, con los intermedios a demanda, en lugar de «dibujadas más la siguiente» con huecos; la cifra de R2 (294 MiB) es la de esa regla y el peor caso con todos los niveles ronda 531 MiB La distancia cercana se limita al plano cercano. Si el corte no cabe, sube el objetivo de px efectivo de toda la nube ([ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md), R3-Q11) | Desde dentro de un nodo, el rango contiguo superaba los 512 MiB; la nube debe verse homogénea |
 | D8 | Opcional (ADR 0052, revisión): si la población de los hijos ya está disponible sin coste (nivel hijo construido pero aún no en GPU), la celda que debe refinar puede dibujarse como sus hijos poblados con el color del padre; si no, se mantiene hasta que cargan. No se añade nada a la instancia solo para esto | Idea oportunista del propietario, no requisito |
 | D5 | Celdas que abarcan octantes: cuentan como «refina» si la máscara del nodo no está vacía; una celda más gruesa que la rejilla 8³ prueba todos los bits de máscara que cubre | Hoy se saltan octante y máscara y pintarían encima de hijos residentes |
 | D6 | Unidad del CRS: `viewer_format` lee solo la `UNIT` de primer nivel del PROJCS o sistema de coordenadas (WKT1, WKT2, compuesto) y la clave GeoTIFF 3076; un CRS geográfico desactiva el modo longitud; sin unidad, metros | ADR 0049; un `UNIT["degree"]` anidado no debe desactivar una nube proyectada |
@@ -38,11 +39,11 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   profundidad máxima pedida y peticiones por segundo de zoom. Comprobación: registro en `docs/records/benchmarks/`.
 - [x] **0b. Pregunta al propietario:** R3-Q19, R3-Q21 y R3-Q11 por celda. Resuelta en el
   [ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md) (15-11-2026).
-- [ ] **1. Niveles a demanda (ADR 0048, #35)** ([plan detallado](fase-1-niveles-a-demanda.md); implementado y verificado el 16-11-2026 salvo el p95 de petición a residente, que pasa a la fase 2 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)); [registro](../records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md)). D1. El corte y el pool dejan de suponer «deseado ∈ guardados» y ya
+- [x] **1. Niveles a demanda (ADR 0048, #35)** ([plan detallado](fase-1-niveles-a-demanda.md); implementado y verificado el 16-11-2026 salvo el p95 de petición a residente, que pasa a la fase 2 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)); [registro](../records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md)). D1. El corte y el pool dejan de suponer «deseado ∈ guardados» y ya
   envían un rango de profundidades y una prioridad. Comprobación: `fs_e430` (#35) se dibuja como superficie en la
   demo; tests del protocolo y del corte; p95 de petición a residente medido; dorados regenerados con su motivo;
   `scripts/check.sh` completo.
-- [ ] **2a. Selección por celda tras una opción `cellLod: octant|cell` (predeterminada `octant`).** D2, D3 y D5 (D8 solo si sale gratis) sobre
+- [ ] **2a. Selección por celda tras una opción `cellLod: octant|cell` (predeterminada `octant`)** (en curso en `feat/cell-lod`; la métrica es la arista real, [registro](../records/benchmarks/R3_FASE2A_METRICA_16-11-2026.md)). D2, D3 y D5 (D8 solo si sale gratis) sobre
   niveles residentes, con el gemelo Rust, el picking y una prueba de partición en GPU (patrón de
   `cell_render_tests.rs`): leer `visible` y comprobar una sola celda dibujada por punto, con ≥3 niveles, profundidades
   no contiguas, un nivel que abarca octantes con máscara, oclusión activada y desactivada, ≥1000 poses aleatorias con
@@ -61,12 +62,6 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   cortes.
 
 Cada fase de código tendrá su plan detallado (`writing-plans`) al empezarla.
-
-## Riesgo abierto tras la fase 0a
-
-- Con la regla D3 (distancia y focal) entre el 1,6 % y el 13 % de las celdas dibujadas quedan por encima del objetivo
-  de px, y medir al punto más cercano no lo corrige; `octant_tight` quedaba en ≤ 0,26 % (ADR 0034). La fase 2a debe
-  usar la arista proyectada real (`projected_voxel_edge_pixels`) o justificar otra regla monótona que cumpla RQ-09.
 
 ## Criterios de parada
 
