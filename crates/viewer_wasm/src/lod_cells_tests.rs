@@ -1586,3 +1586,27 @@ fn pending_levels_with_uncached_blocks_need_a_reader_to_be_work() {
     assert!(dataset.has_pending_level_requests(true));
     assert!(!dataset.has_pending_level_requests(false));
 }
+
+#[test]
+fn cut_levels_are_built_under_a_tight_budget_and_count_toward_it() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let leaf = NodeId::new(3);
+    let depth = unsent_depths(&sent[&leaf], 1)[0];
+    let tight = CellUpdateConfig {
+        cpu_budget_bytes: Some(1),
+        ..CellUpdateConfig::default()
+    };
+    let before = plan_levels(&mut dataset, &view, tight);
+    assert!(before.new_levels.is_empty());
+    let needed = before.stats.diag.cpu_needed_bytes;
+    assert!(needed > 1, "the budget is not exceeded");
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    let update = plan_levels(&mut dataset, &view, tight);
+    assert_eq!(shipped_depths(&update), [(leaf, depth)]);
+    let bytes: u64 = update
+        .new_levels
+        .iter()
+        .map(|(_, node)| viewer_render_wgpu::packed_node_bytes(node))
+        .sum();
+    assert_eq!(update.stats.diag.cpu_needed_bytes, needed + bytes);
+}

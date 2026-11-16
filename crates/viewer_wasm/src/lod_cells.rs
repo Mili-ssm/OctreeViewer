@@ -359,6 +359,18 @@ pub(super) struct CellState {
     level_depths: HashMap<NodeId, Vec<u8>>,
 }
 
+/// The CPU budget as the level builds see it. Levels of nodes in the `cut` are exempt from the
+/// gate (the pool holds a node until its level exists, and those bytes are the cut itself, which
+/// the budget cannot shrink); their bytes add to `needed` when the node is `counted`, so they
+/// gate the builds of other nodes. A level of any other node waits while the build side is
+/// blocked or `needed` has reached `admit`.
+struct LevelRoom<'a> {
+    cut: &'a HashSet<NodeId>,
+    admit: Option<u64>,
+    needed: &'a mut u64,
+    counted: &'a HashSet<NodeId>,
+}
+
 impl Default for CellState {
     fn default() -> Self {
         Self {
@@ -678,7 +690,9 @@ impl LodDataset {
         &mut self,
         max: usize,
         generation: u64,
+        room: LevelRoom<'_>,
     ) -> Result<(Vec<(u64, PackedNode)>, usize), LodDatasetError> {
+        let blocked = self.cells.cpu_blocked || self.cells.gpu_blocked;
         let requests = std::mem::take(&mut self.cells.level_requests);
         let mut keep = Vec::new();
         let mut deferred = 0;
@@ -703,6 +717,12 @@ impl LodDataset {
             }
             if taken == max {
                 deferred += 1;
+                keep.push(request);
+                continue;
+            }
+            if !room.cut.contains(&id)
+                && (blocked || room.admit.is_some_and(|admit| *room.needed >= admit))
+            {
                 keep.push(request);
                 continue;
             }
@@ -740,8 +760,12 @@ impl LodDataset {
                 shipped.extend(packed.levels.iter().map(|level| level.depth));
                 shipped.sort_unstable();
                 shipped.dedup();
+                let bytes = packed_node_bytes(&packed);
                 if let Some(built) = self.cells.built.get_mut(&id) {
-                    built.bytes += packed_node_bytes(&packed);
+                    built.bytes += bytes;
+                }
+                if room.counted.contains(&id) {
+                    *room.needed += bytes;
                 }
                 served.push((generation, packed));
             }
@@ -1286,6 +1310,7 @@ impl LodDataset {
         };
 
         let initial_plan = self.prepare_cell_plan(&selection);
+        let in_initial_cut: HashSet<NodeId> = initial_plan.node_ids().iter().copied().collect();
         // CPU budget fit (ADR 0037). `cpu_needed` is what the driver cannot forget for this
         // update: the packed bytes of the built nodes in the cut or in the support set; every
         // node admitted below adds its own. A candidate is admitted only while that stays within
@@ -1549,14 +1574,24 @@ impl LodDataset {
                 }
             }
         }
-        let (new_levels, levels_deferred) =
-            match self.serve_level_requests(config.max_level_builds, generation) {
-                Ok(served) => served,
-                Err(error) => {
-                    self.forget_unsent(&new_nodes, &previous);
-                    return Err(error);
-                }
-            };
+        let (new_levels, levels_deferred) = match self.serve_level_requests(
+            config.max_level_builds,
+            generation,
+            LevelRoom {
+                cut: &in_initial_cut,
+                admit: config
+                    .cpu_budget_bytes
+                    .map(|budget| share(budget, CPU_ADMIT_PERCENT)),
+                needed: &mut cpu_needed,
+                counted: &counted,
+            },
+        ) {
+            Ok(served) => served,
+            Err(error) => {
+                self.forget_unsent(&new_nodes, &previous);
+                return Err(error);
+            }
+        };
         let build_ms = build_started.elapsed_ms();
         let (cpu_blocked, gpu_blocked) = (self.cells.cpu_blocked, self.cells.gpu_blocked);
         let any_blocked = cpu_blocked || gpu_blocked;
