@@ -38,7 +38,7 @@ pub(crate) const fn pool_resource_bytes(pages: u32) -> u64 {
     let pages = pages as u64;
     pages * PAGE_BYTES // instances
         + pages * size_of::<PageEntry>() as u64 // page table
-        + pages * (MASK_WORDS as u64 * 4) // masks
+        + pages * (NODE_WORDS as u64 * 4) // node records
         + 1024 // sRGB table
         + size_of::<FrameUniform>() as u64
         + (pages + 1) * 4 // page list
@@ -63,8 +63,13 @@ pub const MIN_POOL_PAGES: u32 = 32_768;
 /// The page and slot pipelines have one spare; a new buffer in the compute group would break
 /// finalize. `slot_pass_stays_within_eight_storage_buffers` checks every pipeline.
 pub const MIN_STORAGE_BUFFERS: u32 = 8;
-/// `u32` words of the mask of one node (8 x 8 x 8 bits).
+/// `u32` words of the mask of one node (8 x 8 x 8 bits): words `0..MASK_WORDS` of its record.
 pub const MASK_WORDS: usize = 16;
+/// `u32` words of a node record, the per-slot layout of the `masks` buffer (E8): `0..16` the mask;
+/// `16..19` the node corner (f32 bits, eye-relative, scaled units); `19` the node depth; `20..22`
+/// the active depths (low, high); `22..24` the 4^3 mip (low, high); `24` the 2^3 mip in bits
+/// `0..8` and the 1^3 mip at bit 8; `25..32` zero. `cell_lod::node_record` builds it.
+pub const NODE_WORDS: usize = 32;
 
 /// Bytes of the draw arguments of one phase; phase 2 follows phase 1 in the buffer.
 const DRAW_ARGS_BYTES: u64 = 20;
@@ -506,7 +511,7 @@ fn slot_state(page: CellPage, page_index: u32, local: u32, page_was_drawn: bool)
     if !cell_spans_octants(cell) {
         if ((page.octants >> cell_octant(cell)) & 1u) == 0u { return 0u; }
         let bit = cell_mask_index(cell);
-        if ((masks[page.node * 16u + (bit >> 5u)] >> (bit & 31u)) & 1u) == 1u { return 0u; }
+        if ((masks[page.node * 32u + (bit >> 5u)] >> (bit & 31u)) & 1u) == 1u { return 0u; }
     }
     let lo = cell_lo(page, cell);
     let hi = cell_hi(page, cell);
@@ -700,9 +705,9 @@ pub(crate) struct CellRenderer {
     free_masks: Vec<u32>,
     next_mask: u32,
     mask_allocated: Vec<bool>,
-    /// CPU copy of every node mask, kept exactly like the GPU one: zeroed only when the slot is
-    /// taken, set by `set_node_mask`, untouched when the slot is freed. Picking reads it.
-    mask_mirror: Vec<[u32; MASK_WORDS]>,
+    /// CPU copy of every node record, kept exactly like the GPU one: zeroed only when the slot is
+    /// taken, set by `set_node_record`, untouched when the slot is freed. Picking reads its mask.
+    mask_mirror: Vec<[u32; NODE_WORDS]>,
     /// The frame the entries of `shadow` were built with; `None` until the first
     /// `set_page_frame`.
     page_frame: Option<PageFrameStamp>,
@@ -744,7 +749,7 @@ impl CellRenderer {
         );
         let masks = buffer(
             "cell-masks",
-            pages * (MASK_WORDS * 4) as u64,
+            pages * (NODE_WORDS * 4) as u64,
             U::STORAGE | U::COPY_DST,
         );
         let srgb = buffer(
@@ -1018,7 +1023,7 @@ impl CellRenderer {
             free_masks: Vec::new(),
             next_mask: 0,
             mask_allocated: vec![false; capacity as usize],
-            mask_mirror: vec![[0; MASK_WORDS]; capacity as usize],
+            mask_mirror: vec![[0; NODE_WORDS]; capacity as usize],
             page_frame: None,
             color: CellColor::default(),
         }
@@ -1170,11 +1175,11 @@ impl CellRenderer {
             })
         })?;
         self.mask_allocated[slot as usize] = true;
-        self.mask_mirror[slot as usize] = [0; MASK_WORDS];
+        self.mask_mirror[slot as usize] = [0; NODE_WORDS];
         self.queue.write_buffer(
             &self.masks,
-            u64::from(slot) * (MASK_WORDS * 4) as u64,
-            bytemuck::cast_slice(&[0_u32; MASK_WORDS]),
+            u64::from(slot) * (NODE_WORDS * 4) as u64,
+            bytemuck::cast_slice(&[0_u32; NODE_WORDS]),
         );
         Some(slot)
     }
@@ -1194,26 +1199,28 @@ impl CellRenderer {
         Ok(())
     }
 
-    /// Sets the mask of an allocated node slot: bit `x + 8y + 64z` set means that cell is replaced
-    /// by finer ones.
-    pub fn set_node_mask(
+    /// Sets the record of an allocated node slot. In its mask (words `0..MASK_WORDS`) bit
+    /// `x + 8y + 64z` set means that cell is replaced by finer ones.
+    pub fn set_node_record(
         &mut self,
         slot: u32,
-        mask: &[u32; MASK_WORDS],
+        record: &[u32; NODE_WORDS],
     ) -> Result<(), CellPoolError> {
         self.check_mask_slot(slot)?;
-        self.mask_mirror[slot as usize] = *mask;
+        self.mask_mirror[slot as usize] = *record;
         self.queue.write_buffer(
             &self.masks,
-            u64::from(slot) * (MASK_WORDS * 4) as u64,
-            bytemuck::cast_slice(mask),
+            u64::from(slot) * (NODE_WORDS * 4) as u64,
+            bytemuck::cast_slice(record),
         );
         Ok(())
     }
 
     /// The mask the GPU holds for `slot` (see `mask_mirror`).
     pub(crate) fn node_mask(&self, slot: u32) -> &[u32; MASK_WORDS] {
-        &self.mask_mirror[slot as usize]
+        self.mask_mirror[slot as usize][..MASK_WORDS]
+            .try_into()
+            .expect("the mask is the first MASK_WORDS words of a record")
     }
 
     /// Records the frame that the page entries are relative to; call it after `set_active_pages`,

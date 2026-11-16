@@ -190,6 +190,8 @@ pub struct MaskUpdate {
     pub active: u64,
     /// Depth whose levels span the octants of the node.
     pub node_depth: u8,
+    /// Cell index of the node's lower corner at `node_depth` (the `node_range` start per axis).
+    pub node_lo: [u64; 3],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3017,11 +3019,15 @@ impl CellPool {
                     node_depth,
                     stale: false,
                 };
+                let node_lo = std::array::from_fn(|axis| {
+                    crate::node_cells::node_range(grid, bounds, node_depth, axis).0
+                });
                 let update = |slot: u32| MaskUpdate {
                     slot,
                     mask,
                     active: active_bits,
                     node_depth,
+                    node_lo,
                 };
                 match self.mask_slots.get(&id) {
                     // Octant mode sends a node only when its mask changes; cell mode also when

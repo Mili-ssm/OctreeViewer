@@ -5,7 +5,7 @@
 use crate::cell_driver::CellTarget;
 use crate::cell_pages::{PackedLevel, PageEntry, PageFrame};
 use crate::cell_render::{
-    CellFrame, CellLimitMode, CellPoolError, CellRenderer, MASK_WORDS, cells_supported,
+    CellFrame, CellLimitMode, CellPoolError, CellRenderer, NODE_WORDS, cells_supported,
     plan_device_limits,
 };
 
@@ -74,12 +74,12 @@ impl BenchRenderer {
         self.renderer.alloc_mask_slot()
     }
 
-    pub fn set_node_mask(
+    pub fn set_node_record(
         &mut self,
         slot: u32,
-        mask: &[u32; MASK_WORDS],
+        record: &[u32; NODE_WORDS],
     ) -> Result<(), CellPoolError> {
-        self.renderer.set_node_mask(slot, mask)
+        self.renderer.set_node_record(slot, record)
     }
 
     pub fn set_active_pages(&mut self, pages: &[(u32, PageEntry)]) -> Result<(), CellPoolError> {
@@ -148,8 +148,12 @@ impl CellTarget for BenchRenderer {
         Ok(self.renderer.alloc_mask_slot())
     }
 
-    fn set_node_mask(&mut self, slot: u32, mask: &[u32; MASK_WORDS]) -> Result<(), CellPoolError> {
-        self.renderer.set_node_mask(slot, mask)
+    fn set_node_record(
+        &mut self,
+        slot: u32,
+        record: &[u32; NODE_WORDS],
+    ) -> Result<(), CellPoolError> {
+        self.renderer.set_node_record(slot, record)
     }
 
     fn set_active_pages(

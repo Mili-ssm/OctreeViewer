@@ -5,6 +5,7 @@
 //! next to an identity boundary of the reference, with depth inside a tolerance derived from the
 //! projection and the f32 resolution of the scene.
 
+use crate::test_support::mask_record;
 use std::collections::HashSet;
 
 use viewer_core::{ColorRgb, NodeId, SpatialBounds};
@@ -13,9 +14,9 @@ use wgpu::util::DeviceExt;
 use crate::cell_pages::{CellInstance, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table};
 use crate::cell_render::{
     CellFrame, CellLimitMode, CellRenderer, DEFAULT_CELL_POOL_BUDGET_BYTES, DeviceLimits,
-    MASK_WORDS, MIN_POOL_PAGES, PAGE_BYTES, POOL_BYTES, cells_supported, cells_supported_for,
-    plan_device_limits, pool_pages_for_limits, pool_pages_within_budget, pool_resource_bytes,
-    shader_sources,
+    MASK_WORDS, MIN_POOL_PAGES, NODE_WORDS, PAGE_BYTES, POOL_BYTES, cells_supported,
+    cells_supported_for, plan_device_limits, pool_pages_for_limits, pool_pages_within_budget,
+    pool_resource_bytes, shader_sources,
 };
 use crate::gpu::{CUBE_INDICES, ViewProjection, create_pipeline_resources};
 use crate::{
@@ -770,7 +771,8 @@ fn place(
             assert_eq!(slots.len(), packed.pages.len(), "test pool is large enough");
             pool.upload_level(&packed, &slots).unwrap();
             let mask_slot = pool.alloc_mask_slot().expect("mask slot");
-            pool.set_node_mask(mask_slot, &level.mask).unwrap();
+            pool.set_node_record(mask_slot, &mask_record(&level.mask))
+                .unwrap();
             Placed {
                 packed,
                 slots,
@@ -1575,7 +1577,7 @@ fn pool_calls_reject_bad_input() {
         pool.free_mask_slot(slot).unwrap();
         assert!(pool.free_mask_slot(slot).is_err(), "double free");
         assert!(pool.free_mask_slot(61).is_err(), "never allocated");
-        assert!(pool.set_node_mask(slot, &[0; MASK_WORDS]).is_err());
+        assert!(pool.set_node_record(slot, &[0; NODE_WORDS]).is_err());
         assert!(
             pool.set_active_pages(&page_entries).is_err(),
             "freed mask slot"

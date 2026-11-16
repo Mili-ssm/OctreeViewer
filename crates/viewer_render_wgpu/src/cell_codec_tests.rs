@@ -143,12 +143,12 @@ impl CellTarget for Recording {
     fn alloc_mask_slot(&mut self) -> Result<Option<u32>, CellPoolError> {
         self.gpu.alloc_mask_slot()
     }
-    fn set_node_mask(
+    fn set_node_record(
         &mut self,
         slot: u32,
-        mask: &[u32; crate::MASK_WORDS],
+        record: &[u32; crate::NODE_WORDS],
     ) -> Result<(), CellPoolError> {
-        self.gpu.set_node_mask(slot, mask)
+        self.gpu.set_node_record(slot, record)
     }
     fn set_active_pages(
         &mut self,

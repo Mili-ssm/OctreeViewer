@@ -517,3 +517,32 @@ fn exactly_one_cell_draws_each_point() {
     }
     assert!(checked >= 1000 * 64);
 }
+
+#[test]
+fn node_record_round_trips() {
+    let mut rng = Rng(7);
+    for _ in 0..50 {
+        let node = NodeLod {
+            anchor: std::array::from_fn(|_| rng.range(-1e4, 1e4) as f32),
+            node_depth: rng.below(30) as u8,
+            active: rng.next(),
+            mask: std::array::from_fn(|_| rng.next() & rng.next()),
+        };
+        let record = node_record(&node);
+        let mask: [u64; 8] =
+            std::array::from_fn(|z| u64::from(record[2 * z]) | u64::from(record[2 * z + 1]) << 32);
+        assert_eq!(mask, node.mask);
+        let anchor: [f32; 3] = std::array::from_fn(|a| f32::from_bits(record[16 + a]));
+        assert_eq!(anchor, node.anchor);
+        assert_eq!(record[19], u32::from(node.node_depth));
+        assert_eq!(
+            u64::from(record[20]) | u64::from(record[21]) << 32,
+            node.active
+        );
+        let (m4, m2, m1) = node.mips();
+        assert_eq!(u64::from(record[22]) | u64::from(record[23]) << 32, m4);
+        assert_eq!(record[24] & 0xff, u32::from(m2));
+        assert_eq!(record[24] >> 8, u32::from(m1));
+        assert!(record[25..].iter().all(|&word| word == 0));
+    }
+}

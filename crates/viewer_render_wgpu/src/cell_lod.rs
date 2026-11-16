@@ -13,6 +13,7 @@
 
 use crate::OrbitCamera;
 use crate::camera::VERTICAL_FOV;
+use crate::cell_render::NODE_WORDS;
 
 /// Deepest span below the node depth a cell can have: `rel` stays a `u32` and no shift reaches 32.
 pub const MAX_NODE_SPAN: u8 = 31;
@@ -92,6 +93,26 @@ impl NodeLod {
         }
         (m4, m2, m2 != 0)
     }
+}
+
+/// The GPU node record of `node` (`NODE_WORDS` layout, E8): mask, anchor bits, node depth,
+/// active depths, 4^3 mip, 2^3 mip with the 1^3 mip at bit 8, then zeros.
+pub fn node_record(node: &NodeLod) -> [u32; NODE_WORDS] {
+    let mut record = [0u32; NODE_WORDS];
+    for (i, word) in record[..16].iter_mut().enumerate() {
+        *word = (node.mask[i / 2] >> (32 * (i % 2))) as u32;
+    }
+    for axis in 0..3 {
+        record[16 + axis] = node.anchor[axis].to_bits();
+    }
+    record[19] = u32::from(node.node_depth);
+    record[20] = node.active as u32;
+    record[21] = (node.active >> 32) as u32;
+    let (m4, m2, m1) = node.mips();
+    record[22] = m4 as u32;
+    record[23] = (m4 >> 32) as u32;
+    record[24] = u32::from(m2) | u32::from(m1) << 8;
+    record
 }
 
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {

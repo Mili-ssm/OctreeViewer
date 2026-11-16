@@ -23,7 +23,7 @@ use viewer_render_wgpu::cell_lod::{
 };
 use viewer_render_wgpu::{
     CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan, LodMode, MASK_WORDS,
-    OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, SceneBounds,
+    NODE_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, SceneBounds,
     ViewProjection, VoxelBuildLimits, cell_cut_digest, representative_depth,
 };
 
@@ -147,11 +147,16 @@ impl CellTarget for StrictTarget {
         self.next_mask += 1;
         Ok(Some(self.next_mask - 1))
     }
-    fn set_node_mask(&mut self, slot: u32, mask: &[u32; MASK_WORDS]) -> Result<(), CellPoolError> {
+    fn set_node_record(
+        &mut self,
+        slot: u32,
+        record: &[u32; NODE_WORDS],
+    ) -> Result<(), CellPoolError> {
         if slot >= self.next_mask {
             return Err(CellPoolError::MaskSlotNotAllocated(slot));
         }
-        self.masks.insert(slot, *mask);
+        self.masks
+            .insert(slot, record[..MASK_WORDS].try_into().unwrap());
         Ok(())
     }
     fn set_active_pages(

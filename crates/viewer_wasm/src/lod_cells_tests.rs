@@ -10,7 +10,7 @@ use viewer_format::{
 };
 use viewer_render_wgpu::PackedNode;
 use viewer_render_wgpu::{
-    CellDriver, CellPoolError, CellTarget, DriverConfig, MASK_WORDS, OrbitCamera, PackedLevel,
+    CellDriver, CellPoolError, CellTarget, DriverConfig, NODE_WORDS, OrbitCamera, PackedLevel,
     PageEntry, PageFrame, PoolConfig, SceneBounds, ViewProjection, VoxelBuildLimits,
 };
 
@@ -173,7 +173,7 @@ impl CellTarget for NullTarget {
         self.masks += 1;
         Ok(Some(self.masks - 1))
     }
-    fn set_node_mask(&mut self, _: u32, _: &[u32; MASK_WORDS]) -> Result<(), CellPoolError> {
+    fn set_node_record(&mut self, _: u32, _: &[u32; NODE_WORDS]) -> Result<(), CellPoolError> {
         Ok(())
     }
     fn set_active_pages(

@@ -17,6 +17,7 @@ use crate::cell_render::PageFrameStamp;
 use crate::gpu::{
     PickCopy, PickHit, PickRay, build_pick_chunks, ray_box_interval, resolve_pick_instances,
 };
+use crate::test_support::mask_record;
 
 // ---------------------------------------------------------------------------------------------
 // Crafted pages (no GPU)
@@ -693,7 +694,8 @@ fn pick_copies_at_most_the_page_limit_and_keeps_the_nearest_hit_safe() {
         assert_eq!(hit.instance_index, nearest);
         assert_eq!(hit.voxel_size, 1.0);
         // Hiding the cell of every copied page leaves hits only in pages that were not copied.
-        pool.set_node_mask(mask_slot, &mask_with(&[0])).unwrap();
+        pool.set_node_record(mask_slot, &mask_record(&mask_with(&[0])))
+            .unwrap();
         assert!(pool_pick(h, &pool, ray).is_err());
         // The budget counts the staging buffer.
         // One byte short of one page: the smallest staging buffer that cannot fit.

@@ -103,9 +103,14 @@ impl Fixture {
                 .find(|entry| entry.node == active.key.node)
                 .expect("active node is in the cut");
             let words = self.gpu.mask_words[&active.mask_slot];
-            let expected: [u32; MASK_WORDS] =
+            let expected: [u32; crate::MASK_WORDS] =
                 std::array::from_fn(|i| (entry.mask[i / 2] >> (32 * (i % 2))) as u32);
-            assert_eq!(words, expected, "mask of {:?}", active.key.node);
+            assert_eq!(
+                words[..crate::MASK_WORDS],
+                expected,
+                "mask of {:?}",
+                active.key.node
+            );
         }
         // The table is the active pages, in the frame of the renderer.
         if let Some(frame) = self.gpu.page_frame {
@@ -1437,4 +1442,54 @@ fn reordered_level_requests_are_not_a_change() {
     assert_eq!(fx.driver.take_level_requests(), None);
     fx.driver.level_requests = vec![(id, 7)];
     assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, 7)]));
+}
+
+#[test]
+fn anchors_follow_the_eye() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    let cam = camera("zoom");
+    let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
+    let slots: HashMap<u32, NodeId> = report
+        .plan
+        .active
+        .iter()
+        .map(|active| (active.mask_slot, active.key.node))
+        .collect();
+    assert!(!slots.is_empty());
+    let before = fx.gpu.mask_words.clone();
+    fx.gpu.record_writes.clear();
+
+    // The eye moves; the cut, the masks and the view stay as they are.
+    let moved = std::array::from_fn(|axis| cam.position()[axis] + [0.5, -0.25, 0.125][axis]);
+    fx.gpu.eye = moved;
+    let view = fx.view(&cam);
+    let report = fx
+        .driver
+        .frame(&mut fx.gpu, &ids(&CHILDREN), &view, 4.0)
+        .expect("frame");
+    assert!(report.plan.mask_updates.is_empty());
+
+    assert_eq!(fx.gpu.mask_words.len(), before.len());
+    let grid = fx.driver.config.grid;
+    for (slot, node) in &slots {
+        let (old, new) = (before[slot], fx.gpu.mask_words[slot]);
+        for word in (0..NODE_WORDS).filter(|word| !(16..19).contains(word)) {
+            assert_eq!(new[word], old[word], "word {word} of slot {slot}");
+        }
+        let depth = old[19] as u8;
+        let bounds = fx.nodes[node].bounds;
+        let side = grid.root_side / (1_u64 << depth) as f64;
+        let expected: [f32; 3] = std::array::from_fn(|axis| {
+            let lo = crate::node_cells::node_range(&grid, bounds, depth, axis).0;
+            let corner = grid.root_min[axis] + lo as f64 * side;
+            ((corner - ORIGIN[axis]) * fx.scale - moved[axis]) as f32
+        });
+        let anchor: [f32; 3] = std::array::from_fn(|axis| f32::from_bits(new[16 + axis]));
+        assert_eq!(anchor, expected, "anchor of slot {slot}");
+        assert_ne!(new[16..19], old[16..19]);
+    }
+    // Only live slots are written, one record each.
+    let written: HashSet<u32> = fx.gpu.record_writes.iter().map(|(slot, _)| *slot).collect();
+    assert_eq!(written, slots.keys().copied().collect::<HashSet<_>>());
+    assert_eq!(fx.gpu.record_writes.len(), slots.len());
 }

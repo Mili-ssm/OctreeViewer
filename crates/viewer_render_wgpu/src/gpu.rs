@@ -19,7 +19,7 @@ use crate::{
     cell_pages::{PackedLevel, PageEntry, PageFrame},
     cell_pick::{PoolPick, prepare_pool_pick},
     cell_render::{
-        CellColor, CellFrame, CellRenderer, MASK_WORDS, PageFrameStamp, cell_pool_pages,
+        CellColor, CellFrame, CellRenderer, NODE_WORDS, PageFrameStamp, cell_pool_pages,
         plan_device_limits, pool_resource_bytes,
     },
     instance_buffer_layout,
@@ -855,14 +855,15 @@ impl<'window> SurfaceRenderer<'window> {
         }
     }
 
-    /// Bit `x + 8y + 64z` set: that cell of the node is replaced by finer ones and not drawn.
-    pub fn set_cell_node_mask(
+    /// Writes a node record; in its mask bit `x + 8y + 64z` set means that cell of the node is
+    /// replaced by finer ones and not drawn.
+    pub fn set_cell_node_record(
         &mut self,
         slot: u32,
-        mask: &[u32; MASK_WORDS],
+        record: &[u32; NODE_WORDS],
     ) -> Result<(), GpuRendererError> {
         self.existing_cell_pool()?
-            .set_node_mask(slot, mask)
+            .set_node_record(slot, record)
             .map_err(GpuRendererError::CellPool)
     }
 
@@ -2156,12 +2157,12 @@ impl CellTarget for SurfaceRenderer<'_> {
         self.alloc_cell_mask_slot()
     }
 
-    fn set_node_mask(
+    fn set_node_record(
         &mut self,
         slot: u32,
-        mask: &[u32; MASK_WORDS],
+        record: &[u32; NODE_WORDS],
     ) -> Result<(), GpuRendererError> {
-        self.set_cell_node_mask(slot, mask)
+        self.set_cell_node_record(slot, record)
     }
 
     fn set_color_ranges(&mut self, ranges: CellColorRanges) {

@@ -63,7 +63,7 @@ pub use cell_pool::{
     DEFAULT_UPLOAD_BUDGET_BYTES, FramePlan, HIGH_PERCENT, LOW_PERCENT, LevelKey, LodMode,
     MaskUpdate, POOL_PAGE_BYTES, PageUpload, PoolConfig, PoolCounters, PoolNode, usable_pages,
 };
-pub use cell_render::{CellLimitMode, CellPoolError, MASK_WORDS};
+pub use cell_render::{CellLimitMode, CellPoolError, MASK_WORDS, NODE_WORDS};
 pub use frame_timer::GpuFrameStats;
 pub use gpu::{
     BlockUploadStats, DeviceLoss, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer,

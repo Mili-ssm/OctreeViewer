@@ -11,6 +11,7 @@ use crate::cell_cull::{
     HiZ, HiZBuilder, MARGIN_BASE_U, MARGIN_RHO_U, RECT_SLACK, RHO_MAX, depth_error_bound_u,
     depth_margin_u, hiz_shader_sources, level_size, mip_count,
 };
+use crate::test_support::mask_record;
 
 const DEPTH_READ_WGSL: &str = "
 @group(0) @binding(0) var src: texture_depth_2d;
@@ -709,7 +710,7 @@ fn swap_shell(free_first: bool) {
             );
             pool.upload_level(&packed, &slots).unwrap();
             let mask_slot = pool.alloc_mask_slot().unwrap();
-            pool.set_node_mask(mask_slot, &scene.levels[0].mask)
+            pool.set_node_record(mask_slot, &mask_record(&scene.levels[0].mask))
                 .unwrap();
             placed[0] = Placed {
                 packed,

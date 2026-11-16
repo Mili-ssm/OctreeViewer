@@ -34,10 +34,11 @@ use std::{
 
 use viewer_core::{NodeId, SpatialBounds};
 
+use crate::cell_lod::{NodeLod, node_record};
 use crate::cell_pages::{MISSING_INTENSITY, PAGE_HAS_INTENSITY};
 
 use crate::{
-    CellCutError, CellGrid, CellPool, CellPoolEvent, CutApply, FramePlan, LevelKey, MASK_WORDS,
+    CellCutError, CellGrid, CellPool, CellPoolEvent, CutApply, FramePlan, LevelKey, NODE_WORDS,
     NodeCells, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, PoolConfig, PoolCounters,
     PoolNode, ViewProjection, node_cells::anchor_tolerance, pack_level,
 };
@@ -67,7 +68,8 @@ pub trait CellTarget {
     /// The next mask slot, in order from 0 after a pool is created.
     fn alloc_mask_slot(&mut self) -> Result<Option<u32>, Self::Error>;
 
-    fn set_node_mask(&mut self, slot: u32, mask: &[u32; MASK_WORDS]) -> Result<(), Self::Error>;
+    fn set_node_record(&mut self, slot: u32, record: &[u32; NODE_WORDS])
+    -> Result<(), Self::Error>;
 
     /// The intensity and elevation ranges of the cut drawn this frame, for the shader colour modes
     /// (R3-Q32). Called before `set_active_pages`. A target without shader modes ignores it.
@@ -344,6 +346,10 @@ pub struct CellDriver {
     /// Pool page slot of each page of a level that is uploading or resident.
     slots: HashMap<LevelKey, Vec<u32>>,
     masks_allocated: u32,
+    /// What each written mask slot needs to rebuild its node record when the eye moves.
+    node_slots: HashMap<u32, NodeSlot>,
+    /// The frame the anchors of `node_slots` were last written with.
+    anchor_frame: Option<([f64; 3], [f64; 3], f64)>,
     /// The target received writes since the last reset, so a missing pool there means loss.
     armed: bool,
     /// A target call failed: the target state is unknown until the next reset.
@@ -364,6 +370,13 @@ pub struct CellDriver {
     /// The newest cell generation any message brought: a node of an older colour generation of
     /// the same dataset is dropped, and one stored with an older one is forgotten first.
     newest_generation: Option<u64>,
+}
+
+/// The last record of a mask slot and the node corner it needs to follow the eye.
+struct NodeSlot {
+    node: NodeLod,
+    /// Node corner in dataset units: `root_min + node_lo * side_at_node_depth`.
+    corner: [f64; 3],
 }
 
 /// Bytes of a packed level on the CPU.
@@ -493,6 +506,8 @@ impl CellDriver {
             cpu_bytes: 0,
             slots: HashMap::new(),
             masks_allocated: 0,
+            node_slots: HashMap::new(),
+            anchor_frame: None,
             armed: false,
             failed: false,
             dirty: false,
@@ -853,6 +868,8 @@ impl CellDriver {
             node.live = 0;
         }
         self.masks_allocated = 0;
+        self.node_slots.clear();
+        self.anchor_frame = None;
         self.armed = false;
         self.failed = false;
         self.dirty = true;
@@ -1104,24 +1121,56 @@ impl CellDriver {
             report.uploaded_pages += upload.page_range.len();
             report.uploaded_levels += 1;
         }
-        for update in &plan.mask_updates {
-            self.ensure_mask(target, update.slot)?;
-            let words: [u32; MASK_WORDS] =
-                std::array::from_fn(|i| (update.mask[i / 2] >> (32 * (i % 2))) as u32);
-            target
-                .set_node_mask(update.slot, &words)
-                .map_err(CellDriverError::Target)?;
-        }
-        if let Some(max) = plan.active.iter().map(|active| active.mask_slot).max() {
-            self.ensure_mask(target, max)?;
-        }
-        mark(FramePhase::Written);
         let frame = PageFrame {
             grid: self.config.grid,
             coordinate_origin: self.config.coordinate_origin,
             visual_scale: view.visual_scale(),
             eye_scaled: target.eye(),
         };
+        let stamp = (
+            frame.eye_scaled,
+            frame.coordinate_origin,
+            frame.visual_scale,
+        );
+        // The anchors of the live slots follow the frame like the page origins do: a changed eye,
+        // origin or scale rewrites them below, after the records of this plan.
+        let anchors_stale = self.anchor_frame != Some(stamp);
+        for update in &plan.mask_updates {
+            self.ensure_mask(target, update.slot)?;
+            let grid = &self.config.grid;
+            let side = grid.root_side / (1_u64 << update.node_depth) as f64;
+            let slot = NodeSlot {
+                node: NodeLod {
+                    anchor: [0.0; 3],
+                    node_depth: update.node_depth,
+                    active: update.active,
+                    mask: update.mask,
+                },
+                corner: std::array::from_fn(|axis| {
+                    grid.root_min[axis] + update.node_lo[axis] as f64 * side
+                }),
+            };
+            self.node_slots.insert(update.slot, slot);
+            self.write_record(target, update.slot, &frame)?;
+        }
+        if anchors_stale {
+            let rewritten: HashSet<u32> = plan.mask_updates.iter().map(|u| u.slot).collect();
+            let mut slots: Vec<u32> = self
+                .node_slots
+                .keys()
+                .copied()
+                .filter(|slot| !rewritten.contains(slot))
+                .collect();
+            slots.sort_unstable();
+            for slot in slots {
+                self.write_record(target, slot, &frame)?;
+            }
+        }
+        self.anchor_frame = Some(stamp);
+        if let Some(max) = plan.active.iter().map(|active| active.mask_slot).max() {
+            self.ensure_mask(target, max)?;
+        }
+        mark(FramePhase::Written);
         let mut table: Vec<(u32, PageEntry)> = Vec::new();
         for active in &plan.active {
             let level = self
@@ -1157,6 +1206,26 @@ impl CellDriver {
         }
         mark(FramePhase::ActivePagesSet);
         Ok(())
+    }
+
+    /// Writes the record of `slot` with its anchor in `frame`, computed like a page origin.
+    fn write_record<T: CellTarget>(
+        &mut self,
+        target: &mut T,
+        slot: u32,
+        frame: &PageFrame,
+    ) -> Result<(), CellDriverError<T::Error>> {
+        let state = self
+            .node_slots
+            .get_mut(&slot)
+            .expect("a slot with a record");
+        state.node.anchor = std::array::from_fn(|axis| {
+            ((state.corner[axis] - frame.coordinate_origin[axis]) * frame.visual_scale
+                - frame.eye_scaled[axis]) as f32
+        });
+        target
+            .set_node_record(slot, &node_record(&state.node))
+            .map_err(CellDriverError::Target)
     }
 
     fn ensure_mask<T: CellTarget>(

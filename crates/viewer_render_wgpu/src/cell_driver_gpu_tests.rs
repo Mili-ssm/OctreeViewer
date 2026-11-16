@@ -46,8 +46,12 @@ impl CellTarget for Target<'_> {
         Ok(self.pool.alloc_mask_slot())
     }
 
-    fn set_node_mask(&mut self, slot: u32, mask: &[u32; MASK_WORDS]) -> Result<(), CellPoolError> {
-        self.pool.set_node_mask(slot, mask)
+    fn set_node_record(
+        &mut self,
+        slot: u32,
+        record: &[u32; NODE_WORDS],
+    ) -> Result<(), CellPoolError> {
+        self.pool.set_node_record(slot, record)
     }
 
     fn set_active_pages(
