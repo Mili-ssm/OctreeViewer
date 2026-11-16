@@ -1254,3 +1254,117 @@ fn a_dropped_on_demand_level_leaves_the_pool_and_a_drawn_one_is_refreshed_when_i
         "the new colours replaced the old"
     );
 }
+
+/// Node 2 with only its coarsest level stored and depths up to 7 buildable, in `generation`.
+fn on_demand_fixture(generation: u64) -> Fixture {
+    let mut fx = Fixture::new(HashMap::new(), config(64, 4, u64::MAX));
+    fx.nodes = octant_nodes();
+    fx.driver
+        .add_packed_generation(generation, on_demand_node(&[4], 0))
+        .unwrap();
+    fx
+}
+
+/// Node 2 with one page per level at `depths`, buildable 4..=7; `tag` marks the first cell.
+fn on_demand_node(depths: &[u8], tag: u32) -> PackedNode {
+    let id = NodeId::new(2);
+    PackedNode {
+        id,
+        bounds: octant_nodes()[&id].bounds,
+        points: 2000,
+        buildable: (4, 7),
+        levels: depths
+            .iter()
+            .map(|depth| {
+                let mut level = level_of(id, *depth, 1);
+                level.instances[0].0[0] = tag;
+                level
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn a_missing_level_is_requested_without_failing_the_frame() {
+    let g0 = cell_generation(5, 0);
+    let mut fx = on_demand_fixture(g0);
+    let cam = camera("zoom");
+    let cut = ids(&[2]);
+    let report = fx.run(4, &cut, &cam, 1.0);
+    let wanted = report.plan.entries[0].wanted[0].expect("wanted");
+    assert!(wanted > 4, "setup: the view wants a buildable level");
+    assert!(report.plan.fetch_requests.iter().all(|key| key.depth == 4));
+    let id = NodeId::new(2);
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, wanted)]));
+    fx.step(&cut, &cam, 1.0);
+    assert_eq!(fx.driver.take_level_requests(), None);
+}
+
+#[test]
+fn an_arrived_level_is_offered_on_the_next_frame() {
+    let g0 = cell_generation(5, 0);
+    let mut fx = on_demand_fixture(g0);
+    let cam = camera("zoom");
+    let cut = ids(&[2]);
+    let id = NodeId::new(2);
+    let before = fx.run(4, &cut, &cam, 1.0);
+    let wanted = before.plan.entries[0].wanted[0].expect("wanted");
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, wanted)]));
+    assert_eq!(before.plan.entries[0].drawn[0], Some(4));
+    assert!(before.plan.entries[0].stage[0]);
+    assert_eq!(
+        fx.driver
+            .add_packed_levels(g0, on_demand_node(&[wanted], 0)),
+        Ok(LevelsAdded::Added(1))
+    );
+    let mut offered = false;
+    let mut last = before;
+    for _ in 0..4 {
+        last = fx.step(&cut, &cam, 1.0);
+        offered |= last
+            .plan
+            .fetch_requests
+            .iter()
+            .any(|key| (key.node, key.depth) == (id, wanted));
+    }
+    assert!(offered, "the arrived level is fetched and offered");
+    assert_eq!(last.plan.entries[0].drawn[0], Some(wanted));
+    assert!(!last.plan.entries[0].stage[0]);
+    assert!(fx.driver.pool().is_resident(fx.driver.pool.key(id, wanted)));
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![]));
+}
+
+#[test]
+fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours() {
+    let (g0, g1) = (cell_generation(5, 0), cell_generation(5, 1));
+    let mut fx = on_demand_fixture(g0);
+    let cam = camera("zoom");
+    let cut = ids(&[2]);
+    let id = NodeId::new(2);
+    let wanted = fx.run(4, &cut, &cam, 1.0).plan.entries[0].wanted[0].expect("wanted");
+    fx.driver
+        .add_packed_levels(g0, on_demand_node(&[wanted], 0))
+        .unwrap();
+    fx.run(6, &cut, &cam, 1.0);
+    let key = fx.driver.pool.key(id, wanted);
+    assert!(fx.driver.pool.is_resident(key));
+    let _ = fx.driver.take_level_requests();
+    // The recolour drops the added depth: the node asks for it again while the old one draws.
+    fx.driver
+        .add_packed_generation(g1, on_demand_node(&[4], 1))
+        .unwrap();
+    assert_eq!(stored_depths(&fx.driver, 2), [4]);
+    fx.run(2, &cut, &cam, 1.0);
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, wanted)]));
+    fx.driver
+        .add_packed_levels(g1, on_demand_node(&[wanted], 9))
+        .unwrap();
+    fx.run(6, &cut, &cam, 1.0);
+    let colour = fx
+        .driver
+        .pool
+        .level(key)
+        .map(|level| level.instances[0].0[0]);
+    assert_eq!(colour, Some(9), "the new colours replaced the old");
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![]));
+}

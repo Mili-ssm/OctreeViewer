@@ -243,6 +243,9 @@ pub struct FramePlan {
     /// The cut to draw: the new one, or the retained one.
     pub entries: Vec<CellCutEntry>,
     pub fetch_requests: Vec<LevelKey>,
+    /// Wanted depths that are buildable but not stored, coarse to fine: the owner builds them on
+    /// demand. They are not fetched; the node keeps drawing its resident levels meanwhile.
+    pub level_requests: Vec<LevelKey>,
     pub uploads: Vec<PageUpload>,
     /// Page slots to make inert; they are free for the uploads of this same frame.
     pub page_frees: Vec<u32>,
@@ -292,6 +295,8 @@ struct WantedMemo {
     size_epoch: u64,
     generation: u64,
     needed: Rc<FastSet<LevelKey>>,
+    /// Wanted levels that are buildable but not stored.
+    requests: Rc<FastSet<LevelKey>>,
     /// Nodes left out of `needed` because they are too fine for an ancestor in the cut.
     offenders: BTreeSet<NodeId>,
     overflow: bool,
@@ -1171,11 +1176,38 @@ impl CellPool {
             if let Some(coarsest) = coarsest(&node.stored, caps.get(&entry.node)) {
                 set.insert(self.key(entry.node, coarsest));
             }
-            // Until levels are requested on demand, a wanted depth is fetched as the stored one
-            // that serves it.
+            // A wanted depth that is not stored is requested on demand (`requested_levels`), not
+            // fetched as the stored one that serves it.
             let stored = capped(&node.stored, caps.get(&entry.node));
             for depth in entry.wanted.iter().flatten() {
-                set.insert(self.key(entry.node, served_depth(&stored, *depth)));
+                if stored.contains(depth) {
+                    set.insert(self.key(entry.node, *depth));
+                }
+            }
+        }
+        set
+    }
+
+    /// The wanted depths that are buildable but not stored: the levels to request on demand.
+    fn requested_levels(
+        &self,
+        entries: &[CellCutEntry],
+        nodes: &FastMap<NodeId, PoolNode>,
+        caps: &FastMap<NodeId, u8>,
+    ) -> FastSet<LevelKey> {
+        let mut set = FastSet::default();
+        for entry in entries {
+            let node = &nodes[&entry.node];
+            let stored = capped(&node.stored, caps.get(&entry.node));
+            let buildable = capped_range(node.buildable, caps.get(&entry.node));
+            for depth in entry.wanted.iter().flatten() {
+                if !stored.contains(depth) {
+                    debug_assert!(
+                        (buildable.0..=buildable.1).contains(depth),
+                        "a wanted depth is stored or buildable"
+                    );
+                    set.insert(self.key(entry.node, *depth));
+                }
             }
         }
         set
@@ -1197,8 +1229,9 @@ impl CellPool {
         (needed, total)
     }
 
-    /// R3-Q11. Returns the levels the wanted entries need after the fit, and whether even the
-    /// coarsest levels overflow the usable capacity.
+    /// R3-Q11. Returns the levels the wanted entries need after the fit, the levels they want
+    /// that are not stored (to request), and whether even the coarsest levels overflow the usable
+    /// capacity.
     #[allow(clippy::too_many_arguments)]
     fn fit(
         &mut self,
@@ -1207,7 +1240,7 @@ impl CellPool {
         offenders: &mut BTreeSet<NodeId>,
         eye: [f64; 3],
         ctx: &Ctx,
-    ) -> Result<(FastSet<LevelKey>, bool), CellCutError> {
+    ) -> Result<(FastSet<LevelKey>, FastSet<LevelKey>, bool), CellCutError> {
         let usable = self.usable();
         let (high, low) = (usable * HIGH_PERCENT / 100, usable * LOW_PERCENT / 100);
         let mut caps = std::mem::take(&mut self.caps);
@@ -1250,11 +1283,18 @@ impl CellPool {
                     cursor += 1;
                     scanned += 1;
                     let entry = &entries[position[&id]];
-                    let Some(top) = entry.wanted.iter().flatten().max().copied() else {
+                    let stored = capped(&nodes[&id].stored, caps.get(&id));
+                    // Only stored levels cost pages: a level to request cannot be coarsened.
+                    let Some(top) = entry
+                        .wanted
+                        .iter()
+                        .flatten()
+                        .copied()
+                        .filter(|depth| stored.contains(depth))
+                        .max()
+                    else {
                         continue;
                     };
-                    let stored = capped(&nodes[&id].stored, caps.get(&id));
-                    let top = served_depth(&stored, top);
                     // The finest level below `top` that is smaller; estimates can tie.
                     let size =
                         |depth: u8| self.pages_of(self.key(id, depth), &nodes[&id], ctx.grid);
@@ -1277,8 +1317,9 @@ impl CellPool {
         }
         self.old_released
             .retain(|id, cap| caps.get(id) == Some(cap));
+        let requests = self.requested_levels(&entries, nodes, &caps);
         self.caps = caps;
-        Ok((needed, total > usable))
+        Ok((needed, requests, total > usable))
     }
 
     /// R3-Q21 under a fit cap: a capped node (`node`: its levels below `cap`) that lacks, in an
@@ -1314,7 +1355,7 @@ impl CellPool {
             return None;
         }
         let lacks = (0..8).any(|octant| {
-            let wanted = served_depth(&node.stored, ctx.depth(id, octant, node));
+            let wanted = ctx.depth(id, octant, node);
             needed.contains(&self.key(id, wanted)) && !node.resident.iter().any(|d| *d >= wanted)
         });
         lacks.then_some(old)
@@ -2057,8 +2098,10 @@ impl CellPool {
             });
         if !reusable {
             let mut offenders = BTreeSet::new();
-            let (mut needed, overflow) = self.fit(cut, nodes, &mut offenders, eye, &ctx)?;
+            let (mut needed, mut requests, overflow) =
+                self.fit(cut, nodes, &mut offenders, eye, &ctx)?;
             needed.retain(|key| !offenders.contains(&key.node));
+            requests.retain(|key| !offenders.contains(&key.node));
             self.wanted_generation += 1;
             let min_depth = cut
                 .iter()
@@ -2078,6 +2121,7 @@ impl CellPool {
                 size_epoch: self.size_epoch,
                 generation: self.wanted_generation,
                 needed: Rc::new(needed),
+                requests: Rc::new(requests),
                 offenders,
                 overflow,
                 eye,
@@ -2086,8 +2130,12 @@ impl CellPool {
             });
         }
         let memo = self.wanted_memo.as_ref().expect("set above");
-        let (overflow, generation, needed) =
-            (memo.overflow, memo.generation, Rc::clone(&memo.needed));
+        let (overflow, generation, needed, requests) = (
+            memo.overflow,
+            memo.generation,
+            Rc::clone(&memo.needed),
+            Rc::clone(&memo.requests),
+        );
         if overflow && self.overflow_frame != frame {
             self.overflow += 1;
             self.overflow_frame = frame;
@@ -2406,6 +2454,22 @@ impl CellPool {
             .filter(|key| fresh.contains(key))
             .collect();
 
+        // Missing levels the view wants and the node can build, coarse to fine like the fetches.
+        // They hold no pool state: the level arrives as a stored one (`add_packed_levels`).
+        let mut level_requests: Vec<LevelKey> = if overflow {
+            Vec::new()
+        } else {
+            requests.iter().copied().collect()
+        };
+        level_requests.sort_by(|a, b| {
+            let distance =
+                |key: &LevelKey| distance_sq(eye, nodes[&key.node].bounds, coordinate_origin);
+            a.depth
+                .cmp(&b.depth)
+                .then(distance(a).total_cmp(&distance(b)))
+                .then(a.node.cmp(&b.node))
+        });
+
         // Eviction: on demand for what is missing, and down to the soft limit.
         let missing: usize = order
             .iter()
@@ -2659,6 +2723,7 @@ impl CellPool {
             apply,
             entries: self.applied.clone(),
             fetch_requests,
+            level_requests,
             uploads,
             page_frees,
             mask_updates,

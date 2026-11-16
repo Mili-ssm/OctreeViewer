@@ -361,14 +361,19 @@ impl CutView {
     }
 
     /// Depth the cut wants at `p`: the finest wanted depth of the unhidden cells holding it.
-    fn wanted_at(&self, p: [f64; 3]) -> Option<u8> {
+    /// `raw` skips the excuse of `wanted_of`: a staged octant is held to its raw wanted depth.
+    fn wanted_at(&self, p: [f64; 3], raw: bool) -> Option<u8> {
         (0..self.nodes.len())
             .filter_map(|i| {
                 let c = self.cell_at(i, p)?;
                 if cell_hidden(&self.entries[i].mask, c) {
                     return None;
                 }
-                self.wanted_of(i, octant_of_cell(c))
+                if raw {
+                    self.entries[i].wanted[octant_of_cell(c)]
+                } else {
+                    self.wanted_of(i, octant_of_cell(c))
+                }
             })
             .max()
     }
@@ -500,6 +505,10 @@ struct Harness {
     /// Cross-node coarsenings: a sample point drawn at depth `before` is drawn at `after` with
     /// `after < min(before, wanted now)`.
     zone_coarsenings: usize,
+    /// `zone_coarsenings` without the stage excuse: a staged octant drawn coarser than before,
+    /// while its raw wanted depth did not get coarser, counts too. Printed, not asserted: the
+    /// staged hand-offs it flags predate on-demand levels.
+    staged_coarsenings: usize,
     /// Sample points drawn in the previous cut, still inside the planner's cut, drawn by nothing.
     lost_samples: usize,
     /// The planner's nodes of the cut being drawn, when the dataset has already planned further
@@ -560,6 +569,7 @@ impl Harness {
             sample_depths,
             octant_depths: HashMap::new(),
             zone_coarsenings: 0,
+            staged_coarsenings: 0,
             lost_samples: 0,
             planner_of_drawn_cut: None,
             hole_frames: 0,
@@ -664,9 +674,14 @@ impl Harness {
                 for (i, p) in self.sample_points.iter().enumerate() {
                     let now = cut.depth_at(*p);
                     if let (Some(before), Some(after)) = (self.sample_depths[i], now)
-                        && after < before.min(cut.wanted_at(*p).unwrap_or(u8::MAX))
+                        && after < before.min(cut.wanted_at(*p, false).unwrap_or(u8::MAX))
                     {
                         self.zone_coarsenings += 1;
+                    }
+                    if let (Some(before), Some(after)) = (self.sample_depths[i], now)
+                        && after < before.min(cut.wanted_at(*p, true).unwrap_or(u8::MAX))
+                    {
+                        self.staged_coarsenings += 1;
                     }
                     let drawn_before = self
                         .last_cut
@@ -836,7 +851,7 @@ impl Harness {
         println!(
             "{label}: frames {} | longest RetainedPrevious streak {} | max gap {} (gaps>1: {}) | \
              DescendantTooFine {} | uploads {} | grafted {} refused {} | stage drops {} | \
-             digest {:016x} | pages used {} | zone coarsenings {} | lost samples {} | hold age max {} (waiting frames {}, held peak {}, \
+             digest {:016x} | pages used {} | zone coarsenings {} (staged, raw wanted: {}) | lost samples {} | hold age max {} (waiting frames {}, held peak {}, \
              excluded peak {}, fallback pages peak {}, unsettled {})",
             t.frames,
             t.longest_retained,
@@ -850,6 +865,7 @@ impl Harness {
             t.drawn_digest,
             self.dataset.pages.as_ref().map_or(0, |p| p.pages()),
             self.zone_coarsenings,
+            self.staged_coarsenings,
             self.lost_samples,
             t.hold_age_max,
             t.wait_frames,

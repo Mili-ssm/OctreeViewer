@@ -2929,10 +2929,21 @@ fn the_continuity_cap_uses_the_buildable_range() {
         rig.pool.set_min_side(Some(min));
         let plan = rig.run(12, &cut, &cam, 1.0);
         assert_eq!(plan.entries[0].wanted, [Some(expect); 8], "min {min}");
-        // Cells at the capped depth are the finest the minimum side admits (RQ-09): what draws is
-        // the stored level that serves it, never finer than the first stored level at or above.
-        let served = if expect <= 3 { 3 } else { 5 };
-        assert_eq!(drawn_depth(&plan), served, "min {min}");
+        // Cells at the capped depth are the finest the minimum side admits (RQ-09): a stored depth
+        // draws as itself; a buildable one is requested and the coarsest stored level draws
+        // meanwhile.
+        let stored = [3, 5].contains(&expect);
+        assert_eq!(
+            drawn_depth(&plan),
+            if stored { expect } else { 3 },
+            "min {min}"
+        );
+        let requested: Vec<u8> = plan.level_requests.iter().map(|key| key.depth).collect();
+        assert_eq!(
+            requested,
+            if stored { vec![] } else { vec![expect] },
+            "min {min}"
+        );
     }
     // Every buildable depth is finer than the minimum: the coarsest one is wanted.
     let mut fine = root_node();
@@ -2944,6 +2955,31 @@ fn the_continuity_cap_uses_the_buildable_range() {
     let plan = rig.run(12, &cut, &cam, 1.0);
     assert_eq!(drawn_depth(&plan), 6);
     assert_eq!(plan.entries[0].wanted, [Some(6); 8]);
+}
+
+#[test]
+fn a_wanted_depth_outside_the_chain_is_requested_and_residents_keep_drawing() {
+    let cut = ids(&[1]);
+    let mut nodes = root_node();
+    let node = nodes.get_mut(&NodeId::new(1)).unwrap();
+    node.stored = vec![3];
+    node.buildable = (3, 5);
+    let mut rig = Rig::new(nodes, 64, 16, 1);
+    let far = rig.run(8, &cut, &camera("fit"), 64.0);
+    assert_eq!(drawn_depth(&far), 3, "setup");
+    let mut seen = Vec::new();
+    for _ in 0..8 {
+        let plan = rig.step(&cut, &camera("zoom"), 1.0);
+        assert!(plan.fetch_requests.iter().all(|key| key.depth == 3));
+        assert_eq!(plan.apply, CutApply::Applied);
+        assert_eq!(drawn_depth(&plan), 3, "residents keep drawing");
+        assert_covers_once(&plan.entries[0]);
+        seen.push(plan.level_requests.clone());
+    }
+    let wanted = rig.step(&cut, &camera("zoom"), 1.0).entries[0].wanted[0].expect("wanted");
+    assert!(wanted > 3, "setup: the view wants a finer level");
+    let key = rig.pool.key(NodeId::new(1), wanted);
+    assert!(seen.iter().all(|requests| *requests == [key]), "{seen:?}");
 }
 
 #[test]

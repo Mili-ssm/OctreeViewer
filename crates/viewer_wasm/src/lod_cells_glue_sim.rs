@@ -903,13 +903,16 @@ fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_ho
     )
     .with_reference_spacing(pair.h.dataset.reference_spacing());
     let sent = pair.send_checked(0);
-    let stored: std::collections::HashMap<NodeId, Vec<u8>> = sent
+    let stored: std::collections::HashMap<NodeId, (Vec<u8>, (u8, u8))> = sent
         .iter()
         .map(|(_, bytes)| {
             let node = decode_node_levels(bytes).unwrap();
             (
                 node.id,
-                node.levels.iter().map(|level| level.depth).collect(),
+                (
+                    node.levels.iter().map(|level| level.depth).collect(),
+                    node.buildable,
+                ),
             )
         })
         .collect();
@@ -942,17 +945,22 @@ fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_ho
     // No cell below the minimum side (depth 3), except in a node whose coarsest level is finer.
     let mut capped = 0;
     for entry in &limited.plan.entries {
-        let allowed = stored[&entry.node]
+        let (levels, buildable) = &stored[&entry.node];
+        let allowed = levels
             .iter()
             .copied()
             .rfind(|depth| *depth <= 3)
-            .unwrap_or(stored[&entry.node][0]);
+            .unwrap_or(levels[0]);
+        // The wanted depth may be any buildable one, stored or not.
+        let allowed_wanted = (buildable.0..=buildable.1)
+            .rfind(|depth| *depth <= 3)
+            .unwrap_or(buildable.0);
         for o in 0..8 {
             let (Some(drawn), Some(wanted)) = (entry.drawn[o], entry.wanted[o]) else {
                 continue;
             };
             assert!(drawn <= allowed, "node {:?} drew depth {drawn}", entry.node);
-            assert!(wanted <= allowed, "the cap is the wanted look");
+            assert!(wanted <= allowed_wanted, "the cap is the wanted look");
             capped += 1;
         }
     }

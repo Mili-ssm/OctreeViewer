@@ -408,8 +408,8 @@ fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) 
 
 fn check_stats(label: &str, sim: &Sim) {
     println!(
-        "{label}: {:?} | zone coarsenings {} lost samples {}",
-        sim.stats, sim.h.zone_coarsenings, sim.h.lost_samples
+        "{label}: {:?} | zone coarsenings {} (staged, raw wanted: {}) lost samples {}",
+        sim.stats, sim.h.zone_coarsenings, sim.h.staged_coarsenings, sim.h.lost_samples
     );
     assert_eq!(
         sim.stats.parent_violations, 0,

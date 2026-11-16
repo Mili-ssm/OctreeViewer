@@ -351,6 +351,10 @@ pub struct CellDriver {
     /// Nodes were added or the pool was reset since the last frame.
     dirty: bool,
     busy: bool,
+    /// Levels the last frame wanted that are buildable but not stored, and the set last handed
+    /// out by [`CellDriver::take_level_requests`].
+    level_requests: Vec<(NodeId, u8)>,
+    level_requests_taken: Vec<(NodeId, u8)>,
     /// Nodes added since the last cut was latched ([`CellDriver::cut_received`]): the cut being
     /// drawn was sent before they arrived, so `forget` spares them until the next cut.
     arrived_since_cut: HashSet<NodeId>,
@@ -493,6 +497,8 @@ impl CellDriver {
             failed: false,
             dirty: false,
             busy: false,
+            level_requests: Vec::new(),
+            level_requests_taken: Vec::new(),
             arrived_since_cut: HashSet::new(),
             support: HashSet::new(),
             newest_generation: None,
@@ -842,6 +848,18 @@ impl CellDriver {
         events
     }
 
+    /// The levels to build on demand (wanted by the last frame, buildable, not stored), coarse
+    /// to fine, only when the set changed since the last call. A level that arrives through
+    /// `add_packed_levels` leaves the set on the next frame.
+    #[must_use]
+    pub fn take_level_requests(&mut self) -> Option<Vec<(NodeId, u8)>> {
+        if self.level_requests == self.level_requests_taken {
+            return None;
+        }
+        self.level_requests_taken.clone_from(&self.level_requests);
+        Some(self.level_requests.clone())
+    }
+
     /// Whether another frame has something to do: new nodes, requests, uploads in flight, the
     /// previous cut retained or nodes waiting outside the cut or held back. The viewer draws while this is true. Under a permanent pool overflow
     /// (the cut does not fit even coarsened) the pool keeps retrying and this stays true; the
@@ -1003,6 +1021,11 @@ impl CellDriver {
             // Nodes waiting outside the cut or held back (R3-Q20/Q21) enter on a later frame.
             || plan.counters.excluded_nodes > 0
             || plan.counters.held_nodes > 0;
+        self.level_requests = plan
+            .level_requests
+            .iter()
+            .map(|key| (key.node, key.depth))
+            .collect();
         self.dirty = false;
         report.forgotten = self.forget(cut, view);
         Ok(report)
