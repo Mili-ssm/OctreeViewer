@@ -42,7 +42,7 @@ Estado: Aceptada (la cola bajo la separación, pendiente de revisión) · Fecha:
 - La residencia D4 deja de ser «niveles dibujados y el siguiente más fino» con huecos: el rango entre el más grueso
   y el más fino dibujado es contiguo. Más memoria; si no cabe, sube el objetivo de px efectivo de toda la nube
   (R3-Q11).
-- R3-Q21 sigue (la imagen solo se refina; el residente más cercano mientras carga), con el límite de un nivel por paso.
+- R3-Q21 sigue (la imagen solo se refina; el residente más cercano mientras carga), con el límite de un nivel por frame.
 - La fase 2c mide, en una diferencia entre frames consecutivos, que ningún punto cambia más de un nivel y que las vecinas difieren
   como mucho en uno.
 
