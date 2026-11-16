@@ -6,20 +6,22 @@
 //! | Part | Bytes | Content |
 //! | --- | --- | --- |
 //! | header | 4 | magic `R3NC` |
-//! | | 4 | `u32` format version (1) |
+//! | | 4 | `u32` format version (3) |
 //! | | 8 | `u64` node id |
 //! | | 8 | `u64` point count |
 //! | | 48 | `f64` bounds min x y z, max x y z (world frame) |
 //! | | 4 | `u32` level count |
 //! | level | 4 | `u32` depth |
 //! | | 4 | `u32` page count (at least 1) |
-//! | page ×N | 46 | origin 3×`u64`, `first_cell` `u64`, `cells` `u32`, `box_max` 3×`u16`, `flags` `u32` |
+//! | page ×N | 58 | origin 3×`u64`, `first_cell` `u64`, `cells` `u32`, `box_max` 3×`u16`, `flags` `u32`, `rel_origin` 3×`u32` |
 //! | | 512 × 16 | the page's instance slots, 4×`u32` each |
 //!
 //! Levels are in strictly increasing depth. The node and depth of a page are the ones of its
 //! header and level, so they cannot disagree. Decoding validates everything it can see (lengths,
 //! counts, depth ranges, `first_cell` continuity, the sentinel padding, relative coordinates
-//! inside the page box) and never panics. Every count is checked against the bytes left before
+//! inside the page box) and never panics. `rel_origin` is not cross-checked against `origin` and
+//! the node corner: the blob comes from the build worker and is trusted like the rest of the
+//! geometry. Every count is checked against the bytes left before
 //! anything is allocated, so a hostile length cannot reserve more than the input holds.
 
 use std::fmt;

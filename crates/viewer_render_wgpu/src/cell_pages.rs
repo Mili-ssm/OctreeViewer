@@ -113,6 +113,8 @@ pub struct PageInfo {
     /// Page minimum relative to the node corner at the page depth, in cells (`origin - node_lo <<
     /// (depth - node_depth)`). `u32::MAX` per axis when the page is above the node depth or more
     /// than 31 levels below it (octant-mode leaf tails): cell mode never activates those depths.
+    /// Also `u32::MAX` for a node whose corner is off the global grid (see [`is_grid_aligned`]):
+    /// the origin is only meaningful for grid-aligned nodes, which every V7 node is (ADR 0029).
     pub rel_origin: [u32; 3],
 }
 
@@ -219,6 +221,20 @@ fn mask_axis(coord: u64, (lo, hi): (u64, u64), depth: u8, node_depth: u8) -> u32
     cells.min(7) as u32
 }
 
+/// Whether the node corner lies on the global grid at the node depth, i.e. the 8^3 mask grid
+/// starts at `node_lo << 3` at the representative depth. Cell mode requires it (ADR 0029: V7
+/// nodes are a global integer octree); off-grid bounds hit `node_cells::axis_anchor`'s fallback
+/// and yield no usable relative origin.
+pub(crate) fn is_grid_aligned(grid: &CellGrid, bounds: SpatialBounds) -> bool {
+    let rep = representative_depth(grid, bounds);
+    let node_depth = rep.saturating_sub(3);
+    rep < 3
+        || (0..3).all(|axis| {
+            node_range(grid, bounds, rep, axis).0
+                == node_range(grid, bounds, node_depth, axis).0 << 3
+        })
+}
+
 /// Packs one level of a node. `bounds` are the node bounds in the grid's frame. Precondition: every
 /// cell lies in `node_range(depth)` of the node on each axis (the cell builder clamps to it);
 /// checked with `debug_assert!`.
@@ -228,20 +244,30 @@ pub fn pack_level(
     node: NodeId,
     level: &NodeCellLevel,
 ) -> PackedLevel {
+    let aligned = is_grid_aligned(grid, bounds);
+    debug_assert!(
+        aligned,
+        "cell mode requires grid-aligned nodes, ADR 0029; off-grid bounds hit \
+         node_cells::axis_anchor's fallback"
+    );
+    pack_level_aligned(grid, bounds, node, level, aligned)
+}
+
+/// [`pack_level`] with the alignment verdict given: an off-grid node (`aligned == false`) gets
+/// `u32::MAX` relative origins instead of a wrong corner. Separate so tests reach that path
+/// without tripping the `debug_assert!`.
+pub(crate) fn pack_level_aligned(
+    grid: &CellGrid,
+    bounds: SpatialBounds,
+    node: NodeId,
+    level: &NodeCellLevel,
+    aligned: bool,
+) -> PackedLevel {
     let depth = level.depth;
     let node_depth = representative_depth(grid, bounds).saturating_sub(3);
     let lo: [(u64, u64); 3] = std::array::from_fn(|axis| node_range(grid, bounds, depth, axis));
-    let node_lo: [u64; 3] =
-        std::array::from_fn(|axis| node_range(grid, bounds, node_depth, axis).0);
-    // The 8^3 mask grid starts at the node corner (not for roots shallower than the mask levels).
-    debug_assert!(
-        representative_depth(grid, bounds) < 3
-            || (0..3).all(|axis| {
-                node_range(grid, bounds, representative_depth(grid, bounds), axis).0
-                    == node_lo[axis] << 3
-            }),
-        "the mask grid does not start at the node corner"
-    );
+    let node_lo: Option<[u64; 3]> =
+        aligned.then(|| std::array::from_fn(|axis| node_range(grid, bounds, node_depth, axis).0));
     let spans = depth <= node_depth;
     // Constant per level, so they never split a page.
     let page_flags = level.cells.iter().fold(0, |flags, cell| {
@@ -322,7 +348,7 @@ fn close_page(
     spans: bool,
     node_depth: u8,
     page_flags: u32,
-    node_lo: [u64; 3],
+    node_lo: Option<[u64; 3]>,
     cells: std::ops::Range<usize>,
     min: [u64; 3],
     max: [u64; 3],
@@ -354,7 +380,7 @@ fn close_page(
             .checked_sub(node_depth)
             .filter(|span| *span <= 31);
         span.and_then(|span| {
-            let corner = u128::from(node_lo[axis]) << span;
+            let corner = u128::from(node_lo?[axis]) << span;
             u32::try_from(u128::from(min[axis]).checked_sub(corner)?).ok()
         })
         .unwrap_or(u32::MAX)

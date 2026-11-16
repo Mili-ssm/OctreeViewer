@@ -337,31 +337,31 @@ impl Default for CellColor {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub(crate) struct FrameUniform {
-    view_projection: [[f32; 4]; 4],
-    num_pages: u32,
-    shading: u32,
+    pub(crate) view_projection: [[f32; 4]; 4],
+    pub(crate) num_pages: u32,
+    pub(crate) shading: u32,
     /// Half of the visibility bits that phase 1 and phase 2 read (0 or 1).
-    prev: u32,
-    capacity: u32,
-    viewport: [f32; 2],
-    mip_count: u32,
-    _padding: u32,
-    color_mode: f32,
-    intensity_min: f32,
-    intensity_max: f32,
-    height_offset: f32,
-    height_span: f32,
+    pub(crate) prev: u32,
+    pub(crate) capacity: u32,
+    pub(crate) viewport: [f32; 2],
+    pub(crate) mip_count: u32,
+    pub(crate) _padding: u32,
+    pub(crate) color_mode: f32,
+    pub(crate) intensity_min: f32,
+    pub(crate) intensity_max: f32,
+    pub(crate) height_offset: f32,
+    pub(crate) height_span: f32,
     /// 0 octant mode, 1 cell mode.
-    lod_mode: u32,
+    pub(crate) lod_mode: u32,
     /// 0 off.
-    counters: u32,
-    target_px: f32,
-    forward: [f32; 3],
-    focal: f32,
-    right: [f32; 3],
-    min_side: f32,
-    up: [f32; 3],
-    _padding_end: u32,
+    pub(crate) counters: u32,
+    pub(crate) target_px: f32,
+    pub(crate) forward: [f32; 3],
+    pub(crate) focal: f32,
+    pub(crate) right: [f32; 3],
+    pub(crate) min_side: f32,
+    pub(crate) up: [f32; 3],
+    pub(crate) _padding_end: u32,
 }
 
 pub(crate) const COMMON_WGSL: &str = r"

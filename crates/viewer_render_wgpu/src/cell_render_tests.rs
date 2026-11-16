@@ -1081,6 +1081,39 @@ fn frame_uniform_is_176_bytes_and_matches_the_wgsl_layout() {
     ];
     let found: Vec<(&str, u32)> = members.iter().map(|(n, o)| (n.as_str(), *o)).collect();
     assert_eq!(found, expected);
+    use crate::cell_render::FrameUniform as F;
+    use core::mem::offset_of;
+    let rust: [(&str, usize); 22] = [
+        ("view_proj", offset_of!(F, view_projection)),
+        ("num_pages", offset_of!(F, num_pages)),
+        ("shading", offset_of!(F, shading)),
+        ("prev", offset_of!(F, prev)),
+        ("capacity", offset_of!(F, capacity)),
+        ("viewport", offset_of!(F, viewport)),
+        ("mip_count", offset_of!(F, mip_count)),
+        ("pad0", offset_of!(F, _padding)),
+        ("color_mode", offset_of!(F, color_mode)),
+        ("intensity_min", offset_of!(F, intensity_min)),
+        ("intensity_max", offset_of!(F, intensity_max)),
+        ("height_offset", offset_of!(F, height_offset)),
+        ("height_span", offset_of!(F, height_span)),
+        ("lod_mode", offset_of!(F, lod_mode)),
+        ("counters", offset_of!(F, counters)),
+        ("target_px", offset_of!(F, target_px)),
+        ("forward", offset_of!(F, forward)),
+        ("focal", offset_of!(F, focal)),
+        ("right", offset_of!(F, right)),
+        ("min_side", offset_of!(F, min_side)),
+        ("up", offset_of!(F, up)),
+        ("pad1", offset_of!(F, _padding_end)),
+    ];
+    for ((name, offset), (want, wgsl)) in rust.iter().zip(expected) {
+        assert_eq!(
+            (*name, *offset as u32),
+            (want, wgsl),
+            "Rust offset of {name}"
+        );
+    }
 }
 
 #[test]

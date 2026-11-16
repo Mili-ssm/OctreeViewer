@@ -472,3 +472,15 @@ fn a_version_1_buffer_is_refused() {
         Err(CodecError::UnsupportedVersion(1))
     );
 }
+
+#[test]
+fn a_version_2_buffer_with_46_byte_page_records_is_refused() {
+    let mut old = small();
+    // Version 2 pages had no `rel_origin`: 12 bytes less per page record.
+    old.drain(PAGE_AT + 46..PAGE_AT + PAGE_RECORD_BYTES);
+    old[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    assert_eq!(
+        decode_node_levels(&old),
+        Err(CodecError::UnsupportedVersion(2))
+    );
+}
