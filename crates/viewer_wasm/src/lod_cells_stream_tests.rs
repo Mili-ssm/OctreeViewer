@@ -640,6 +640,11 @@ struct StepGate {
     cell_node_changed: usize,
     /// ... and whose drawing node is the same (within-node jumps).
     cell_within_node: usize,
+    /// Cell mode spatial gate (measured, never asserted): pairs of adjacent lattice samples drawn
+    /// by different nodes, summed over the checked cuts ...
+    cell_border_pairs: usize,
+    /// ... whose drawn depths differ by more than one level (ADR 0053, between neighbouring cells).
+    cell_border_over_one: usize,
 }
 
 /// Cell-mode counters of the sample oracle.
@@ -1161,6 +1166,22 @@ impl Harness {
         self.gate.cell_node_changed += node_changed;
         self.gate.cell_within_node += within_node;
         gate_prev.retain(|(node, _), _| current.contains(node));
+        // Spatial gate: adjacent lattice points (one step along an axis) of the same node lattice
+        // that different nodes draw.
+        for (&(lattice, n), &(drawer, depth)) in &gate_prev {
+            let at = [n % 7, n / 7 % 7, n / 49];
+            for (axis, stride) in [1_u16, 7, 49].into_iter().enumerate() {
+                if at[axis] == 6 {
+                    continue;
+                }
+                if let Some(&(other, other_depth)) = gate_prev.get(&(lattice, n + stride))
+                    && other != drawer
+                {
+                    self.gate.cell_border_pairs += 1;
+                    self.gate.cell_border_over_one += usize::from(depth.abs_diff(other_depth) > 1);
+                }
+            }
+        }
         self.cell_gate_prev = gate_prev;
         memory.retain(|(node, _), _| current.contains(node));
         seen.retain(|(node, _), _| current.contains(node));
