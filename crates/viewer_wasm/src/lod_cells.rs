@@ -350,6 +350,10 @@ pub(super) struct CellState {
     /// The `(node, depth)` levels the render side asked for, in priority order (the last
     /// `apply_level_requests`; served ones leave it).
     level_requests: Vec<(NodeId, u8)>,
+    /// What the last `serve_level_requests` let through (`LevelRoom`): the cut nodes, whose
+    /// levels are always servable, and whether the other nodes' levels were servable then.
+    level_cut: HashSet<NodeId>,
+    level_outside_open: bool,
     /// Requested depths `node_cell_level` cannot build (a leaf at the deepest cell depth whose
     /// positions are still merged): dropped, and not tried again.
     unservable_levels: HashSet<(NodeId, u8)>,
@@ -369,6 +373,14 @@ struct LevelRoom<'a> {
     admit: Option<u64>,
     needed: &'a mut u64,
     counted: &'a HashSet<NodeId>,
+}
+
+impl LevelRoom<'_> {
+    /// Whether a level of a node outside the cut may be built now: the build side is not blocked
+    /// and the bytes the cut needs are under the admit share.
+    fn admits_outside_cut(&self, blocked: bool) -> bool {
+        !blocked && self.admit.is_none_or(|admit| *self.needed < admit)
+    }
 }
 
 impl Default for CellState {
@@ -392,6 +404,8 @@ impl Default for CellState {
             paint: None,
             read_ancestor_last: false,
             level_requests: Vec::new(),
+            level_cut: HashSet::new(),
+            level_outside_open: true,
             unservable_levels: HashSet::new(),
             level_depths: HashMap::new(),
         }
@@ -631,18 +645,17 @@ impl LodDataset {
         self.cells.level_requests = requests.to_vec();
     }
 
-    /// Whether requested levels wait to be built and another update can make progress: not while
-    /// a budget blocks builds or holds the levels, and a request with uncached blocks only when
-    /// the host can read them (`can_load_blocks`).
+    /// Whether some requested level is servable now, so another update makes progress: its node
+    /// has cells, its blocks are cached or the host can read them (`can_load_blocks`), and the
+    /// gate of the last update (`LevelRoom`) let it through: a cut node always, another node only
+    /// while the build side is not blocked and under the admit share.
     #[cfg(any(target_arch = "wasm32", test))]
     pub(crate) fn has_pending_level_requests(&self, can_load_blocks: bool) -> bool {
-        if self.cells.cpu_blocked || self.cells.gpu_blocked {
-            return false;
-        }
         self.cells.level_requests.iter().any(|request| {
             !self.cells.unservable_levels.contains(request)
                 && self.level_node_state(request.0).is_some()
                 && (can_load_blocks || self.level_blocks_cached(request.0))
+                && (self.cells.level_cut.contains(&request.0) || self.cells.level_outside_open)
         })
     }
 
@@ -720,9 +733,7 @@ impl LodDataset {
                 keep.push(request);
                 continue;
             }
-            if !room.cut.contains(&id)
-                && (blocked || room.admit.is_some_and(|admit| *room.needed >= admit))
-            {
+            if !room.cut.contains(&id) && !room.admits_outside_cut(blocked) {
                 keep.push(request);
                 continue;
             }
@@ -771,6 +782,8 @@ impl LodDataset {
             }
         }
         self.cells.level_requests = keep;
+        self.cells.level_cut = room.cut.clone();
+        self.cells.level_outside_open = room.admits_outside_cut(blocked);
         match failure {
             Some(error) if served.is_empty() => Err(error),
             _ => Ok((served, deferred)),

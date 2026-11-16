@@ -1610,3 +1610,46 @@ fn cut_levels_are_built_under_a_tight_budget_and_count_toward_it() {
         .sum();
     assert_eq!(update.stats.diag.cpu_needed_bytes, needed + bytes);
 }
+
+#[test]
+fn a_held_non_cut_request_does_not_keep_the_worker_dirty() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let tight = CellUpdateConfig {
+        cpu_budget_bytes: Some(1),
+        ..CellUpdateConfig::default()
+    };
+    let update = plan_levels(&mut dataset, &view, tight);
+    // A built node outside the cut: the root, which the cut's nodes replace (if it were in the
+    // cut it would be built below and the test would fail).
+    let outside = NodeId::new(1);
+    let depth = unsent_depths(&sent[&outside], 1)[0];
+    dataset.apply_level_requests(&[(outside, depth)]);
+    for _ in 0..3 {
+        let update = plan_levels(&mut dataset, &view, tight);
+        assert!(update.new_levels.is_empty(), "built over the budget");
+        assert!(!dataset.has_pending_level_requests(true), "held but dirty");
+    }
+}
+
+#[test]
+fn an_exempt_cut_request_is_retried_while_blocked() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let tight = CellUpdateConfig {
+        cpu_budget_bytes: Some(1),
+        max_level_builds: 1,
+        ..CellUpdateConfig::default()
+    };
+    let requests: Vec<(NodeId, u8)> = [NodeId::new(3), NodeId::new(4)]
+        .into_iter()
+        .map(|id| (id, unsent_depths(&sent[&id], 1)[0]))
+        .collect();
+    plan_levels(&mut dataset, &view, tight);
+    dataset.apply_level_requests(&requests);
+    let first = plan_levels(&mut dataset, &view, tight);
+    assert_eq!(shipped_depths(&first).len(), 1);
+    // Blocked, one cut level left by the build cap: another update serves it.
+    assert!(dataset.has_pending_level_requests(true));
+    let second = plan_levels(&mut dataset, &view, tight);
+    assert_eq!(shipped_depths(&second).len(), 1);
+    assert!(!dataset.has_pending_level_requests(true));
+}

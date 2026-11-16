@@ -253,6 +253,8 @@ pub struct FramePlan {
     pub active: Vec<ActiveLevel>,
     pub events: Vec<CellPoolEvent>,
     pub counters: PoolCounters,
+    /// The nodes the fit truncates this frame (`counters.pool_coarsened` of them), ascending.
+    pub coarsened_nodes: Vec<NodeId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2746,6 +2748,11 @@ impl CellPool {
             active,
             events: std::mem::take(&mut self.events),
             counters,
+            coarsened_nodes: {
+                let mut ids: Vec<NodeId> = caps.keys().copied().collect();
+                ids.sort_unstable();
+                ids
+            },
         })))
     }
 }

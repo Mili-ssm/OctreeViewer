@@ -522,14 +522,14 @@ struct Harness {
     zone_coarsenings: usize,
     /// `zone_coarsenings` without the stage excuse: a staged octant drawn coarser than before,
     /// while its raw wanted depth did not get coarser, counts too. Each such drop is excused when
-    /// the fit capped nodes that frame or the ladder ran coarser than the target, and the octant
-    /// that draws the sample is itself staged below its wish (a capped node, or an octant whose
-    /// depth the stage pixels explain, is staged by construction); the rest are
+    /// the octant that draws the sample is staged below its wish and its node was capped by the
+    /// fit that frame or the ladder ran coarser than the target; the rest are
     /// `unexcused_drops` (asserted 0).
     staged_coarsenings: usize,
     stage_excused_drops: usize,
     unexcused_drops: usize,
-    frame_coarsened: u32,
+    /// The nodes the fit capped in the frame being checked.
+    frame_capped: Vec<NodeId>,
     frame_stage_px: f64,
     /// Sample points drawn in the previous cut, still inside the planner's cut, drawn by nothing.
     lost_samples: usize,
@@ -594,7 +594,7 @@ impl Harness {
             staged_coarsenings: 0,
             stage_excused_drops: 0,
             unexcused_drops: 0,
-            frame_coarsened: 0,
+            frame_capped: Vec::new(),
             frame_stage_px: 0.0,
             lost_samples: 0,
             planner_of_drawn_cut: None,
@@ -709,15 +709,15 @@ impl Harness {
                         && after < before.min(cut.wanted_at(*p, true).unwrap_or(u8::MAX))
                     {
                         // Only a counted stage explains a drop below the raw wish, and only for
-                        // the octant that draws the point: the fit capped nodes this frame
-                        // (R3-Q11) or the ladder runs coarser than the target (R3-Q3 stage
-                        // pixels), and that octant is staged below its wish.
-                        let staged = cut
-                            .drawer_at(*p)
-                            .is_some_and(|(node, octant)| cut.entries[node].stage[octant]);
-                        let counted_stage =
-                            self.frame_coarsened > 0 || self.frame_stage_px > self.target_px;
-                        if staged && counted_stage {
+                        // the octant that draws the point, staged below its wish: its node was
+                        // capped by the fit this frame (R3-Q11), or the ladder runs coarser than
+                        // the target (R3-Q3 stage pixels).
+                        let excused = cut.drawer_at(*p).is_some_and(|(node, octant)| {
+                            cut.entries[node].stage[octant]
+                                && (self.frame_capped.contains(&cut.nodes[node])
+                                    || self.frame_stage_px > self.target_px)
+                        });
+                        if excused {
                             self.stage_excused_drops += 1;
                         } else {
                             self.unexcused_drops += 1;
@@ -774,7 +774,7 @@ impl Harness {
         let plan = &out.update.report.plan;
         self.target.check_plan(plan);
         let digest = cell_cut_digest(&plan.entries);
-        self.frame_coarsened = stats.counters.pool_coarsened;
+        self.frame_capped = plan.coarsened_nodes.clone();
         self.frame_stage_px = out.stage_pixels;
         self.check_drawn_cut(number, plan, digest);
         if let Some(last) = self.last_stage
