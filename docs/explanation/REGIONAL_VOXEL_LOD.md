@@ -306,4 +306,4 @@ resultados en el [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-
 
 - Los conjuntos activos de la 2a pueden saltarse niveles (por ejemplo `{6, 13}`) hasta la fase 2b, que aplica la regla de
   un nivel de la [ADR 0053](../adr/0053-transiciones-de-un-nivel.md).
-- La medición en navegador compara el corte, no los píxeles: ver «Navegador» del registro.
+- `probe-cells-parity` compara el resumen del corte, no los píxeles; la comparación de píxeles a la misma pose (octante frente a celda) está en la sección «Navegador» del registro.

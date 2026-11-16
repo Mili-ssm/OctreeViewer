@@ -83,7 +83,7 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
   - `pub const MAX_NODE_SPAN: u8 = 31`.
 
 - [x] **Step 1: Write the failing tests** in `cell_lod_tests.rs`:
-  - `the_bound_covers_the_projected_edge`: 10 000 seeded cubes with `zmin ≥ near` under random cameras; `edge_bound ≥ projected_voxel_edge_pixels` of the same cube (same frame via `ViewProjection`) with relative slack 1e-5.
+  - `the_bound_covers_the_projected_edge` (renamed `edge_px_matches_the_camera` by the Task 2 amendment): 10 000 seeded cubes with `zmin ≥ near` under random cameras; `edge_bound ≥ projected_voxel_edge_pixels` of the same cube (same frame via `ViewProjection`) with relative slack 1e-5.
   - `refines_is_monotone_from_child_to_parent`: random chains, including `‖anchor‖ = 1e4` with `d − node_depth = 29`.
   - `a_cell_around_the_eye_refines`: eye inside the cube, and cube crossing `near` → `true`, finite bound, never NaN.
   - `min_side_stops_refinement`: `side ≤ min_side` → `false` at any distance.
@@ -116,7 +116,7 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Consumes: Task 1 twin (and Task 2's verdict).
 - Produces: `pub enum LodMode { Octant, Cell }` (default `Octant`); `CellPool::set_lod_mode(&mut self, mode: LodMode)`; in cell mode `FramePlan.active` holds one `ActiveLevel` per (node, active depth) with `octant_bits = 0xff`, and `MaskUpdate { slot, mask, active, node_depth }` describes every applied node; `CellCutEntry.drawn` keeps meaning "per-octant closest resident" for stats; `cell_cut_digest` unchanged in octant mode.
 
-- [x] **Step 1: Write the failing tests:** `cell_mode_activates_the_closest_resident_of_each_wanted_depth`; `cell_mode_clamps_active_depths_to_the_node_span`; `cell_mode_never_forces_one_depth_for_a_spanning_level`; `children_wait_for_the_parent_d5_level` (E7: mask empty and children held until a depth `≥ rep` is resident, and that depth is requested first); `cell_mode_wants_with_the_twin_metric`.
+- [x] **Step 1: Write the failing tests:** `cell_mode_activates_the_closest_resident_of_each_wanted_depth`; `cell_mode_clamps_active_depths_to_the_node_span`; `cell_mode_never_forces_one_depth_for_a_spanning_level`; `children_wait_for_the_parent_d5_level` (E7: mask empty and children held until a depth `≥ rep` is resident, and that depth is requested first); `cell_mode_wants_with_the_twin_metric` (dropped: after the metric gate the twin uses the same projected edge as the cut).
 - [x] **Step 2:** `--lib cell_pool` and `--lib cell_cut` → FAIL.
 - [x] **Step 3:** implement; octant mode untouched (goldens unchanged).
 - [x] **Step 4:** all `viewer_render_wgpu` lib tests → PASS; clippy clean.
@@ -178,7 +178,7 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - [x] **Step 1: Write the failing tests:**
   - `cell_mode_draws_one_cell_per_point_on_every_adapter`: read back `visible`; 200 seeded poses by default and 1000 with `CELL_LOD_POSES=1000`, over the Task 1 scene kinds plus a 2-page level, the eye inside a cell, and 1-ULP threshold poses (bisect `target_px`); occlusion off → each sample point inside the frustum (2 % viewport margin) is covered by exactly one drawn cell; occlusion on → no point covered twice.
   - `cell_mode_matches_the_twin_away_from_the_threshold`: GPU decision equals `cell_lod::draws` whenever the cell's and its ancestors' `edge_px/target` differ from 1 by more than 1e-4.
-  - `octant_mode_is_unchanged`: `compaction_count_matches_a_cpu_count_on_every_adapter` passes.
+  - `octant_mode_is_unchanged`: `compaction_count_matches_a_cpu_count_on_every_adapter` passes (the existing test, not a new one).
 - [x] **Step 2:** `cargo test -p viewer_render_wgpu --profile fast --offline --lib cell_render` → FAIL.
 - [x] **Step 3:** implement.
 - [x] **Step 4:** same command → PASS (record the adapters that ran); clippy clean.
@@ -233,6 +233,6 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Modify: `examples/web-host/probe-cells-parity.mjs` (both modes), `examples/web-host/PROBES.md`, `docs/explanation/REGIONAL_VOXEL_LOD.md` (per-cell rule E1–E7), master plan (tick 2a; D3 records the metric that replaced the distance rule), this plan's `Estado`
 - Create: `docs/records/benchmarks/R3_FASE2A_LOD_POR_CELDA_<dd-mm-aaaa>.md`
 
-- [x] **Step 1:** `probe-cells-parity` in both modes on the demo sample and on `fs_e430` (V7); same-pose screenshots in octant and cell mode during a zoom; nodes with ≥ 2 drawn depths; slot-pass time with timestamp queries where the adapter has them; a run in Chrome WebGPU; `scripts/check.sh` with the real input.
+- [ ] **Step 1:** `probe-cells-parity` in both modes on the demo sample and on `fs_e430` (V7); same-pose screenshots in octant and cell mode during a zoom; nodes with ≥ 2 drawn depths; slot-pass time with timestamp queries where the adapter has them; a run in Chrome WebGPU; `scripts/check.sh` with the real input. Done (16-11-2026): the probe in both modes on `belvedere-v7.oct` instead (the probe takes a file, and `fs_e430` is V5, which never reaches the cell path); same-pose screenshots and a Chrome WebGPU run on the real GPU (see the record); drawn depths per depth from the native bench counters. Not done: slot-pass timing with timestamp queries (moves to phase 2c); `scripts/check.sh` result pending.
 - [x] **Step 2:** record facts (per-depth counts, above-target by actual edge from the twin, adapters that ran the GPU tests) and inferences separately.
 - [x] **Step 3:** commit `docs: record phase 2a (per-cell LOD in the GPU)`.

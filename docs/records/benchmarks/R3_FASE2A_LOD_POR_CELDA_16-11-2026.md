@@ -1,6 +1,6 @@
 # R3 fase 2a: selección por celda en la GPU — 16-11-2026
 
-**Estado: cerrado (16-11-2026).** La puerta de partición de la GPU pasa (0 huecos y 0 dobles en dos adaptadores), los tests de extremo a extremo con el controlador llegan a D5 sin errores y el modo `cell` dibuja igual o menos instancias que `octant` en los casos nativos medidos (hasta −39 % en la órbita a 1 px de Belvedere). El probe de navegador da el mismo resumen del corte en ambos modos en Belvedere; no compara píxeles.
+**Estado: cerrado (16-11-2026).** La puerta de partición de la GPU pasa (0 huecos y 0 dobles en dos adaptadores), los tests de extremo a extremo con el controlador llegan a D5 sin errores y el modo `cell` dibuja igual o menos instancias que `octant` en los casos nativos medidos (hasta −39 % en la órbita a 4 px de Belvedere, −35 % a 1 px). El probe de navegador da el mismo resumen del corte en ambos modos en Belvedere; no compara píxeles.
 
 Plan: [fase 2a](../../plans/fase-2a-lod-por-celda-en-gpu.md). Métrica: [R3_FASE2A_METRICA_16-11-2026.md](R3_FASE2A_METRICA_16-11-2026.md). Regla y opción: [REGIONAL_VOXEL_LOD](../../explanation/REGIONAL_VOXEL_LOD.md#selección-por-celda-en-la-gpu-fase-2a-16-11-2026).
 

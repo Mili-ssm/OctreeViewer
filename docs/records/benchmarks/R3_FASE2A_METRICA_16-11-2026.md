@@ -134,7 +134,7 @@ Corte con `select_lod_stable_projector` y `octant_tight` de la biblioteca como e
 
 ## Qué mide y qué no (método)
 
-- **Reglas.** `distance`: `lado > max(lado_mín, px · max(dist_más_cercana, cerca) / focal)` (la regla de la fase 0a). `edge`: `lado > lado_mín` y `projected_voxel_edge_pixels(celda) > px`. `bound`: `cell_lod::refines` (E1, `edge_bound` con `LodView::from_camera`, `cerca` = `lod_min_depth`), con la celda convertida a coordenadas escaladas relativas al ojo en `f32` como `(esquina · escala − ojo)`.
+- **Reglas.** `distance`: `lado > max(lado_mín, px · max(dist_más_cercana, cerca) / focal)` (la regla de la fase 0a). `edge`: `lado > lado_mín` y `projected_voxel_edge_pixels(celda) > px`. `bound`: la cota E1 provisional, `cell_lod::refines` en el commit medido (`c3091fb`: `edge_bound` con `LodView::from_camera` y `cerca` = `lod_min_depth`; tras el veredicto el gemelo pasó a `edge_px` y el spike conserva la cota en una función local), con la celda convertida a coordenadas escaladas relativas al ojo en `f32` como `(esquina · escala − ojo)`.
 - **Descenso** por nodo del corte con la regla elegida; el resto del modelo (nodos enmascarados, celdas bajo `S`, residencia r2, bytes por `pack_level`) es el de la fase 0a. El código de la rama `explore/cell-lod-spike` (commits `9e0ec17`, `5f8ba56`) se trajo sobre `main` sin conflictos.
 - **Poses:** órbita 0°, rasante y dentro de una hoja (`--poses`); no se midió la órbita de 90° ni el zoom.
 - **Pares no monótonos:** solo para celdas dibujadas por encima de la profundidad `S`; las celdas de un punto bajo `S` (cola) no se comprueban.

@@ -45,8 +45,8 @@ Aparece una nube con CRS geográfico (grados) que necesite tamaño mínimo en lo
   - **Mínimo en px**: el objetivo de px de siempre; siempre activo.
   - **Mínimo en longitud**: desactivado (predeterminado), un valor con unidad (m, cm, mm) o el espaciado de la nube
     (la continuidad de RF-05).
-- En cada celda y cada frame el lado dibujado no baja de `max(lado_mín, lado que da el objetivo de px a su
-  distancia)`: es la regla D3 del [plan](../plans/nivel-pedido-y-lod-por-celda.md), que ya toma el máximo. «Solo px»
+- En cada celda y cada frame el lado dibujado no baja de `max(lado_mín, lado cuya arista proyectada cumple el
+  objetivo de px)`: es la regla D3 del [plan](../plans/nivel-pedido-y-lod-por-celda.md), que ya toma el máximo. «Solo px»
   es el filtro de longitud desactivado.
 - Sigue todo lo demás: unidades del CRS, modo longitud desactivado con un CRS geográfico, RQ-09 admite cubos por
   encima del objetivo cuando gana el filtro de longitud, y `setContinuity` queda para el espaciado.
