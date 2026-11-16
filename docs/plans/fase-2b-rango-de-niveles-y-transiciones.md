@@ -62,19 +62,21 @@ As in phase 2a (English code/commits, Spanish docs, no AI attribution; octant mo
 
 ### Task 0: The px target is a minimum, and 0.1 mm length minimum by default ([ADR 0054](../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md))
 
-- [ ] Refine rule in both modes: a cell refines only if its children would still project to at least the px target and measure at least the length minimum (cubes between N and 2N px; the octant probe and the twin + WGSL share it); default length minimum 0.1 mm in cloud units (metres until the CRS unit is read, phase 3), applied by the driver unless the API sets another; goldens updated with the reason; GPU partition test and sims green in both modes; browser screenshots at the owner's poses.
+- [x] (7daa1ac, d447b50, 4d1a391, 544bf5c) Refine rule in both modes: a cell refines only if its children would still project to at least the px target and measure at least the length minimum (cubes between N and 2N px; the octant probe and the twin + WGSL share it); default length minimum 0.1 mm in cloud units (metres until the CRS unit is read, phase 3), applied by the driver unless the API sets another; goldens updated with the reason; GPU partition test and sims green in both modes; browser screenshots at the owner's poses.
 
 ### Task 1: The depth range per node (F1–F3)
 
-- [ ] **1a** compute and expose the range (`CellCutEntry.range`), no behaviour change; tests: far ≤ near, a node straddling the eye plane, the eye inside the node, an octant behind the eye.
-- [ ] **1b** activate every already-resident depth inside the range (cell mode); browser screenshot of the owner's pose (kill criterion: no bands → stop).
-- [ ] **1c** fetch stored depths inside the range.
-- [ ] **1d** build missing depths on demand down to the spacing/separation depth only; the fit counts requested depths; measure the uncapped need, `levels.bin` coverage, request queue and build-worker heap in the browser.
+- [x] (4083d8c) **1a** compute and expose the range (`CellCutEntry.range`), no behaviour change; tests: far ≤ near, a node straddling the eye plane, the eye inside the node, an octant behind the eye.
+- [x] (4083d8c; browser: graded cubes in nodes with residents, a near node without them still drew its finest level) **1b** activate every already-resident depth inside the range (cell mode); browser screenshot of the owner's pose (kill criterion: no bands → stop).
+- [x] (462196a) **1c** fetch stored depths inside the range.
+- [ ] (blocked by the closest-resident jump until Task 3a; work stashed) **1d** build missing depths on demand down to the spacing/separation depth only; the fit counts requested depths; measure the uncapped need, `levels.bin` coverage, request queue and build-worker heap in the browser.
 - [ ] Test: no drawn cell finer than its parent cell needed (`refines()` of the parent), exempting the buildable minimum, caps and the span floor; the sims' `finer_than_wanted` counter drops.
 
 ### Task 2: Cross-node chain instead of the per-node mask (F4) — to detail after Task 1 (node record links to its ancestor's record; GPU partition test over parent + child pairs)
 
-### Task 3: One level per frame (ADR 0053, temporal) — to detail after Task 2
+### Task 3: One level per frame (ADR 0053, temporal) — 3a (stepping rule) moved ahead of Task 2 because the closest-resident jump blocks 1d
+
+- [ ] **3a** per (node, octant) the drawn depth steps one level toward the wanted one through resident depths, never past it; the adjacent depth is requested first; in cell mode the active span moves at most one level per frame at each end (per-point stepping approximated per node).
 
 Known case (16-11-2026, task 0a): with the closest-resident rule (R3-Q21) a node drawing depth 10 that wants 8 jumps to 7 when only {7, 10} are resident (seeded dolly simulations at their original px, which task 0a halved to 1.0 / 2.0). With ADR 0053 and 0054 the transition must step from the drawn depth towards the wanted one, one level per frame, using a resident intermediate; restore `SYNTHETIC_CASE_PX` = 2.0 and the glue literals (2.0, 4.0) as this task's regression test.
 
