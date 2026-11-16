@@ -62,10 +62,10 @@ fn write_las(path: &std::path::Path, side: u32) -> Result<u64, Box<dyn Error>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let output = env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("examples/web-host/sample.oct"));
+    let output = env::args_os().nth(1).map_or_else(
+        || PathBuf::from("examples/web-host/sample.oct"),
+        PathBuf::from,
+    );
     let scratch = env::temp_dir().join(format!("create_web_sample_{}", std::process::id()));
     let result = generate(&output, &scratch);
     let _ = fs::remove_dir_all(&scratch);

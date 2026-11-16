@@ -143,7 +143,10 @@ fn diagnostics_report_internal_windows_without_changing_output_bytes() {
     let validation_workers = diagnostics
         .validation_workers
         .expect("profiled validation reports worker aggregates");
-    assert!(!validation_workers.is_empty());
+    assert_ne!(
+        validation_workers,
+        [] as [viewer_convert_core::ValidationWorkerDiagnostics; 0]
+    );
     assert!(validation_workers.iter().all(|worker| {
         worker.blocks_read > 0
             && worker.points_read > 0
@@ -386,7 +389,11 @@ fn converts_laz_in_bounded_blocks_and_preserves_intensity_and_rgb16() {
     let root_sample = reader.read_block(root_block_ids[0]).unwrap();
     assert!(root_sample.points().len() <= 512);
     for index in 0..5 {
-        let source_position = [index as f64 * 0.25, (index % 3) as f64, (index % 5) as f64];
+        let source_position = [
+            f64::from(index) * 0.25,
+            f64::from(index % 3),
+            f64::from(index % 5),
+        ];
         let nearest_distance = root_sample
             .points()
             .points()
@@ -441,7 +448,7 @@ fn converts_laz_in_bounded_blocks_and_preserves_intensity_and_rgb16() {
             panic!("RGB must remain u16");
         };
         let (colors, remainder) = rgb.as_chunks::<3>();
-        assert!(remainder.is_empty());
+        assert_eq!(remainder, [] as [u16; 0]);
         assert!(
             colors
                 .iter()
@@ -837,7 +844,7 @@ fn v6_serial_and_parallel_conversion_outputs_are_identical_and_readable() {
                 panic!("RGB must remain u16");
             };
             let (colors, remainder) = rgb.as_chunks::<3>();
-            assert!(remainder.is_empty());
+            assert_eq!(remainder, [] as [u16; 0]);
             assert!(
                 colors
                     .iter()
@@ -1338,7 +1345,7 @@ fn resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_r
             Some(5)
         );
         let block_id = reader.block_storage_stats().unwrap()[0].id;
-        assert!(!reader.read_block(block_id).unwrap().attributes().is_empty());
+        assert_ne!(reader.read_block(block_id).unwrap().attributes(), []);
 
         convert_file(&input, &expected, options).unwrap();
         assert_eq!(fs::read(output).unwrap(), fs::read(expected).unwrap());
@@ -1408,7 +1415,7 @@ fn pair_output_refuses_existing_companion_and_geometry_alone_is_gray() {
     let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
     for block in reader.block_storage_stats().unwrap() {
         let data = reader.read_block(block.id).unwrap();
-        assert!(data.attributes().is_empty());
+        assert_eq!(data.attributes(), []);
         assert!(
             data.points()
                 .points()
@@ -1506,7 +1513,7 @@ fn spool_diagnostics_account_written_and_live_bytes() {
         assert!(phases.peak_live_spool_bytes > 0);
         // Strict: internal nodes delete their input spools, so dropped removals would fail this.
         assert!(phases.peak_live_spool_bytes < phases.spool_bytes_written);
-        assert!(!phases.root_child_spool_bytes_written.is_empty());
+        assert_ne!(phases.root_child_spool_bytes_written, [] as [u64; 0]);
         assert!(
             phases.root_child_spool_bytes_written.iter().sum::<u64>() <= phases.spool_bytes_written
         );
@@ -1582,20 +1589,80 @@ fn node_spool_events_match_child_spool_totals() {
 
 fn sha256_hex(data: &[u8]) -> String {
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-        0xc67178f2,
+        0x428a_2f98,
+        0x7137_4491,
+        0xb5c0_fbcf,
+        0xe9b5_dba5,
+        0x3956_c25b,
+        0x59f1_11f1,
+        0x923f_82a4,
+        0xab1c_5ed5,
+        0xd807_aa98,
+        0x1283_5b01,
+        0x2431_85be,
+        0x550c_7dc3,
+        0x72be_5d74,
+        0x80de_b1fe,
+        0x9bdc_06a7,
+        0xc19b_f174,
+        0xe49b_69c1,
+        0xefbe_4786,
+        0x0fc1_9dc6,
+        0x240c_a1cc,
+        0x2de9_2c6f,
+        0x4a74_84aa,
+        0x5cb0_a9dc,
+        0x76f9_88da,
+        0x983e_5152,
+        0xa831_c66d,
+        0xb003_27c8,
+        0xbf59_7fc7,
+        0xc6e0_0bf3,
+        0xd5a7_9147,
+        0x06ca_6351,
+        0x1429_2967,
+        0x27b7_0a85,
+        0x2e1b_2138,
+        0x4d2c_6dfc,
+        0x5338_0d13,
+        0x650a_7354,
+        0x766a_0abb,
+        0x81c2_c92e,
+        0x9272_2c85,
+        0xa2bf_e8a1,
+        0xa81a_664b,
+        0xc24b_8b70,
+        0xc76c_51a3,
+        0xd192_e819,
+        0xd699_0624,
+        0xf40e_3585,
+        0x106a_a070,
+        0x19a4_c116,
+        0x1e37_6c08,
+        0x2748_774c,
+        0x34b0_bcb5,
+        0x391c_0cb3,
+        0x4ed8_aa4a,
+        0x5b9c_ca4f,
+        0x682e_6ff3,
+        0x748f_82ee,
+        0x78a5_636f,
+        0x84c8_7814,
+        0x8cc7_0208,
+        0x90be_fffa,
+        0xa450_6ceb,
+        0xbef9_a3f7,
+        0xc671_78f2,
     ];
     let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
+        0x6a09_e667,
+        0xbb67_ae85,
+        0x3c6e_f372,
+        0xa54f_f53a,
+        0x510e_527f,
+        0x9b05_688c,
+        0x1f83_d9ab,
+        0x5be0_cd19,
     ];
     let mut padded = data.to_vec();
     padded.push(0x80);
@@ -1644,7 +1711,11 @@ fn sha256_hex(data: &[u8]) -> String {
             *slot = slot.wrapping_add(value);
         }
     }
-    h.iter().map(|word| format!("{word:08x}")).collect()
+    h.iter().fold(String::new(), |mut hex, word| {
+        std::fmt::Write::write_fmt(&mut hex, format_args!("{word:08x}"))
+            .expect("writing to a String cannot fail");
+        hex
+    })
 }
 
 /// One line per node in id order, plus the SHA-256 of `.oct` followed by its attributes file.
@@ -1658,7 +1729,7 @@ fn planner_snapshot(output: &std::path::Path) -> (Vec<String>, String) {
         .map(|id| {
             let node = hierarchy.node(NodeId::new(id)).unwrap();
             let blocks = node.blocks().iter().map(|b| b.get()).collect::<Vec<_>>();
-            let parent = node.parent().map(|p| p.get());
+            let parent = node.parent().map(viewer_core::NodeId::get);
             let children = hierarchy
                 .child_ids(node.id())
                 .iter()
@@ -2179,7 +2250,9 @@ fn assert_preorder_structure(output: &std::path::Path, divisions: u8) {
                 let child = hierarchy.node(*child).unwrap();
                 assert!(child.parent() == Some(id) && child.id().get() > id.get());
                 let (min, max) = (child.bounds().min(), child.bounds().max());
-                subdivision.cell_index(std::array::from_fn(|axis| (min[axis] + max[axis]) / 2.0))
+                subdivision.cell_index(std::array::from_fn(|axis| {
+                    f64::midpoint(min[axis], max[axis])
+                }))
             })
             .collect::<Vec<_>>();
         assert!(keys.windows(2).all(|pair| pair[0] < pair[1]), "{keys:?}");
@@ -2188,16 +2261,16 @@ fn assert_preorder_structure(output: &std::path::Path, divisions: u8) {
     assert_eq!(visited, (0..count).collect::<Vec<_>>(), "ids are preorder");
     let blocks = (0..count)
         .flat_map(|id| hierarchy.node(NodeId::new(id)).unwrap().blocks().to_vec())
-        .map(|block| block.get())
+        .map(viewer_core::BlockId::get)
         .collect::<Vec<_>>();
     assert_eq!(blocks, (0..blocks.len() as u64).collect::<Vec<_>>());
 }
 
 #[test]
 fn node_jobs_commit_nodes_and_blocks_in_preorder() {
+    type WriteFixture = fn(&std::path::Path);
     let tmp = test_dir();
     let dir = tmp.path();
-    type WriteFixture = fn(&std::path::Path);
     let fixtures: [(&str, WriteFixture); 5] = [
         ("dense.las", |path| fixture(path, false, true, 4_000)),
         ("clusters.las", eight_cluster_fixture),
@@ -2266,7 +2339,10 @@ fn mem_spool_store_lifecycle_holds_for_whole_plans_and_leaves_no_spool() {
                 .with_spatial_workers(workers)
                 .unwrap();
             let phases = mem_plan_and_drain(input, options);
-            assert!(!phases.node_spool_events.is_empty());
+            assert_ne!(
+                phases.node_spool_events,
+                [] as [viewer_convert_core::diagnostics::NodeSpoolEvent; 0]
+            );
         }
     }
 }
@@ -2283,7 +2359,7 @@ fn an_all_equal_root_is_respooled_and_planned_as_one_leaf() {
     assert!(events[0].is_leaf && events[0].became_leaf_all_equal);
     // 300 records stay below one 32 KiB flush in the LAS scan; the rescan of `SOURCE` finishes
     // (flushes) its children before they are dropped.
-    assert!(!events[0].child_spool_bytes.is_empty());
+    assert_ne!(events[0].child_spool_bytes, [] as [u64; 0]);
 
     let output = tmp.path().join("equal-root.oct");
     convert_file(&input, &output, options).unwrap();
@@ -2317,7 +2393,7 @@ fn a_child_with_all_points_equal_becomes_a_leaf() {
     let hierarchy = reader.metadata().hierarchy();
     let node = hierarchy.node(NodeId::new(equal[0].node_id)).unwrap();
     assert_eq!(node.point_count(), 600);
-    assert!(hierarchy.child_ids(node.id()).is_empty());
+    assert_eq!(hierarchy.child_ids(node.id()), []);
 }
 
 /// A `MemSpoolStore` whose `reader` fails once for each listed point count (after its delay), so

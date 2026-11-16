@@ -1074,13 +1074,12 @@ fn read_hierarchy(
                         "conflicting counts for node {key_text}"
                     )));
                 }
-                Some(_) => {}
                 None if count > 0 => {
                     positive_node_count = positive_node_count
                         .checked_add(1)
                         .ok_or(ConvertError::SizeOverflow)?;
                 }
-                None => {}
+                Some(_) | None => {}
             }
             if counts.len() > MAX_EPT_NODES {
                 return Err(ConvertError::InvalidEpt(

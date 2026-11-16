@@ -150,7 +150,7 @@ mod tests {
     fn a_node_with_all_points_equal_becomes_a_leaf_and_releases_its_children() {
         let dir = tempfile::tempdir().unwrap();
         // Enough records for one 32 KiB flush, so a child spool is really created.
-        let (info, store) = spooled(dir.path(), &[[2.0, 3.0, 4.0]; 2_000]);
+        let (info, store) = spooled(dir.path(), &vec![[2.0, 3.0, 4.0]; 2_000]);
         let output = run_node_job(
             &context(&info, 2),
             &job(&info, cube(0.0, 10.0)),
@@ -180,7 +180,7 @@ mod tests {
     fn an_all_equal_root_closes_its_children_unflushed_and_releases_them() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("input.las");
-        write_las(&path, &[[2.0, 3.0, 4.0]; 2_000]);
+        write_las(&path, &vec![[2.0, 3.0, 4.0]; 2_000]);
         let reader = open_las_reader(&path).unwrap();
         let info = inspect_source(&reader).unwrap();
         let store = MemSpoolStore::new(true);
@@ -203,7 +203,10 @@ mod tests {
         .unwrap();
 
         assert!(partition.all_points_equal);
-        assert!(partition.children.is_empty());
+        assert_eq!(
+            partition.children,
+            [] as [viewer_convert_core::pipeline::node_job::ChildOutput; 0]
+        );
         assert_eq!(partition.release, [SpoolId(1)]);
         assert_eq!(seen.last(), Some(&2_000));
         let flushed = partition.metrics.unwrap().child_spool_bytes;

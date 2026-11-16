@@ -43,12 +43,11 @@ pub(crate) fn verify_candidate_visual_scale(
 }
 
 pub(crate) fn link_or_copy(source: &Path, destination: &Path) -> Result<(), ConvertError> {
-    match fs::hard_link(source, destination) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            fs::copy(source, destination)?;
-            Ok(())
-        }
+    if let Ok(()) = fs::hard_link(source, destination) {
+        Ok(())
+    } else {
+        fs::copy(source, destination)?;
+        Ok(())
     }
 }
 
@@ -195,7 +194,7 @@ pub(crate) fn validate_output_pair(
                             None => {
                                 first_error.get_or_insert(ConvertError::SizeOverflow);
                             }
-                        };
+                        }
                     }
                     if first_error.is_none()
                         && let Err(error) = emit_progress(
@@ -385,7 +384,7 @@ pub(crate) fn create_temporary_output(output_path: &Path) -> Result<TemporaryOut
                     file: Some(file),
                 });
             }
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(ConvertError::Io(error)),
         }
     }

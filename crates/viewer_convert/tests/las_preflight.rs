@@ -113,6 +113,7 @@ fn convert_bytes(bytes: &[u8]) -> Result<(), ConvertError> {
     .map(|_| ())
 }
 
+#[expect(clippy::needless_pass_by_value, reason = "callers hand over the bytes")]
 fn assert_rejected(bytes: Vec<u8>, field: &str) {
     let len = bytes.len() as u64;
     preflight_las(&mut Cursor::new(&bytes), len).expect("header preflight alone accepts it");
@@ -372,7 +373,7 @@ fn variable_chunk_table_covering_fewer_points_is_rejected_by_the_shared_check() 
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "index out of bounds")]
 fn sequential_reader_panics_on_the_same_file() {
     open_sequential(variable_chunk_laz(2, 12));
 }

@@ -30,7 +30,7 @@ impl Workspace {
                 Ok(()) => {
                     return Ok(Self { path });
                 }
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
                 Err(error) => return Err(ConvertError::Io(error)),
             }
         }

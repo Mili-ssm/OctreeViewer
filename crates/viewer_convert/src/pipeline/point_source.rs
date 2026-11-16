@@ -129,7 +129,7 @@ mod tests {
         assert!(ranges.windows(2).all(|pair| pair[0].end == pair[1].start));
         assert!(ranges.iter().all(|range| range.start % BATCH == 0));
         let serial = spool(&path, None).unwrap();
-        assert!(!serial.is_empty());
+        assert_ne!(serial, [] as [u8; 0]);
         assert_eq!(spool(&path, Some(3)).unwrap(), serial);
     }
 
