@@ -1368,3 +1368,15 @@ fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours
     assert_eq!(colour, Some(9), "the new colours replaced the old");
     assert_eq!(fx.driver.take_level_requests(), Some(vec![]));
 }
+
+#[test]
+fn reordered_level_requests_are_not_a_change() {
+    let mut fx = on_demand_fixture(cell_generation(5, 0));
+    let id = NodeId::new(2);
+    fx.driver.level_requests = vec![(id, 6), (id, 7)];
+    assert!(fx.driver.take_level_requests().is_some());
+    fx.driver.level_requests = vec![(id, 7), (id, 6)];
+    assert_eq!(fx.driver.take_level_requests(), None);
+    fx.driver.level_requests = vec![(id, 7)];
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, 7)]));
+}

@@ -1176,13 +1176,11 @@ impl CellPool {
             if let Some(coarsest) = coarsest(&node.stored, caps.get(&entry.node)) {
                 set.insert(self.key(entry.node, coarsest));
             }
-            // A wanted depth that is not stored is requested on demand (`requested_levels`), not
-            // fetched as the stored one that serves it.
+            // A wanted depth is fetched as the stored one that serves it; when it is not stored
+            // itself it is also requested on demand (`requested_levels`).
             let stored = capped(&node.stored, caps.get(&entry.node));
             for depth in entry.wanted.iter().flatten() {
-                if stored.contains(depth) {
-                    set.insert(self.key(entry.node, *depth));
-                }
+                set.insert(self.key(entry.node, served_depth(&stored, *depth)));
             }
         }
         set
@@ -1229,8 +1227,8 @@ impl CellPool {
         (needed, total)
     }
 
-    /// R3-Q11. Returns the levels the wanted entries need after the fit, the levels they want
-    /// that are not stored (to request), and whether even the coarsest levels overflow the usable
+    /// R3-Q11. Returns the levels the wanted entries need after the fit (the stored ones that
+    /// serve them), the wanted depths that are not stored (to request), and whether even the coarsest levels overflow the usable
     /// capacity.
     #[allow(clippy::too_many_arguments)]
     fn fit(
@@ -1283,18 +1281,11 @@ impl CellPool {
                     cursor += 1;
                     scanned += 1;
                     let entry = &entries[position[&id]];
-                    let stored = capped(&nodes[&id].stored, caps.get(&id));
-                    // Only stored levels cost pages: a level to request cannot be coarsened.
-                    let Some(top) = entry
-                        .wanted
-                        .iter()
-                        .flatten()
-                        .copied()
-                        .filter(|depth| stored.contains(depth))
-                        .max()
-                    else {
+                    let Some(top) = entry.wanted.iter().flatten().max().copied() else {
                         continue;
                     };
+                    let stored = capped(&nodes[&id].stored, caps.get(&id));
+                    let top = served_depth(&stored, top);
                     // The finest level below `top` that is smaller; estimates can tie.
                     let size =
                         |depth: u8| self.pages_of(self.key(id, depth), &nodes[&id], ctx.grid);
@@ -1355,7 +1346,7 @@ impl CellPool {
             return None;
         }
         let lacks = (0..8).any(|octant| {
-            let wanted = ctx.depth(id, octant, node);
+            let wanted = served_depth(&node.stored, ctx.depth(id, octant, node));
             needed.contains(&self.key(id, wanted)) && !node.resident.iter().any(|d| *d >= wanted)
         });
         lacks.then_some(old)

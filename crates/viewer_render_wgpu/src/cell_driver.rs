@@ -853,7 +853,13 @@ impl CellDriver {
     /// `add_packed_levels` leaves the set on the next frame.
     #[must_use]
     pub fn take_level_requests(&mut self) -> Option<Vec<(NodeId, u8)>> {
-        if self.level_requests == self.level_requests_taken {
+        // The order is the request priority and moves with the camera: only the set counts.
+        let sorted = |requests: &[(NodeId, u8)]| {
+            let mut sorted = requests.to_vec();
+            sorted.sort_unstable();
+            sorted
+        };
+        if sorted(&self.level_requests) == sorted(&self.level_requests_taken) {
             return None;
         }
         self.level_requests_taken.clone_from(&self.level_requests);
