@@ -1,6 +1,6 @@
 # Fase 1: niveles a demanda (#35) Implementation Plan
 
-Estado: completado · 16-11-2026 · [registro](../records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md)
+Estado: completado salvo el p95 de petición a residente (Task 7, pendiente en [#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)) · 16-11-2026 · [registro](../records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md). Los pasos «→ FAIL» de las tareas 2–6 no se observaron: los tests no compilaban sin la API nueva.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -131,14 +131,14 @@ in-process path wires the same calls without workers. Per-octant selection (ADR 
 
 **Interfaces:**
 - Consumes: `node_cell_level` (Task 1), `PackedNode.buildable` (Task 2).
-- Produces: `LodDataset::apply_level_requests(&mut self, requests: &[(NodeId, u8)])` (replaces the pending set); `CellUpdateConfig.max_level_builds: usize` (default 8, separate from `max_node_builds`); `BuilderOutput.levels: Vec<EncodedNode>` (one `PackedNode` per node with its new levels, encoded with `encode_node_levels`); on `set_cell_paint` the pending set is cleared.
+- Produces: `LodDataset::apply_level_requests(&mut self, requests: &[(NodeId, u8)])` (replaces the pending set); `CellUpdateConfig.max_level_builds: usize` (default 8, separate from `max_node_builds`); `BuilderOutput.levels: Vec<EncodedNode>` (one `PackedNode` per node with its new levels, encoded with `encode_node_levels`); on `set_cell_paint` the pending set survives and is built with the current colour (changed during execution).
 
 - [x] **Step 1: Write the failing tests:**
   - `a_requested_level_is_built_and_shipped` (request `(leaf, chain_min - 1)` for a built leaf → next update's `levels` holds that depth only).
   - `a_newer_request_set_replaces_the_pending_one` (request A, then B before an update → only B is built).
   - `an_uncached_request_schedules_its_blocks_and_is_served_later` (evict the node's blocks → the update lists them to read and ships nothing; after `insert_block` the next update ships the level).
   - `level_builds_respect_their_own_budget` (12 requests → 8 built in one update, 4 in the next).
-  - `a_colour_change_clears_pending_requests`.
+  - `pending_requests_survive_a_colour_change` (plan change in execution: pending requests survive a recolour and are built with the current colour; a rebuilt node keeps its on-demand depths).
 - [x] **Step 2:** `cargo test -p viewer_wasm --profile fast --offline --lib lod_cells` → FAIL.
 - [x] **Step 3:** implement; an uncached node adds its blocks to the update's read list (the same list `plan_cell_update` fills for candidates).
 - [x] **Step 4:** same command → PASS; `cargo clippy -p viewer_wasm --offline --all-targets -- -D warnings` and the wasm32 clippy of `scripts/check.sh` clean.
@@ -174,6 +174,6 @@ in-process path wires the same calls without workers. Per-octant selection (ADR 
 
 - [x] **Step 1: Write the failing test** `a_close_pair_leaf_draws_at_its_spacing_from_far` (the ADR 0046 scenario: a leaf whose chain keeps only fine levels, viewed from far at 4 px → after the level request round-trip the drawn depth equals the depth the full chain would draw).
 - [x] **Step 2:** `cargo test -p viewer_wasm --profile fast --offline --lib a_close_pair_leaf_draws_at_its_spacing_from_far` → PASS (Tasks 1–6 make it pass; it guards the #35 scenario from now on).
-- [x] **Step 3:** build the demo (`scripts/serve-demo.sh`) and verify with Playwright (desktop and mobile): `fs_e430_n4008_18.las` converted to V7 and opened with the file picker draws a surface, not stray points; the built-in sample still reaches the target; console clean. Record request-to-resident p95 and the request queue length over a 10 s zoom (kill criterion: steady growth, or p95 > 1 s at 4 px).
+- [ ] **Step 3:** (Playwright done; request-to-resident p95 and queue length pending, #54) build the demo (`scripts/serve-demo.sh`) and verify with Playwright (desktop and mobile): `fs_e430_n4008_18.las` converted to V7 and opened with the file picker draws a surface, not stray points; the built-in sample still reaches the target; console clean. Record request-to-resident p95 and the request queue length over a 10 s zoom (kill criterion: steady growth, or p95 > 1 s at 4 px).
 - [x] **Step 4:** `scripts/check.sh` with `FORMAT_PARITY_REAL_INPUT` → all steps pass.
 - [x] **Step 5:** write the record and the docs; commit `docs: record phase 1 (on-demand levels)`.

@@ -50,3 +50,18 @@ Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario (la regla; el mecan
 ## Revisar si
 Construir niveles a demanda cuesta más tiempo de frame o de espera que guardarlos, medido en Majadas y
 Belvedere, o los bloques del nodo ya no están en la caché del worker de construcción cuando se piden.
+
+## Revisión 16-11-2026
+Lo construido en la fase 1 ([registro](../records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md)) precisa las
+consecuencias:
+- El protocolo envía el conjunto completo de peticiones (`levelRequests{gen, nodes, depths}`, en orden de
+  prioridad); el último sustituye al anterior. El worker de construcción devuelve los niveles en `nodeLevels` y las
+  profundidades que no puede construir (una hoja con posiciones aún fusionadas en `MAX_CELL_DEPTH`); el driver baja el
+  máximo construible de ese nodo para no volver a pedirlas.
+- Las invariantes del corte pasan de «el nivel deseado está guardado» a «está en el rango construible»; mientras falta,
+  se dibuja el residente más cercano al pedido, el más fino si empatan (R3-Q21).
+- Los niveles de nodos del corte no esperan al freno de admisión de CPU pero cuentan en él; el exceso de CPU lo sigue
+  gobernando el engrosamiento por CPU del [ADR 0037](0037-corte-ajustado-al-presupuesto-de-cpu.md).
+- Al recolorear, un nodo reconstruido conserva sus niveles a demanda, construidos con el color nuevo; las peticiones
+  pendientes sobreviven.
+
