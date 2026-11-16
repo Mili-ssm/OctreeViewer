@@ -1637,6 +1637,25 @@ impl CellPool {
                     *slot = f.octants_of(gap, o).filter_map(|a| drawn[a]).max();
                 }
             }
+            // The covering node may not have drawn over this zone before (it is new in the cut
+            // or drew elsewhere): what drew there was the nearest applied ancestor above it.
+            if let Some((_, gap)) = above {
+                for k in f.gaps().filter(|k| *k > gap) {
+                    let Some(drawn) = self
+                        .applied_index
+                        .cells
+                        .get(&f.ancestor(k))
+                        .and_then(|a| self.applied_drawn.get(a))
+                    else {
+                        continue;
+                    };
+                    for (o, slot) in limit.iter_mut().enumerate() {
+                        if slot.is_none() {
+                            *slot = f.octants_of(k, o).filter_map(|a| drawn[a]).max();
+                        }
+                    }
+                }
+            }
             for (d, k) in &below {
                 let df = Footprint::new(grid, self.applied_index.nodes[d].bounds);
                 for (o, drawn) in self.applied_drawn[d].iter().enumerate() {

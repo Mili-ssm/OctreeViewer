@@ -378,21 +378,6 @@ impl CutView {
             .max()
     }
 
-    /// The (entry, octant) drawing the finest unhidden depth at `p`.
-    fn drawer_at(&self, p: [f64; 3]) -> Option<(usize, usize)> {
-        (0..self.nodes.len())
-            .filter_map(|i| {
-                let c = self.cell_at(i, p)?;
-                if cell_hidden(&self.entries[i].mask, c) {
-                    return None;
-                }
-                let o = octant_of_cell(c);
-                Some((self.active[i][o]?, i, o))
-            })
-            .max()
-            .map(|(_, i, o)| (i, o))
-    }
-
     /// Finest depth drawn at `p` (unhidden), if any.
     fn depth_at(&self, p: [f64; 3]) -> Option<u8> {
         (0..self.nodes.len())
@@ -522,7 +507,7 @@ struct Harness {
     zone_coarsenings: usize,
     /// `zone_coarsenings` without the stage excuse: a staged octant drawn coarser than before,
     /// while its raw wanted depth did not get coarser, counts too. Each such drop is excused when
-    /// the drawing octant is staged (drawn coarser than wanted), the fit capped nodes that frame
+    /// the fit capped nodes that frame
     /// or the ladder ran coarser than the target; the rest are `unexcused_drops` (asserted 0).
     staged_coarsenings: usize,
     stage_excused_drops: usize,
@@ -708,17 +693,10 @@ impl Harness {
                     if let (Some(before), Some(after)) = (self.sample_depths[i], now)
                         && after < before.min(cut.wanted_at(*p, true).unwrap_or(u8::MAX))
                     {
-                        // A stage lowers the octant below its raw wish: the entry draws a level
-                        // coarser than wanted (R3-Q3), the fit capped nodes this frame (R3-Q11),
-                        // or the ladder runs coarser than the target (R3-Q3 stage pixels).
-                        let staged = cut.drawer_at(*p).is_some_and(|(i, o)| {
-                            cut.entries[i].stage[o]
-                                && cut.entries[i].drawn[o] < cut.entries[i].wanted[o]
-                        });
-                        if staged
-                            || self.frame_coarsened > 0
-                            || self.frame_stage_px > self.target_px
-                        {
+                        // Only a counted stage explains a drop below the raw wish: the fit capped
+                        // nodes this frame (R3-Q11) or the ladder runs coarser than the target
+                        // (R3-Q3 stage pixels).
+                        if self.frame_coarsened > 0 || self.frame_stage_px > self.target_px {
                             self.stage_excused_drops += 1;
                         } else {
                             self.unexcused_drops += 1;

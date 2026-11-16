@@ -338,22 +338,26 @@ fn octant_fully_masked(mask: &[u64; 8], octant: usize) -> bool {
 }
 
 /// `(depth, is_stage)`: the wanted level if resident, else the resident level closest to it
-/// (R3-Q21): the finest of the coarser ones, or when none is coarser the coarsest of the finer
-/// ones. It is a stage only when coarser than `wanted`; a finer level already meets the target
-/// (ADR 0031).
+/// (R3-Q21, the image only refines): the coarsest of the finer ones, which meets the target and
+/// is no stage (ADR 0031); only when none is finer, the finest of the coarser ones, as a stage.
 pub fn resident_depth(wanted: u8, resident: &[u8]) -> Option<(u8, bool)> {
     if resident.contains(&wanted) {
         return Some((wanted, false));
     }
-    let coarser = resident
+    let finer = resident
+        .iter()
+        .copied()
+        .filter(|depth| *depth > wanted)
+        .min();
+    if let Some(depth) = finer {
+        return Some((depth, false));
+    }
+    resident
         .iter()
         .copied()
         .filter(|depth| *depth < wanted)
-        .max();
-    match coarser {
-        Some(depth) => Some((depth, true)),
-        None => resident.iter().copied().min().map(|depth| (depth, false)),
-    }
+        .max()
+        .map(|depth| (depth, true))
 }
 
 /// `(drawn, stage)` of a node from its `wanted` depths and `resident` levels, as `cell_cut`

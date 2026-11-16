@@ -353,8 +353,9 @@ fn regraft_mid_cut_keeps_coverage() {
     assert!(rig.pool.is_resident(wanted));
     assert!(!rig.pool.evict(wanted), "a level the cut draws stays");
     assert!(!rig.pool.evict(coarsest), "the coarsest level is pinned");
-    // Far away the cut draws coarse levels, so the fine one can go.
-    rig.run(3, &cut, &cam, 64.0);
+    // Far away the cut draws coarse levels, so the fine one can go once they are resident (until
+    // then it is the finer level that meets the target, R3-Q21).
+    rig.run(12, &cut, &cam, 64.0);
     assert!(rig.pool.evict(wanted));
     let plan = rig.step(&cut, &cam, 64.0);
     assert_eq!(plan.events, vec![CellPoolEvent::Evict(wanted)]);
@@ -1799,8 +1800,10 @@ fn takes_over_at(capacity: u32, target: f64, expect_held: bool, limit: u64) {
 #[test]
 fn a_child_that_wants_less_than_the_ancestor_drew_takes_over_at_its_wanted_level() {
     // At 16 px the children want depth 5 < the 6 the ancestor drew; the ancestor itself wants 4
-    // now and redraws coarser, so the children are not held behind it.
-    takes_over_at(512, 16.0, false, 15);
+    // now. While its level 4 is not resident it keeps drawing 6 (R3-Q21: the image only refines,
+    // a finer level meets the target), so the children whose only level is 4 are held behind it
+    // until their 5 arrives, and then take over at their wanted level.
+    takes_over_at(512, 16.0, true, 15);
 }
 
 #[test]
@@ -1812,8 +1815,8 @@ fn a_child_whose_fit_cap_is_below_the_ancestor_depth_takes_over_at_the_cap() {
 
 #[test]
 fn the_hold_follows_what_would_be_drawn_and_not_mere_residency() {
-    // Node 10 wants 6 (the depth node 2 drew). With 5 and 7 resident the closest level below 6
-    // is 5, so it is held although 7 is resident.
+    // Node 10 wants 6 (the depth node 2 drew). With only 5 resident (the closest level, below
+    // 6) it is held; levels of the node that are not resident do not count.
     let nodes = two_regions();
     let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
     let cam = camera("fit");
@@ -1822,7 +1825,7 @@ fn the_hold_follows_what_would_be_drawn_and_not_mere_residency() {
     let mut cut = ids(&region_children(10));
     cut.push(NodeId::new(3));
     rig.held.insert(NodeId::new(10));
-    seed_resident(&mut rig.pool, 10, &[5, 7]);
+    seed_resident(&mut rig.pool, 10, &[5]);
     let points = sample_points(nodes[&NodeId::new(10)].bounds);
     for frame in 0..12 {
         let resident = resident_levels(&rig);
@@ -1855,7 +1858,7 @@ fn the_closest_resident_level_decides_whether_a_node_is_held() {
     // Node 2 drew 6 and node 10 wants 6.
     for (resident, held) in [
         (vec![5_u8], true),
-        (vec![5, 7], true),
+        (vec![5, 7], false),
         (vec![4, 5], true),
         (vec![6], false),
         (vec![5, 6], false),
