@@ -27,14 +27,14 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 
 | # | Decision | Why |
 | --- | --- | --- |
-| E1 | **Metric (provisional until Task 2):** `edge_bound(c) = side · focal · dmax / max(zmin, near)²` in scaled eye-relative units; `zmin` = `dot(centre, fwd) − side/2 · (abs(fx) + abs(fy) + abs(fz))`, `dmax` = distance from the eye to the farthest corner, `near` = `OrbitCamera::lod_min_depth` (scaled). `refines(c)` = `side > min_side` ∧ `edge_bound(c) > target_px` | For `zmin ≥ near` it bounds every projected edge (largest singular value of the perspective Jacobian is `f·‖p‖/z²`), so no drawn cell is above target when a finer level is active (phase 0a risk: 1.6–13 % with the distance rule). It is monotone (parent: smaller `zmin`, larger `dmax`, twice the side), which makes E4 a partition. Cost risk: up to ~1.3× the actual edge off-axis; Task 2 measures it against the kill criteria and may replace it |
+| E1 | **Metric (measured in Task 2, [record](../records/benchmarks/R3_FASE2A_METRICA_16-11-2026.md)):** `edge_px(c)` = the actual projected edge, as `projected_voxel_edge_pixels`: for the 8 eye-relative corners `o`, `d = dot(o, fwd)`; any `d ≤ 0` → `+inf`; else pixel `focal · (dot(o, right) / d, dot(o, up) / d)`; the result is the largest 2D length of the 12 cube edges. `refines(c)` = `side > min_side` ∧ `edge_px(c) > target_px` | Task 2: fewest instances (0.85–0.99× `octant_tight` inside Majadas), ≤ 0.006 % cells above target, 0 outside; the bound `side·focal·dmax/max(zmin, near)²` failed (0.596 %) because clamping to `near` under-refines near the eye. It is not monotone by proof (0 non-monotone pairs measured), so E4 does not rely on monotonicity |
 | E2 | **Integer coordinates:** relative to the node corner at each depth, `rel = abs − (node_lo << (d − node_depth))`, a `u32` per axis; ancestor at `d_prev` = `rel >> (d − d_prev)`. Cell mode only activates `node_depth ≤ d ≤ node_depth + 31` (the CPU clamps; a 2 km node stops at ~1 µm) | D2 of the master plan; the anchor depends only on the node bounds, so it never changes after insertion; no cell larger than its node draws over its siblings |
 | E3 | **Position for the metric:** `lo = node_anchor + f32(rel) · side`, the anchor being the node corner eye-relative in f32 (rewritten every frame the eye moves, like page origins); the ancestor side is `side · 2^(d − d_prev)` (exact). Drawing positions keep using the page origin | Same integer → same float → same decision for a cell and for its children |
-| E4 | **Draw rule** (active depths `A` of the node as a `u64` bitmask): draw `c` at `d` iff ¬`masked_any(c)` ∧ (no active depth above `d` ∨ ¬`refines(c)`) ∧ (no active depth below `d` ∨ `refines'(anc_prev(c))`), with `refines'(x)` = `refines(x)` ∨ `masked_any(x)` | Along the chain of a point the drawn cell is the first transition refine → not refine: exactly one with a monotone predicate |
+| E4 | **Draw rule** (active depths `A` of the node as a `u64` bitmask): draw `c` at `d` iff ¬`masked_any(c)` ∧ (no active depth above `d` ∨ ¬`refines(c)`) ∧ for **every** active depth `a < d`: `refines'(anc_a(c))`, with `refines'(x)` = `refines(x)` ∨ `masked_any(x)`. Evaluate ancestors from the coarsest, stopping at the first that does not refine | Along the chain of a point the drawn cell is the first active depth that does not refine: exactly one by construction, with or without a monotone metric; cost ≤ `|A|` evaluations per cell |
 | E5 | **`masked_any`** (D5): depth `≥ rep` (= `node_depth + 3`): the one 8³ bit; `node_depth ≤ d < rep`: one bit of a precomputed mip (4³ as `u64`, 2³ as 8 bits, 1³ as 1 bit) | Today a coarse cell tests only the bit at its minimum corner and paints over resident children |
-| E6 | **Active set in cell mode:** `A` = { closest resident (finer on a tie) to `w` : `w` ∈ octant wanted depths }, clamped to E2's range, with no "spanning level forces one depth" rule. The octant wanted depth uses E1 (a cell of side `d` at the octant's nearest point) instead of the actual edge, so the CPU never wants coarser than the GPU draws | Closest resident: owner, R3-Q21, 16-11-2026; one metric on both sides |
+| E6 | **Active set in cell mode:** `A` = { closest resident (finer on a tie) to `w` : `w` ∈ octant wanted depths }, clamped to E2's range, with no "spanning level forces one depth" rule. The octant wanted depth keeps `projected_voxel_edge_pixels` at the octant's nearest point (ADR 0034), the same metric as E1, so the CPU and the GPU agree | Closest resident: owner, R3-Q21, 16-11-2026; one metric on both sides |
 | E7 | **D5 gate:** a node's mask bits are applied only while it has an active depth `≥ rep`; until then its masking children are held (they do not draw, as `eval_hold` does) and that depth is requested first | Without it a partially masked coarse cell leaves a hole (pre-mortem); octant mode overdrew instead |
-| E8 | **GPU layout** (the compute stage already uses the 8 storage buffers of the WebGPU minimum, `cell_render.rs:60-65`): page entry 32 → 48 B (words 8–10 `rel` of the page minimum, word 11 `depth`); mask slot 16 → 32 words, now a *node record* (0–15 mask; 16–18 anchor f32; 19 `node_depth`; 20–21 `A`; 22–23 4³ mip; 24 2³ mip and 1³ `<< 8`; 25–31 reserved); frame uniform 128 → 160 B (+ `forward`, `focal`, `near`, `target_px`, `min_side`, `lod_mode`, `counters`); per-depth counters appended to the `draw_args` buffer | No new binding |
+| E8 | **GPU layout** (the compute stage already uses the 8 storage buffers of the WebGPU minimum, `cell_render.rs:60-65`): page entry 32 → 48 B (words 8–10 `rel` of the page minimum, word 11 `depth`); mask slot 16 → 32 words, now a *node record* (0–15 mask; 16–18 anchor f32; 19 `node_depth`; 20–21 `A`; 22–23 4³ mip; 24 2³ mip and 1³ `<< 8`; 25–31 reserved); frame uniform 128 → 176 B (+ `forward`, `right`, `up`, `focal`, `target_px`, `min_side`, `lod_mode`, `counters`); per-depth counters appended to the `draw_args` buffer | No new binding |
 
 ## Global Constraints
 
@@ -49,11 +49,11 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 
 ## Review Focus
 
-1. Eye inside a cell, or a cell crossing the near distance: the bound uses `near`, stays finite, never NaN (Task 1 `a_cell_around_the_eye_refines`).
+1. Eye inside a cell, or a cell with a corner behind the eye: `edge_px = +inf`, it refines (unless `side ≤ min_side`), never NaN (Task 1 `a_cell_around_the_eye_refines`).
 2. Children of one ancestor split across two pages agree on the ancestor's decision (Task 7 partition test with a 2-page level).
 3. A child node entering under a parent with no resident depth `≥ rep`: no hole and no overlap (Task 3 `children_wait_for_the_parent_d5_level`, Task 4 sims).
 4. Switching `cellLod` at runtime with levels resident: the next frame is valid in the new mode (Task 10 `switching_mode_rewrites_the_page_table`).
-5. Active depths non-contiguous (`{6, 9, 13}` relative) and a gap ≥ 16; an anchor far from the eye (`‖anchor‖ = 1e4`, `d − node_depth = 29`) keeps the decision monotone (Task 1).
+5. Active depths non-contiguous (`{6, 9, 13}` relative), a gap ≥ 16 and the span top 31; an anchor far from the eye (`‖anchor‖ = 1e4`, `d − node_depth = 29`) (Task 1).
 
 ## Kill criteria
 
@@ -100,10 +100,11 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Modify: `crates/viewer_render_wgpu/examples/coverage_spike.rs` (bring the `--cell-lod` code of branch `explore/cell-lod-spike`, commits `9e0ec17` and `5f8ba56`, and add `--metric bound|edge|distance`, where `bound` calls `cell_lod::refines`, `edge` refines while `projected_voxel_edge_pixels > target`, `distance` is the phase 0a rule)
 - Create: `docs/records/benchmarks/R3_FASE2A_METRICA_<dd-mm-aaaa>.md` and its data folder
 
-- [ ] **Step 1:** run `--cell-lod` for each metric on both datasets, poses grazing, orbit-0 and inside-leaf, 1/2/4/8 px, residency `r2`; report instances vs CPU path and vs `octant_tight`, above-target cells by actual edge, and for `edge` the number of child-refines-but-parent-does-not pairs (non-monotone cases).
-- [ ] **Step 2:** write the record (facts, inferences) and a verdict: the metric that passes the kill criteria with the fewest instances; `edge` qualifies only with 0 non-monotone pairs. If none passes → stop (kill criteria).
-- [ ] **Step 3:** if the verdict is not `bound`, amend E1 and Task 1's twin in a follow-up commit before Task 3.
-- [ ] **Step 4:** commit `docs: measure the per-cell LOD metric (phase 2a gate)`.
+- [x] **Step 1:** run `--cell-lod` for each metric on both datasets, poses grazing, orbit-0 and inside-leaf, 1/2/4/8 px, residency `r2`; report instances vs CPU path and vs `octant_tight`, above-target cells by actual edge, and for `edge` the number of child-refines-but-parent-does-not pairs (non-monotone cases).
+- [x] **Step 2:** write the record (facts, inferences) and a verdict: the metric that passes the kill criteria with the fewest instances; `edge` qualifies only with 0 non-monotone pairs. If none passes → stop (kill criteria).
+- [x] **Step 3:** if the verdict is not `bound`, amend E1 and Task 1's twin in a follow-up commit before Task 3.
+- [x] **Step 4:** commit `docs: measure the per-cell LOD metric (phase 2a gate)`.
+- [ ] **Amendment (verdict `edge`, 16-11-2026):** the twin of Task 1 switches to E1 `edge_px` (`LodView` gets `right` and `up`, loses `near`; `edge_bound` becomes `edge_px`) and to the E4 all-ancestors rule; `the_bound_covers_the_projected_edge` becomes `edge_px_matches_the_camera` (relative 1e-4 against `projected_voxel_edge_pixels` in f64) and the partition test runs unchanged. Commit `feat(render): use the actual projected edge in the per-cell LOD twin`.
 
 ### Task 3: The cut and the pool in cell mode (CPU only)
 
@@ -144,9 +145,9 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Test: `cell_codec_tests.rs`, `cell_render_tests.rs`
 
 **Interfaces:**
-- Produces: `PageEntry(pub [u32; 12])`; `PageInfo::entry(&self, frame, mask_slot, octant_bits, rel_origin: [u32; 3]) -> PageEntry` (`rel_origin` = page minimum relative to the node corner at the page depth, E2); `PAGE_BYTES = 48`; `FrameUniform` gains `forward: [f32; 3]`, `focal`, `near`, `target_px`, `min_side`, `lod_mode: u32` (0 octant, 1 cell), `counters: u32` (0 off), 160 B.
+- Produces: `PageEntry(pub [u32; 12])`; `PageInfo::entry(&self, frame, mask_slot, octant_bits, rel_origin: [u32; 3]) -> PageEntry` (`rel_origin` = page minimum relative to the node corner at the page depth, E2); `PAGE_BYTES = 48`; `FrameUniform` gains `forward`, `right`, `up: [f32; 3]`, `focal`, `target_px`, `min_side`, `lod_mode: u32` (0 octant, 1 cell), `counters: u32` (0 off), 176 B.
 
-- [ ] **Step 1: Write the failing tests:** `page_entry_round_trips_the_relative_origin_and_depth`; `frame_uniform_is_160_bytes_and_matches_the_wgsl_layout`.
+- [ ] **Step 1: Write the failing tests:** `page_entry_round_trips_the_relative_origin_and_depth`; `frame_uniform_is_176_bytes_and_matches_the_wgsl_layout`.
 - [ ] **Step 2:** `--lib cell_codec`, `--lib cell_render` → FAIL.
 - [ ] **Step 3:** implement; `slot_state` does not use the new fields yet.
 - [ ] **Step 4:** all lib tests of both crates → PASS unchanged; the storage-buffer test passes.
@@ -176,7 +177,7 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 
 - [ ] **Step 1: Write the failing tests:**
   - `cell_mode_draws_one_cell_per_point_on_every_adapter`: read back `visible`; 200 seeded poses by default and 1000 with `CELL_LOD_POSES=1000`, over the Task 1 scene kinds plus a 2-page level, the eye inside a cell, and 1-ULP threshold poses (bisect `target_px`); occlusion off → each sample point inside the frustum (2 % viewport margin) is covered by exactly one drawn cell; occlusion on → no point covered twice.
-  - `cell_mode_matches_the_twin_away_from_the_threshold`: GPU decision equals `cell_lod::draws` whenever the cell's and its ancestor's `edge_bound/target` differ from 1 by more than 1e-4.
+  - `cell_mode_matches_the_twin_away_from_the_threshold`: GPU decision equals `cell_lod::draws` whenever the cell's and its ancestors' `edge_px/target` differ from 1 by more than 1e-4.
   - `octant_mode_is_unchanged`: `compaction_count_matches_a_cpu_count_on_every_adapter` passes.
 - [ ] **Step 2:** `cargo test -p viewer_render_wgpu --profile fast --offline --lib cell_render` → FAIL.
 - [ ] **Step 3:** implement.
