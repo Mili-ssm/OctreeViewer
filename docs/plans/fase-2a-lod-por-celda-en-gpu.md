@@ -116,11 +116,11 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Consumes: Task 1 twin (and Task 2's verdict).
 - Produces: `pub enum LodMode { Octant, Cell }` (default `Octant`); `CellPool::set_lod_mode(&mut self, mode: LodMode)`; in cell mode `FramePlan.active` holds one `ActiveLevel` per (node, active depth) with `octant_bits = 0xff`, and `MaskUpdate { slot, mask, active, node_depth }` describes every applied node; `CellCutEntry.drawn` keeps meaning "per-octant closest resident" for stats; `cell_cut_digest` unchanged in octant mode.
 
-- [ ] **Step 1: Write the failing tests:** `cell_mode_activates_the_closest_resident_of_each_wanted_depth`; `cell_mode_clamps_active_depths_to_the_node_span`; `cell_mode_never_forces_one_depth_for_a_spanning_level`; `children_wait_for_the_parent_d5_level` (E7: mask empty and children held until a depth `≥ rep` is resident, and that depth is requested first); `cell_mode_wants_with_the_twin_metric`.
-- [ ] **Step 2:** `--lib cell_pool` and `--lib cell_cut` → FAIL.
-- [ ] **Step 3:** implement; octant mode untouched (goldens unchanged).
-- [ ] **Step 4:** all `viewer_render_wgpu` lib tests → PASS; clippy clean.
-- [ ] **Step 5:** commit `feat(render): plan cell mode in the cut and the pool`.
+- [x] **Step 1: Write the failing tests:** `cell_mode_activates_the_closest_resident_of_each_wanted_depth`; `cell_mode_clamps_active_depths_to_the_node_span`; `cell_mode_never_forces_one_depth_for_a_spanning_level`; `children_wait_for_the_parent_d5_level` (E7: mask empty and children held until a depth `≥ rep` is resident, and that depth is requested first); `cell_mode_wants_with_the_twin_metric`.
+- [x] **Step 2:** `--lib cell_pool` and `--lib cell_cut` → FAIL.
+- [x] **Step 3:** implement; octant mode untouched (goldens unchanged).
+- [x] **Step 4:** all `viewer_render_wgpu` lib tests → PASS; clippy clean.
+- [x] **Step 5:** commit `feat(render): plan cell mode in the cut and the pool`.
 
 ### Task 4: Streaming simulations in cell mode (CPU only)
 
@@ -130,7 +130,7 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 
 **Interfaces:**
 - Consumes: `cell_lod::drawn_depth_at` (Task 1), `LodMode` (Task 3).
-- Produces: in cell mode the oracle samples a 7³ lattice over the *whole cut* (all nodes, so overlap between nodes is visible) and gets each sample's drawn depth from the twin over the plan's active sets and masks. Gates: no sample drawn twice, no hole outside lost zones, R3-Q21 per sample with `wanted` = the CPU octant depth (`now ≥ min(before, wanted)`, existing excuses for counted stages), `staged_coarsenings == 0` unexcused. Depths the bound wants but the cut does not activate are a reported counter, not a failure. Octant mode keeps its oracle.
+- Produces: in cell mode the oracle samples a 7³ lattice over the *whole cut* (all nodes, so overlap between nodes is visible) and gets each sample's drawn depth from the twin over the plan's active sets and masks. Gates: no sample drawn twice, no hole outside lost zones, R3-Q21 per sample with `wanted` = the twin's per-cell wanted depth (first depth of the node span whose cell at the sample does not refine, capped by the buildable range) (`now ≥ min(before, wanted)`, existing excuses for counted stages), `staged_coarsenings == 0` unexcused. Depths the bound wants but the cut does not activate are a reported counter, not a failure. Octant mode keeps its oracle.
 
 - [ ] **Step 1: Write the failing tests:** the existing streaming scenarios and the 18 seeded sims parametrised by mode; `cell_mode_bands_follow_the_distance` (straight zoom over a flat node: the drawn depth does not increase with sample distance within a node).
 - [ ] **Step 2:** `cargo test -p viewer_wasm --profile fast --offline --lib lod_cells` → FAIL.
