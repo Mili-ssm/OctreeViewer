@@ -1,6 +1,6 @@
 # Fase 2a: selección por celda en la GPU (#44) Implementation Plan
 
-Estado: implementado · 16-11-2026 · fase 2a del [plan maestro](nivel-pedido-y-lod-por-celda.md) (pre-mortem aplicado); [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-2026.md); pendiente de revisión final y fusión. La señal «en reposo» sigue siendo el resumen del corte por octantes: pasa a la fase 2c
+Estado: implementado · 16-11-2026 · fase 2a del [plan maestro](nivel-pedido-y-lod-por-celda.md) (pre-mortem aplicado); [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-2026.md); revisión final hecha y `scripts/check.sh` 24/24 (`d47695a`); pendiente de fusión. La señal «en reposo» sigue siendo el resumen del corte por octantes: pasa a la fase 2c
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -233,6 +233,6 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Modify: `examples/web-host/probe-cells-parity.mjs` (both modes), `examples/web-host/PROBES.md`, `docs/explanation/REGIONAL_VOXEL_LOD.md` (per-cell rule E1–E7), master plan (tick 2a; D3 records the metric that replaced the distance rule), this plan's `Estado`
 - Create: `docs/records/benchmarks/R3_FASE2A_LOD_POR_CELDA_<dd-mm-aaaa>.md`
 
-- [ ] **Step 1:** `probe-cells-parity` in both modes on the demo sample and on `fs_e430` (V7); same-pose screenshots in octant and cell mode during a zoom; nodes with ≥ 2 drawn depths; slot-pass time with timestamp queries where the adapter has them; a run in Chrome WebGPU; `scripts/check.sh` with the real input. Done (16-11-2026): the probe in both modes on `belvedere-v7.oct` instead (the probe takes a file, and `fs_e430` is V5, which never reaches the cell path); same-pose screenshots and a Chrome WebGPU run on the real GPU (see the record); drawn depths per depth from the native bench counters. Not done: slot-pass timing with timestamp queries (moves to phase 2c); `scripts/check.sh` result pending.
+- [x] **Step 1:** `probe-cells-parity` in both modes on the demo sample and on `fs_e430` (V7); same-pose screenshots in octant and cell mode during a zoom; nodes with ≥ 2 drawn depths; slot-pass time with timestamp queries where the adapter has them; a run in Chrome WebGPU; `scripts/check.sh` with the real input. Done (16-11-2026): the probe in both modes on `belvedere-v7.oct` instead (the probe takes a file, and `fs_e430` is V5, which never reaches the cell path); same-pose screenshots and a Chrome WebGPU run on the real GPU (see the record); drawn depths per depth from the native bench counters. Not done: slot-pass timing with timestamp queries (moves to phase 2c). `scripts/check.sh` with the real input: 24/24 at `d47695a`.
 - [x] **Step 2:** record facts (per-depth counts, above-target by actual edge from the twin, adapters that ran the GPU tests) and inferences separately.
 - [x] **Step 3:** commit `docs: record phase 2a (per-cell LOD in the GPU)`.

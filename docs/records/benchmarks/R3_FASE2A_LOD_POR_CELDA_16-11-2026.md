@@ -113,4 +113,4 @@ Scripts de Playwright del verificador (fuera del repositorio): cargar la página
 
 - Las medidas de bench son de una sola ejecución, sin repetición ni varianza; solo valen para los casos exportados, RADV y el perfil `perf`.
 - Los conjuntos activos de la 2a pueden saltarse niveles hasta la fase 2b ([ADR 0053](../../adr/0053-transiciones-de-un-nivel.md)).
-- Falta `scripts/check.sh` con la entrada real (a cargo del controlador).
+- `scripts/check.sh` con la entrada real (Belvedere COPC): 24/24 pasos en `d47695a`, tras la revisión final de la rama.
