@@ -253,7 +253,11 @@ fn hierarchy_block_catalog_is_empty_when_no_node_references_blocks() {
         None,
     )
     .unwrap();
-    assert_eq!(hierarchy.block_ids(), []);
+    assert!(
+        hierarchy.block_ids().is_empty(),
+        "{:?}",
+        hierarchy.block_ids()
+    );
     assert!(!hierarchy.references_block(BlockId::new(u64::MAX)));
 }
 
@@ -352,7 +356,11 @@ fn validates_attribute_schema_and_allows_payload_free_internal_nodes() {
     )
     .unwrap();
 
-    assert_eq!(hierarchy.node(NodeId::new(1)).unwrap().blocks(), []);
+    assert!(
+        hierarchy.node(NodeId::new(1)).unwrap().blocks().is_empty(),
+        "{:?}",
+        hierarchy.node(NodeId::new(1)).unwrap().blocks()
+    );
     assert_eq!(hierarchy.attributes()[0].component_count(), 1);
 }
 

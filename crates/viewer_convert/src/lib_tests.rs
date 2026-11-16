@@ -143,10 +143,7 @@ fn diagnostics_report_internal_windows_without_changing_output_bytes() {
     let validation_workers = diagnostics
         .validation_workers
         .expect("profiled validation reports worker aggregates");
-    assert_ne!(
-        validation_workers,
-        [] as [viewer_convert_core::ValidationWorkerDiagnostics; 0]
-    );
+    assert!(!validation_workers.is_empty());
     assert!(validation_workers.iter().all(|worker| {
         worker.blocks_read > 0
             && worker.points_read > 0
@@ -448,7 +445,7 @@ fn converts_laz_in_bounded_blocks_and_preserves_intensity_and_rgb16() {
             panic!("RGB must remain u16");
         };
         let (colors, remainder) = rgb.as_chunks::<3>();
-        assert_eq!(remainder, [] as [u16; 0]);
+        assert!(remainder.is_empty(), "{remainder:?}");
         assert!(
             colors
                 .iter()
@@ -844,7 +841,7 @@ fn v6_serial_and_parallel_conversion_outputs_are_identical_and_readable() {
                 panic!("RGB must remain u16");
             };
             let (colors, remainder) = rgb.as_chunks::<3>();
-            assert_eq!(remainder, [] as [u16; 0]);
+            assert!(remainder.is_empty(), "{remainder:?}");
             assert!(
                 colors
                     .iter()
@@ -1345,7 +1342,7 @@ fn resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_r
             Some(5)
         );
         let block_id = reader.block_storage_stats().unwrap()[0].id;
-        assert_ne!(reader.read_block(block_id).unwrap().attributes(), []);
+        assert!(!reader.read_block(block_id).unwrap().attributes().is_empty());
 
         convert_file(&input, &expected, options).unwrap();
         assert_eq!(fs::read(output).unwrap(), fs::read(expected).unwrap());
@@ -1415,7 +1412,7 @@ fn pair_output_refuses_existing_companion_and_geometry_alone_is_gray() {
     let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
     for block in reader.block_storage_stats().unwrap() {
         let data = reader.read_block(block.id).unwrap();
-        assert_eq!(data.attributes(), []);
+        assert!(data.attributes().is_empty(), "{:?}", data.attributes());
         assert!(
             data.points()
                 .points()
@@ -1513,7 +1510,7 @@ fn spool_diagnostics_account_written_and_live_bytes() {
         assert!(phases.peak_live_spool_bytes > 0);
         // Strict: internal nodes delete their input spools, so dropped removals would fail this.
         assert!(phases.peak_live_spool_bytes < phases.spool_bytes_written);
-        assert_ne!(phases.root_child_spool_bytes_written, [] as [u64; 0]);
+        assert!(!phases.root_child_spool_bytes_written.is_empty());
         assert!(
             phases.root_child_spool_bytes_written.iter().sum::<u64>() <= phases.spool_bytes_written
         );
@@ -1711,11 +1708,9 @@ fn sha256_hex(data: &[u8]) -> String {
             *slot = slot.wrapping_add(value);
         }
     }
-    h.iter().fold(String::new(), |mut hex, word| {
-        std::fmt::Write::write_fmt(&mut hex, format_args!("{word:08x}"))
-            .expect("writing to a String cannot fail");
-        hex
-    })
+    #[expect(clippy::format_collect, reason = "test output, not a hot path")]
+    let hex = h.iter().map(|word| format!("{word:08x}")).collect();
+    hex
 }
 
 /// One line per node in id order, plus the SHA-256 of `.oct` followed by its attributes file.
@@ -2339,10 +2334,7 @@ fn mem_spool_store_lifecycle_holds_for_whole_plans_and_leaves_no_spool() {
                 .with_spatial_workers(workers)
                 .unwrap();
             let phases = mem_plan_and_drain(input, options);
-            assert_ne!(
-                phases.node_spool_events,
-                [] as [viewer_convert_core::diagnostics::NodeSpoolEvent; 0]
-            );
+            assert!(!phases.node_spool_events.is_empty());
         }
     }
 }
@@ -2359,7 +2351,7 @@ fn an_all_equal_root_is_respooled_and_planned_as_one_leaf() {
     assert!(events[0].is_leaf && events[0].became_leaf_all_equal);
     // 300 records stay below one 32 KiB flush in the LAS scan; the rescan of `SOURCE` finishes
     // (flushes) its children before they are dropped.
-    assert_ne!(events[0].child_spool_bytes, [] as [u64; 0]);
+    assert!(!events[0].child_spool_bytes.is_empty());
 
     let output = tmp.path().join("equal-root.oct");
     convert_file(&input, &output, options).unwrap();
@@ -2393,7 +2385,11 @@ fn a_child_with_all_points_equal_becomes_a_leaf() {
     let hierarchy = reader.metadata().hierarchy();
     let node = hierarchy.node(NodeId::new(equal[0].node_id)).unwrap();
     assert_eq!(node.point_count(), 600);
-    assert_eq!(hierarchy.child_ids(node.id()), []);
+    assert!(
+        hierarchy.child_ids(node.id()).is_empty(),
+        "{:?}",
+        hierarchy.child_ids(node.id())
+    );
 }
 
 /// A `MemSpoolStore` whose `reader` fails once for each listed point count (after its delay), so

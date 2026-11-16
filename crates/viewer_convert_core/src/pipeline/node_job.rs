@@ -825,7 +825,7 @@ pub fn join_segments<S: SpoolStore>(
     target: SpoolId,
     segments: &[SpoolId],
 ) -> Result<u64, ConvertError> {
-    debug_assert_ne!(segments, []);
+    debug_assert!(!segments.is_empty());
     store.create(target)?;
     let mut buffer = vec![0_u8; SPOOL_IO_BUFFER_BYTES];
     let mut total = 0_u64;

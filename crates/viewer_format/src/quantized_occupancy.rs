@@ -246,7 +246,11 @@ mod tests {
             let empty = quantize_local_positions(&[], 0.0).unwrap();
             let candidate = QuantizedOccupancy::new(&empty, bits).unwrap();
             assert_eq!(candidate.index().leaf_count(), 0);
-            assert_eq!(candidate.residual_bytes(), []);
+            assert!(
+                candidate.residual_bytes().is_empty(),
+                "{:?}",
+                candidate.residual_bytes()
+            );
             assert_eq!(candidate.reconstruct(), empty);
             let identical = fixture(vec![[u32::MAX; 3]; 5]);
             let candidate = QuantizedOccupancy::new(&identical, bits).unwrap();

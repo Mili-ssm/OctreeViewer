@@ -599,7 +599,11 @@ mod tests {
             scheduler.complete(ticket, Err(())).unwrap(),
             RequestCompletion::Failed
         );
-        assert_eq!(scheduler.pending_blocks(), [] as [BlockId; 0]);
+        assert!(
+            scheduler.pending_blocks().is_empty(),
+            "{:?}",
+            scheduler.pending_blocks()
+        );
         assert!(scheduler.retry(block_id));
         assert_eq!(scheduler.pending_blocks(), vec![block_id]);
     }

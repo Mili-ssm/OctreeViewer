@@ -68,7 +68,7 @@ impl PackedIds<'_> {
 
 /// Fill a byte palette in first-occurrence order and return byte-to-ID lookup.
 fn byte_dictionary(raw: &[u8], table: &mut Vec<u8>) -> [u16; 256] {
-    debug_assert_eq!(table.as_slice(), []);
+    debug_assert!(table.is_empty(), "{table:?}");
     let mut lookup = [u16::MAX; 256];
     for &value in raw {
         let id = &mut lookup[usize::from(value)];

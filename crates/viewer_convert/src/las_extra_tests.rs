@@ -244,7 +244,11 @@ fn flags_without_extra_bytes_are_kept_and_older_formats_are_unchanged() {
     let paged = dir.path().join("p.oct");
     convert_file(&input, &paged, options(FormatVersion::V7_PRE5)).unwrap();
     let mut reader = open(&paged);
-    assert_eq!(reader.format_metadata().las_extra_bytes(), []);
+    assert!(
+        reader.format_metadata().las_extra_bytes().is_empty(),
+        "{:?}",
+        reader.format_metadata().las_extra_bytes()
+    );
     let hierarchy = reader.format_metadata().dataset().hierarchy();
     let block = hierarchy.node(hierarchy.root_id()).unwrap().blocks()[0];
     let last = hierarchy.attributes().last().unwrap().name().to_owned();
@@ -373,6 +377,10 @@ fn undocumented_extra_bytes_are_dropped_and_reported() {
         report.omitted_dimensions
     );
     let reader = open(&output);
-    assert_eq!(reader.format_metadata().las_extra_bytes(), []);
+    assert!(
+        reader.format_metadata().las_extra_bytes().is_empty(),
+        "{:?}",
+        reader.format_metadata().las_extra_bytes()
+    );
     column_index(&reader, "las_flags");
 }

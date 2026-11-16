@@ -1423,7 +1423,7 @@ fn split_geometry_is_gray_and_selective_reads_do_not_touch_other_file() {
     let id = BlockId::new(42);
     assert!(!reader.has_attributes());
     let gray = reader.read_block(id).unwrap();
-    assert_eq!(gray.attributes(), []);
+    assert!(gray.attributes().is_empty(), "{:?}", gray.attributes());
     assert!(
         gray.points()
             .points()

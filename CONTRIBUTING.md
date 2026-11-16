@@ -87,10 +87,11 @@ Fuente única de las reglas.
   intercambiables.
 - **Clippy**: los lints viven en `[workspace.lints]` del `Cargo.toml` raíz y cada crate los hereda
   con `[lints] workspace = true`. Política: `pedantic` en `warn` con excepciones (`allow`)
-  justificadas una a una en el propio `Cargo.toml`; lints de `restriction` elegidos uno a uno, nunca
-  el grupo; `disallowed_methods`/`disallowed_types` en `deny` (su configuración sigue en el
-  `clippy.toml` de cada crate). Una excepción local usa `#[expect(clippy::lint, reason = "…")]`,
-  no `#[allow]`, y todo `unsafe` lleva un comentario `// SAFETY:`. `viewer_render_wgpu` y
+  en el propio `Cargo.toml`, cada una con su motivo en un comentario (los `cast_*` comparten uno); lints de
+  `restriction` elegidos uno a uno, nunca el grupo; `disallowed_methods`/`disallowed_types` en `deny` (su configuración sigue en el
+  `clippy.toml` de cada crate). Una excepción local usa `#[expect(clippy::lint, reason = "…")]`;
+  `#[allow(…, reason = "…")]` solo donde `expect` no puede funcionar (un lint que salta solo en
+  algunos targets o binarios de test), y todo `unsafe` lleva un comentario `// SAFETY:`. `viewer_render_wgpu` y
   `viewer_wasm` se suman al terminar la fase 2b; hasta entonces no heredan los lints.
 
 ## Issues y PRs

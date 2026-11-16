@@ -354,16 +354,12 @@ impl Seek for GatedReader {
     }
 }
 
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "callers hand over the bytes; the helper clones them per reader"
-)]
-fn parallel_readers(bytes: Vec<u8>, count: usize) -> Vec<FormatReader<Cursor<Vec<u8>>>> {
-    let base = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
+fn parallel_readers(bytes: &[u8], count: usize) -> Vec<FormatReader<Cursor<Vec<u8>>>> {
+    let base = FormatReader::new(Cursor::new(bytes.to_vec())).unwrap();
     let mut readers = Vec::with_capacity(count);
     readers.push(base);
     for _ in 1..count {
-        let fork = readers[0].fork_reader(Cursor::new(bytes.clone()));
+        let fork = readers[0].fork_reader(Cursor::new(bytes.to_vec()));
         readers.push(fork);
     }
     readers
@@ -540,7 +536,7 @@ fn parallel_reads_deliver_in_order_with_one_or_two_readers() {
         (BLOCK_ID, ReadSelection::Geometry),
     ];
     for reader_count in [1, 2] {
-        let mut readers = parallel_readers(bytes.clone(), reader_count);
+        let mut readers = parallel_readers(&bytes, reader_count);
         let budget = viewer_format::ReadBudget::new(u64::MAX);
         let mut delivered = Vec::new();
         let progress = read_selected_parallel(&mut readers, &requests, &budget, |index, result| {
@@ -648,7 +644,7 @@ fn parallel_quota_blocks_or_reduces_window_and_callback_break_counts_result() {
         .peak_bytes();
     let requests = [(BLOCK_ID, ReadSelection::Positions); 2];
 
-    let mut readers = parallel_readers(bytes.clone(), 2);
+    let mut readers = parallel_readers(&bytes, 2);
     let budget = viewer_format::ReadBudget::new(peak);
     let mut delivered = Vec::new();
     let progress = read_selected_parallel(&mut readers, &requests, &budget, |index, result| {
@@ -663,7 +659,7 @@ fn parallel_quota_blocks_or_reduces_window_and_callback_break_counts_result() {
     assert_eq!(budget.peak_reserved_bytes(), peak);
     assert_eq!(budget.reserved_bytes(), 0);
 
-    let mut readers = parallel_readers(bytes.clone(), 2);
+    let mut readers = parallel_readers(&bytes, 2);
     let budget = viewer_format::ReadBudget::new(peak);
     let external = budget.try_reserve(peak).unwrap().unwrap();
     let blocked = read_selected_parallel(&mut readers, &requests[..1], &budget, |_, _| {
@@ -681,7 +677,7 @@ fn parallel_quota_blocks_or_reduces_window_and_callback_break_counts_result() {
     assert_eq!(resumed.delivered, 1);
     assert_eq!(budget.reserved_bytes(), 0);
 
-    let mut readers = parallel_readers(bytes, 2);
+    let mut readers = parallel_readers(&bytes, 2);
     let budget = viewer_format::ReadBudget::new(u64::MAX);
     let cancelled = read_selected_parallel(&mut readers, &requests, &budget, |index, _| {
         assert_eq!(index, 0);
@@ -777,7 +773,7 @@ fn parallel_crc_worker_and_callback_panics_release_every_reservation() {
         .ranges()[0];
     let mut corrupt = original.clone();
     corrupt[range.offset() as usize] ^= 1;
-    let mut readers = parallel_readers(corrupt, 2);
+    let mut readers = parallel_readers(&corrupt, 2);
     let budget = viewer_format::ReadBudget::new(u64::MAX);
     assert!(matches!(
         read_selected_parallel(
@@ -800,7 +796,7 @@ fn parallel_crc_worker_and_callback_panics_release_every_reservation() {
         .ranges()[0];
     let mut bad_colors = original;
     bad_colors[color_range.offset() as usize] ^= 1;
-    let mut readers = parallel_readers(bad_colors, 2);
+    let mut readers = parallel_readers(&bad_colors, 2);
     let budget = viewer_format::ReadBudget::new(u64::MAX);
     let mut delivered_indices = Vec::new();
     assert!(matches!(
@@ -881,7 +877,7 @@ fn parallel_crc_worker_and_callback_panics_release_every_reservation() {
     ));
     assert_eq!(budget.reserved_bytes(), 0);
 
-    let mut readers = parallel_readers(bytes, 2);
+    let mut readers = parallel_readers(&bytes, 2);
     let budget = viewer_format::ReadBudget::new(u64::MAX);
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = read_selected_parallel(

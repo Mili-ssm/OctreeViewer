@@ -203,10 +203,7 @@ mod tests {
         .unwrap();
 
         assert!(partition.all_points_equal);
-        assert_eq!(
-            partition.children,
-            [] as [viewer_convert_core::pipeline::node_job::ChildOutput; 0]
-        );
+        assert!(partition.children.is_empty(), "{:?}", partition.children);
         assert_eq!(partition.release, [SpoolId(1)]);
         assert_eq!(seen.last(), Some(&2_000));
         let flushed = partition.metrics.unwrap().child_spool_bytes;

@@ -150,8 +150,16 @@ fn replacement_keeps_parent_and_exposes_a_resident_child_until_the_cut_is_comple
     let complete = planner.update(&hierarchy, &desired, &mut cache);
     assert_eq!(complete.node_ids(), [NodeId::new(2), NodeId::new(3)]);
     assert_eq!(complete.block_ids(), [BlockId::new(20), BlockId::new(30)]);
-    assert_eq!(complete.fallback_nodes(), []);
-    assert_eq!(complete.pending_blocks(), []);
+    assert!(
+        complete.fallback_nodes().is_empty(),
+        "{:?}",
+        complete.fallback_nodes()
+    );
+    assert!(
+        complete.pending_blocks().is_empty(),
+        "{:?}",
+        complete.pending_blocks()
+    );
     assert!(complete.coverage_complete());
 
     let parent_ids = complete.node_ids();
@@ -248,7 +256,11 @@ fn protected_active_cut_blocks_an_over_budget_transition_without_eviction() {
     assert!(cache.contains(BlockId::new(10)));
     assert!(!cache.contains(BlockId::new(20)));
     assert!(cache.contains(BlockId::new(11)));
-    assert_eq!(rejected.evicted_blocks(), []);
+    assert!(
+        rejected.evicted_blocks().is_empty(),
+        "{:?}",
+        rejected.evicted_blocks()
+    );
     assert_eq!(cache.used_bytes(), budget);
 
     planner.reset(&mut cache);
@@ -341,7 +353,11 @@ fn replacement_retains_the_previous_region_until_the_new_target_is_complete() {
     assert!(cache.insert(right).cached());
     let complete = planner.prepare(&hierarchy, &target_side(&hierarchy, false), &cache);
     assert_eq!(complete.node_ids(), [NodeId::new(3)]);
-    assert_eq!(complete.pending_blocks(), []);
+    assert!(
+        complete.pending_blocks().is_empty(),
+        "{:?}",
+        complete.pending_blocks()
+    );
     planner.commit(&complete, &mut cache);
     cache.remove(BlockId::new(20));
 
@@ -406,7 +422,11 @@ fn additive_retains_the_previous_region_only_while_the_new_target_loads() {
     assert!(cache.insert(right).cached());
     let complete = planner.prepare(&hierarchy, &target_side(&hierarchy, false), &cache);
     assert_eq!(complete.node_ids(), [NodeId::new(1), NodeId::new(3)]);
-    assert_eq!(complete.pending_blocks(), []);
+    assert!(
+        complete.pending_blocks().is_empty(),
+        "{:?}",
+        complete.pending_blocks()
+    );
     planner.commit(&complete, &mut cache);
     cache.remove(BlockId::new(20));
     let waiting_again = planner.prepare(&hierarchy, &target_side(&hierarchy, true), &cache);
@@ -479,8 +499,8 @@ fn resident_payload_count_not_node_metadata_controls_the_strict_budget() {
     assert_eq!(desired.point_count(), 1);
 
     let plan = LodTransitionPlanner::new().update(&hierarchy, &desired, &mut cache);
-    assert_eq!(plan.node_ids(), []);
-    assert_eq!(plan.block_ids(), []);
+    assert!(plan.node_ids().is_empty(), "{:?}", plan.node_ids());
+    assert!(plan.block_ids().is_empty(), "{:?}", plan.block_ids());
     assert_eq!(plan.point_count(), 0);
     assert_eq!(plan.point_budget(), 2);
     assert_eq!(plan.budget_omitted_nodes(), [NodeId::new(1)]);
@@ -511,7 +531,7 @@ fn multi_block_nodes_are_admitted_as_a_whole_and_empty_cuts_fit_zero_budget() {
     let desired = target(&hierarchy, false, 2);
     let mut planner = LodTransitionPlanner::new();
     let partial = planner.update(&hierarchy, &desired, &mut cache);
-    assert_eq!(partial.node_ids(), []);
+    assert!(partial.node_ids().is_empty(), "{:?}", partial.node_ids());
     assert_eq!(partial.pending_blocks(), [BlockId::new(11)]);
     assert_eq!(partial.uncovered_nodes(), [NodeId::new(1)]);
 
@@ -527,7 +547,7 @@ fn multi_block_nodes_are_admitted_as_a_whole_and_empty_cuts_fit_zero_budget() {
         .select_lod(&outside, LodSelectionConfig::new(1.0, 0).unwrap(), |_| 0.0)
         .unwrap();
     let empty = planner.update(&hierarchy, &empty_target, &mut cache);
-    assert_eq!(empty.node_ids(), []);
+    assert!(empty.node_ids().is_empty(), "{:?}", empty.node_ids());
     assert_eq!(empty.point_count(), 0);
     assert_eq!(empty.point_budget(), 0);
     assert!(empty.coverage_complete());

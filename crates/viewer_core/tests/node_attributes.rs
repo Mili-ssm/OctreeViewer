@@ -260,16 +260,13 @@ fn empty_depth_zero_and_bad_alignment() {
         [VoxelCoord::new(0, 0, 0)],
     )
     .unwrap();
-    assert_eq!(
-        summarize_attribute(
-            &index,
-            &column(AttributeValues::U8(vec![1]), 1),
-            Policy::Mean
-        )
-        .unwrap()
-        .levels(),
-        [] as [Vec<u8>; 0]
-    );
+    let summary = summarize_attribute(
+        &index,
+        &column(AttributeValues::U8(vec![1]), 1),
+        Policy::Mean,
+    )
+    .unwrap();
+    assert!(summary.levels().is_empty(), "{:?}", summary.levels());
     assert_eq!(
         summarize_colors(&index, &[]).unwrap_err(),
         NodeSummaryError::RowCountMismatch

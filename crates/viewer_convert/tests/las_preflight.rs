@@ -113,11 +113,10 @@ fn convert_bytes(bytes: &[u8]) -> Result<(), ConvertError> {
     .map(|_| ())
 }
 
-#[expect(clippy::needless_pass_by_value, reason = "callers hand over the bytes")]
-fn assert_rejected(bytes: Vec<u8>, field: &str) {
+fn assert_rejected(bytes: &[u8], field: &str) {
     let len = bytes.len() as u64;
-    preflight_las(&mut Cursor::new(&bytes), len).expect("header preflight alone accepts it");
-    match convert_bytes(&bytes) {
+    preflight_las(&mut Cursor::new(bytes), len).expect("header preflight alone accepts it");
+    match convert_bytes(bytes) {
         Err(ConvertError::LazChunkTable { field: got, .. }) => assert_eq!(got, field),
         other => panic!("expected LazChunkTable({field}), got {other:?}"),
     }
@@ -126,19 +125,22 @@ fn assert_rejected(bytes: Vec<u8>, field: &str) {
 #[test]
 fn negative_variable_chunk_point_count_is_rejected() {
     assert_rejected(
-        craft(true, u64::MAX, 10, 1), // i32 -1 sign-extended
+        &craft(true, u64::MAX, 10, 1), // i32 -1 sign-extended
         "chunk point_count",
     );
 }
 
 #[test]
 fn negative_fixed_chunk_byte_count_is_rejected() {
-    assert_rejected(craft(false, 50_000, u64::MAX, 1), "chunk byte_count");
+    assert_rejected(&craft(false, 50_000, u64::MAX, 1), "chunk byte_count");
 }
 
 #[test]
 fn huge_fixed_chunk_byte_count_is_rejected() {
-    assert_rejected(craft(false, 50_000, i32::MAX as u64, 1), "chunk byte_count");
+    assert_rejected(
+        &craft(false, 50_000, i32::MAX as u64, 1),
+        "chunk byte_count",
+    );
 }
 
 #[test]
@@ -184,13 +186,13 @@ fn variable_chunk_trusting_forged_header_count_is_rejected() {
 // parallel decompressor trip `debug_assert!(num_points >= requested)` in `laz`.
 #[test]
 fn variable_chunk_table_covering_fewer_points_than_declared_is_rejected() {
-    assert_rejected(craft(true, 1, 10, 1), "chunk point_count total");
+    assert_rejected(&craft(true, 1, 10, 1), "chunk point_count total");
 }
 
 #[test]
 fn fixed_chunk_table_covering_fewer_points_than_declared_is_rejected() {
     // 200 declared points, default chunk size 50_000: zero chunks cannot hold them.
-    assert_rejected(craft(false, 0, 10, 0), "chunk point_count total");
+    assert_rejected(&craft(false, 0, 10, 0), "chunk point_count total");
 }
 
 // Found by fuzzing (fuzz_las_preflight). Both reached `laz` through the guarded path, so

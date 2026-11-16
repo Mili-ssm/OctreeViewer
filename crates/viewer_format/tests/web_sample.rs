@@ -83,7 +83,7 @@ fn web_host_default_sample_is_a_v7_dataset_with_attributes() {
         HierarchySemantics::Replacement
     );
     let blocks = reader.metadata().hierarchy().block_ids().to_vec();
-    assert_ne!(blocks, [] as [viewer_core::BlockId; 0]);
+    assert!(!blocks.is_empty());
     for id in blocks {
         let block = reader.read_block(id).unwrap();
         assert!(block.points().points().iter().all(|point| {

@@ -228,11 +228,9 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
     for block in pending.as_chunks::<64>().0 {
         compress(&mut state, block);
     }
-    Ok(state.iter().fold(String::new(), |mut hex, word| {
-        std::fmt::Write::write_fmt(&mut hex, format_args!("{word:08x}"))
-            .expect("writing to a String cannot fail");
-        hex
-    }))
+    #[expect(clippy::format_collect, reason = "tool output, not a hot path")]
+    let hex = state.iter().map(|word| format!("{word:08x}")).collect();
+    Ok(hex)
 }
 
 struct Args {

@@ -4,7 +4,7 @@ use std::mem::{align_of, size_of};
 use viewer_core::{BlockId, CacheInsertRejection, CacheInsertResult};
 
 /// Field types of the result before the enum refactor, using Rust's default layout.
-#[allow(dead_code, reason = "only its size and alignment are reported")]
+#[expect(dead_code, reason = "only its size and alignment are reported")]
 struct PreviousCacheInsertResult {
     cached: bool,
     rejection: Option<CacheInsertRejection>,

@@ -31,10 +31,13 @@ pub(crate) fn header_for_role(
     FormatIdentity { version, role }.to_header_bytes()
 }
 
-// `allow`, not `expect`: the lint fires only on 64-bit targets (wasm32 pointers are 4 bytes).
-#[allow(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "the layout hands out the magic as a shared `&'static` constant"
+// The lint fires only on 64-bit targets (wasm32 pointers are 4 bytes).
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "the layout hands out the magic as a shared `&'static` constant"
+    )
 )]
 pub(crate) fn footer_bytes(
     magic: &'static [u8; 8],
@@ -368,10 +371,13 @@ pub(crate) fn attribute_type_tag(data_type: AttributeDataType) -> u8 {
     }
 }
 
-// `allow`, not `expect`: the lint fires only on 64-bit targets (wasm32 pointers are 4 bytes).
-#[allow(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "the layout hands out the magic as a shared reference"
+// The lint fires only on 64-bit targets (wasm32 pointers are 4 bytes).
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "the layout hands out the magic as a shared reference"
+    )
 )]
 pub(crate) fn parse_split_footer(
     footer: &[u8; FOOTER_SIZE as usize],

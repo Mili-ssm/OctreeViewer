@@ -31,6 +31,8 @@ float_cmp = "allow"
 # Mathematical notation uses short, similar names.
 similar_names = "allow"
 many_single_char_names = "allow"
+# `assert!(x.is_empty(), "{x:?}")` reads better than comparing with an empty array.
+assert_is_empty = "allow"
 # Noise.
 must_use_candidate = "allow"
 module_name_repetitions = "allow"

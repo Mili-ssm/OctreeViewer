@@ -1101,7 +1101,7 @@ fn lazy_attribute_range_covers_pages_that_are_not_loaded() {
     let eager = open_pair(primary.clone(), attributes);
     let lazy =
         FormatReader::open_lazy(Cursor::new(primary), FormatReaderLimits::default()).unwrap();
-    assert_ne!(lazy.page_source().unwrap().root_unloaded(), []);
+    assert!(!lazy.page_source().unwrap().root_unloaded().is_empty());
     let expected = eager.attribute_range(0, 0).unwrap();
     assert!(expected.is_some());
     assert_eq!(lazy.attribute_range(0, 0).unwrap(), expected);
@@ -1150,7 +1150,7 @@ fn reference_spacing_is_stored_and_stable_while_pages_are_grafted() {
     let source = std::sync::Arc::clone(lazy.page_source().unwrap());
     assert_eq!(source.reference_spacing(), expected);
     let mut pending: Vec<NodeId> = source.root_unloaded().to_vec();
-    assert_ne!(pending, [] as [viewer_core::NodeId; 0]);
+    assert!(!pending.is_empty());
     while let Some(anchor) = pending.pop() {
         pending.extend(lazy.read_page(anchor).unwrap().unloaded);
         assert_eq!(source.reference_spacing(), expected);
