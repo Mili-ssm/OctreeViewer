@@ -300,7 +300,7 @@ impl StrictTarget {
 const GLUE_SEEDS: [u64; 3] = [1, 7, 42];
 
 fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
-    let full = synthetic_cpu_bytes(&views);
+    let full = synthetic_cpu_bytes(&views, LodMode::Octant);
     let budget = full / 3;
     let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
     let mut reports = 0;
@@ -349,7 +349,7 @@ fn the_viewer_stats_report_the_cut_apply_and_the_nodes_forgotten_for_the_cpu_bud
     // The at-rest set now carries the levels built on demand (569 112 bytes, 206 200 before them,
     // same nodes): an eighth is the absolute budget a third was (about 70 000 bytes), the one at
     // which this seed forgets a node.
-    let budget = synthetic_cpu_bytes(&views) / 8;
+    let budget = synthetic_cpu_bytes(&views, LodMode::Octant) / 8;
     let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, 7, 256 << 10);
     let before = sim.viewer.stats(&sim.h.target);
     assert_eq!((before.cut_apply, before.forgotten_total), (None, 0));
@@ -484,7 +484,7 @@ fn the_builder_emits_no_scene_while_cells_are_present() {
 #[test]
 fn the_in_process_glue_reaches_the_in_process_digest() {
     let views = synth_orbit();
-    let budget = synthetic_cpu_bytes(&views);
+    let budget = synthetic_cpu_bytes(&views, LodMode::Octant);
     let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
     let mut h = synthetic_harness(1 << 20, 2.0);
     let mut cells = InProcessCells::new(&h.dataset, h.config);

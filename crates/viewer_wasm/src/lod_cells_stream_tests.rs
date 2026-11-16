@@ -1065,6 +1065,25 @@ impl Harness {
         self.cell_ctx = Some(ctx);
     }
 
+    /// Cell mode: the frame of reference of the twin for the frame about to be checked.
+    pub(super) fn set_cell_ctx(&mut self, view: &ViewProjection, stage_pixels: f64) {
+        let grid = self.dataset.cell_grid();
+        let viewport = view.viewport();
+        let scale = view.visual_scale();
+        self.cell_ctx = Some(CellCtx {
+            lod: LodView::from_camera(
+                &view.camera(),
+                viewport.map(|v| v as f32),
+                stage_pixels as f32,
+                (self.driver.pool().min_side().unwrap_or(0.0) * scale) as f32,
+            ),
+            eye: view.camera().position(),
+            scale,
+            origin: self.dataset.coordinate_origin(),
+            root_side: grid.root_side,
+        });
+    }
+
     fn frame(&mut self, view: &ViewProjection) -> FrameInfo {
         self.driver.set_lod_mode(self.mode);
         self.target.eye = view.camera().position();
@@ -1093,21 +1112,7 @@ impl Harness {
         self.frame_capped = plan.coarsened_nodes.clone();
         self.frame_stage_px = out.stage_pixels;
         if self.mode == LodMode::Cell {
-            let grid = self.dataset.cell_grid();
-            let viewport = view.viewport();
-            let scale = view.visual_scale();
-            self.cell_ctx = Some(CellCtx {
-                lod: LodView::from_camera(
-                    &view.camera(),
-                    viewport.map(|v| v as f32),
-                    out.stage_pixels as f32,
-                    (self.driver.pool().min_side().unwrap_or(0.0) * scale) as f32,
-                ),
-                eye: view.camera().position(),
-                scale,
-                origin: self.dataset.coordinate_origin(),
-                root_side: grid.root_side,
-            });
+            self.set_cell_ctx(view, out.stage_pixels);
         }
         self.check_drawn_cut(number, plan, digest);
         if let Some(last) = self.last_stage

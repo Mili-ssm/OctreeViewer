@@ -282,6 +282,10 @@ impl Sim {
         }
         self.render_seen = self.view_gen;
         self.h.target.eye = view.camera().position();
+        self.h.driver.set_lod_mode(self.h.mode);
+        if self.h.mode == LodMode::Cell {
+            self.h.set_cell_ctx(view, self.h.target_px);
+        }
         let draw = draw_cell_cut(
             &mut self.h.driver,
             &mut self.h.target,
@@ -339,6 +343,8 @@ impl Sim {
         use viewer_render_wgpu::CellTarget;
         self.h.target.drop_pool();
         self.h.last_cut = None;
+        // The image drawn before is not a baseline for the lost samples of the cell oracle.
+        self.h.cell_seen.clear();
         self.h.last_cut_digest = None;
         self.h.dirty = true;
         self.stats.pool_resets += 1;
@@ -349,6 +355,8 @@ impl Sim {
         self.h.driver = driver_for(&self.h.dataset, self.cpu_budget);
         self.h.target = StrictTarget::default();
         self.h.last_cut = None;
+        // The image drawn before is not a baseline for the lost samples of the cell oracle.
+        self.h.cell_seen.clear();
         self.h.last_cut_digest = None;
         self.cut = None;
         self.ack = None;
@@ -522,13 +530,13 @@ fn synth_dolly() -> Vec<ViewProjection> {
         .collect()
 }
 
-fn synth_sim(seed: u64, budget: u64, pages: usize, px: f64) -> Sim {
-    Sim::new(synthetic_harness(pages, px), budget, seed)
+fn synth_sim(seed: u64, budget: u64, pages: usize, px: f64, mode: LodMode) -> Sim {
+    Sim::new(synthetic_harness(pages, px).in_mode(mode), budget, seed)
 }
 
 /// Bytes the in-process run keeps at rest on the synthetic tree.
-fn synthetic_cpu_bytes(views: &[ViewProjection]) -> u64 {
-    let mut h = synthetic_harness(1 << 20, 2.0);
+fn synthetic_cpu_bytes(views: &[ViewProjection], mode: LodMode) -> u64 {
+    let mut h = synthetic_harness(1 << 20, 2.0).in_mode(mode);
     for view in views {
         h.frame(view);
     }
@@ -536,16 +544,26 @@ fn synthetic_cpu_bytes(views: &[ViewProjection]) -> u64 {
     h.driver.cpu_bytes()
 }
 
-fn synthetic_case(name: &str, views: Vec<ViewProjection>, seeds: &[u64], inject: Inject) {
-    let full = synthetic_cpu_bytes(&views);
+fn synthetic_case(
+    name: &str,
+    views: Vec<ViewProjection>,
+    seeds: &[u64],
+    inject: Inject,
+    mode: LodMode,
+) {
+    let full = synthetic_cpu_bytes(&views, mode);
     // Small: a third of what the whole run keeps; idle nodes are forgotten and built again.
     let budget = full / 3;
-    let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let expected = in_process_digest(
+        synthetic_harness(1 << 20, 2.0).in_mode(mode),
+        budget,
+        &views,
+    );
     let mut reports = 0;
     for seed in seeds {
-        let mut sim = synth_sim(*seed, budget, 1 << 20, 2.0);
+        let mut sim = synth_sim(*seed, budget, 1 << 20, 2.0, mode);
         let digest = sim.run(&views, inject, 200_000);
-        check_stats(&format!("synthetic {name} seed {seed}"), &sim);
+        check_stats(&format!("synthetic {name} seed {seed} {mode:?}"), &sim);
         assert_eq!(digest, expected, "{name} seed {seed}");
         assert!(sim.stats.node_messages > 0);
         if inject.driver_replaced_at.is_some() {
@@ -567,30 +585,59 @@ fn synthetic_case(name: &str, views: Vec<ViewProjection>, seeds: &[u64], inject:
 
 const SEEDS: [u64; 4] = [1, 7, 42, 1234];
 
-#[test]
-fn sim_synthetic_orbit_reaches_the_in_process_digest() {
-    synthetic_case("orbit", synth_orbit(), &SEEDS, Inject::default());
+/// Runs a seeded simulation in both pool modes: the octant one keeps its name.
+macro_rules! sim_both_modes {
+    ($body:ident, $octant:ident, $cell:ident) => {
+        #[test]
+        fn $octant() {
+            $body(LodMode::Octant);
+        }
+
+        #[test]
+        fn $cell() {
+            $body(LodMode::Cell);
+        }
+    };
 }
 
-#[test]
-fn sim_synthetic_dolly_reaches_the_in_process_digest() {
-    synthetic_case("dolly", synth_dolly(), &SEEDS, Inject::default());
+fn synthetic_orbit_in(mode: LodMode) {
+    synthetic_case("orbit", synth_orbit(), &SEEDS, Inject::default(), mode);
 }
 
-#[test]
-fn sim_synthetic_pool_reset_and_driver_replaced_mid_load_converge() {
+sim_both_modes!(
+    synthetic_orbit_in,
+    sim_synthetic_orbit_reaches_the_in_process_digest,
+    sim_synthetic_orbit_reaches_the_in_process_digest_in_cell_mode
+);
+
+fn synthetic_dolly_in(mode: LodMode) {
+    synthetic_case("dolly", synth_dolly(), &SEEDS, Inject::default(), mode);
+}
+
+sim_both_modes!(
+    synthetic_dolly_in,
+    sim_synthetic_dolly_reaches_the_in_process_digest,
+    sim_synthetic_dolly_reaches_the_in_process_digest_in_cell_mode
+);
+
+fn synthetic_inject_in(mode: LodMode) {
     let inject = Inject {
         pool_reset_at: Some(5),
         driver_replaced_at: Some(10),
         forget_zones_on_loss: true,
         ..Inject::default()
     };
-    synthetic_case("orbit+inject", synth_orbit(), &SEEDS, inject);
-    synthetic_case("dolly+inject", synth_dolly(), &SEEDS[..2], inject);
+    synthetic_case("orbit+inject", synth_orbit(), &SEEDS, inject, mode);
+    synthetic_case("dolly+inject", synth_dolly(), &SEEDS[..2], inject, mode);
 }
 
-#[test]
-fn sim_synthetic_with_a_tight_page_budget_leaves_no_hole_while_acks_lag() {
+sim_both_modes!(
+    synthetic_inject_in,
+    sim_synthetic_pool_reset_and_driver_replaced_mid_load_converge,
+    sim_synthetic_pool_reset_and_driver_replaced_mid_load_converge_in_cell_mode
+);
+
+fn synthetic_tight_pages_in(mode: LodMode) {
     // One page of 100 bytes at a time (150-byte budget). A and B (the two anchors of the
     // synthetic region) each need their own page; the two together need 200 bytes, so the
     // whole orbit cannot settle on this budget. The view stays on A, jumps to B and the page of
@@ -605,7 +652,7 @@ fn sim_synthetic_with_a_tight_page_budget_leaves_no_hole_while_acks_lag() {
         ..Inject::default()
     };
     let expected = {
-        let mut h = synthetic_harness(150, 2.0);
+        let mut h = synthetic_harness(150, 2.0).in_mode(mode);
         h.driver = driver_for(&h.dataset, u64::MAX);
         h.count_octant_coarsenings = true;
         h.settle(&a, 3, 20_000);
@@ -614,9 +661,9 @@ fn sim_synthetic_with_a_tight_page_budget_leaves_no_hole_while_acks_lag() {
         h.totals.drawn_digest
     };
     for seed in SEEDS {
-        let mut sim = synth_sim(seed, u64::MAX, 150, 2.0);
+        let mut sim = synth_sim(seed, u64::MAX, 150, 2.0, mode);
         let digest = sim.run(&views, inject, 200_000);
-        check_stats(&format!("synthetic pages seed {seed}"), &sim);
+        check_stats(&format!("synthetic pages seed {seed} {mode:?}"), &sim);
         assert_eq!(digest, expected, "seed {seed}");
         assert!(sim.h.dataset.page_stats().2 > 0, "no page was evicted");
         assert!(
@@ -625,6 +672,12 @@ fn sim_synthetic_with_a_tight_page_budget_leaves_no_hole_while_acks_lag() {
         );
     }
 }
+
+sim_both_modes!(
+    synthetic_tight_pages_in,
+    sim_synthetic_with_a_tight_page_budget_leaves_no_hole_while_acks_lag,
+    sim_synthetic_with_a_tight_page_budget_leaves_no_hole_while_acks_lag_in_cell_mode
+);
 
 #[test]
 fn the_lost_sample_oracle_asks_the_plan_of_the_cut_that_is_drawn() {
@@ -812,7 +865,7 @@ fn a_page_named_only_by_an_unacknowledged_cut_is_not_evicted_during_the_ack_lag(
 #[test]
 fn a_digest_is_not_at_rest_right_after_the_pool_was_lost() {
     let views = synth_orbit();
-    let mut sim = synth_sim(7, u64::MAX, 1 << 20, 2.0);
+    let mut sim = synth_sim(7, u64::MAX, 1 << 20, 2.0, LodMode::Octant);
     let digest = sim.run(&views, Inject::default(), 200_000);
     let poll = |sim: &mut Sim| {
         let idle = sim.build_idle();
@@ -1233,7 +1286,7 @@ fn a_budget_that_fits_the_working_set_reaches_full_detail_without_coarsening() {
 #[test]
 fn the_two_workers_settle_and_stop_forgetting_under_a_budget_below_the_working_set() {
     let views = synth_orbit();
-    let budget = synthetic_cpu_bytes(&views) / 3;
+    let budget = synthetic_cpu_bytes(&views, LodMode::Octant) / 3;
     for seed in SEEDS {
         let mut h = synthetic_harness(1 << 20, 2.0);
         h.config.cpu_budget_bytes = Some(budget);
@@ -1283,8 +1336,20 @@ fn real_views(real: &Real, orbit: bool) -> Vec<ViewProjection> {
 /// about 54.8 MB of live nodes (the unlimited run keeps 53.0 MB before the last frames): at 80%
 /// or less the in-process run itself never settles, it forgets and rebuilds two nodes per frame
 /// at stage 8 (a finding of R3 Task 10a2: the budget has no hysteresis below the working set).
-fn real_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64], inject: Inject) {
-    let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20);
+fn real_case(
+    name: &str,
+    orbit: bool,
+    budget_percent: u64,
+    seeds: &[u64],
+    inject: Inject,
+    mode: LodMode,
+) {
+    let open = || {
+        open_real("belvedere-v7.oct", 4.0, 256 << 20).map(|mut real| {
+            real.harness.mode = mode;
+            real
+        })
+    };
     let Some(real) = open() else { return };
     let views = real_views(&real, orbit);
     // A fraction of what an unlimited run keeps.
@@ -1303,35 +1368,64 @@ fn real_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64], inject
     for seed in seeds {
         let mut sim = Sim::new(open().unwrap().harness, budget, *seed);
         let digest = sim.run(&views, inject, 400_000);
-        check_stats(&format!("belvedere {name} seed {seed}"), &sim);
+        check_stats(&format!("belvedere {name} seed {seed} {mode:?}"), &sim);
         println!("belvedere {name} seed {seed}: digest {digest} in-process {expected}");
         assert_eq!(digest, expected, "belvedere {name} seed {seed}");
     }
 }
 
-#[test]
-#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_sim"]
-fn real_sim_belvedere_orbit_reaches_the_in_process_digest() {
-    real_case("orbit", true, 50, &[1, 7], Inject::default());
+/// Like `sim_both_modes!`, for the real-data runs (ignored: minutes each).
+macro_rules! real_sim_both_modes {
+    ($body:ident, $octant:ident, $cell:ident) => {
+        #[test]
+        #[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_sim"]
+        fn $octant() {
+            $body(LodMode::Octant);
+        }
+
+        #[test]
+        #[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_sim"]
+        fn $cell() {
+            $body(LodMode::Cell);
+        }
+    };
 }
 
-#[test]
-#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_sim"]
-fn real_sim_belvedere_dolly_reaches_the_in_process_digest() {
-    real_case("dolly", false, 90, &[3], Inject::default());
+fn real_orbit_in(mode: LodMode) {
+    real_case("orbit", true, 50, &[1, 7], Inject::default(), mode);
 }
 
-#[test]
-#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_sim"]
-fn real_sim_belvedere_pool_reset_and_driver_replaced_mid_load_converge() {
+real_sim_both_modes!(
+    real_orbit_in,
+    real_sim_belvedere_orbit_reaches_the_in_process_digest,
+    real_sim_belvedere_orbit_reaches_the_in_process_digest_in_cell_mode
+);
+
+fn real_dolly_in(mode: LodMode) {
+    real_case("dolly", false, 90, &[3], Inject::default(), mode);
+}
+
+real_sim_both_modes!(
+    real_dolly_in,
+    real_sim_belvedere_dolly_reaches_the_in_process_digest,
+    real_sim_belvedere_dolly_reaches_the_in_process_digest_in_cell_mode
+);
+
+fn real_inject_in(mode: LodMode) {
     let inject = Inject {
         pool_reset_at: Some(4),
         driver_replaced_at: Some(8),
         forget_zones_on_loss: true,
         ..Inject::default()
     };
-    real_case("orbit+inject", true, 50, &[5], inject);
+    real_case("orbit+inject", true, 50, &[5], inject, mode);
 }
+
+real_sim_both_modes!(
+    real_inject_in,
+    real_sim_belvedere_pool_reset_and_driver_replaced_mid_load_converge,
+    real_sim_belvedere_pool_reset_and_driver_replaced_mid_load_converge_in_cell_mode
+);
 
 #[path = "lod_cells_glue_sim.rs"]
 mod glue;
