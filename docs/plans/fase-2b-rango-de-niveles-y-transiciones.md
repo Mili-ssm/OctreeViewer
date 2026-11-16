@@ -60,6 +60,10 @@ As in phase 2a (English code/commits, Spanish docs, no AI attribution; octant mo
 
 ---
 
+### Task 0: The px target is a minimum, and 0.1 mm length minimum by default ([ADR 0054](../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md))
+
+- [ ] Refine rule in both modes: a cell refines only if its children would still project to at least the px target and measure at least the length minimum (cubes between N and 2N px; the octant probe and the twin + WGSL share it); default length minimum 0.1 mm in cloud units (metres until the CRS unit is read, phase 3), applied by the driver unless the API sets another; goldens updated with the reason; GPU partition test and sims green in both modes; browser screenshots at the owner's poses.
+
 ### Task 1: The depth range per node (F1–F3)
 
 - [ ] **1a** compute and expose the range (`CellCutEntry.range`), no behaviour change; tests: far ≤ near, a node straddling the eye plane, the eye inside the node, an octant behind the eye.
