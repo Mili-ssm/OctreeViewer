@@ -690,6 +690,10 @@ struct Need {
     distance: f64,
 }
 
+/// A stepping octant's wait state: `((drawn depth, wanted depth is finer, adjacent depth
+/// awaited), frames waited)`.
+type StepWait = ((u8, bool, u8), u32);
+
 pub struct CellPool {
     config: PoolConfig,
     frame: u64,
@@ -739,7 +743,7 @@ pub struct CellPool {
     /// same direction does not restart the wait, and a hop (a new drawn depth) does. At
     /// `STEP_WAIT_FRAMES` the octant hops to the resident level closest to its drawn depth
     /// (ADR 0053).
-    step_waits: FastMap<(NodeId, usize), ((u8, bool, u8), u32)>,
+    step_waits: FastMap<(NodeId, usize), StepWait>,
     /// Cell mode: per node of the applied cut that was already active in the previous cut, the
     /// depths its range residents may take: that span widened by one level at each end.
     applied_window: FastMap<NodeId, (u8, u8)>,

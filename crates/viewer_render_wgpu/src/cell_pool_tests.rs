@@ -28,7 +28,7 @@ struct Rig {
     refused: HashSet<LevelKey>,
     frame: u64,
     /// The stepping oracle's wait per `(node, octant)` (see `Rig::check_stepping`).
-    waits: HashMap<(NodeId, usize), ((u8, bool, u8), u32)>,
+    waits: HashMap<(NodeId, usize), StepWait>,
 }
 
 impl Rig {
@@ -243,7 +243,7 @@ impl Rig {
 struct SteppingBefore {
     drawn: FastMap<NodeId, [Option<u8>; 8]>,
     resident: HashMap<NodeId, Vec<u8>>,
-    waits: HashMap<(NodeId, usize), ((u8, bool, u8), u32)>,
+    waits: HashMap<(NodeId, usize), StepWait>,
 }
 
 /// The depths strictly after `from` up to `w`, in the order of the walk from `from` to `w`.
