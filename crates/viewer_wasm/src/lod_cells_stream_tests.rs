@@ -593,6 +593,9 @@ struct Harness {
     cell_signature: Option<u64>,
     /// Cell mode: drawn depth of each lattice sample (node, index) in the last evaluation.
     cell_memory: HashMap<(NodeId, u16), ([f64; 3], u8)>,
+    /// Samples drawn before, for the lost-sample check: unlike `cell_memory` (the R3-Q21
+    /// baseline) it survives `forget_zones`, as `last_cut` does in the octant oracle.
+    cell_seen: HashMap<(NodeId, u16), ([f64; 3], u8)>,
     /// Cell-mode counters (reported, never asserted).
     cell_counters: CellCounters,
     /// Cell mode: the nodes of the last evaluated cut as the twin sees them.
@@ -687,6 +690,7 @@ impl Harness {
             cell_ctx: None,
             cell_signature: None,
             cell_memory: HashMap::new(),
+            cell_seen: HashMap::new(),
             cell_counters: CellCounters::default(),
             cell_nodes: Vec::new(),
         }
@@ -714,6 +718,13 @@ impl Harness {
         self.octant_depths.clear();
         self.cell_memory.clear();
         self.cell_signature = None;
+    }
+
+    /// Whether a counted stage explains a drop below the raw wish for an octant of `node`: the
+    /// octant is staged below its wish and its node was capped by the fit this frame (R3-Q11)
+    /// or the ladder runs coarser than the target (R3-Q3 stage pixels). Shared by both oracles.
+    fn stage_excuses(&self, staged: bool, node: NodeId) -> bool {
+        staged && (self.frame_capped.contains(&node) || self.frame_stage_px > self.target_px)
     }
 
     /// A failed check: panics, or is counted when `soft_checks` is set.
@@ -805,9 +816,7 @@ impl Harness {
                         // capped by the fit this frame (R3-Q11), or the ladder runs coarser than
                         // the target (R3-Q3 stage pixels).
                         let excused = cut.drawer_at(*p).is_some_and(|(node, octant)| {
-                            cut.entries[node].stage[octant]
-                                && (self.frame_capped.contains(&cut.nodes[node])
-                                    || self.frame_stage_px > self.target_px)
+                            self.stage_excuses(cut.entries[node].stage[octant], cut.nodes[node])
                         });
                         if excused {
                             self.stage_excused_drops += 1;
@@ -912,7 +921,7 @@ impl Harness {
             .collect();
         // Samples: the ones remembered (nodes of the previous cut) and the lattice of this cut.
         let mut points: Vec<((NodeId, u16), [f64; 3])> = self
-            .cell_memory
+            .cell_seen
             .iter()
             .map(|(key, (p, _))| (*key, *p))
             .collect();
@@ -947,6 +956,7 @@ impl Harness {
             .filter_map(|id| hierarchy.node(*id).map(SpatialNode::bounds))
             .collect();
         let mut memory = HashMap::new();
+        let mut seen = HashMap::new();
         let mut lost = 0;
         for (key, p) in points {
             let rel = to_eye(p);
@@ -974,7 +984,7 @@ impl Harness {
                             "frame {number}: sample {key:?} at {p:?} is drawn by no node \
                              (before {before:?})"
                         ));
-                    } else if before.is_some()
+                    } else if self.cell_seen.contains_key(&key)
                         && planner
                             .iter()
                             .any(|b| (0..3).all(|a| p[a] >= b.min()[a] && p[a] <= b.max()[a]))
@@ -983,6 +993,9 @@ impl Harness {
                     }
                     if let Some(old) = self.cell_memory.get(&key) {
                         memory.insert(key, *old);
+                    }
+                    if let Some(old) = self.cell_seen.get(&key) {
+                        seen.insert(key, *old);
                     }
                 }
                 [(j, depth, cell)] => {
@@ -1002,9 +1015,12 @@ impl Harness {
                         if let Some(before) = before
                             && *depth < before.min(wanted)
                         {
-                            let excused = plan.coarsened_nodes.contains(&node.id)
-                                || self.frame_stage_px > self.target_px;
-                            self.zone_coarsenings += 1;
+                            let staged = plan.entries[*j].stage[octant_of_cell(*cell)];
+                            let excused = self.stage_excuses(staged, node.id);
+                            // As in the octant oracle, whose wish of a staged octant is lowered
+                            // to what it draws: only a drop of an unstaged octant is a zone
+                            // coarsening, the staged ones are counted apart.
+                            self.zone_coarsenings += usize::from(!staged);
                             self.staged_coarsenings += 1;
                             if excused {
                                 self.stage_excused_drops += 1;
@@ -1019,6 +1035,7 @@ impl Harness {
                         }
                     }
                     memory.insert(key, (p, *depth));
+                    seen.insert(key, (p, *depth));
                 }
                 several => {
                     self.fail(format!(
@@ -1040,7 +1057,9 @@ impl Harness {
         // against them (and against the ones its own cut adds).
         let current: HashSet<NodeId> = nodes.iter().map(|node| node.id).collect();
         memory.retain(|(node, _), _| current.contains(node));
+        seen.retain(|(node, _), _| current.contains(node));
         self.cell_memory = memory;
+        self.cell_seen = seen;
         self.cell_counters.evaluations += 1;
         self.cell_nodes = nodes;
         self.cell_ctx = Some(ctx);
@@ -1441,6 +1460,7 @@ fn synthetic_build_cap_defers_without_waiting_for_the_camera_in(mode: LodMode) {
     capped.camera_moved();
     // The new pool draws nothing yet: the old image is not a baseline for lost samples.
     capped.last_cut = None;
+    capped.cell_seen.clear();
     capped.totals = Totals::default();
     // The ladder is already at the target rung: every selected node waits for the cap.
     capped.stage = Some(2.0);
@@ -1620,6 +1640,8 @@ fn cell_mode_bands_follow_the_distance() {
         let ctx = h.cell_ctx.as_ref().expect("a cell-mode frame ran");
         // Points of the view axis from the eye through the target and beyond, dataset frame.
         let mut per_node: HashMap<NodeId, Vec<u8>> = HashMap::new();
+        // The node the axis enters first, nearest the eye.
+        let mut nearest_node: Option<NodeId> = None;
         for step in 0..=4_000 {
             let along = distance * (step as f64 / 2_000.0);
             let p: [f64; 3] = std::array::from_fn(|a| eye[a] - direction[a] / norm * along);
@@ -1630,10 +1652,21 @@ fn cell_mode_bands_follow_the_distance() {
                     continue;
                 }
                 if let Some(depth) = drawn_depth_at(&ctx.lod, &node.lod, rel, node.lo, node.side) {
+                    nearest_node.get_or_insert(node.id);
                     per_node.entry(node.id).or_default().push(depth);
                 }
             }
         }
+        let nearest = nearest_node.expect("the view axis crosses the cut");
+        let depths = &per_node[&nearest];
+        let distinct: HashSet<u8> = depths.iter().copied().collect();
+        println!("distance {distance}: nearest node {nearest:?} draws {distinct:?}");
+        // Far away a node is one band; at the closest distance the first node entered is a
+        // single deep band (observed: 33); in between it must show at least two depths.
+        assert!(
+            distance > 50.0 || distance < 15.0 || distinct.len() >= 2,
+            "distance {distance}: the nearest node {nearest:?} draws one depth {depths:?}"
+        );
         for (node, depths) in per_node {
             // `depths` follows the distance to the eye, nearest first.
             assert!(
