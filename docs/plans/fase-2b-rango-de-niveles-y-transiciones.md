@@ -76,6 +76,8 @@ As in phase 2a (English code/commits, Spanish docs, no AI attribution; octant mo
 
 ### Task 3: One level per frame (ADR 0053, temporal) — to detail after Task 2
 
+Known case (16-11-2026, task 0a): with the closest-resident rule (R3-Q21) a node drawing depth 10 that wants 8 jumps to 7 when only {7, 10} are resident (seeded dolly simulations at their original px, which task 0a halved to 1.0 / 2.0). With ADR 0053 and 0054 the transition must step from the drawn depth towards the wanted one, one level per frame, using a resident intermediate; restore `SYNTHETIC_CASE_PX` = 2.0 and the glue literals (2.0, 4.0) as this task's regression test.
+
 ### Task 4: Residency D4 and coarse levels derived from children
 
 ### Task 5: The tail below spacing (ADR 0053, pending review) — measure, then decide with the owner
