@@ -3,7 +3,7 @@
 use viewer_core::SpatialBounds;
 
 use super::*;
-use crate::{OrbitCamera, SceneBounds};
+use crate::SceneBounds;
 
 struct Rng(u64);
 
@@ -323,6 +323,10 @@ fn scene(kind: usize, rng: &mut Rng) -> Scene {
             anchor = [0; 3].map(|_| -rng.range(0.0, 1.0) * side_fine - 3.0 * side_fine);
             ("eye inside a cell", active_bits(&[0, 1, 3]), [0; 8])
         }
+        6 => {
+            // `rel >= 2^24` is inexact as an `f32`; level 31 is the top of the span.
+            ("top of the span", active_bits(&[0, 25, 31]), [0; 8])
+        }
         _ => (
             "mask on every level",
             active_bits(&[1, 3, 4, 6]),
@@ -341,12 +345,18 @@ fn scene(kind: usize, rng: &mut Rng) -> Scene {
     }
 }
 
-const SCENE_KINDS: usize = 6;
+const SCENE_KINDS: usize = 7;
 
-fn count_drawing(view: &LodView, scene: &Scene, point: [f64; 3]) -> (usize, Option<u8>) {
+/// `(depths drawing, first drawing depth, oracle's answer)`.
+fn count_drawing(
+    view: &LodView,
+    scene: &Scene,
+    point: [f64; 3],
+) -> (usize, Option<u8>, Option<u8>) {
     let node = &scene.node;
     let node_lo = node.anchor.map(f64::from);
     let mut count = 0;
+    let mut first = None;
     for level in 0..=u32::from(MAX_NODE_SPAN) {
         if node.active >> level & 1 == 0 {
             continue;
@@ -361,10 +371,12 @@ fn count_drawing(view: &LodView, scene: &Scene, point: [f64; 3]) -> (usize, Opti
         let depth = node.node_depth + level as u8;
         if draws(view, node, depth, rel, side as f32) {
             count += 1;
+            first.get_or_insert(depth);
         }
     }
     (
         count,
+        first,
         drawn_depth_at(view, node, point, node_lo, scene.side0),
     )
 }
@@ -413,7 +425,7 @@ fn exactly_one_cell_draws_each_point() {
                 view.target_px = bound * (1.0 + (rng.unit() as f32 - 0.5) * 2e-3);
             }
             for &point in &points {
-                let (count, oracle) = count_drawing(&view, &scene, point);
+                let (count, drawn, oracle) = count_drawing(&view, &scene, point);
                 let expected = usize::from(!point_is_masked(&scene, point));
                 assert_eq!(
                     count,
@@ -423,10 +435,45 @@ fn exactly_one_cell_draws_each_point() {
                     expected == 0,
                     scene.node
                 );
-                assert_eq!(oracle.is_some(), expected == 1);
+                assert_eq!(
+                    oracle, drawn,
+                    "{}: oracle disagrees with the per-depth loop",
+                    scene.name
+                );
                 checked += 1;
             }
         }
     }
     assert!(checked >= 1000 * 64);
+}
+
+#[test]
+fn the_bound_clamps_zmin_to_near() {
+    let side = 8.0f32;
+    let half = side / 2.0;
+    let view = LodView {
+        forward: [0.0, 0.0, 1.0],
+        focal: 1000.0,
+        near: 0.5,
+        target_px: 1.0,
+        min_side: 0.0,
+    };
+    // `(lo, dmax)`: zmin is exactly 0 (the eye on the near face plane), then negative (inside).
+    let on_plane = (
+        [-half, -half, 0.0],
+        (half * half * 2.0 + side * side).sqrt(),
+    );
+    let inside = ([-half, -half, -half], (3.0 * half * half).sqrt());
+    for (lo, dmax) in [on_plane, inside] {
+        let expected = side * view.focal * dmax / (view.near * view.near);
+        let bound = edge_bound(&view, lo, side);
+        assert!(
+            bound.is_finite() && bound > 0.0,
+            "bound {bound} for lo {lo:?}"
+        );
+        assert!(
+            (bound - expected).abs() <= expected * 1e-6,
+            "bound {bound} expected {expected} for lo {lo:?}"
+        );
+    }
 }
