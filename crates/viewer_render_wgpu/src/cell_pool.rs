@@ -1286,13 +1286,17 @@ impl CellPool {
                     };
                     let stored = capped(&nodes[&id].stored, caps.get(&id));
                     let top = served_depth(&stored, top);
-                    // The finest level below `top` that is smaller; estimates can tie.
+                    // The finest level below `top` that saves pages: smaller, or already needed
+                    // (dropping `top` then frees it outright). Estimates can tie, and a tie must
+                    // not stop the fit: the cut would overflow with nothing coarsened.
                     let size =
                         |depth: u8| self.pages_of(self.key(id, depth), &nodes[&id], ctx.grid);
                     if let Some(below) = stored
                         .iter()
                         .copied()
-                        .filter(|d| *d < top && size(*d) < size(top))
+                        .filter(|d| {
+                            *d < top && (size(*d) < size(top) || needed.contains(&self.key(id, *d)))
+                        })
                         .max()
                     {
                         caps.insert(id, below);
@@ -1670,8 +1674,10 @@ impl CellPool {
                 f.rep.saturating_sub(MAX_MASK_LEVELS),
             );
             let short = (0..8).any(|o| {
+                // The raw wanted depth, not the stored one (R3-Q21): a child storing only a
+                // level coarser than what its parent draws does not take over until that level
+                // is built on demand.
                 wanted[o]
-                    .map(|w| served_depth(&stored, w))
                     .is_some_and(|w| limit[o].is_some_and(|l| here[o].is_none_or(|d| d < l.min(w))))
             });
             if short {

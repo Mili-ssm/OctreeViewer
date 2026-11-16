@@ -1093,6 +1093,35 @@ fn added_levels_extend_the_stored_chain_in_order() {
 }
 
 #[test]
+fn on_demand_levels_count_toward_the_cpu_budget() {
+    let generation = cell_generation(5, 0);
+    let mut fx = Fixture::new(HashMap::new(), config(256, 4, u64::MAX));
+    for id in [2, 3] {
+        fx.driver
+            .add_packed_generation(generation, packed_at(id, &[10, 14]))
+            .unwrap();
+    }
+    let at_rest = fx.driver.cpu_bytes();
+    // The budget holds both nodes as stored; the levels added to one push it over.
+    fx.driver.config.cpu_budget_bytes = at_rest;
+    let cam = camera("fit");
+    assert!(fx.step(&[], &cam, 64.0).forgotten.is_empty());
+    fx.driver
+        .add_packed_levels(generation, packed_at(2, &[12]))
+        .unwrap();
+    assert_eq!(
+        fx.driver.cpu_bytes(),
+        at_rest + level_bytes(&level_of(NodeId::new(2), 12, 2))
+    );
+    let report = fx.step(&[], &cam, 64.0);
+    assert_eq!(report.forgotten.len(), 1, "one idle node goes");
+    assert!(fx.driver.cpu_bytes() <= at_rest);
+    // The bytes of the forgotten node include its on-demand level: nothing leaks.
+    let kept = fx.driver.nodes.values().map(|node| node.bytes).sum::<u64>();
+    assert_eq!(fx.driver.cpu_bytes(), kept);
+}
+
+#[test]
 fn an_already_stored_depth_is_ignored() {
     let generation = cell_generation(5, 0);
     let mut driver = CellDriver::new(config(44, 4, u64::MAX));

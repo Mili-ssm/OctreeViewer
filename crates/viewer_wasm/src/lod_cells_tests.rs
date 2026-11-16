@@ -8,6 +8,7 @@ use viewer_format::{
     CrsRecord, FormatMetadata, FormatReader, FormatReaderLimits, FormatVersion, FormatWriter,
     FormatWriterOptions, GlobalFrame, NodeCell, OctreeReader, PagedReader, SourcePointBlock,
 };
+use viewer_render_wgpu::PackedNode;
 use viewer_render_wgpu::{
     CellDriver, CellPoolError, CellTarget, DriverConfig, MASK_WORDS, OrbitCamera, PackedLevel,
     PageEntry, PageFrame, PoolConfig, SceneBounds, ViewProjection, VoxelBuildLimits,
@@ -1332,4 +1333,206 @@ fn the_async_read_order_is_stable_while_nothing_arrives() {
     for order in &orders {
         assert_eq!(order, &orders[0]);
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Levels built on demand (R3: the render side asks, the build side serves)
+// ---------------------------------------------------------------------------------------------
+
+/// A dataset whose cut nodes are all built (their cells taken from the updates, as a driver
+/// would), with every block cached, and the packed nodes as they were sent.
+fn built_for_levels() -> (LodDataset, HashMap<NodeId, PackedNode>, ViewProjection) {
+    let mut dataset = cell_dataset();
+    load_all(&mut dataset);
+    let view = view_at(None);
+    let mut sent = HashMap::new();
+    for _ in 0..20 {
+        let update = dataset
+            .plan_cell_update(&view, 64.0, CellUpdateConfig::default(), None, |_| Ok(None))
+            .unwrap();
+        let done = update.new_nodes.is_empty();
+        for (_, node) in update.new_nodes {
+            sent.insert(node.id, node);
+        }
+        if done {
+            return (dataset, sent, view);
+        }
+    }
+    panic!("the cells did not settle");
+}
+
+/// `count` depths a leaf can build but did not ship, finest last.
+fn unsent_depths(node: &PackedNode, count: usize) -> Vec<u8> {
+    let stored: Vec<u8> = node.levels.iter().map(|level| level.depth).collect();
+    (node.buildable.0..=node.buildable.1)
+        .filter(|depth| !stored.contains(depth))
+        .take(count)
+        .collect()
+}
+
+fn plan_levels(
+    dataset: &mut LodDataset,
+    view: &ViewProjection,
+    config: CellUpdateConfig,
+) -> CellUpdate {
+    dataset
+        .plan_cell_update(view, 64.0, config, None, |_| Ok(None))
+        .unwrap()
+}
+
+/// Updates until nothing is built any more; every packed node and level sent on the way.
+fn run_levels(
+    dataset: &mut LodDataset,
+    view: &ViewProjection,
+) -> (Vec<PackedNode>, Vec<(NodeId, u8)>) {
+    let (mut nodes, mut levels) = (Vec::new(), Vec::new());
+    for _ in 0..20 {
+        let update = plan_levels(dataset, view, CellUpdateConfig::default());
+        levels.extend(shipped_depths(&update));
+        let done = update.new_nodes.is_empty();
+        nodes.extend(update.new_nodes.into_iter().map(|(_, node)| node));
+        if done {
+            break;
+        }
+    }
+    (nodes, levels)
+}
+
+fn shipped_depths(update: &CellUpdate) -> Vec<(NodeId, u8)> {
+    update
+        .new_levels
+        .iter()
+        .flat_map(|(_, node)| node.levels.iter().map(|level| (node.id, level.depth)))
+        .collect()
+}
+
+#[test]
+fn a_requested_level_is_built_and_shipped() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let leaf = NodeId::new(3);
+    let depth = unsent_depths(&sent[&leaf], 1)[0];
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    let update = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+    assert_eq!(shipped_depths(&update), [(leaf, depth)]);
+    assert!(update.new_nodes.is_empty());
+    // Served: the next update ships nothing.
+    let next = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+    assert!(next.new_levels.is_empty());
+}
+
+#[test]
+fn a_newer_request_set_replaces_the_pending_one() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let (a, b) = (NodeId::new(3), NodeId::new(4));
+    let depth_a = unsent_depths(&sent[&a], 1)[0];
+    let depth_b = unsent_depths(&sent[&b], 1)[0];
+    dataset.apply_level_requests(&[(a, depth_a)]);
+    dataset.apply_level_requests(&[(b, depth_b)]);
+    let update = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+    assert_eq!(shipped_depths(&update), [(b, depth_b)]);
+}
+
+#[test]
+fn an_uncached_request_schedules_its_blocks_and_is_served_later() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let leaf = NodeId::new(3);
+    let depth = unsent_depths(&sent[&leaf], 1)[0];
+    let block = BlockId::new(103);
+    dataset.cache.remove(block);
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    let update = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+    assert!(update.new_levels.is_empty());
+    assert!(
+        update.stats.pending_block_ids.contains(&block),
+        "the blocks of the requested node are not listed to read"
+    );
+    dataset.insert_block(node_block(&dataset, 3)).unwrap();
+    let update = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+    assert_eq!(shipped_depths(&update), [(leaf, depth)]);
+}
+
+#[test]
+fn level_builds_respect_their_own_budget() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let requests: Vec<(NodeId, u8)> = (3..=9)
+        .map(NodeId::new)
+        .flat_map(|id| {
+            unsent_depths(&sent[&id], 2)
+                .into_iter()
+                .map(move |depth| (id, depth))
+        })
+        .take(12)
+        .collect();
+    assert_eq!(requests.len(), 12);
+    dataset.apply_level_requests(&requests);
+    // Node builds are capped to zero: the level budget is a separate one.
+    let config = CellUpdateConfig {
+        max_node_builds: 0,
+        ..CellUpdateConfig::default()
+    };
+    let first = plan_levels(&mut dataset, &view, config);
+    assert_eq!(shipped_depths(&first).len(), 8);
+    assert!(first.stats.build_deferred >= 4);
+    let second = plan_levels(&mut dataset, &view, config);
+    assert_eq!(shipped_depths(&second).len(), 4);
+    let mut all = shipped_depths(&first);
+    all.extend(shipped_depths(&second));
+    all.sort();
+    let mut expected = requests;
+    expected.sort();
+    assert_eq!(all, expected);
+}
+
+#[test]
+fn a_colour_change_clears_pending_requests() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let leaf = NodeId::new(3);
+    let depth = unsent_depths(&sent[&leaf], 1)[0];
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    assert!(dataset.has_pending_level_requests());
+    assert!(dataset.set_cell_paint(Some((0, 0))));
+    assert!(!dataset.has_pending_level_requests());
+    // The node is rebuilt with the new colours; no level of the cleared request ships, because
+    // the render side has not asked again.
+    load_all(&mut dataset);
+    let (nodes, levels) = run_levels(&mut dataset, &view);
+    assert!(levels.is_empty());
+    assert!(nodes.iter().any(|node| node.id == leaf), "not rebuilt");
+}
+
+#[test]
+fn a_rebuilt_node_keeps_its_on_demand_depths_with_the_new_colours() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let leaf = NodeId::new(3);
+    let depth = unsent_depths(&sent[&leaf], 1)[0];
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    let update = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+    assert_eq!(shipped_depths(&update), [(leaf, depth)]);
+    assert!(dataset.set_cell_paint(Some((0, 0))));
+    load_all(&mut dataset);
+    let (nodes, _) = run_levels(&mut dataset, &view);
+    let rebuilt = nodes
+        .iter()
+        .find(|node| node.id == leaf)
+        .expect("the node was not rebuilt");
+    assert!(rebuilt.levels.iter().any(|level| level.depth == depth));
+}
+
+#[test]
+fn an_unservable_depth_is_not_retried() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let leaf = NodeId::new(3);
+    // Past the last depth the node can build: `node_cell_level` refuses it, like a leaf whose
+    // positions are still merged at `MAX_CELL_DEPTH`.
+    let depth = sent[&leaf].buildable.1 + 1;
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    let first = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+    assert!(first.new_levels.is_empty());
+    assert!(!dataset.has_pending_level_requests());
+    // Asked again by the render side: no rebuild, nothing shipped.
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    assert!(!dataset.has_pending_level_requests());
+    let again = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+    assert!(again.new_levels.is_empty());
+    assert!(again.new_nodes.is_empty());
 }

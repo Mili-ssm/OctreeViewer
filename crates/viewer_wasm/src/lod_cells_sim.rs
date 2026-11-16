@@ -10,7 +10,7 @@
 use super::cells_tests::node_block;
 use super::*;
 use crate::lod_driver::plan_cells_staged;
-use crate::{CutRestProbe, PoolAck, add_cell_nodes, draw_cell_cut};
+use crate::{CutRestProbe, PoolAck, add_cell_levels, add_cell_nodes, draw_cell_cut};
 use std::collections::{HashMap, HashSet, VecDeque};
 use viewer_render_wgpu::PackedNode;
 
@@ -20,6 +20,8 @@ const MAX_UPDATES_ABOVE_TARGET: usize = 60;
 /// Build to render, in order. `nodeCells` is never merged; `cellCut` is latest-wins on arrival.
 enum Msg {
     Node(u64, Box<PackedNode>),
+    /// Levels built on demand for a node the driver holds (`nodeLevels`).
+    Levels(u64, Box<PackedNode>),
     /// Epoch, cut and support set of the `cellCut` message.
     Cut(u64, Vec<NodeId>, Vec<NodeId>),
 }
@@ -79,6 +81,8 @@ struct Sim {
     // Render to build.
     ack: Option<PoolAck>,
     evict: Vec<NodeId>,
+    /// The driver's last `take_level_requests`, latest wins.
+    level_requests: Option<Vec<(NodeId, u8)>>,
     pool_resets: usize,
     /// Build steps left before the build side learns of a `driverReplaced` (the message takes
     /// time; the builder keeps planning for the old driver meanwhile).
@@ -116,6 +120,7 @@ impl Sim {
             digest: 0,
             ack: None,
             evict: Vec::new(),
+            level_requests: None,
             pool_resets: 0,
             replaced_in: None,
             loss_window: false,
@@ -157,6 +162,10 @@ impl Sim {
         let evicted = std::mem::take(&mut self.evict);
         wake |= !evicted.is_empty();
         ds.apply_evicted(&evicted);
+        if let Some(requests) = self.level_requests.take() {
+            ds.apply_level_requests(&requests);
+            wake = true;
+        }
         if let Some(ack) = self.ack.take() {
             wake |= !ack.missing.is_empty();
             self.stats.missing_reports += ack.missing.len();
@@ -211,6 +220,10 @@ impl Sim {
             self.to_render
                 .push_back(Msg::Node(generation, Box::new(node)));
         }
+        for (generation, node) in update.new_levels {
+            self.to_render
+                .push_back(Msg::Levels(generation, Box::new(node)));
+        }
         self.to_render
             .push_back(Msg::Cut(update.cut_epoch, update.cut, update.support));
         for anchor in update.stats.pending_page_anchors {
@@ -232,6 +245,11 @@ impl Sim {
                         usize::from(self.reported_missing.remove(&node.id));
                     add_cell_nodes(&mut self.h.driver, [(generation, *node)])
                         .unwrap_or_else(|error| panic!("nodeCells: {error}"));
+                    got = true;
+                }
+                Some(Msg::Levels(generation, node)) => {
+                    add_cell_levels(&mut self.h.driver, [(generation, *node)])
+                        .unwrap_or_else(|error| panic!("nodeLevels: {error}"));
                     got = true;
                 }
                 Some(Msg::Cut(epoch, cut, support)) => {
@@ -273,6 +291,9 @@ impl Sim {
         }
         self.h
             .check_drawn_cut(number, &draw.report.plan, self.digest);
+        if let Some(requests) = self.h.driver.take_level_requests() {
+            self.level_requests = Some(requests);
+        }
         self.applied = *epoch;
         self.plans.retain(|e, _| e >= epoch);
         self.stats.evicted += draw.evicted.len();
@@ -321,6 +342,7 @@ impl Sim {
         self.h.last_cut_digest = None;
         self.cut = None;
         self.ack = None;
+        self.level_requests = None;
         self.evict.clear();
         self.pool_resets = 0;
         // Messages queued for the old driver die with it (the generation filter); the builder
@@ -408,8 +430,16 @@ fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) 
 
 fn check_stats(label: &str, sim: &Sim) {
     println!(
-        "{label}: {:?} | zone coarsenings {} (staged, raw wanted: {}) lost samples {}",
-        sim.stats, sim.h.zone_coarsenings, sim.h.staged_coarsenings, sim.h.lost_samples
+        "{label}: {:?} | zone coarsenings {} | drops below the raw wish: stage-excused {}, unexcused {} | lost samples {}",
+        sim.stats,
+        sim.h.zone_coarsenings,
+        sim.h.stage_excused_drops,
+        sim.h.unexcused_drops,
+        sim.h.lost_samples
+    );
+    assert_eq!(
+        sim.h.unexcused_drops, 0,
+        "a sample was drawn coarser than before with no stage lowering it"
     );
     assert_eq!(
         sim.stats.parent_violations, 0,

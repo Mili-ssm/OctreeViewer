@@ -106,7 +106,10 @@ impl NodeCellLevel {
 pub struct NodeCells {
     pub node: NodeId,
     pub levels: Vec<NodeCellLevel>,
-    /// Inclusive first and last depth `node_cell_level` can build for this node.
+    /// Inclusive first and last depth `node_cell_level` can build for this node. A depth inside
+    /// the range can still fail with `AbsoluteDepthExceeded` (a leaf at `MAX_CELL_DEPTH` whose
+    /// positions are still merged): the caller treats that depth as unservable, drops the
+    /// request and does not retry it.
     pub buildable: (u8, u8),
 }
 
@@ -197,7 +200,9 @@ impl NodeCellSource for PointNodeCellSource {
 
 /// Builds the cells of one `depth` on their own, equal to the level the unpruned chain of
 /// [`PointNodeCellSource::node_cells`] holds at that depth. Depths outside `NodeCells::buildable`
-/// fail with `AbsoluteDepthExceeded`.
+/// fail with `AbsoluteDepthExceeded`, and so does a leaf at `MAX_CELL_DEPTH` whose positions are
+/// still merged: for a requested depth that error means the depth is unservable, and the caller
+/// drops the request and remembers it instead of retrying.
 pub fn node_cell_level(
     grid: &CellGrid,
     _node: NodeId,

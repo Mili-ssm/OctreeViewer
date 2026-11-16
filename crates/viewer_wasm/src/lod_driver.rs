@@ -159,13 +159,14 @@ pub(crate) fn plan_cells_staged(
             let pending = !stats.pending_block_ids.is_empty()
                 || !stats.pending_page_anchors.is_empty()
                 || stats.build_deferred > 0;
+            let levels_pending = dataset.has_pending_level_requests();
             (*stage_pixels, *dirty) = next_lod_stage(
                 Some(stage),
                 step.target_pixels,
                 pending,
                 step.can_load_blocks,
             );
-            *dirty |= stats.build_deferred > 0;
+            *dirty |= stats.build_deferred > 0 || levels_pending;
             Ok(CellStagePlan {
                 update,
                 stage_pixels: stage,
@@ -207,7 +208,7 @@ pub(crate) fn update_cells_staged<T: CellTarget>(
     )?;
     // Builds and the driver's own work (uploads, retained cut, a target that lost its pool) need
     // no new input.
-    *dirty |= driver.needs_frame_on(&*target);
+    *dirty |= driver.needs_frame_on(&*target) || dataset.has_pending_level_requests();
     Ok(CellStageUpdate {
         update,
         stage_pixels: planned.stage_pixels,

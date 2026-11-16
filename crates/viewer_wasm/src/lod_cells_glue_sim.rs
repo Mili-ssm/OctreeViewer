@@ -13,6 +13,7 @@ use viewer_render_wgpu::decode_node_levels;
 /// Build to render. `nodeCells` is never merged; `cellCut` is latest-wins at the viewer.
 enum Wire {
     Node(u64, Vec<u8>),
+    Levels(u64, Vec<u8>),
     Cut {
         epoch: u64,
         view_epoch: u64,
@@ -40,6 +41,7 @@ struct GlueSim {
     byte_cap: usize,
     to_render: VecDeque<Wire>,
     inflight: CellMessages,
+    inflight_levels: Option<Vec<(NodeId, u8)>>,
     inflight_delay: usize,
     /// The render side's view counter: what `viewEpoch()` returns.
     view_gen: u64,
@@ -70,6 +72,7 @@ impl GlueSim {
             byte_cap,
             to_render: VecDeque::new(),
             inflight: CellMessages::default(),
+            inflight_levels: None,
             inflight_delay: 0,
             view_gen: 1,
             build_seen: 0,
@@ -97,7 +100,10 @@ impl GlueSim {
     fn build_step(&mut self, view: &ViewProjection) {
         if self.inflight_delay > 0 {
             self.inflight_delay -= 1;
-        } else if !self.inflight.is_empty() {
+        } else {
+            if let Some(requests) = self.inflight_levels.take() {
+                self.builder.level_requests(&mut self.h.dataset, &requests);
+            }
             let messages = std::mem::take(&mut self.inflight);
             let ds = &mut self.h.dataset;
             if messages.driver_replaced {
@@ -139,6 +145,10 @@ impl GlueSim {
             self.to_render
                 .push_back(Wire::Node(out.generation, node.bytes));
         }
+        for node in out.levels {
+            self.to_render
+                .push_back(Wire::Levels(out.generation, node.bytes));
+        }
         self.to_render.push_back(Wire::Cut {
             epoch: out.cut_epoch,
             view_epoch: out.view_epoch,
@@ -156,6 +166,10 @@ impl GlueSim {
                     .viewer
                     .push_node(generation, bytes)
                     .unwrap_or_else(|error| panic!("push_node: {error}")),
+                Some(Wire::Levels(generation, bytes)) => self
+                    .viewer
+                    .push_levels(generation, bytes)
+                    .unwrap_or_else(|error| panic!("push_levels: {error}")),
                 Some(Wire::Cut {
                     epoch,
                     view_epoch,
@@ -187,6 +201,9 @@ impl GlueSim {
         self.inflight.evict.extend(messages.evict);
         if messages.ack.is_some() {
             self.inflight.ack = messages.ack;
+        }
+        if let Some(requests) = self.viewer.take_level_requests() {
+            self.inflight_levels = Some(requests);
         }
     }
 
@@ -256,6 +273,7 @@ impl GlueSim {
                     self.h.target = StrictTarget::default();
                     self.to_render.clear();
                     self.inflight = CellMessages::default();
+                    self.inflight_levels = None;
                     self.stats.driver_replacements += 1;
                 }
                 self.step(view);
@@ -279,6 +297,7 @@ fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
     let full = synthetic_cpu_bytes(&views);
     let budget = full / 3;
     let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let mut reports = 0;
     for (i, seed) in GLUE_SEEDS.iter().enumerate() {
         // A cap of one byte applies one node per frame; the other seeds apply bursts.
         let cap = if i == 0 { 1 } else { 256 << 10 };
@@ -287,13 +306,12 @@ fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
         println!("glue {name} seed {seed}: {:?}", sim.stats);
         assert_eq!(digest, expected, "{name} seed {seed}");
         assert!(sim.stats.node_messages > 0);
-        if inject.driver_replaced_at.is_some() {
-            assert!(
-                sim.stats.missing_reports > 0,
-                "the missing path was not exercised: {:?}",
-                sim.stats
-            );
-        }
+        reports += sim.stats.missing_reports;
+    }
+    // Which seeds hit the path depends on the interleaving: an ack naming the missing nodes can
+    // be superseded before the builder reads it, or the builder learns of the replacement first.
+    if inject.driver_replaced_at.is_some() {
+        assert!(reports > 0, "the missing path was not exercised");
     }
 }
 
@@ -322,7 +340,10 @@ fn glue_synthetic_pool_reset_and_driver_replaced_mid_load_converge() {
 fn the_viewer_stats_report_the_cut_apply_and_the_nodes_forgotten_for_the_cpu_budget() {
     use viewer_render_wgpu::CutApply;
     let views = synth_orbit();
-    let budget = synthetic_cpu_bytes(&views) / 3;
+    // The at-rest set now carries the levels built on demand (569 112 bytes, 206 200 before them,
+    // same nodes): an eighth is the absolute budget a third was (about 70 000 bytes), the one at
+    // which this seed forgets a node.
+    let budget = synthetic_cpu_bytes(&views) / 8;
     let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, 7, 256 << 10);
     let before = sim.viewer.stats(&sim.h.target);
     assert_eq!((before.cut_apply, before.forgotten_total), (None, 0));
@@ -331,7 +352,7 @@ fn the_viewer_stats_report_the_cut_apply_and_the_nodes_forgotten_for_the_cpu_bud
     assert_eq!(after.cut_apply, Some(CutApply::Applied));
     assert!(
         after.forgotten_total > 0,
-        "a third of the working set forgot nothing"
+        "an eighth of the working set forgot nothing"
     );
     // Retained: a pool too small for the cut keeps the previous one (overflow).
     let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, 7, 256 << 10);
@@ -552,6 +573,22 @@ impl Pair {
     /// Plans until idle for `view_epoch`, sending nodes and the last cut when `deliver`.
     /// Returns the nodes' bytes in order (every round).
     fn send(&mut self, view_epoch: u64, deliver: bool) -> Vec<(u64, Vec<u8>)> {
+        let mut nodes = self.send_round(view_epoch, deliver);
+        // The viewer's requests for levels are served by more rounds until it asks for no more.
+        while deliver && self.serve_requests() {
+            nodes.extend(self.send_round(view_epoch, deliver));
+        }
+        nodes
+    }
+
+    /// Runs viewer frames until quiet and hands the driver's level requests to the builder.
+    /// Whether it had any.
+    fn serve_requests(&mut self) -> bool {
+        self.pump();
+        self.relay_level_requests()
+    }
+
+    fn send_round(&mut self, view_epoch: u64, deliver: bool) -> Vec<(u64, Vec<u8>)> {
         self.builder.set_view_epoch(view_epoch);
         self.builder.mark_dirty();
         let mut nodes = Vec::new();
@@ -562,6 +599,13 @@ impl Pair {
                 if deliver {
                     self.viewer
                         .push_node(out.generation, node.bytes.clone())
+                        .unwrap();
+                }
+            }
+            if deliver {
+                for node in &out.levels {
+                    self.viewer
+                        .push_levels(out.generation, node.bytes.clone())
                         .unwrap();
                 }
             }
@@ -589,12 +633,17 @@ impl Pair {
         self.builder.set_view_epoch(view_epoch);
         self.builder.mark_dirty();
         let mut nodes = Vec::new();
-        for _ in 0..500 {
+        'plans: for _ in 0..500 {
             let out = self.plan();
             for node in &out.nodes {
                 nodes.push((out.generation, node.bytes.clone()));
                 self.viewer
                     .push_node(out.generation, node.bytes.clone())
+                    .unwrap();
+            }
+            for node in &out.levels {
+                self.viewer
+                    .push_levels(out.generation, node.bytes.clone())
                     .unwrap();
             }
             let idle = out.idle;
@@ -607,9 +656,15 @@ impl Pair {
                 2.0,
             );
             self.checked_frame();
+            if self.relay_level_requests() {
+                continue;
+            }
             if idle {
                 for _ in 0..500 {
                     self.checked_frame();
+                    if self.relay_level_requests() {
+                        continue 'plans;
+                    }
                     if !self.viewer.cells_busy(&self.target) {
                         return nodes;
                     }
@@ -618,6 +673,15 @@ impl Pair {
             }
         }
         panic!("the builder never went idle");
+    }
+
+    /// The viewer's changed level requests go to the builder, which plans again. Whether any.
+    fn relay_level_requests(&mut self) -> bool {
+        let Some(requests) = self.viewer.take_level_requests() else {
+            return false;
+        };
+        self.builder.level_requests(&mut self.h.dataset, &requests);
+        true
     }
 
     fn checked_frame(&mut self) {
