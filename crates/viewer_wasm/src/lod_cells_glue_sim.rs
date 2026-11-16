@@ -65,7 +65,8 @@ impl GlueSim {
             cpu_budget,
         );
         let builder = BuilderCells::new(h.config);
-        let mut viewer = ViewerCells::new(config, byte_cap);
+        let mut viewer =
+            ViewerCells::new(config, byte_cap).with_data_bounds(h.dataset.cell_data_bounds());
         viewer.camera_changed(1);
         Self {
             h,
@@ -103,7 +104,8 @@ impl GlueSim {
                 self.cpu_budget,
             ),
             self.byte_cap,
-        );
+        )
+        .with_data_bounds(self.h.dataset.cell_data_bounds());
         viewer.set_lod_mode(self.mode);
         viewer.camera_changed(self.view_gen);
         viewer

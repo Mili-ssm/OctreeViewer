@@ -560,6 +560,11 @@ impl OrbitCamera {
             .max(0.001)
     }
 
+    /// `lod_min_depth` for the LOD probes of the cell cut.
+    pub(crate) fn lod_near_depth(&self) -> f64 {
+        self.lod_min_depth()
+    }
+
     pub(crate) fn clip_distances(&self) -> (f64, f64) {
         // Panning/recentering moves the orbit pivot, not the dataset bounds.
         let (position, forward, _, _) = self.basis();

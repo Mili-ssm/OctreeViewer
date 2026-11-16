@@ -1312,6 +1312,8 @@ fn on_demand_node(depths: &[u8], tag: u32) -> PackedNode {
             .map(|depth| {
                 let mut level = level_of(id, *depth, 1);
                 level.instances[0].0[0] = tag;
+                // The marked cell lies in the node (at its corner), where the probes look.
+                level.instances[0].0[1] = 0;
                 level
             })
             .collect(),

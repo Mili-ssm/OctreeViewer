@@ -480,6 +480,7 @@ fn root_node() -> HashMap<NodeId, PoolNode> {
             stored: vec![3, 4, 5],
             buildable: (3, 5),
             points: 2000,
+            octant_data_bounds: None,
         },
     )])
 }
@@ -819,6 +820,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
                 stored: vec![3, 4],
                 buildable: (3, 4),
                 points: 2000,
+                octant_data_bounds: None,
             },
         ),
         (
@@ -828,6 +830,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
                 stored: vec![7, 8],
                 buildable: (7, 8),
                 points: 2000,
+                octant_data_bounds: None,
             },
         ),
         (
@@ -837,6 +840,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
                 stored: vec![6, 7],
                 buildable: (6, 7),
                 points: 2000,
+                octant_data_bounds: None,
             },
         ),
     ])
@@ -1041,7 +1045,7 @@ fn a_steady_frame_calls_cell_cut_at_most_once_and_changes_invalidate_the_reuse()
 
 fn full_depths(cam: &OrbitCamera, node: &PoolNode, target: f64) -> [u8; 8] {
     std::array::from_fn(|o| {
-        octant_wanted_depth(
+        crate::cell_cut::octant_wanted_depth(
             &view(cam),
             &grid(),
             ORIGIN,
@@ -1127,13 +1131,22 @@ fn the_hinted_search_equals_the_full_search() {
         let width = usize::from(range.1 - range.0) + 1;
         let hint = range.0 + ((next(&mut state) * width as f64) as usize % width) as u8;
         let v = view(&cam);
-        let full = octant_wanted_depth(&v, &grid(), ORIGIN, node.bounds, octant, range, target_px);
+        let full = crate::cell_cut::octant_wanted_depth(
+            &v,
+            &grid(),
+            ORIGIN,
+            node.bounds,
+            octant,
+            range,
+            target_px,
+        );
         let near = crate::cell_cut::octant_wanted_depth_near(
             &v,
             &grid(),
             ORIGIN,
             node.bounds,
             octant,
+            crate::cell_cut::ProbeBox::Geometric,
             range,
             target_px,
             hint,
@@ -1446,6 +1459,7 @@ fn the_fallback_never_makes_the_real_cut_too_fine() {
             stored: vec![4, 5],
             buildable: (4, 5),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     let mut rig = Rig::new(nodes.clone(), 64, 8, 1);
@@ -2186,6 +2200,7 @@ fn only_a_node_with_an_ancestor_the_fallback_would_use_can_be_held() {
             stored: vec![8, 9, 10],
             buildable: (8, 10),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     let mut rig = rig_with_coarse_children(Some(deep));
@@ -2702,6 +2717,7 @@ fn a_zone_nothing_can_cover_retains_the_previous_cut_and_counts_the_loss() {
             stored: vec![4, 5],
             buildable: (4, 5),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     let mut rig = Rig::new(nodes.clone(), 64, 8, 1);
@@ -2798,6 +2814,7 @@ fn chain_with_extras() -> HashMap<NodeId, PoolNode> {
             stored: vec![4, 5],
             buildable: (4, 5),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     nodes.insert(
@@ -2807,6 +2824,7 @@ fn chain_with_extras() -> HashMap<NodeId, PoolNode> {
             stored: vec![9, 10],
             buildable: (9, 10),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     nodes
@@ -3391,6 +3409,7 @@ fn cell_mode_clamps_the_pool_to_the_node_span() {
             stored: vec![below],
             buildable: (below, node_depth + 6),
             points: 500,
+            octant_data_bounds: None,
         },
     )]);
     let cam = camera("fit");
@@ -3424,6 +3443,7 @@ fn leaf_below_its_node() -> (HashMap<NodeId, PoolNode>, u8, u8) {
             stored: vec![below, node_depth + 2],
             buildable: (below, node_depth + 6),
             points: 500,
+            octant_data_bounds: None,
         },
     )]);
     (nodes, node_depth, below)
@@ -3498,6 +3518,7 @@ fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
         stored: vec![below, cap, near],
         buildable: (below, near),
         points: 500,
+        octant_data_bounds: None,
     };
     let mut pool = CellPool::new(PoolConfig::default());
     pool.set_lod_mode(LodMode::Cell);
@@ -3572,6 +3593,7 @@ fn d5_node(side: f64, stored: &[u8]) -> PoolNode {
         stored: stored.to_vec(),
         buildable: (stored[0], *stored.last().unwrap()),
         points: 2000,
+        octant_data_bounds: None,
     }
 }
 
@@ -3665,6 +3687,7 @@ fn the_d5_request_comes_first() {
                 stored: vec![3, 5],
                 buildable: (3, 5),
                 points: 2000,
+                octant_data_bounds: None,
             },
         ),
     ]));
@@ -4185,7 +4208,11 @@ fn children_entering_below_node_2() -> (Rig, Vec<NodeId>) {
     let mut rig = Rig::new(nodes, 4096, 64, 0);
     rig.pool.set_lod_mode(LodMode::Cell);
     let plan = rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
-    let drawn = depth_of(&plan, 2).into_iter().flatten().max().expect("node 2 draws");
+    let drawn = depth_of(&plan, 2)
+        .into_iter()
+        .flatten()
+        .max()
+        .expect("node 2 draws");
     assert_eq!(drawn, 6, "setup");
     let mut cut = ids(&region_children(10));
     cut.push(NodeId::new(3));
@@ -4240,5 +4267,8 @@ fn a_leaving_node_hands_back_one_level() {
         plan = rig.step(&ids(&[2, 3]), &camera("fit"), 64.0);
     }
     let first: Vec<u8> = depth_of(&plan, 2).into_iter().flatten().collect();
-    assert!(!first.is_empty() && first.iter().all(|d| *d + 1 == coarsest), "{first:?}");
+    assert!(
+        !first.is_empty() && first.iter().all(|d| *d + 1 == coarsest),
+        "{first:?}"
+    );
 }

@@ -85,9 +85,10 @@ use crate::node_cells::{node_range, representative_depth_for_spacing};
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
     cell_cut::{
-        FastMap, FastSet, MAX_MASK_LEVELS, PrevState, STEP_WAIT_FRAMES, cell_cut_ranged,
-        cell_cut_with, cell_depth_range, drawn_levels, in_cell_range, node_far_depth,
-        octant_wanted_depth, octant_wanted_depth_near, served_depth,
+        FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_octants,
+        behind_wanted, cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels,
+        in_cell_range, node_far_depth, octant_wanted_depth_in, octant_wanted_depth_near,
+        served_depth,
     },
     representative_depth,
 };
@@ -164,6 +165,19 @@ pub struct PoolNode {
     pub buildable: (u8, u8),
     /// Points of the node, for the size estimate of levels that have not arrived.
     pub points: u64,
+    /// Tight box of the cells of each octant (dataset frame, from the finest stored level,
+    /// `None` for an octant without cells); `None` while no level gives one. The LOD probes
+    /// these instead of the geometric octant, which can reach the eye while the data is far.
+    pub octant_data_bounds: Option<[Option<SpatialBounds>; 8]>,
+}
+
+impl PoolNode {
+    pub(crate) fn probe_box(&self, octant: usize) -> ProbeBox {
+        match self.octant_data_bounds {
+            None => ProbeBox::Geometric,
+            Some(bounds) => bounds[octant].map_or(ProbeBox::Empty, ProbeBox::Data),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1815,6 +1829,14 @@ impl CellPool {
                         continue;
                     }
                     let top = served_depth(&stored, top);
+                    // E7: a cap never goes below the node's D5 depth (it is protected and its
+                    // pages are already counted): below it the gate of its descendants waits for
+                    // a depth that is no longer requested (`d5_wanted` reads the capped levels).
+                    let floor = d5
+                        .iter()
+                        .filter(|key| key.node == id)
+                        .map(|key| key.depth)
+                        .max();
                     // The finest level below `top` that saves pages: smaller, or already needed
                     // (dropping `top` then frees it outright). Estimates can tie, and a tie must
                     // not stop the fit: the cut would overflow with nothing coarsened.
@@ -1824,7 +1846,9 @@ impl CellPool {
                         .iter()
                         .copied()
                         .filter(|d| {
-                            *d < top && (size(*d) < size(top) || needed.contains(&self.key(id, *d)))
+                            floor.is_none_or(|floor| *d >= floor)
+                                && *d < top
+                                && (size(*d) < size(top) || needed.contains(&self.key(id, *d)))
                         })
                         .max()
                     {
@@ -2598,6 +2622,17 @@ impl CellPool {
                 .flatten()
                 .map(|cached| cached.depths);
             let exact = hints.is_none();
+            // Octant mode keeps the geometric probe: it still has the degenerate-probe hole (a box
+            // reaching the eye asks for the finest depth), tracked as a follow-up. Only cell
+            // mode probes the data extent and gives behind or empty octants their siblings' wish.
+            let cell = self.lod_mode == LodMode::Cell;
+            let probe = |octant: usize| {
+                if cell {
+                    data.probe_box(octant)
+                } else {
+                    ProbeBox::Geometric
+                }
+            };
             let depths = std::array::from_fn(|octant| match hints {
                 Some(hints) => octant_wanted_depth_near(
                     view,
@@ -2605,20 +2640,36 @@ impl CellPool {
                     origin,
                     data.bounds,
                     octant,
+                    probe(octant),
                     data.buildable,
                     target_px,
                     hints[octant],
                 ),
-                None => octant_wanted_depth(
+                None => octant_wanted_depth_in(
                     view,
                     grid,
                     origin,
                     data.bounds,
                     octant,
+                    probe(octant),
                     data.buildable,
                     target_px,
                 ),
             });
+            let depths = if cell {
+                behind_wanted(
+                    depths,
+                    behind_octants(
+                        view,
+                        grid,
+                        origin,
+                        data.bounds,
+                        std::array::from_fn(|octant| data.probe_box(octant)),
+                    ),
+                )
+            } else {
+                depths
+            };
             let depths = match finest_allowed {
                 Some(limit) => depths.map(|depth| continuity_depth(data.buildable, depth, limit)),
                 None => depths,
@@ -2629,6 +2680,7 @@ impl CellPool {
                     grid,
                     origin,
                     data.bounds,
+                    std::array::from_fn(|octant| data.probe_box(octant)),
                     data.buildable,
                     target_px,
                     hints

@@ -145,6 +145,7 @@ fn load_case(dir: &Path) -> Result<Case> {
                     ),
                     stored,
                     points: node["points"].as_u64().ok_or("points")?,
+                    octant_data_bounds: None,
                 },
                 levels,
             },

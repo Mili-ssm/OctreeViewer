@@ -757,8 +757,8 @@ fn subregions_preserve_global_morton_order_and_aggregate_duplicates() {
         plain_block(points.clone()),
         attributed_block(vec![points[0]], vec![7], vec![9]),
     ];
-    let level = node_cell_level(&grid(), cube([0.0; 3], SIDE), Some(unit), true, &blocks, 23)
-        .unwrap();
+    let level =
+        node_cell_level(&grid(), cube([0.0; 3], SIDE), Some(unit), true, &blocks, 23).unwrap();
     let level = &level;
     let mut expected: Vec<[u64; 3]> = coords.iter().map(|coord| coord.map(|v| v as u64)).collect();
     expected.sort_by_key(|coord| morton(*coord));
@@ -1257,7 +1257,14 @@ fn a_leaf_can_draw_from_its_node_depth_plus_three() {
     assert!(representative_depth_for_spacing(&grid(), spacing) > rep + 1);
     let block = plain_block(random_points(&mut Lcg(9), [0.0; 3], 16.0, 200));
     let cells = PointNodeCellSource { min_growth: 1.0 }
-        .node_cells(&grid(), NodeId::new(3), bounds, Some(spacing), true, &[block])
+        .node_cells(
+            &grid(),
+            NodeId::new(3),
+            bounds,
+            Some(spacing),
+            true,
+            &[block],
+        )
         .unwrap();
     assert_eq!(cells.buildable.0, rep);
     // The coarsest level is the node depth plus three and aggregates several points per cell.

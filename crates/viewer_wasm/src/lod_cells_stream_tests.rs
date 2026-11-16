@@ -547,6 +547,9 @@ struct Totals {
     forgotten: usize,
 }
 
+/// `(node, wanted, drawn)` of an entry of the last plan.
+type LastEntry = (NodeId, [Option<u8>; 8], [Option<u8>; 8]);
+
 struct Harness {
     dataset: LodDataset,
     driver: CellDriver,
@@ -575,6 +578,7 @@ struct Harness {
     unexcused_drops: usize,
     /// The nodes the fit capped in the frame being checked.
     frame_capped: Vec<NodeId>,
+    last_entries: Vec<LastEntry>,
     frame_stage_px: f64,
     /// Sample points drawn in the previous cut, still inside the planner's cut, drawn by nothing.
     lost_samples: usize,
@@ -718,6 +722,7 @@ impl Harness {
             stage_excused_drops: 0,
             unexcused_drops: 0,
             frame_capped: Vec::new(),
+            last_entries: Vec::new(),
             frame_stage_px: 0.0,
             lost_samples: 0,
             planner_of_drawn_cut: None,
@@ -1235,6 +1240,11 @@ impl Harness {
         .unwrap_or_else(|error| panic!("frame {number}: {error}"));
         let stats = &out.update.stats;
         let plan = &out.update.report.plan;
+        self.last_entries = plan
+            .entries
+            .iter()
+            .map(|e| (e.node, e.wanted, e.drawn))
+            .collect();
         self.target.check_plan(plan);
         let digest = cell_cut_digest(&plan.entries);
         self.frame_capped = plan.coarsened_nodes.clone();
@@ -2353,3 +2363,112 @@ both_modes!(
     a_late_node_of_an_older_colour_generation_is_dropped_by_the_driver,
     a_late_node_of_an_older_colour_generation_is_dropped_in_cell_mode
 );
+
+/// The built-in sample at a close pose: the leaves are tall cubes whose octants cross the eye plane
+/// while the data lies in front of it. No node may draw its finest depth (cells of ~0.003 px)
+/// there: the probe measures the data, not the node box.
+fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in(mode: LodMode) {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/web-host/sample.oct");
+    let file = std::fs::File::open(path).unwrap();
+    let reader: RealReader =
+        FormatReader::open_lazy(std::io::BufReader::new(file), FormatReaderLimits::default())
+            .unwrap();
+    let scale = reader.format_metadata().visual_scale();
+    let mut dataset = LodDataset::from_shared_metadata_and_visual_scale(
+        reader.format_metadata().viewer_dataset().unwrap(),
+        scale,
+        256 << 20,
+    )
+    .with_global_frame(reader.format_version().uses_global_frame());
+    let paged = reader.page_source().is_some();
+    if let Some(source) = reader.page_source().cloned() {
+        dataset = dataset
+            .with_pages(
+                source.root_unloaded(),
+                Box::new({
+                    let s = source.clone();
+                    move |a| s.release_page(a)
+                }),
+                256 << 20,
+            )
+            .unwrap();
+    }
+    let origin = dataset.coordinate_origin();
+    let _ = paged;
+    let reader = Rc::new(RefCell::new(reader));
+    let for_blocks = Rc::clone(&reader);
+    let for_pages = Rc::clone(&reader);
+    let blocks: Blocks = Box::new(move |id| {
+        crate::block_loading::load_render_block(
+            &mut *for_blocks.borrow_mut(),
+            id,
+            Some(viewer_render_wgpu::ColorMode::Rgb),
+            None,
+            None,
+        )
+        .map(Some)
+    });
+    let pages: Pages = Box::new(move |anchor| {
+        let graft = for_pages
+            .borrow_mut()
+            .read_page(anchor)
+            .map_err(|e| e.to_string())?;
+        Ok(PageInsert {
+            anchor,
+            number: graft.number,
+            nodes: graft.nodes,
+            unloaded: graft.unloaded,
+            bytes: graft.encoded_len,
+        })
+    });
+    let mut h = Harness::new(dataset, 4.0, blocks, pages).in_mode(mode);
+    h.soft_checks = true;
+    let viewport = [870, 750];
+    let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
+    let mk = |eye: [f64; 3], target: [f64; 3]| {
+        let root = h.dataset.metadata.hierarchy().stats().root_bounds;
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(
+            SceneBounds {
+                min: local(root.min()),
+                max: local(root.max())
+            },
+            viewport
+        ));
+        assert!(camera.set_pose(local(eye), local(target)));
+        ViewProjection::new(camera, viewport, scale, VoxelBuildLimits::default())
+    };
+    let target = [31.95849609375, 31.95849609375, 1.99951171875];
+    let v0 = mk(
+        [31.95849609375, 75.78127736426028, 77.90279540825159],
+        target,
+    );
+    let v4 = mk(
+        [31.95849609375, 38.75951960734527, 6.118357964164779],
+        target,
+    );
+    h.settle(&v0, 3, 5000);
+    h.camera_moved();
+    h.settle(&v4, 3, 5000);
+    for (node, wanted, drawn) in &h.last_entries {
+        if [13, 14, 17, 18].contains(&node.get()) {
+            for o in 0..8 {
+                let (Some(w), Some(d)) = (wanted[o], drawn[o]) else {
+                    continue;
+                };
+                assert!(
+                    w <= 14 && d <= 14,
+                    "node {} octant {o} wants {w} and draws {d} in {mode:?}",
+                    node.get()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in_cell_mode() {
+    // Octant mode still has the degenerate-probe hole (follow-up), so only cell mode is covered.
+    the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in(LodMode::Cell);
+}

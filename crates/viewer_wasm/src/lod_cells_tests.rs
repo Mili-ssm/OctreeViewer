@@ -200,6 +200,7 @@ pub(super) fn driver_for(dataset: &LodDataset, cpu_budget_bytes: u64) -> CellDri
         cpu_budget_bytes,
     });
     driver.set_min_side(Some(crate::cells_glue::DEFAULT_MIN_SIDE));
+    driver.set_data_bounds(dataset.cell_data_bounds());
     driver
 }
 

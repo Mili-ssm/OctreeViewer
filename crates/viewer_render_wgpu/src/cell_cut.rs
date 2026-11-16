@@ -216,7 +216,7 @@ impl fmt::Display for CellCutError {
 impl std::error::Error for CellCutError {}
 
 /// Octant `octant` of `bounds` (both in any one frame), split at the mid-plane of each axis.
-fn octant_box(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
+pub(crate) fn octant_box(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
     let mid: [f64; 3] = std::array::from_fn(|a| (bounds.min()[a] + bounds.max()[a]) / 2.0);
     let upper = |a: usize| octant >> (2 - a) & 1 == 1;
     let min = std::array::from_fn(|a| if upper(a) { mid[a] } else { bounds.min()[a] });
@@ -224,10 +224,22 @@ fn octant_box(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
     SpatialBounds::new(min, max).ok()
 }
 
+/// What the probe of an octant looks at: the octant's geometric box, or the tight box of its
+/// stored data (dataset frame, like the node bounds).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ProbeBox {
+    /// No level is stored yet: the octant's geometric box stands in for its data.
+    Geometric,
+    Data(SpatialBounds),
+    /// The octant holds no data: nothing to draw, so the coarsest depth.
+    Empty,
+}
+
 /// The coarsest buildable depth (`buildable` is inclusive) for which a cell of that depth, placed
 /// at the point of `octant` nearest the eye and shifted to stay inside it, would not refine: its
 /// children would project below `target_px` (ADR 0054, the target is a minimum size); else the
-/// finest (source density, RQ-09/R3-Q9). An infinite or NaN edge never stops the refinement.
+/// finest (source density, RQ-09/R3-Q9). An infinite or NaN edge never stops the refinement,
+/// except for an octant with nothing in front of the eye (see `OctantProbe::classify`).
 ///
 /// The test runs relative to `coordinate_origin` (bounds minus origin, eye `position / scale`,
 /// origin `[0; 3]` for the view), the frame the view itself uses, so large origins lose no
@@ -241,20 +253,99 @@ pub fn octant_wanted_depth(
     buildable: (u8, u8),
     target_px: f64,
 ) -> u8 {
-    debug_assert!(buildable.0 <= buildable.1, "buildable range is ordered");
-    let Some(meets) = OctantProbe::new(view, grid, coordinate_origin, bounds, octant, target_px)
-    else {
-        return buildable.1;
-    };
-    (buildable.0..=buildable.1)
-        .find(|depth| meets.at(*depth))
-        .unwrap_or(buildable.1)
+    octant_wanted_depth_in(
+        view,
+        grid,
+        coordinate_origin,
+        bounds,
+        octant,
+        ProbeBox::Geometric,
+        buildable,
+        target_px,
+    )
 }
 
-/// `octant_wanted_depth` searched outward from `hint` (the answer of a nearby view), assuming that
-/// once a depth stops refining every finer one does too (its children are half as large at about
-/// the same distance). It then costs 2 probes when the answer has not moved, instead of one per
-/// coarser depth, and returns the same depth whenever that holds. The
+/// `octant_wanted_depth` probing `probe` (see `ProbeBox`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn octant_wanted_depth_in(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    bounds: SpatialBounds,
+    octant: usize,
+    probe: ProbeBox,
+    buildable: (u8, u8),
+    target_px: f64,
+) -> u8 {
+    debug_assert!(buildable.0 <= buildable.1, "buildable range is ordered");
+    match OctantProbe::classify(
+        view,
+        grid,
+        coordinate_origin,
+        bounds,
+        octant,
+        probe,
+        target_px,
+    ) {
+        Probe::Finest => buildable.1,
+        Probe::Coarsest | Probe::Behind => buildable.0,
+        Probe::Meets(meets) => (buildable.0..=buildable.1)
+            .find(|depth| meets.at(*depth))
+            .unwrap_or(buildable.1),
+    }
+}
+
+/// Octants of the node with no data in view (bit `o`: wholly behind the eye or the LOD near
+/// distance, or empty),
+/// and those with data in front (straddling or in front): a behind octant makes no demand of its
+/// own, so the pool gives it the finest wish of the in-front ones (`behind_wanted`) instead of a
+/// coarsest level that would need pages and coarsen the visible result.
+pub(crate) fn behind_octants(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    bounds: SpatialBounds,
+    probes: [ProbeBox; 8],
+) -> (u8, u8) {
+    (0..8).fold((0, 0), |(behind, front), octant| {
+        match OctantProbe::classify(
+            view,
+            grid,
+            coordinate_origin,
+            bounds,
+            octant,
+            probes[octant],
+            1.0,
+        ) {
+            // Behind, or without data: nothing of it is drawn.
+            Probe::Behind | Probe::Coarsest => (behind | 1 << octant, front),
+            Probe::Finest | Probe::Meets(_) => (behind, front | 1 << octant),
+        }
+    })
+}
+
+/// A behind octant wants the finest wish among the in-front octants (none in front: its own).
+pub(crate) fn behind_wanted(depths: [u8; 8], (behind, front): (u8, u8)) -> [u8; 8] {
+    let Some(finest) = (0..8)
+        .filter(|o| front >> o & 1 == 1)
+        .map(|o| depths[o])
+        .max()
+    else {
+        return depths;
+    };
+    std::array::from_fn(|o| {
+        if behind >> o & 1 == 1 {
+            finest
+        } else {
+            depths[o]
+        }
+    })
+}
+
+/// `octant_wanted_depth_in` searched outward from `hint` (the answer of a nearby view), assuming
+/// that once a depth stops refining every finer one does too (its children are half as large at
+/// about the same distance). It then costs 2 probes when the answer has not moved, instead of one
+/// per coarser depth, and returns the same depth whenever that holds. The
 /// `the_hinted_search_equals_the_full_search` test (cell_pool_tests.rs) found no difference in
 /// 79 993 random poses. A `hint` outside the range falls back to the full search.
 #[allow(clippy::too_many_arguments)]
@@ -264,27 +355,37 @@ pub(crate) fn octant_wanted_depth_near(
     coordinate_origin: [f64; 3],
     bounds: SpatialBounds,
     octant: usize,
+    probe: ProbeBox,
     buildable: (u8, u8),
     target_px: f64,
     hint: u8,
 ) -> u8 {
     let (coarsest, finest) = buildable;
     if !(coarsest..=finest).contains(&hint) {
-        return octant_wanted_depth(
+        return octant_wanted_depth_in(
             view,
             grid,
             coordinate_origin,
             bounds,
             octant,
+            probe,
             buildable,
             target_px,
         );
     }
-    let Some(meets) = OctantProbe::new(view, grid, coordinate_origin, bounds, octant, target_px)
-    else {
-        return finest;
-    };
-    hinted_search(&meets, buildable, hint)
+    match OctantProbe::classify(
+        view,
+        grid,
+        coordinate_origin,
+        bounds,
+        octant,
+        probe,
+        target_px,
+    ) {
+        Probe::Finest => finest,
+        Probe::Coarsest | Probe::Behind => coarsest,
+        Probe::Meets(meets) => hinted_search(&meets, buildable, hint),
+    }
 }
 
 /// The hinted search of `octant_wanted_depth_near` over an already built probe; `hint` lies in
@@ -309,8 +410,8 @@ fn hinted_search(meets: &OctantProbe, (coarsest, finest): (u8, u8), hint: u8) ->
 
 /// Cell mode: `(far, front)` of a node. `far` is the coarsest buildable depth whose cell, placed
 /// at the node's corner farthest along the view direction (inside the node box), would not
-/// refine: the depth the node's far side needs. It is the finest depth when no corner is in
-/// front of the eye. `front` has bit `o` set for each octant wholly in front of the eye plane; the
+/// refine: the depth the node's far side needs. It is the coarsest depth when no corner is in
+/// front of the eye. `front` has bit `o` set for each octant (its data box, `probes`) wholly in front of the eye plane; the
 /// others (behind it or crossing it) want the finest depth only because they measure `+inf`,
 /// which says nothing about the node's range: they still draw their own depth but do not set
 /// `hi`. `hint` is the answer of a
@@ -321,6 +422,7 @@ pub(crate) fn node_far_depth(
     grid: &CellGrid,
     coordinate_origin: [f64; 3],
     bounds: SpatialBounds,
+    probes: [ProbeBox; 8],
     buildable: (u8, u8),
     target_px: f64,
     hint: Option<u8>,
@@ -335,7 +437,12 @@ pub(crate) fn node_far_depth(
     // behind it holds cubes with a corner at or behind the eye, which measure `+inf` and want the
     // finest depth only for that reason.
     let front = (0..8).fold(0_u8, |bits, octant| {
-        let in_front = octant_box(relative, octant).is_some_and(|b| {
+        let region = match probes[octant] {
+            ProbeBox::Geometric => octant_box(relative, octant),
+            ProbeBox::Data(data) => relative_bounds(data, coordinate_origin),
+            ProbeBox::Empty => None,
+        };
+        let in_front = region.is_some_and(|b| {
             (0..3)
                 .map(|a| {
                     let near = if forward[a] > 0.0 {
@@ -351,7 +458,8 @@ pub(crate) fn node_far_depth(
         bits | (u8::from(in_front) << octant)
     });
     if farthest_corner_depth(&relative, eye, forward) <= 0.0 {
-        return (buildable.1, front);
+        // Wholly behind the eye: nothing in front to measure, so no finest depth.
+        return (buildable.0, front);
     }
     let corner: [f64; 3] = std::array::from_fn(|a| {
         if forward[a] > 0.0 {
@@ -368,6 +476,22 @@ pub(crate) fn node_far_depth(
             .unwrap_or(buildable.1),
     };
     (far, front)
+}
+
+/// Lower bound of the view depth of any point of `bounds` inside the view frustum: its
+/// euclidean distance from `eye` times the cosine of the frustum's widest half angle (a point
+/// at distance `r` and angle `a` off the axis lies at depth `r cos a`). A box that straddles the
+/// plane through the eye still shows no data nearer than this, which the plane alone (depth 0)
+/// does not tell.
+fn nearest_visible_depth(view: &ViewProjection, bounds: &SpatialBounds, eye: [f64; 3]) -> f64 {
+    let distance = (0..3)
+        .map(|a| (eye[a].clamp(bounds.min()[a], bounds.max()[a]) - eye[a]).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    let [width, height] = view.viewport();
+    let aspect = f64::from(width) / f64::from(height.max(1));
+    let tan_corner = (crate::camera::VERTICAL_FOV * 0.5).tan() * (1.0 + aspect * aspect).sqrt();
+    distance / (1.0 + tan_corner * tan_corner).sqrt()
 }
 
 /// View depth (along `forward`, from `eye`) of the corner of `bounds` farthest along `forward`.
@@ -409,6 +533,18 @@ pub(crate) fn served_depth(stored: &[u8], depth: u8) -> u8 {
         .expect("stored levels are not empty")
 }
 
+/// How an octant is probed.
+enum Probe<'a> {
+    /// No valid box: every depth fails and the finest is used.
+    Finest,
+    /// The octant has no data: it asks for the coarsest depth.
+    Coarsest,
+    /// The octant's data lies wholly behind the eye or the LOD near distance: nothing of it is
+    /// drawn, so it asks for the coarsest depth on its own (see `behind_octants`).
+    Behind,
+    Meets(OctantProbe<'a>),
+}
+
 /// The test of `octant_wanted_depth` for one octant: does a cell of a given depth, placed at the
 /// point of the octant nearest the eye and shifted to stay inside it, project to at most the
 /// target (see `at`)?
@@ -419,28 +555,92 @@ struct OctantProbe<'a> {
     /// The point the cell is placed towards: the eye for an octant, the far corner for a node's
     /// far side.
     anchor: [f64; 3],
+    /// View depth of the nearest face of the cell, which then sits on the view axis, when the
+    /// octant's box straddles the LOD near distance (see `new`).
+    on_axis: Option<f64>,
     target_px: f64,
 }
 
 impl<'a> OctantProbe<'a> {
-    /// `None` when the octant has no valid box: every depth then fails and the finest is used.
-    fn new(
+    /// The box probed is the octant's data box (`ProbeBox::Data`) or, without one, the octant of
+    /// `bounds`. A cell with a corner at or behind the eye projects to `+inf`, which never stops
+    /// the refinement, so a box reaching the eye would always want the finest depth although its
+    /// data may be far away or not in view at all. The view depths of the box decide:
+    ///
+    /// - every corner at depth <= `near` (the LOD near distance, `lod_near_depth`), or nearer than
+    ///   anything of the box can be in view (`nearest_visible_depth`): nothing to see, the
+    ///   coarsest depth;
+    /// - the nearest corner at depth >= `near`: the cell at the point nearest the eye, as usual;
+    /// - otherwise the box straddles `near`: the cell is placed on the view axis with its nearest
+    ///   face at the nearest depth the box can show (`nearest_visible_depth`, at least `near`),
+    ///   so the answer is at least as fine as the data in view needs.
+    fn classify(
         view: &'a ViewProjection,
         grid: &'a CellGrid,
         coordinate_origin: [f64; 3],
         bounds: SpatialBounds,
         octant: usize,
+        probe: ProbeBox,
         target_px: f64,
-    ) -> Option<Self> {
-        let relative = relative_bounds(bounds, coordinate_origin)?;
-        let octant_box = octant_box(relative, octant)?;
-        Some(Self::at_anchor(
+    ) -> Probe<'a> {
+        let (boxed, measured) = match probe {
+            ProbeBox::Empty => return Probe::Coarsest,
+            ProbeBox::Data(data) => (relative_bounds(data, coordinate_origin), true),
+            ProbeBox::Geometric => (
+                relative_bounds(bounds, coordinate_origin)
+                    .and_then(|relative| octant_box(relative, octant)),
+                false,
+            ),
+        };
+        let Some(octant_box) = boxed else {
+            return Probe::Finest;
+        };
+        if !measured {
+            // Without data the geometric box says nothing about what is in view: a box that
+            // reaches the eye keeps wanting the finest depth.
+            return Probe::Meets(Self::at_anchor(
+                view,
+                grid,
+                octant_box,
+                view_eye(view),
+                target_px,
+            ));
+        }
+        let eye = view_eye(view);
+        let forward = view.camera().forward();
+        let near = view.camera().lod_near_depth() / view.visual_scale();
+        let depth_of = |toward: bool| -> f64 {
+            (0..3)
+                .map(|a| {
+                    let corner = if (forward[a] > 0.0) == toward {
+                        octant_box.max()[a]
+                    } else {
+                        octant_box.min()[a]
+                    };
+                    (corner - eye[a]) * forward[a]
+                })
+                .sum()
+        };
+        let (nearest, farthest) = (depth_of(false), depth_of(true));
+        // Nothing of the box can be both in view and at least `near` away.
+        let visible = near.max(nearest_visible_depth(view, &octant_box, eye));
+        if farthest <= visible {
+            return Probe::Behind;
+        }
+        // The point of the box nearest the eye may lie far off the view axis, at a depth no visible
+        // point of the box has: the cell then goes on the axis at `visible`.
+        let closest: f64 = (0..3)
+            .map(|a| (eye[a].clamp(octant_box.min()[a], octant_box.max()[a]) - eye[a]) * forward[a])
+            .sum();
+        let on_axis = (nearest < near || closest < visible).then_some(visible);
+        Probe::Meets(Self {
             view,
             grid,
             octant_box,
-            view_eye(view),
+            anchor: eye,
+            on_axis,
             target_px,
-        ))
+        })
     }
 
     fn at_anchor(
@@ -455,6 +655,7 @@ impl<'a> OctantProbe<'a> {
             grid,
             octant_box,
             anchor,
+            on_axis: None,
             target_px,
         }
     }
@@ -465,13 +666,24 @@ impl<'a> OctantProbe<'a> {
     /// stops the refinement. The length minimum is applied by the pool (`continuity_depth`).
     fn at(&self, depth: u8) -> bool {
         let side = self.grid.root_side / 2.0_f64.powi(i32::from(depth));
-        let min: [f64; 3] = std::array::from_fn(|a| {
-            let low = self.octant_box.min()[a];
-            let high = (self.octant_box.max()[a] - side).max(low);
-            self.anchor[a]
-                .clamp(self.octant_box.min()[a], self.octant_box.max()[a])
-                .clamp(low, high)
-        });
+        let min: [f64; 3] = match self.on_axis {
+            Some(near) => {
+                // The cell's nearest corner is at view depth `near`: its centre is half the
+                // cell's extent along the view direction further.
+                let forward = self.view.camera().forward();
+                let extent: f64 = forward.iter().map(|v| v.abs()).sum::<f64>() * side;
+                std::array::from_fn(|a| {
+                    self.anchor[a] + forward[a] * (near + extent / 2.0) - side / 2.0
+                })
+            }
+            None => std::array::from_fn(|a| {
+                let low = self.octant_box.min()[a];
+                let high = (self.octant_box.max()[a] - side).max(low);
+                self.anchor[a]
+                    .clamp(self.octant_box.min()[a], self.octant_box.max()[a])
+                    .clamp(low, high)
+            }),
+        };
         let half = side / 2.0;
         let smallest = (0..8_usize)
             .map(|child| {

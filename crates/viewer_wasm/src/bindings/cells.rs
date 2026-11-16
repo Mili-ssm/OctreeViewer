@@ -648,6 +648,8 @@ impl WasmVoxelViewer {
         root_min: js_sys::Float64Array,
         root_side: f64,
         reference_spacing: Option<f64>,
+        data_min: Option<js_sys::Float64Array>,
+        data_max: Option<js_sys::Float64Array>,
     ) -> Result<String, JsValue> {
         // Arguments and renderer are checked before any state changes: an error leaves the
         // previous cells path as it was.
@@ -695,6 +697,17 @@ impl WasmVoxelViewer {
         }
         let mut cells =
             ViewerCells::new(config, self.cell_node_cap).with_reference_spacing(reference_spacing);
+        // The tight data extent (`cellsInfo.dataMin/dataMax`) is optional: without it the probes
+        // use the geometric octants.
+        if let (Some(min), Some(max)) = (data_min, data_max)
+            && min.length() == 3
+            && max.length() == 3
+        {
+            let (mut lo, mut hi) = ([0.0; 3], [0.0; 3]);
+            min.copy_to(&mut lo);
+            max.copy_to(&mut hi);
+            cells = cells.with_data_bounds(viewer_core::SpatialBounds::new(lo, hi).ok());
+        }
         cells
             .set_continuity(self.continuity)
             .map_err(|message| JsValue::from_str(&message))?;

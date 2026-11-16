@@ -622,6 +622,13 @@ impl LodDataset {
         }
     }
 
+    /// The tight extent of the data for `CellDriver::set_data_bounds`; `None` when it is the root
+    /// cube itself (nothing tighter is known).
+    pub fn cell_data_bounds(&self) -> Option<SpatialBounds> {
+        let stats = self.metadata.hierarchy().stats();
+        (stats.data_bounds != stats.root_bounds).then_some(stats.data_bounds)
+    }
+
     /// The dataset's `coordinate_origin`, for `DriverConfig::coordinate_origin`.
     pub fn coordinate_origin(&self) -> [f64; 3] {
         self.metadata.coordinate_frame().origin()

@@ -433,6 +433,39 @@ fn camera_inside_node_returns_finest_for_its_octant() {
     }
 }
 
+/// Eye inside the geometric octant, data far in front or behind: the probe measures the data.
+#[test]
+fn a_probe_of_the_data_never_asks_the_finest_for_a_degenerate_box() {
+    let huge = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    let grid = CellGrid {
+        root_min: [-1000.0; 3],
+        root_side: 2000.0,
+    };
+    let mut camera = cameras().remove(0).1;
+    // Eye inside octant 6, looking along -x.
+    assert!(camera.set_pose([500.0, 300.0, -200.0], [0.0, 300.0, -200.0]));
+    let view = view(&camera);
+    let at = |probe| octant_wanted_depth_in(&view, &grid, [0.0; 3], huge, 6, probe, (3, 9), 8.0);
+    let data = |min: [f64; 3], side: f64| ProbeBox::Data(cube_box(min, side));
+    // Octant 0 of a 200-cube holds exactly the data box: the geometric answer for it.
+    let reference_node = SpatialBounds::new([0.0, 250.0, -250.0], [200.0, 450.0, -50.0]).unwrap();
+    let reference = octant_wanted_depth(&view, &grid, [0.0; 3], reference_node, 0, (3, 9), 8.0);
+    assert_eq!(
+        at(ProbeBox::Geometric),
+        9,
+        "the geometric box reaches the eye"
+    );
+    assert!(reference < 9, "setup: the target is met at that distance");
+    assert_eq!(at(data([0.0, 250.0, -250.0], 100.0)), reference);
+    // All data behind the eye plane: the coarsest depth.
+    assert_eq!(at(data([600.0, 250.0, -250.0], 100.0)), 3);
+    assert_eq!(at(ProbeBox::Empty), 3);
+}
+
+fn cube_box(min: [f64; 3], side: f64) -> SpatialBounds {
+    SpatialBounds::new(min, min.map(|v| v + side)).unwrap()
+}
+
 #[test]
 fn camera_inside_the_dataset_matches_the_oracle() {
     let grid = dataset_grid(ORIGIN);
@@ -1503,7 +1536,18 @@ fn ranged_entry(
         &|_, octant, data| {
             octant_wanted_depth(view, grid, [0.0; 3], bounds, octant, data.buildable, target)
         },
-        Some(&|_, data| node_far_depth(view, grid, [0.0; 3], bounds, data.buildable, target, None)),
+        Some(&|_, data| {
+            node_far_depth(
+                view,
+                grid,
+                [0.0; 3],
+                bounds,
+                [ProbeBox::Geometric; 8],
+                data.buildable,
+                target,
+                None,
+            )
+        }),
         None,
     )
     .unwrap()
@@ -1542,7 +1586,16 @@ fn the_far_wanted_depth_is_never_finer_than_the_near_one() {
             -1000.0 + ((next() * 2000.0 / side).floor() * side).min(2000.0 - side)
         });
         let bounds = SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
-        let (far, front) = node_far_depth(&view, &grid, [0.0; 3], bounds, (3, 12), target, None);
+        let (far, front) = node_far_depth(
+            &view,
+            &grid,
+            [0.0; 3],
+            bounds,
+            [ProbeBox::Geometric; 8],
+            (3, 12),
+            target,
+            None,
+        );
         let near = (0..8)
             .filter(|o| front >> o & 1 == 1)
             .map(|o| octant_wanted_depth(&view, &grid, [0.0; 3], bounds, o, (3, 12), target))
