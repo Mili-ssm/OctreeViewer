@@ -243,6 +243,8 @@ are in source dataset coordinates, with the file's coordinate origin and visual 
 cell); an unknown mode rejects and keeps the current one, and the choice survives "Recreate
 viewer". The demo starts in `cell` mode (the library default stays `octant`);
 `?cellLod=octant` in the page URL compares with the per-octant selection. There is no UI control yet.
+The cells path never draws cubes smaller than a default length minimum of 0.1 mm (`1e-4` dataset
+units, metres assumed until the CRS unit is read); continuity (cloud spacing x factor) wins when larger.
 `renderedVoxels` reports submitted/current HZB-visible instances; it does not guarantee each voxel
 contributes a final pixel. Metadata reports bounds and coordinate origin; a CRS is not inferred when
 the file does not provide one. The canvas is transferred to a worker and cannot be reused after

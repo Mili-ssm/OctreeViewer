@@ -190,13 +190,17 @@ impl CellTarget for NullTarget {
     }
 }
 
+/// The reference driver of the simulations: like a new viewer, it stops at the default length
+/// minimum (ADR 0054), so the glue and the in-process oracle draw the same cubes.
 pub(super) fn driver_for(dataset: &LodDataset, cpu_budget_bytes: u64) -> CellDriver {
-    CellDriver::new(DriverConfig {
+    let mut driver = CellDriver::new(DriverConfig {
         pool: PoolConfig::default(),
         grid: dataset.cell_grid(),
         coordinate_origin: dataset.coordinate_origin(),
         cpu_budget_bytes,
-    })
+    });
+    driver.set_min_side(Some(crate::cells_glue::DEFAULT_MIN_SIDE));
+    driver
 }
 
 /// Builds the cells of `id` and hands them to the driver, as steps 1 and 2 do.
