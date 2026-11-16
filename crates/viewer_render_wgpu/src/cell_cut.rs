@@ -513,20 +513,25 @@ pub fn resident_depth(wanted: u8, resident: &[u8]) -> Option<(u8, bool)> {
 /// `drawn`, `stage` and `step` per octant (see `CellCutEntry`).
 pub(crate) type DrawnLevels = ([Option<u8>; 8], [bool; 8], [Option<u8>; 8]);
 
-/// Frames an octant waits for its adjacent depth before it gives up stepping (ADR 0053): about
-/// 0.5 s at 60 fps. The ADR allows a longer total latency, but never a view stuck behind a
-/// depth that does not arrive (refused, over the CPU budget or build cap, or evicted).
+/// Frames an octant waits for the adjacent depth of each hop before it gives up on it (ADR
+/// 0053): about 0.5 s at 60 fps. The ADR allows a longer total latency, but never a view stuck
+/// behind a depth that does not arrive (refused, over the CPU budget or build cap, or evicted).
+/// Each hop of a timed-out octant gets its own wait, so a stuck zone crosses `n` levels in at
+/// most `n * STEP_WAIT_FRAMES` frames (the frame budgets of the simulations are sized on it).
 pub const STEP_WAIT_FRAMES: u32 = 30;
 
 /// The stepping rule (ADR 0053): `(draw, next)` for one octant that drew `prev` in the last
-/// applied cut and now wants the stored depth `w`. A `prev` that is absent or no longer resident
-/// draws the resident level closest to `w` (R3-Q21). Otherwise the octant moves at most one level
-/// towards `w` and never past it: `next` is the adjacent servable depth in that direction (depths
-/// that are neither resident nor buildable are skipped; `w` when none is servable), drawn once
-/// resident; until then `prev` keeps drawing. `next` is `None` when nothing is pending.
-/// `buildable` is the depth range the node can serve. `timed_out`: the adjacent depth did not
-/// arrive in `STEP_WAIT_FRAMES`, so the octant draws the resident level of the interval between
-/// `prev` and `w` closest to `w` (the finer on a tie).
+/// applied cut and now wants the stored depth `w`. With no `prev` it draws the resident level
+/// closest to `w` (R3-Q21). A `prev` that is no longer resident (pool reset or eviction) draws
+/// the resident level of the interval `prev..w` closest to `prev` (the closest to `w` when the
+/// interval has none). Otherwise the octant moves at most one level towards `w` and never past
+/// it: `next` is the adjacent servable depth in that direction (depths that are neither resident
+/// nor buildable are skipped; `w` when none is servable), drawn once resident; until then `prev`
+/// keeps drawing. `next` is `None` when `draw == w`, and a pending octant stays pending (the view
+/// is never at rest before it reaches `w`). `buildable` is the depth range the node can serve.
+/// `timed_out`: the adjacent depth did not arrive in `STEP_WAIT_FRAMES`, so the octant hops to the
+/// resident level of the interval closest to `prev` (the smallest jump towards `w`); it stays
+/// when there is none. The caller restarts the wait after every hop.
 pub(crate) fn stepped_depth(
     prev: Option<u8>,
     w: u8,
@@ -544,25 +549,37 @@ pub(crate) fn stepped_depth(
         }
         .unwrap_or(w)
     };
-    let Some(prev) = prev.filter(|prev| resident.contains(prev)) else {
+    // The resident level of `prev..w` closest to `prev`, other than `prev` itself.
+    let nearest_to_prev = |prev: u8| {
+        let (lo, hi) = (prev.min(w), prev.max(w));
+        resident
+            .iter()
+            .copied()
+            .filter(|d| (lo..=hi).contains(d) && *d != prev)
+            .min_by_key(|d| d.abs_diff(prev))
+    };
+    let Some(prev) = prev else {
         let (depth, _) = resident_depth(w, resident)?;
         return Some((depth, (depth != w).then(|| adjacent(depth))));
     };
+    if !resident.contains(&prev) {
+        let depth = match nearest_to_prev(prev) {
+            Some(depth) => depth,
+            None => resident_depth(w, resident)?.0,
+        };
+        return Some((depth, (depth != w).then(|| adjacent(depth))));
+    }
     if w == prev {
         return Some((prev, None));
     }
-    if timed_out {
-        let (lo, hi) = (prev.min(w), prev.max(w));
-        let closest = resident
-            .iter()
-            .copied()
-            .filter(|d| (lo..=hi).contains(d))
-            .min_by_key(|d| (d.abs_diff(w), std::cmp::Reverse(*d)))
-            .unwrap_or(prev);
-        return Some((closest, None));
-    }
     let next = adjacent(prev);
-    let draw = if resident.contains(&next) { next } else { prev };
+    let draw = if resident.contains(&next) {
+        next
+    } else if timed_out {
+        nearest_to_prev(prev).unwrap_or(prev)
+    } else {
+        prev
+    };
     // Pending while the octant has not reached `w`: the depth it takes after `draw`.
     Some((draw, (draw != w).then(|| adjacent(draw))))
 }

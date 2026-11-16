@@ -251,6 +251,10 @@ pub struct PoolCounters {
     pub lost_nodes: u32,
     /// Longest run of consecutive frames a held or excluded node has been waiting (R3-Q20/Q21).
     pub hold_age_max: u32,
+    /// Octants whose cut applied this frame drew a level more than one away from their previous
+    /// one because their wait timed out or their previous level was gone (ADR 0053): the only
+    /// jumps of more than one level the stepping rule allows.
+    pub step_hops: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -729,9 +733,13 @@ pub struct CellPool {
     /// Cell mode: the `(min, max)` active depths of each node of the applied cut, as last
     /// written to the records.
     applied_span: FastMap<NodeId, (u8, u8)>,
-    /// Per `(node, octant)` stepping towards its wanted depth: `(wanted, adjacent depth awaited,
-    /// applied frames waited)`. At `STEP_WAIT_FRAMES` the octant stops stepping (ADR 0053).
-    step_waits: FastMap<(NodeId, usize), (u8, u8, u32)>,
+    /// Per `(node, octant)` stepping towards its wanted depth: `((drawn depth, wanted depth is
+    /// finer, adjacent depth awaited), frames waited)`. Every planned frame counts, applied or
+    /// retained; the key ignores the exact wanted depth, so a wanted depth flipping within the
+    /// same direction does not restart the wait, and a hop (a new drawn depth) does. At
+    /// `STEP_WAIT_FRAMES` the octant hops to the resident level closest to its drawn depth
+    /// (ADR 0053).
+    step_waits: FastMap<(NodeId, usize), ((u8, bool, u8), u32)>,
     /// Cell mode: per node of the applied cut that was already active in the previous cut, the
     /// depths its range residents may take: that span widened by one level at each end.
     applied_window: FastMap<NodeId, (u8, u8)>,
@@ -844,9 +852,27 @@ impl CellPool {
             *timed_out = self
                 .step_waits
                 .get(&(id, o))
-                .is_some_and(|(_, _, frames)| *frames >= STEP_WAIT_FRAMES);
+                .is_some_and(|(_, frames)| *frames >= STEP_WAIT_FRAMES);
         }
         state
+    }
+
+    /// Octants of `entries` (a cut about to be applied) that jump more than one level from what
+    /// they drew because they timed out or their previous level is not resident any more.
+    fn step_hops(&self, entries: &[CellCutEntry]) -> u32 {
+        let mut hops = 0;
+        for entry in entries {
+            let prev = self.prev_state(entry.node);
+            for o in 0..8 {
+                if let (Some(was), Some(now)) = (prev.drawn[o], entry.drawn[o])
+                    && was.abs_diff(now) > 1
+                    && (prev.timed_out[o] || !self.is_resident(self.key(entry.node, was)))
+                {
+                    hops += 1;
+                }
+            }
+        }
+        hops
     }
 
     pub fn new(config: PoolConfig) -> Self {
@@ -969,11 +995,18 @@ impl CellPool {
         if let Some((lo, hi)) = entry.range
             && !wanted.is_empty()
         {
+            // A node entering the cut has no window: it starts from the depths it draws, one
+            // level either side, and widens from there one level per frame.
             let (wlo, whi) = self
                 .applied_window
                 .get(&entry.node)
                 .copied()
-                .unwrap_or((0, u8::MAX));
+                .unwrap_or_else(|| {
+                    let drawn = entry.required_levels();
+                    let first = drawn.first().copied().unwrap_or(u8::MAX);
+                    let last = drawn.last().copied().unwrap_or(0);
+                    (first.saturating_sub(1), last.saturating_add(1))
+                });
             wanted.extend(lo.max(wlo)..=hi.min(whi));
             wanted.sort_unstable();
             wanted.dedup();
@@ -2878,23 +2911,17 @@ impl CellPool {
         // Levels in use: the drawn ones and, when retaining, the previous cut's.
         let mut protected: FastSet<LevelKey> = FastSet::default();
         let mut pinned: FastSet<LevelKey> = FastSet::default();
+        let mut step_hops = 0;
         if apply == CutApply::Applied {
+            if let Some(memo) = self.real_memo.as_ref().filter(|memo| !memo.applied)
+                && let Some(entries) = memo.entries.as_deref()
+            {
+                step_hops = self.step_hops(entries);
+            }
             let memo = self.real_memo.as_mut().expect("set above");
             let fresh = !memo.applied;
             memo.applied = true;
             self.applied_covered = memo.covered_octants;
-            if !fresh {
-                // The cut is reused, but the stepping octants keep waiting: when one times out
-                // the cut is planned again (a new residency epoch) and it stops stepping.
-                let mut expired = false;
-                for (_, _, frames) in self.step_waits.values_mut() {
-                    *frames += 1;
-                    expired |= *frames == STEP_WAIT_FRAMES;
-                }
-                if expired {
-                    self.residency_epoch += 1;
-                }
-            }
             if fresh {
                 self.applied = memo.entries.clone().expect("applied cut exists");
                 self.applied_drawn = self
@@ -2902,29 +2929,6 @@ impl CellPool {
                     .iter()
                     .map(|entry| (entry.node, entry.drawn))
                     .collect();
-                let mut waits = FastMap::default();
-                for entry in &self.applied {
-                    for o in 0..8 {
-                        if let (Some(w), Some(next)) = (entry.wanted[o], entry.step[o]) {
-                            let frames = match self.step_waits.get(&(entry.node, o)) {
-                                Some(&(pw, pn, frames)) if (pw, pn) == (w, next) => frames + 1,
-                                _ => 0,
-                            };
-                            waits.insert((entry.node, o), (w, next, frames));
-                        } else if let Some(&(pw, pn, frames)) =
-                            self.step_waits.get(&(entry.node, o))
-                            && frames >= STEP_WAIT_FRAMES
-                            && entry.wanted[o] == Some(pw)
-                            && entry.drawn[o]
-                                .is_some_and(|d| (d < pn && pn <= pw) || (d > pn && pn >= pw))
-                        {
-                            // A timed-out octant stops waiting, but the depth it gave up on
-                            // keeps loading (and is not cancelled) until it is drawn or passed.
-                            waits.insert((entry.node, o), (pw, pn, frames));
-                        }
-                    }
-                }
-                self.step_waits = waits;
                 self.applied_window = self
                     .applied
                     .iter()
@@ -2937,6 +2941,30 @@ impl CellPool {
                 self.applied_cover.clone_from(&memo.hold_ancestors);
                 self.index_applied(nodes, grid);
             }
+        }
+        // The wait of each stepping octant of what is on screen: every frame counts. At the
+        // limit the cut is planned again, so the octants hop (`prev_state`).
+        let mut waits = FastMap::default();
+        let mut expired = false;
+        for entry in &self.applied {
+            for o in 0..8 {
+                if let (Some(w), Some(drawn), Some(next)) =
+                    (entry.wanted[o], entry.drawn[o], entry.step[o])
+                {
+                    let key = (drawn, w > drawn, next);
+                    let frames = match self.step_waits.get(&(entry.node, o)) {
+                        Some(&(waiting, frames)) if waiting == key => frames + 1,
+                        // This frame is the first of the wait.
+                        _ => 1,
+                    };
+                    expired |= frames == STEP_WAIT_FRAMES;
+                    waits.insert((entry.node, o), (key, frames));
+                }
+            }
+        }
+        self.step_waits = waits;
+        if expired {
+            self.residency_epoch += 1;
         }
         for entry in &self.applied {
             for depth in entry.required_levels() {
@@ -2992,7 +3020,7 @@ impl CellPool {
                     self.step_waits
                         .iter()
                         .filter(|((node, _), _)| nodes.contains_key(node))
-                        .map(|((node, _), (_, next, _))| self.key(*node, *next)),
+                        .map(|((node, _), ((_, _, next), _))| self.key(*node, *next)),
                 )
                 .collect()
         };
@@ -3524,6 +3552,7 @@ impl CellPool {
             excluded_nodes: absent,
             lost_nodes: if apply == CutApply::Applied { 0 } else { lost },
             hold_age_max: age_max,
+            step_hops,
         };
         Ok(Pass::Done(Box::new(FramePlan {
             apply,

@@ -1739,18 +1739,56 @@ fn stepping_skips_unservable_depths_and_times_out() {
         stepped_depth(Some(10), 7, (3, 6), &[10], false),
         Some((10, Some(7)))
     );
-    // Timed out: the closest resident of 7..=10 to the wanted depth, never past it.
+    // Timed out: a hop to the resident level of the interval closest to `prev`, never past the
+    // wanted depth, and the octant stays pending (`step`) until it draws the wanted depth.
     assert_eq!(
         stepped_depth(Some(10), 8, (3, 12), &[6, 9, 10], true),
-        Some((9, None))
+        Some((9, Some(8)))
     );
     assert_eq!(
         stepped_depth(Some(6), 8, (3, 12), &[6, 9, 10], true),
-        Some((6, None))
+        Some((6, Some(7)))
     );
-    // A tie draws the finer depth.
+}
+
+#[test]
+fn a_timeout_hops_to_the_resident_closest_to_the_previous_depth() {
+    // Drew 10, wants 4, residents {10, 6}: it waits for 9 first, and only after the wait hops to
+    // 6 (not further than the closest resident), still pending towards 4.
     assert_eq!(
-        stepped_depth(Some(10), 8, (3, 12), &[7, 9, 10], true),
-        Some((9, None))
+        stepped_depth(Some(10), 4, (3, 12), &[10, 6], false),
+        Some((10, Some(9)))
+    );
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[10, 6], true),
+        Some((6, Some(5)))
+    );
+    // 9 or 8 arriving meanwhile is taken instead of the farther 6.
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[10, 9, 6], true),
+        Some((9, Some(8)))
+    );
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[10, 8, 6], true),
+        Some((8, Some(7)))
+    );
+    // Nothing resident in between: it keeps waiting, and stays pending.
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[10], true),
+        Some((10, Some(9)))
+    );
+}
+
+#[test]
+fn a_lost_previous_depth_draws_the_resident_closest_to_it_towards_the_wanted_one() {
+    // 10 is no longer resident: 8 (closest to 10 inside 4..=10) and not 6 (closest to 4).
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[6, 8], false),
+        Some((8, Some(7)))
+    );
+    // Nothing between: the closest to the wanted depth.
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[2, 12], false),
+        Some((2, Some(3)))
     );
 }
