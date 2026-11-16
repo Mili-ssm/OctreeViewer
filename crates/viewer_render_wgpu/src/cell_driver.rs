@@ -523,6 +523,15 @@ impl CellDriver {
         }
     }
 
+    /// Per-octant or per-cell level selection (ADR 0050). Takes effect on the next frame; the
+    /// pool re-plans and re-sends every node's mask record ([`CellPool::set_lod_mode`]).
+    pub fn set_lod_mode(&mut self, mode: crate::LodMode) {
+        if self.pool.lod_mode() != mode {
+            self.pool.set_lod_mode(mode);
+            self.dirty = true;
+        }
+    }
+
     /// Bytes of packed levels kept.
     pub fn cpu_bytes(&self) -> u64 {
         self.cpu_bytes
