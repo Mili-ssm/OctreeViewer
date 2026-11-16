@@ -1,6 +1,6 @@
 # Fase 2a: selección por celda en la GPU (#44) Implementation Plan
 
-Estado: en curso · 16-11-2026 · fase 2a del [plan maestro](nivel-pedido-y-lod-por-celda.md) (pre-mortem aplicado)
+Estado: implementado · 16-11-2026 · fase 2a del [plan maestro](nivel-pedido-y-lod-por-celda.md) (pre-mortem aplicado); [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-2026.md); pendiente de revisión final y fusión. La señal «en reposo» sigue siendo el resumen del corte por octantes: pasa a la fase 2c
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -233,6 +233,6 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Modify: `examples/web-host/probe-cells-parity.mjs` (both modes), `examples/web-host/PROBES.md`, `docs/explanation/REGIONAL_VOXEL_LOD.md` (per-cell rule E1–E7), master plan (tick 2a; D3 records the metric that replaced the distance rule), this plan's `Estado`
 - Create: `docs/records/benchmarks/R3_FASE2A_LOD_POR_CELDA_<dd-mm-aaaa>.md`
 
-- [ ] **Step 1:** `probe-cells-parity` in both modes on the demo sample and on `fs_e430` (V7); same-pose screenshots in octant and cell mode during a zoom; nodes with ≥ 2 drawn depths; slot-pass time with timestamp queries where the adapter has them; a run in Chrome WebGPU; `scripts/check.sh` with the real input.
-- [ ] **Step 2:** record facts (per-depth counts, above-target by actual edge from the twin, adapters that ran the GPU tests) and inferences separately.
-- [ ] **Step 3:** commit `docs: record phase 2a (per-cell LOD in the GPU)`.
+- [x] **Step 1:** `probe-cells-parity` in both modes on the demo sample and on `fs_e430` (V7); same-pose screenshots in octant and cell mode during a zoom; nodes with ≥ 2 drawn depths; slot-pass time with timestamp queries where the adapter has them; a run in Chrome WebGPU; `scripts/check.sh` with the real input.
+- [x] **Step 2:** record facts (per-depth counts, above-target by actual edge from the twin, adapters that ran the GPU tests) and inferences separately.
+- [x] **Step 3:** commit `docs: record phase 2a (per-cell LOD in the GPU)`.
