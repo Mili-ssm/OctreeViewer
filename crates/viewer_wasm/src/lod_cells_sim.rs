@@ -448,12 +448,13 @@ fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) 
 
 fn check_stats(label: &str, sim: &Sim) {
     println!(
-        "{label}: {:?} | zone coarsenings {} | drops below the raw wish: stage-excused {}, unexcused {} | lost samples {}",
+        "{label}: {:?} | zone coarsenings {} | drops below the raw wish: stage-excused {}, unexcused {} | lost samples {} | ADR 0053 gate {:?}",
         sim.stats,
         sim.h.zone_coarsenings,
         sim.h.stage_excused_drops,
         sim.h.unexcused_drops,
-        sim.h.lost_samples
+        sim.h.lost_samples,
+        sim.h.gate
     );
     assert_eq!(
         sim.h.unexcused_drops, 0,

@@ -612,8 +612,34 @@ struct Harness {
     cell_seen: HashMap<(NodeId, u16), ([f64; 3], u8)>,
     /// Cell-mode counters (reported, never asserted).
     cell_counters: CellCounters,
+    /// ADR 0053 temporal gate: depth drawn per (node, octant) at the previous checked cut, the
+    /// timeout hops (`PoolCounters::step_hops`, global per frame) not yet charged to a check, and
+    /// the counters. The memory survives `camera_moved`: the rule holds whatever the camera does.
+    step_prev: HashMap<(NodeId, usize), u8>,
+    pending_hops: u32,
+    gate: StepGate,
+    /// Cell mode: (drawing node, depth) of each lattice sample at the previous evaluation.
+    cell_gate_prev: HashMap<(NodeId, u16), (NodeId, u8)>,
     /// Cell mode: the nodes of the last evaluated cut as the twin sees them.
     cell_nodes: Vec<CellNode>,
+}
+
+/// Counters of the ADR 0053 temporal gate (reported; only the octant-mode unexplained ones are asserted 0).
+#[derive(Default, Debug, Clone, Copy)]
+struct StepGate {
+    /// Timeout hops the pool counted (global per frame).
+    hops: usize,
+    /// Octant mode: drawn-depth changes of more than one level between consecutive checked cuts.
+    octant_jumps: usize,
+    /// ... excused by a counted stage (a drop of a staged octant).
+    octant_stage_excused: usize,
+    /// ... beyond the stage excuses and the timeout hops of the frame (asserted 0).
+    octant_unexplained: usize,
+    /// Cell mode (measured, never asserted): samples whose depth changed by more than one level
+    /// and whose drawing node changed between the two frames (hand-off between nodes).
+    cell_node_changed: usize,
+    /// ... and whose drawing node is the same (within-node jumps).
+    cell_within_node: usize,
 }
 
 /// Cell-mode counters of the sample oracle.
@@ -706,6 +732,10 @@ impl Harness {
             cell_memory: HashMap::new(),
             cell_seen: HashMap::new(),
             cell_counters: CellCounters::default(),
+            step_prev: HashMap::new(),
+            pending_hops: 0,
+            gate: StepGate::default(),
+            cell_gate_prev: HashMap::new(),
             cell_nodes: Vec::new(),
         }
     }
@@ -750,6 +780,8 @@ impl Harness {
     /// The oracles on the cut a frame drew (holes, coarsenings, lost samples); runs when the
     /// drawn cut changed.
     fn check_drawn_cut(&mut self, number: usize, plan: &FramePlan, digest: u64) {
+        self.pending_hops += plan.counters.step_hops;
+        self.gate.hops += plan.counters.step_hops as usize;
         if self.mode == LodMode::Cell {
             self.check_cell_cut(number, plan, digest);
             return;
@@ -765,6 +797,7 @@ impl Harness {
                     &holes[..holes.len().min(3)]
                 ));
             }
+            self.gate_octant_steps(number, &cut);
             if self.check_zones {
                 // The pool stage of the brief: the depth drawn per (node, octant) never gets
                 // coarser while the camera is still.
@@ -862,6 +895,47 @@ impl Harness {
             }
             self.last_cut_digest = Some(digest);
             self.last_cut = Some(cut);
+        }
+    }
+
+    /// ADR 0053 gate, octant mode: a (node, octant) present in the previous checked cut and in
+    /// this one changes its drawn depth by at most one level. Excused: a drop of a staged octant
+    /// that a counted stage explains, and as many jumps as timeout hops the pool counted since
+    /// the last check. The hop counter is global, so a hop is charged to any jump of the frame
+    /// (conservative only in that it may excuse a jump of another node; the totals are
+    /// reported).
+    fn gate_octant_steps(&mut self, number: usize, cut: &CutView) {
+        let hops = std::mem::take(&mut self.pending_hops);
+        let mut current = HashMap::new();
+        let mut jumps = Vec::new();
+        let mut stage_excused = 0;
+        for (i, node) in cut.nodes.iter().enumerate() {
+            for (octant, drawn) in cut.active[i].iter().enumerate() {
+                let Some(now) = *drawn else {
+                    continue;
+                };
+                current.insert((*node, octant), now);
+                if let Some(&before) = self.step_prev.get(&(*node, octant))
+                    && before.abs_diff(now) > 1
+                {
+                    if now < before && self.stage_excuses(cut.entries[i].stage[octant], *node) {
+                        stage_excused += 1;
+                    } else {
+                        jumps.push((*node, octant, before, now));
+                    }
+                }
+            }
+        }
+        self.gate.octant_jumps += jumps.len() + stage_excused;
+        self.gate.octant_stage_excused += stage_excused;
+        let unexplained = jumps.len().saturating_sub(hops as usize);
+        self.gate.octant_unexplained += unexplained;
+        self.step_prev = current;
+        if unexplained > 0 {
+            self.fail(format!(
+                "frame {number}: {unexplained} drawn-depth jumps over one level without a timeout hop \
+                 ({hops} hops this frame), (node, octant, from, to): {jumps:?}"
+            ));
         }
     }
 
@@ -971,6 +1045,9 @@ impl Harness {
             .collect();
         let mut memory = HashMap::new();
         let mut seen = HashMap::new();
+        let mut gate_prev = HashMap::new();
+        let mut within_node = 0;
+        let mut node_changed = 0;
         let mut lost = 0;
         for (key, p) in points {
             let rel = to_eye(p);
@@ -1048,6 +1125,16 @@ impl Harness {
                             }
                         }
                     }
+                    if let Some(&(was_node, was)) = self.cell_gate_prev.get(&key)
+                        && was.abs_diff(*depth) > 1
+                    {
+                        if was_node == node.id {
+                            within_node += 1;
+                        } else {
+                            node_changed += 1;
+                        }
+                    }
+                    gate_prev.insert(key, (node.id, *depth));
                     memory.insert(key, (p, *depth));
                     seen.insert(key, (p, *depth));
                 }
@@ -1070,6 +1157,11 @@ impl Harness {
         // Only the samples of the nodes that are in the cut now stay: the next frame compares
         // against them (and against the ones its own cut adds).
         let current: HashSet<NodeId> = nodes.iter().map(|node| node.id).collect();
+        self.pending_hops = 0;
+        self.gate.cell_node_changed += node_changed;
+        self.gate.cell_within_node += within_node;
+        gate_prev.retain(|(node, _), _| current.contains(node));
+        self.cell_gate_prev = gate_prev;
         memory.retain(|(node, _), _| current.contains(node));
         seen.retain(|(node, _), _| current.contains(node));
         self.cell_memory = memory;
@@ -1270,6 +1362,7 @@ impl Harness {
             t.fallback_peak,
             t.hold_unsettled,
         );
+        println!("{label}: ADR 0053 gate {:?}", self.gate);
     }
 }
 
