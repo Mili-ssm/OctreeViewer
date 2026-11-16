@@ -51,7 +51,7 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   objetivo) leídos en `perf`; la señal «en reposo» pasa a un resumen del gemelo (aplazado a la fase 2c: en la 2a sigue siendo el resumen del corte por octantes); se actualizan
   `probe-cells-parity`, `PROBES.md` y `REGIONAL_VOXEL_LOD.md`.
 - [ ] **2b. Residencia D4 y transiciones de un nivel ([ADR 0053](../adr/0053-transiciones-de-un-nivel.md), RF-31).** Conjunto de niveles por nodo contiguo entre el más grueso y el más fino dibujado (intermedios a demanda), como mucho un nivel por frame al acercarse y al alejarse, evaluar la derivación de niveles gruesos desde los hijos residentes (sin releer bloques), y medida de la cola bajo la separación (pendiente de revisión).
-- [ ] **2c. Activar `cell` por defecto tras medir.** Comprobación según el ADR 0050: Playwright acercándose a la
+- [ ] **2c. Activar `cell` por defecto tras medir.** Adelantado en la demo (propietario, 16-11-2026: «fusiónala activando el modo de celdas así podré ver qué tal funciona en la demo»): la demo arranca en `cell` y `?cellLod=octant` compara; el predeterminado de la librería sigue en `octant` hasta cerrar las comprobaciones de esta fase. Comprobación según el ADR 0050: Playwright acercándose a la
   muestra (bandas), y ningún octante **ni nodo** cambia entero en un frame, medido con una diferencia de frames
   cuando entra un nodo hijo, y ninguna celda cambia más de un nivel entre frames ni difiere en más de uno de sus vecinas (ADR 0053); si la máscara por nodo no lo permite, abrir una pregunta antes de seguir.
 - [ ] **3. Selector de tamaño mínimo (ADR 0049).** D6 y D7. Comprobación: tests de la unidad del CRS (metro, pie,

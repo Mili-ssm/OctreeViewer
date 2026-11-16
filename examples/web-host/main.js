@@ -513,14 +513,16 @@ function handleWorkerMessage(event) {
             });
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
-        // `?cellLod=cell|octant` picks the cells path's level selection (no UI control yet).
-        const cellLod = new URLSearchParams(location.search).get("cellLod");
-        if (cellLod === "octant" || cellLod === "cell") {
-            worker.postMessage({ type: "setCellLod", mode: cellLod });
-        } else if (cellLod !== null) {
-            // A bad value would come back as a worker error and stop the render loop.
-            console.warn(`ignoring ?cellLod=${cellLod}: expected "octant" or "cell"`);
+        // The demo draws with per-cell level selection (owner, 16-11-2026); `?cellLod=octant` compares
+        // with the library default. No UI control yet.
+        const requestedCellLod = new URLSearchParams(location.search).get("cellLod");
+        let cellLod = "cell";
+        if (requestedCellLod === "octant" || requestedCellLod === "cell") {
+            cellLod = requestedCellLod;
+        } else if (requestedCellLod !== null) {
+            console.warn(`ignoring ?cellLod=${requestedCellLod}: expected "octant" or "cell"`);
         }
+        worker.postMessage({ type: "setCellLod", mode: cellLod });
         requestFrameOnce();
         if (reopenAfterRecreate) {
             const { file, name, attributes } = reopenAfterRecreate;
