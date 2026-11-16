@@ -491,7 +491,8 @@ function renderViewerFrame() {
 }
 
 // `takeCellMessages` is in the order the builder needs; the channel keeps it. `evict` and the resets
-// are never merged. Only the ack is a state, and the build worker keeps the last.
+// are never merged. The ack and `levelRequests` are states (the whole set of levels the driver wants):
+// the build worker keeps the last of each. `levelRequests` goes after the ack, which it never reorders.
 function forwardCellMessages() {
     if (!cellsRemote || !buildWorker) return;
     const messages = viewer.takeCellMessages();
@@ -502,8 +503,14 @@ function forwardCellMessages() {
         buildWorker.postMessage({ type: "evict", gen, nodes: messages.evict }, [messages.evict.buffer]);
     }
     if (messages.poolAck) buildWorker.postMessage({ type: "poolAck", gen, ...messages.poolAck });
+    const requests = messages.levelRequests;
+    if (requests) {
+        buildWorker.postMessage({
+            type: "levelRequests", gen, cutEpoch: requests.cutEpoch, nodes: requests.nodes, depths: requests.depths,
+        }, [requests.nodes.buffer, requests.depths.buffer]);
+    }
     cellCounters.messagesSent += Number(Boolean(messages.driverReplaced)) + Number(Boolean(messages.poolReset))
-        + Number(messages.evict.length > 0) + Number(Boolean(messages.poolAck));
+        + Number(messages.evict.length > 0) + Number(Boolean(messages.poolAck)) + Number(Boolean(requests));
 }
 
 // Hex digest of the scene on screen (`null` while nothing is displayed), identical in both modes.
@@ -1040,6 +1047,17 @@ function handleBuildMessage(data) {
                 }
             }
             cellCounters.nodeCellMessages += 1;
+            if (failure) throw failure;
+        } else if (data.type === "nodeLevels") {
+            // Like nodeCells: never dropped by epoch, applied in order after the nodes of the batch.
+            let failure = null;
+            for (const buffer of data.buffers) {
+                try {
+                    viewer.addCellLevels(data.generation, new Uint8Array(buffer));
+                } catch (error) {
+                    failure ??= error;
+                }
+            }
             if (failure) throw failure;
         } else if (data.type === "cellCut") {
             pendingCellCut = null;

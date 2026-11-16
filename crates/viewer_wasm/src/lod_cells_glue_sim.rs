@@ -518,6 +518,51 @@ fn the_in_process_glue_reaches_the_in_process_digest() {
     }
 }
 
+#[test]
+fn in_process_cells_serve_a_level_request() {
+    let views = synth_orbit();
+    // The driver asks for levels the nodes did not carry; one thread serves them in the next
+    // update, so the requests are seen pending and are gone at rest.
+    let mut saw_pending = false;
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    let mut cells = InProcessCells::new(&h.dataset, h.config);
+    let mut target = StrictTarget::default();
+    for (i, view) in views.iter().enumerate() {
+        cells.mark_dirty();
+        let last = i + 1 == views.len();
+        for _ in 0..(if last { 20_000 } else { 3 }) {
+            target.eye = view.camera().position();
+            let (blocks, pages) = (&mut h.blocks, &mut h.pages);
+            cells
+                .update(
+                    &mut h.dataset,
+                    view,
+                    2.0,
+                    true,
+                    &mut target,
+                    Some(&mut ()),
+                    false,
+                    &mut |_: &mut (), id| blocks(id),
+                    &mut |_: &mut (), anchor| pages(anchor),
+                )
+                .unwrap();
+            saw_pending |= h.dataset.has_pending_level_requests(true);
+            if last
+                && cells
+                    .stats(&h.dataset, &target)
+                    .cut_digest_at_rest
+                    .is_some()
+            {
+                break;
+            }
+        }
+    }
+    let stats = cells.stats(&h.dataset, &target);
+    assert!(stats.cut_digest_at_rest.is_some(), "the view reaches rest");
+    assert!(!h.dataset.has_pending_level_requests(true));
+    assert!(saw_pending, "the driver requested levels");
+}
+
 /// One builder and one viewer driven by hand (no simulated latency): `send` plans until the
 /// builder is idle and hands everything to the viewer, `pump` runs viewer frames until it is
 /// quiet.

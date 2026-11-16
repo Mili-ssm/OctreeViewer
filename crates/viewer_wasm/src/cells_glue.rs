@@ -200,8 +200,6 @@ pub(crate) struct BuilderOutput {
     pub nodes: Vec<EncodedNode>,
     /// Levels built on demand (`encode_node_levels`: one node per entry holding only the new
     /// depths), after `nodes` and before the cut.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    // the JS bindings of the level messages are not wired yet
     pub levels: Vec<EncodedNode>,
     /// The build side has nothing more to do for this view: with the render side having applied
     /// this epoch, the cut is at rest.
@@ -264,7 +262,6 @@ impl BuilderCells {
 
     /// The render side's levels to build (`CellDriver::take_level_requests`): replaces the pending
     /// set and plans again.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))] // the JS bindings of the level messages are not wired yet
     pub(crate) fn level_requests(&mut self, dataset: &mut LodDataset, requests: &[(NodeId, u8)]) {
         dataset.apply_level_requests(requests);
         self.dirty = true;
@@ -442,8 +439,6 @@ enum Item {
         bytes: Vec<u8>,
     },
     /// Levels built on demand, applied after the node they belong to.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    // the JS bindings of the level messages are not wired yet
     Levels {
         generation: u64,
         bytes: Vec<u8>,
@@ -591,7 +586,6 @@ impl ViewerCells {
 
     /// One entry of a `nodeLevels` message (`BuilderOutput::levels`), validated like
     /// [`push_node`](Self::push_node) and applied in order after the nodes sent before it.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))] // the JS bindings of the level messages are not wired yet
     pub(crate) fn push_levels(&mut self, generation: u64, bytes: Vec<u8>) -> Result<(), String> {
         decode_node_levels(&bytes)
             .map_err(|error| format!("malformed nodeLevels entry: {error}"))?;
@@ -730,9 +724,13 @@ impl ViewerCells {
 
     /// The levels the driver wants built on demand, when the set changed since the last call: the
     /// build side serves them (`BuilderCells::level_requests`).
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))] // the JS bindings of the level messages are not wired yet
     pub(crate) fn take_level_requests(&mut self) -> Option<Vec<(NodeId, u8)>> {
         self.level_requests.take()
+    }
+
+    /// The epoch of the cut the driver last drew: the one its level requests come from.
+    pub(crate) fn applied_epoch(&self) -> u64 {
+        self.applied_epoch
     }
 
     /// The messages for the build side, in the order it must apply them: `driverReplaced`, then
