@@ -995,7 +995,7 @@ function onBuildMessage(worker, data) {
 // the dataset on the CPU path, which both sides then keep until the viewer is recreated.
 function beginCells(opened) {
     const info = opened.cellsInfo;
-    const path = info ? viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing) : "off";
+    const path = info ? viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing, info.dataMin, info.dataMax) : "off";
     if (path === "enabled") {
         cellsRemote = true;
         forwardCellMessages();
@@ -1345,7 +1345,7 @@ async function recreateViewer(pose) {
             viewer.enableCells(true);
             if (cellNodeBytes) viewer.setCellNodeBytesPerFrame(cellNodeBytes);
             const info = opened.cellsInfo;
-            const path = viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing);
+            const path = viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing, info.dataMin, info.dataMax);
             if (path !== "enabled") throw new Error(`the new device cannot draw cells (${path})`);
             pendingCellCut = null;
             appliedCutEpoch = 0;

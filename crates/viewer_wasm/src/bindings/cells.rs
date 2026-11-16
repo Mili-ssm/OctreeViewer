@@ -394,6 +394,15 @@ impl WasmSceneBuilder {
                 .reference_spacing()
                 .map_or(JsValue::NULL, JsValue::from_f64),
         )?;
+        // The tight data extent for `beginRemoteCells`; null when it is the root cube.
+        let data = dataset.cell_data_bounds();
+        for (key, pick) in [("dataMin", true), ("dataMax", false)] {
+            let value = data.as_ref().map_or(JsValue::NULL, |bounds| {
+                let corner = if pick { bounds.min() } else { bounds.max() };
+                js_sys::Float64Array::from(corner.as_slice()).into()
+            });
+            set(&info, key, &value)?;
+        }
         Ok(info.into())
     }
 
