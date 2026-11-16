@@ -1227,12 +1227,18 @@ impl CellRenderer {
     /// `Some` switches the slot pass to the per-cell decision of [`crate::cell_lod`] (`lod_mode`
     /// 1); `None` keeps the octant-bit and mask test. Production callers keep `None` until the
     /// cut is wired.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the cell driver wires it in a later task")
-    )]
     pub(crate) fn set_lod_view(&mut self, view: Option<LodView>) {
         self.lod_view = view;
+    }
+
+    /// The view the slot pass decides with (`None`: octant mode).
+    pub(crate) fn lod_view(&self) -> Option<LodView> {
+        self.lod_view
+    }
+
+    /// The record the GPU holds for `slot` (see `mask_mirror`).
+    pub(crate) fn node_record(&self, slot: u32) -> &[u32; NODE_WORDS] {
+        &self.mask_mirror[slot as usize]
     }
 
     /// The compacted slot ids (`page * PAGE_SLOTS + slot`) of the last compaction that drew;

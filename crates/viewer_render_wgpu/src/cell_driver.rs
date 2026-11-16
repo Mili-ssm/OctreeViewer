@@ -34,7 +34,7 @@ use std::{
 
 use viewer_core::{NodeId, SpatialBounds};
 
-use crate::cell_lod::{NodeLod, node_record};
+use crate::cell_lod::{LodView, MAX_NODE_SPAN, NodeLod, node_record};
 use crate::cell_pages::{MISSING_INTENSITY, PAGE_HAS_INTENSITY};
 
 use crate::{
@@ -74,6 +74,11 @@ pub trait CellTarget {
     /// The intensity and elevation ranges of the cut drawn this frame, for the shader colour modes
     /// (R3-Q32). Called before `set_active_pages`. A target without shader modes ignores it.
     fn set_color_ranges(&mut self, _ranges: CellColorRanges) {}
+
+    /// The per-cell decision's view of the frame being drawn (`Some` in cell mode, `None` in
+    /// octant mode). Called before `set_active_pages`. A target that cannot draw cell mode
+    /// ignores it.
+    fn set_lod_view(&mut self, _view: Option<LodView>) {}
 
     /// The page table of this frame; `frame` is the one its entries were built with.
     fn set_active_pages(
@@ -350,6 +355,8 @@ pub struct CellDriver {
     node_slots: HashMap<u32, NodeSlot>,
     /// The frame the anchors of `node_slots` were last written with.
     anchor_frame: Option<([f64; 3], [f64; 3], f64)>,
+    /// The mode the records of `node_slots` were last written in.
+    records_mode: Option<crate::LodMode>,
     /// The target received writes since the last reset, so a missing pool there means loss.
     armed: bool,
     /// A target call failed: the target state is unknown until the next reset.
@@ -508,6 +515,7 @@ impl CellDriver {
             masks_allocated: 0,
             node_slots: HashMap::new(),
             anchor_frame: None,
+            records_mode: None,
             armed: false,
             failed: false,
             dirty: false,
@@ -870,6 +878,7 @@ impl CellDriver {
         self.masks_allocated = 0;
         self.node_slots.clear();
         self.anchor_frame = None;
+        self.records_mode = None;
         self.armed = false;
         self.failed = false;
         self.dirty = true;
@@ -1056,7 +1065,7 @@ impl CellDriver {
             self.failed = true;
             return Err(CellDriverError::OfferRefused(key));
         }
-        if let Err(error) = self.execute(target, view, &mut report, mark) {
+        if let Err(error) = self.execute(target, view, target_px, &mut report, mark) {
             // The target kept part of this frame: empty it so the reset of the next frame meets
             // the fresh target it assumes.
             target.drop_pool();
@@ -1085,6 +1094,7 @@ impl CellDriver {
         &mut self,
         target: &mut T,
         view: &ViewProjection,
+        target_px: f64,
         report: &mut FrameReport,
         mark: &mut dyn FnMut(FramePhase),
     ) -> Result<(), CellDriverError<T::Error>> {
@@ -1135,6 +1145,30 @@ impl CellDriver {
         // The anchors of the live slots follow the frame like the page origins do: a changed eye,
         // origin or scale rewrites them below, after the records of this plan.
         let anchors_stale = self.anchor_frame != Some(stamp);
+        // A mode switch rewrites every record: a retained frame sends no `MaskUpdate`, and the
+        // records of the other mode hold other active bits.
+        let mode = self.pool.lod_mode();
+        let mode_changed = self.records_mode != Some(mode);
+        // In cell mode the shader's active bits are the depths this frame emits for the node
+        // (R3-Q21: a retained frame rebuilds the active list without a `MaskUpdate`).
+        let cell_mode = mode == crate::LodMode::Cell;
+        let mut emitted: HashMap<u32, Vec<u8>> = HashMap::new();
+        if cell_mode {
+            for active in &plan.active {
+                emitted
+                    .entry(active.mask_slot)
+                    .or_default()
+                    .push(active.key.depth);
+            }
+        }
+        let emitted_bits = |slot: u32, node_depth: u8| {
+            emitted.get(&slot).map_or(0, |depths| {
+                depths
+                    .iter()
+                    .filter(|depth| **depth >= node_depth && **depth - node_depth <= MAX_NODE_SPAN)
+                    .fold(0u64, |bits, depth| bits | 1 << (depth - node_depth))
+            })
+        };
         // A slot the pool freed holds no node: it needs no anchor until a node takes it again.
         for slot in self.pool.free_mask_slots() {
             self.node_slots.remove(&slot);
@@ -1147,7 +1181,11 @@ impl CellDriver {
                 node: NodeLod {
                     anchor: [0.0; 3],
                     node_depth: update.node_depth,
-                    active: update.active,
+                    active: if cell_mode {
+                        emitted_bits(update.slot, update.node_depth)
+                    } else {
+                        update.active
+                    },
                     mask: update.mask,
                 },
                 corner: std::array::from_fn(|axis| {
@@ -1157,7 +1195,7 @@ impl CellDriver {
             self.node_slots.insert(update.slot, slot);
             self.write_record(target, update.slot, &frame)?;
         }
-        if anchors_stale {
+        {
             let rewritten: HashSet<u32> = plan.mask_updates.iter().map(|u| u.slot).collect();
             let mut slots: Vec<u32> = self
                 .node_slots
@@ -1167,9 +1205,19 @@ impl CellDriver {
                 .collect();
             slots.sort_unstable();
             for slot in slots {
-                self.write_record(target, slot, &frame)?;
+                let state = self.node_slots.get_mut(&slot).expect("a live slot");
+                let active = if cell_mode {
+                    emitted_bits(slot, state.node.node_depth)
+                } else {
+                    state.node.active
+                };
+                if anchors_stale || mode_changed || active != state.node.active {
+                    state.node.active = active;
+                    self.write_record(target, slot, &frame)?;
+                }
             }
         }
+        self.records_mode = Some(mode);
         self.anchor_frame = Some(stamp);
         if let Some(max) = plan.active.iter().map(|active| active.mask_slot).max() {
             self.ensure_mask(target, max)?;
@@ -1204,6 +1252,19 @@ impl CellDriver {
         // Nothing resident and no pool yet: there is no page table to write.
         if !table.is_empty() || target.has_pool() {
             target.set_color_ranges(colors);
+            target.set_lod_view(cell_mode.then(|| {
+                let min_side = self
+                    .pool
+                    .min_side()
+                    .map_or(0.0, |side| side * view.visual_scale());
+                let [width, height] = view.viewport();
+                LodView::from_camera(
+                    &view.camera(),
+                    [width as f32, height as f32],
+                    target_px as f32,
+                    min_side as f32,
+                )
+            }));
             target
                 .set_active_pages(&table, &frame)
                 .map_err(CellDriverError::Target)?;

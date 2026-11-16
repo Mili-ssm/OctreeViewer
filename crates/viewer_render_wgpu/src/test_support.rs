@@ -133,6 +133,8 @@ pub(crate) struct FakeGpu {
     pub(crate) page_frame: Option<PageFrame>,
     /// The ranges of the last frame's cut (`CellTarget::set_color_ranges`).
     pub(crate) color_ranges: Option<crate::CellColorRanges>,
+    /// The view of every frame that reached the target (`CellTarget::set_lod_view`).
+    pub(crate) lod_views: Vec<Option<crate::cell_lod::LodView>>,
 }
 
 impl FakeGpu {
@@ -229,6 +231,10 @@ impl CellTarget for FakeGpu {
 
     fn set_color_ranges(&mut self, ranges: crate::CellColorRanges) {
         self.color_ranges = Some(ranges);
+    }
+
+    fn set_lod_view(&mut self, view: Option<crate::cell_lod::LodView>) {
+        self.lod_views.push(view);
     }
 
     fn set_active_pages(

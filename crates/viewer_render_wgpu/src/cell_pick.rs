@@ -2,7 +2,8 @@
 //!
 //! The pool lives on the GPU, so `prepare` copies the pages the ray can touch into a staging
 //! buffer and `resolve` walks their cells on the CPU with the filters of the slot pass (empty
-//! slot, octant bit, node mask; no frustum and no Hi-Z). Everything runs in the frame of the page
+//! slot, octant bit, node mask; no frustum and no Hi-Z). In cell mode the drawn test is the
+//! per-cell decision of [`crate::cell_lod`] over the node records the renderer mirrors. Everything runs in the frame of the page
 //! entries, i.e. relative to the frame (eye, visual scale, coordinate origin) stored with the page
 //! table, so the f32 entries stay exact whatever the current camera does. The camera is read at
 //! `prepare`; the pool is not. The renderer's scale and origin can change after the pages were
@@ -15,8 +16,11 @@
 
 use glam::DVec3;
 
+use std::collections::HashMap;
+
+use crate::cell_lod::{LodView, NodeLod, draws};
 use crate::cell_pages::{CellInstance, PAGE_SLOTS, PageEntry, decode_cell, srgb_to_linear_table};
-use crate::cell_render::{CellRenderer, MASK_WORDS, PAGE_BYTES};
+use crate::cell_render::{CellRenderer, MASK_WORDS, NODE_WORDS, PAGE_BYTES};
 use crate::gpu::{PICK_MAX_CANDIDATE_INSTANCES, PickHit, PickRay, ray_box_interval};
 
 /// Pages copied per pick.
@@ -41,6 +45,28 @@ pub(crate) struct PoolPickPlan {
     pub copies: Vec<PoolCopy>,
     /// Entry distance of the first candidate that was not copied.
     pub cutoff: Option<f64>,
+    /// `Some` in cell mode.
+    pub lod: Option<LodPick>,
+}
+
+/// What the per-cell decision needs at the time of the copy: the view the last frame drew with
+/// and the record of each node slot the copied pages name.
+#[derive(Debug, Clone)]
+pub(crate) struct LodPick {
+    pub view: LodView,
+    pub nodes: HashMap<u32, NodeLod>,
+}
+
+/// The node of a record in the layout of [`crate::cell_lod::node_record`].
+fn node_of_record(record: &[u32; NODE_WORDS]) -> NodeLod {
+    NodeLod {
+        anchor: std::array::from_fn(|axis| f32::from_bits(record[16 + axis])),
+        node_depth: record[19] as u8,
+        active: u64::from(record[20]) | u64::from(record[21]) << 32,
+        mask: std::array::from_fn(|i| {
+            u64::from(record[2 * i]) | u64::from(record[2 * i + 1]) << 32
+        }),
+    }
 }
 
 pub struct PoolPick {
@@ -185,6 +211,14 @@ pub(crate) fn prepare_pool_pick(
         });
     }
     queue.submit([encoder.finish()]);
+    let lod = pool.lod_view().map(|view| LodPick {
+        view,
+        nodes: copies
+            .iter()
+            .map(|copy| copy.page.0[4])
+            .map(|slot| (slot, node_of_record(pool.node_record(slot))))
+            .collect(),
+    });
     Ok(Some(PoolPick {
         buffer: staging,
         plan: PoolPickPlan {
@@ -194,8 +228,35 @@ pub(crate) fn prepare_pool_pick(
             coordinate_origin: frame.coordinate_origin,
             copies,
             cutoff,
+            lod,
         },
     }))
+}
+
+/// The per-cell decision for `cell` of a page of the copy (cell mode only draws what the twin of
+/// the slot pass draws). Pages the cell decision never activates (no relative origin, depth
+/// outside the node's span) draw nothing.
+fn drawn_in_cell_mode(lod: &LodPick, copy: &PoolCopy, cell: &CellInstance) -> bool {
+    let entry = &copy.page.0;
+    let (depth, origin) = (entry[11], [entry[8], entry[9], entry[10]]);
+    let Some(node) = lod.nodes.get(&entry[4]) else {
+        return false;
+    };
+    let depth = u8::try_from(depth).unwrap_or(u8::MAX);
+    if origin[0] == u32::MAX
+        || depth < node.node_depth
+        || depth - node.node_depth > crate::cell_lod::MAX_NODE_SPAN
+    {
+        return false;
+    }
+    let span = 1u64 << (depth - node.node_depth);
+    let rel: [u64; 3] =
+        std::array::from_fn(|axis| u64::from(origin[axis]) + u64::from(cell.rel()[axis]));
+    if rel.iter().any(|&r| r >= span) {
+        return false;
+    }
+    let rel = rel.map(|r| r as u32);
+    draws(&lod.view, node, depth, rel, copy.page.side())
 }
 
 /// The nearest drawn cell of the copied pages; ties go to the lower global slot
@@ -218,7 +279,11 @@ pub(crate) fn resolve_pool_pick(
                 continue;
             }
             // Same filters as `slot_state` in the slot pass.
-            if !cell.spans_octants() {
+            if let Some(lod) = &plan.lod {
+                if !drawn_in_cell_mode(lod, copy, &cell) {
+                    continue;
+                }
+            } else if !cell.spans_octants() {
                 if (copy.page.0[5] >> cell.octant()) & 1 == 0 {
                     continue;
                 }

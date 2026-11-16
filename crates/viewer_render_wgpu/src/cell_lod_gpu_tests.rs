@@ -543,7 +543,7 @@ fn pose_toward(
 }
 
 /// At least 2 % of the viewport inside every side of the frustum.
-fn well_inside(matrix: &[[f32; 4]; 4], position: [f64; 3], eye: [f64; 3]) -> bool {
+pub(super) fn well_inside(matrix: &[[f32; 4]; 4], position: [f64; 3], eye: [f64; 3]) -> bool {
     let p: [f64; 3] = std::array::from_fn(|a| position[a] - eye[a]);
     let q: [f64; 4] = std::array::from_fn(|row| {
         f64::from(matrix[0][row]) * p[0]

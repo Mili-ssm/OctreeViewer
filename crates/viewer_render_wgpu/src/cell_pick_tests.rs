@@ -74,6 +74,7 @@ fn plan(ray: PickRay, copies: Vec<PoolCopy>, cutoff: Option<f64>) -> PoolPickPla
         coordinate_origin: [0.0; 3],
         copies,
         cutoff,
+        lod: None,
     }
 }
 
@@ -866,4 +867,171 @@ fn ray_box_interval_agrees_with_dense_sampling() {
         }
     }
     assert!(hits > 100 && misses > 100 && inside >= 100 && parallel >= 100);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cell mode: the drawn cell is the one the per-cell decision draws
+// ---------------------------------------------------------------------------------------------
+
+/// `(nearest drawn (distance, global slot, depth), second best drawn distance, nearest cell of any kind)`.
+type TwinPick = (Option<(f64, usize, u8)>, Option<f64>, Option<(f64, usize)>);
+
+/// The nearest cell the twin draws along `ray` and the nearest cell of any kind, as
+/// `(distance, global slot)`, plus the second best drawn distance.
+fn twin_pick(
+    scene: &[super::lod::LodNodeScene],
+    pool: &super::lod::LodPool,
+    lods: &[crate::cell_lod::NodeLod],
+    view: &crate::cell_lod::LodView,
+    eye: [f64; 3],
+    ray: &PickRay,
+) -> TwinPick {
+    let table = crate::cell_pages::srgb_to_linear_table();
+    let ray = PickRay {
+        origin: ray.origin - glam::DVec3::from_array(eye),
+        ..*ray
+    };
+    let (mut best, mut second, mut any): (Option<(f64, usize, u8)>, Option<f64>, _) =
+        (None, None, None::<(f64, usize)>);
+    for placed in &pool.placed {
+        let node = &scene[placed.node];
+        let depth = node.node_depth + node.offsets[placed.level];
+        let side_node = node.grid.root_side / (1_u64 << node.node_depth) as f64;
+        let node_lo: [u64; 3] = std::array::from_fn(|a| {
+            ((node.bounds.min()[a] - node.grid.root_min[a]) / side_node).round() as u64
+        });
+        let frame = PageFrame {
+            grid: node.grid,
+            coordinate_origin: [0.0; 3],
+            visual_scale: 1.0,
+            eye_scaled: eye,
+        };
+        for (page_index, page) in placed.packed.pages.iter().enumerate() {
+            let entry = page.entry(&frame, pool.node_slots[placed.node], 0xff);
+            for local in 0..page.cells as usize {
+                let coord = node.levels[placed.level].cells[page.first_cell + local].coord;
+                let rel: [u32; 3] = std::array::from_fn(|a| {
+                    (coord[a] - (node_lo[a] << node.offsets[placed.level])) as u32
+                });
+                let decoded = decode_cell(
+                    &entry,
+                    &placed.packed.instances[page_index * PAGE_SLOTS + local],
+                    &table,
+                );
+                let Some(distance) =
+                    box_distance(&ray, decoded.lo.map(f64::from), decoded.hi.map(f64::from))
+                else {
+                    continue;
+                };
+                let global = placed.slots[page_index] as usize * PAGE_SLOTS + local;
+                if any.is_none_or(|a| (distance, global) < a) {
+                    any = Some((distance, global));
+                }
+                if !crate::cell_lod::draws(view, &lods[placed.node], depth, rel, entry.side()) {
+                    continue;
+                }
+                if best.is_none_or(|b| (distance, global) < (b.0, b.1)) {
+                    second = best.map(|b| b.0);
+                    best = Some((distance, global, depth));
+                } else if second.is_none_or(|s| distance < s) {
+                    second = Some(distance);
+                }
+            }
+        }
+    }
+    (best, second, any)
+}
+
+#[test]
+fn pick_in_cell_mode_hits_the_drawn_cell() {
+    use super::lod::{LodNodeScene, place_lod, random_pose, set_pose};
+    for_each_adapter(CellLimitMode::Auto, |h| {
+        if !h.runs_test_pool {
+            return false;
+        }
+        let unit = CellGrid {
+            root_min: [0.0; 3],
+            root_side: 1.0,
+        };
+        let mut rng = Rng(0x91c4);
+        let nodes = vec![
+            LodNodeScene::random(&mut rng, unit, 1, [0, 1, 0], &[0, 2, 4, 6], 0, 1500),
+            LodNodeScene::random(&mut rng, unit, 1, [1, 0, 0], &[1, 3, 5], 0, 600),
+        ];
+        let bounds = ([0.0; 3], [1.0; 3]);
+        let (mut compared, mut hits, mut ambiguous, mut mattered) = (0, 0, 0, 0);
+        let mut depths = HashSet::new();
+        let mut mismatches = Vec::new();
+        let mut poses = 0;
+        while poses < 24 {
+            let Some((camera, view)) = random_pose(&mut rng, bounds, (0.5, 12.0)) else {
+                continue;
+            };
+            poses += 1;
+            let mut pool = new_pool(h);
+            let placed = place_lod(&mut pool, &nodes);
+            let lods = set_pose(&mut pool, &nodes, &placed, &camera, view);
+            pool.set_page_frame(stamp(camera.position()));
+            for iy in 0..12 {
+                for ix in 0..16 {
+                    let pixel = [
+                        (ix as f64 + 0.5) / 16.0 * f64::from(WIDTH),
+                        (iy as f64 + 0.5) / 12.0 * f64::from(HEIGHT),
+                    ];
+                    let Some(ray) = camera_ray(&camera, pixel) else {
+                        continue;
+                    };
+                    let (expected, second, any) =
+                        twin_pick(&nodes, &placed, &lods, &view, camera.position(), &ray);
+                    let actual = pool_pick(h, &pool, ray).unwrap();
+                    hits += usize::from(actual.is_some());
+                    if let (Some(e), Some(second)) = (expected, second)
+                        && second - e.0 < 1.0e-5 * e.0
+                    {
+                        ambiguous += 1;
+                        continue;
+                    }
+                    compared += 1;
+                    match (expected, actual) {
+                        (None, None) => {}
+                        (Some((distance, global, depth)), Some(actual)) => {
+                            if actual.instance_index == global
+                                && (actual.distance - distance).abs() <= 1.0e-9 * (1.0 + distance)
+                            {
+                                depths.insert(depth);
+                                // Without the per-cell decision another cell would win here.
+                                mattered += usize::from(
+                                    any.is_some_and(|a| a.1 != global && a.0 < distance),
+                                );
+                            } else {
+                                mismatches.push(format!(
+                                    "pose {poses} pixel {pixel:?}: twin ({distance}, {global}), pick {actual:?}"
+                                ));
+                            }
+                        }
+                        (expected, actual) => mismatches.push(format!(
+                            "pose {poses} pixel {pixel:?}: twin {expected:?}, pick {actual:?}"
+                        )),
+                    }
+                }
+            }
+        }
+        println!(
+            "# adapter {}: cell pick {compared} compared, {hits} hits, {ambiguous} ambiguous, \
+             {mattered} where the decision mattered, depths hit {depths:?}",
+            h.label
+        );
+        assert!(
+            mismatches.is_empty(),
+            "{:#?}",
+            &mismatches[..mismatches.len().min(8)]
+        );
+        assert!(
+            compared > 200 && hits > 100,
+            "too few picks: {compared} {hits}"
+        );
+        assert!(depths.len() >= 2, "only {depths:?} were hit");
+        assert!(mattered > 0, "the cell decision never changed the winner");
+        true
+    });
 }

@@ -1724,3 +1724,98 @@ fn anchor_plus_relative_origin_is_the_page_origin() {
     }
     assert!(!report.plan.active.is_empty());
 }
+
+/// The bits the driver must write as a node's active depths: the depths emitted for its slot.
+fn emitted_bits(report: &FrameReport, slot: u32, node_depth: u8) -> u64 {
+    report
+        .plan
+        .active
+        .iter()
+        .filter(|active| active.mask_slot == slot)
+        .fold(0, |bits, active| {
+            bits | 1 << (active.key.depth - node_depth)
+        })
+}
+
+fn record_active(words: &[u32; NODE_WORDS]) -> u64 {
+    u64::from(words[20]) | u64::from(words[21]) << 32
+}
+
+#[test]
+fn driver_in_cell_mode_writes_records_and_uniform() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    let cam = camera("zoom");
+    let cut = ids(&CHILDREN);
+    let viewport = [VIEWPORT[0] as f32, VIEWPORT[1] as f32];
+
+    // Octant mode hands the target no view.
+    fx.run(40, &cut, &cam, 4.0);
+    assert!(!fx.gpu.lod_views.is_empty());
+    assert!(fx.gpu.lod_views.iter().all(Option::is_none));
+
+    // A mode switch rewrites every live record on the next frame.
+    let live: HashSet<u32> = fx.driver.node_slots.keys().copied().collect();
+    assert!(!live.is_empty());
+    fx.gpu.record_writes.clear();
+    fx.driver.set_lod_mode(crate::LodMode::Cell);
+    fx.step(&cut, &cam, 4.0);
+    let written: HashSet<u32> = fx.gpu.record_writes.iter().map(|(slot, _)| *slot).collect();
+    assert!(written.is_superset(&live), "{written:?} vs {live:?}");
+
+    // Cell mode: the camera's view, the final target and the scaled `min_side`.
+    fx.gpu.lod_views.clear();
+    fx.run(40, &cut, &cam, 4.0);
+    let view = fx.gpu.lod_views.last().copied().flatten().expect("a view");
+    assert_eq!(
+        view,
+        crate::cell_lod::LodView::from_camera(&cam, viewport, 4.0, 0.0)
+    );
+    let (forward, right, up) = (cam.forward(), cam.right_up().0, cam.right_up().1);
+    assert_eq!(view.forward, forward.map(|c| c as f32));
+    assert_eq!(
+        (view.right, view.up),
+        (right.map(|c| c as f32), up.map(|c| c as f32))
+    );
+    assert!(view.focal > 0.0);
+    fx.scale = 0.5;
+    fx.driver.set_min_side(Some(0.25));
+    fx.run(2, &cut, &cam, 4.0);
+    let view = fx.gpu.lod_views.last().copied().flatten().expect("a view");
+    assert_eq!(view.min_side, 0.125);
+    assert_eq!(view.target_px, 4.0);
+    fx.driver.set_lod_mode(crate::LodMode::Octant);
+    fx.step(&cut, &cam, 4.0);
+    assert_eq!(fx.gpu.lod_views.last(), Some(&None));
+
+    // Cell mode again: each record's active bits are the depths emitted for its node.
+    fx.driver.set_lod_mode(crate::LodMode::Cell);
+    fx.run(40, &cut, &cam, 4.0);
+    let report = fx.step(&cut, &cam, 4.0);
+    let slots: HashSet<u32> = report.plan.active.iter().map(|a| a.mask_slot).collect();
+    assert!(!slots.is_empty());
+    for slot in &slots {
+        let words = fx.gpu.mask_words[slot];
+        assert_ne!(record_active(&words), 0);
+        assert_eq!(
+            record_active(&words),
+            emitted_bits(&report, *slot, words[19] as u8),
+            "slot {slot}"
+        );
+    }
+
+    // A frame whose active set differs from the record (retained frames send no `MaskUpdate`)
+    // rewrites the affected record and only that one.
+    let victim = *slots.iter().min().unwrap();
+    let node = fx.driver.node_slots.get_mut(&victim).unwrap();
+    node.node.active ^= 1 << 31;
+    fx.gpu.record_writes.clear();
+    let report = fx.step(&cut, &cam, 4.0);
+    assert!(report.plan.mask_updates.is_empty());
+    let written: Vec<u32> = fx.gpu.record_writes.iter().map(|(slot, _)| *slot).collect();
+    assert_eq!(written, [victim]);
+    let words = fx.gpu.mask_words[&victim];
+    assert_eq!(
+        record_active(&words),
+        emitted_bits(&report, victim, words[19] as u8)
+    );
+}

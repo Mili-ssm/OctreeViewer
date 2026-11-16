@@ -16,6 +16,7 @@ use crate::{
     block_sync::plan_block_sync,
     budget::{buffer_capacity, check_peak_bytes, check_visible_instances},
     cell_driver::CellTarget,
+    cell_lod::LodView,
     cell_pages::{PackedLevel, PageEntry, PageFrame},
     cell_pick::{PoolPick, prepare_pool_pick},
     cell_render::{
@@ -2167,6 +2168,12 @@ impl CellTarget for SurfaceRenderer<'_> {
 
     fn set_color_ranges(&mut self, ranges: CellColorRanges) {
         self.cell_color_ranges = ranges;
+    }
+
+    fn set_lod_view(&mut self, view: Option<LodView>) {
+        if let Some(pool) = &mut self.cell_pool {
+            pool.set_lod_view(view);
+        }
     }
 
     fn set_active_pages(
