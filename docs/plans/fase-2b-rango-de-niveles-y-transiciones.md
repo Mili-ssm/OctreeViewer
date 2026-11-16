@@ -72,7 +72,13 @@ As in phase 2a (English code/commits, Spanish docs, no AI attribution; octant mo
 - [ ] (blocked by the closest-resident jump until Task 3a; work stashed) **1d** build missing depths on demand down to the spacing/separation depth only; the fit counts requested depths; measure the uncapped need, `levels.bin` coverage, request queue and build-worker heap in the browser.
 - [ ] Test: no drawn cell finer than its parent cell needed (`refines()` of the parent), exempting the buildable minimum, caps and the span floor; the sims' `finer_than_wanted` counter drops.
 
-### Task 2: Cross-node chain instead of the per-node mask (F4) — to detail after Task 1 (node record links to its ancestor's record; GPU partition test over parent + child pairs)
+### Task 2: Node hand-offs within one level (re-planned 16-11-2026 from measurements)
+
+Measured (cell-mode sims on Belvedere V7, per-frame gate of Task 3a): 96 % of jumps > 1 level happen at node hand-offs. Of those, 78.8 % because a leaf child cannot draw coarser than its spacing depth (its buildable range starts there, `nd + 9..12`, while the internal parent stops at `nd + 8`); 17.5 % because the parent is at its finest depth when the child arrives; 0 % from the parent's sample being sparse. The cross-node chain (former F4) is not needed for these and is kept only if the border measurement below still fails.
+
+- [ ] **2a (B)** leaves build cell levels from `rep = node_depth + 3` like internal nodes (their coarse levels aggregate many points; the spacing depth stays the start of the single-point tail), in both modes; goldens updated with the reason.
+- [ ] **2b (D)** a node entering the cut seeds its active window at its drawing ancestor's finest active depth + 1 (and a node leaving hands back one level per frame), then widens one level per frame.
+- [ ] **2c** measure: the temporal gate's node-change jumps (baseline: dolly 13 066, orbit 17 300–19 500) and a new spatial gate — neighbouring lattice samples across a node border differ by ≤ 1 level; if the spatial gate still fails, plan the cross-node chain.
 
 ### Task 3: One level per frame (ADR 0053, temporal) — 3a (stepping rule) moved ahead of Task 2 because the closest-resident jump blocks 1d
 
