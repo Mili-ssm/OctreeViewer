@@ -938,9 +938,10 @@ fn the_hinted_search_equals_the_full_search() {
         }
         let target_px = [1.0, 4.0, 16.0][(next(&mut state) * 3.0) as usize % 3];
         let octant = (next(&mut state) * 8.0) as usize % 8;
-        let hint = stored[(next(&mut state) * stored.len() as f64) as usize % stored.len()];
-        let v = view(&cam);
         let range = (stored[0], *stored.last().unwrap());
+        let width = usize::from(range.1 - range.0) + 1;
+        let hint = range.0 + ((next(&mut state) * width as f64) as usize % width) as u8;
+        let v = view(&cam);
         let full = octant_wanted_depth(&v, &grid(), ORIGIN, node.bounds, octant, range, target_px);
         let near = crate::cell_cut::octant_wanted_depth_near(
             &v,
@@ -2928,6 +2929,10 @@ fn the_continuity_cap_uses_the_buildable_range() {
         rig.pool.set_min_side(Some(min));
         let plan = rig.run(12, &cut, &cam, 1.0);
         assert_eq!(plan.entries[0].wanted, [Some(expect); 8], "min {min}");
+        // Cells at the capped depth are the finest the minimum side admits (RQ-09): what draws is
+        // the stored level that serves it, never finer than the first stored level at or above.
+        let served = if expect <= 3 { 3 } else { 5 };
+        assert_eq!(drawn_depth(&plan), served, "min {min}");
     }
     // Every buildable depth is finer than the minimum: the coarsest one is wanted.
     let mut fine = root_node();

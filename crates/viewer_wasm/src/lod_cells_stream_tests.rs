@@ -348,14 +348,14 @@ impl CutView {
         self.active[j][octant_of_cell(c)].is_some() && !cell_hidden(&self.entries[j].mask, c)
     }
 
-    /// Depth the entry wants for an octant, limited to what its stored levels can give: a wanted
-    /// depth finer than the stored chain is met by the finest stored level until levels are built
-    /// on demand, and drawing it is not a coarsening.
+    /// Depth the entry wants for an octant, as the zone oracles judge it: the raw wanted depth,
+    /// except that an octant flagged as a stage (R3-Q21: the wanted level is not resident, or not
+    /// built yet) is only held to the level it draws.
     fn wanted_of(&self, i: usize, octant: usize) -> Option<u8> {
         let entry = &self.entries[i];
         let wanted = entry.wanted[octant]?;
         Some(match entry.drawn[octant] {
-            Some(drawn) if !entry.stage[octant] => wanted.min(drawn),
+            Some(drawn) if entry.stage[octant] => wanted.min(drawn),
             _ => wanted,
         })
     }

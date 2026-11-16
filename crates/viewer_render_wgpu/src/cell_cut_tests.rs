@@ -3,6 +3,8 @@
 
 use std::collections::HashMap;
 
+use crate::NodeCells;
+
 use viewer_core::{HierarchySemantics, NodeId, PointBlock, SpatialBounds};
 
 use super::*;
@@ -32,37 +34,45 @@ fn dataset_grid(root_min: [f64; 3]) -> CellGrid {
     }
 }
 
-/// Stored levels of every fixture node, built like `refinement_tests.rs` (local frame).
-fn fixture_nodes(fixture: &Fixture) -> HashMap<NodeId, CellCutNode> {
+/// The cells the fixture builds for node `id` (local frame, like `refinement_tests.rs`), and its
+/// bounds in the dataset frame.
+fn fixture_cells(fixture: &Fixture, id: NodeId) -> (SpatialBounds, NodeCells) {
     let local_grid = CellGrid {
         root_min: [0.0; 3],
         root_side: SIDE,
     };
+    let node = fixture.hierarchy.node(id).expect("node");
+    let bounds = node.bounds();
+    let local = SpatialBounds::new(
+        std::array::from_fn(|axis| bounds.min()[axis] - ORIGIN[axis]),
+        std::array::from_fn(|axis| bounds.max()[axis] - ORIGIN[axis]),
+    )
+    .unwrap();
+    let blocks: Vec<PointBlock> = node
+        .blocks()
+        .iter()
+        .map(|block| fixture.cache.peek(*block).expect("block").clone())
+        .collect();
+    let cells = PointNodeCellSource::default()
+        .node_cells(
+            &local_grid,
+            id,
+            local,
+            node.spacing(),
+            fixture.hierarchy.is_leaf(id),
+            &blocks,
+        )
+        .expect("cells");
+    (bounds, cells)
+}
+
+/// Stored levels of every fixture node. Its range is the stored span, so every wanted depth is a
+/// stored one.
+fn fixture_nodes(fixture: &Fixture) -> HashMap<NodeId, CellCutNode> {
     (1..=9)
         .map(NodeId::new)
         .map(|id| {
-            let node = fixture.hierarchy.node(id).expect("node");
-            let bounds = node.bounds();
-            let local = SpatialBounds::new(
-                std::array::from_fn(|axis| bounds.min()[axis] - ORIGIN[axis]),
-                std::array::from_fn(|axis| bounds.max()[axis] - ORIGIN[axis]),
-            )
-            .unwrap();
-            let blocks: Vec<PointBlock> = node
-                .blocks()
-                .iter()
-                .map(|block| fixture.cache.peek(*block).expect("block").clone())
-                .collect();
-            let cells = PointNodeCellSource::default()
-                .node_cells(
-                    &local_grid,
-                    id,
-                    local,
-                    node.spacing(),
-                    fixture.hierarchy.is_leaf(id),
-                    &blocks,
-                )
-                .expect("cells");
+            let (bounds, cells) = fixture_cells(fixture, id);
             let stored: Vec<u8> = cells.levels.iter().map(|level| level.depth).collect();
             (
                 id,
@@ -312,19 +322,50 @@ fn a_pruned_depth_is_wanted_as_is() {
 
 #[test]
 fn internal_nodes_never_want_beyond_their_range() {
+    let fixture = fixture(HierarchySemantics::Replacement);
     let grid = dataset_grid(ORIGIN);
-    let mut nodes = root_with(&[3, 4, 5, 6, 7, 8], &[3, 4, 5, 6, 7, 8]);
-    // An internal node builds `first..=first + 5` and no deeper.
-    nodes.get_mut(&NodeId::new(1)).unwrap().buildable = (3, 8);
-    // Eye inside the node, a huge scale of detail: every octant would want the deepest depth.
-    let mut camera = cameras().remove(0).1;
-    assert!(camera.set_pose([SIDE / 4.0; 3], [SIDE / 2.0; 3]));
-    for target in [0.01, 1.0] {
-        let entries = run(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, target).unwrap();
-        for wanted in entries[0].wanted.iter().flatten() {
-            assert!(*wanted <= 3 + 5, "{wanted} beyond the range at {target}px");
+    let (mut checked, mut capped) = (0, 0);
+    for id in (1..=9).map(NodeId::new) {
+        if fixture.hierarchy.is_leaf(id) {
+            continue;
+        }
+        let (bounds, cells) = fixture_cells(&fixture, id);
+        let stored: Vec<u8> = cells.levels.iter().map(|level| level.depth).collect();
+        let (first, last) = cells.buildable;
+        assert!(
+            last <= first + 5,
+            "node {} builds {first}..={last}",
+            id.get()
+        );
+        let nodes = HashMap::from([(
+            id,
+            CellCutNode {
+                bounds,
+                buildable: cells.buildable,
+                resident: stored.clone(),
+                stored,
+            },
+        )]);
+        // Eye inside the node, looking at a point of it: the finest wish is the deepest depth.
+        let mut camera = cameras().remove(0).1;
+        let inside = bounds.min().map(|v| v + 0.25 * SIDE / 2.0);
+        let target = bounds.min().map(|v| v + 0.5 * SIDE / 2.0);
+        assert!(camera.set_pose(inside, target));
+        for px in [0.01, 1.0] {
+            let entries = run(&[id], &nodes, &camera, &grid, ORIGIN, px).unwrap();
+            for wanted in entries[0].wanted.iter().flatten() {
+                assert!(
+                    *wanted <= first + 5,
+                    "node {}: {wanted} at {px}px",
+                    id.get()
+                );
+                checked += 1;
+                capped += usize::from(*wanted == last);
+            }
         }
     }
+    assert!(checked > 0, "no octant was wanted");
+    assert!(capped > 0, "no octant reached the end of its range");
 }
 
 #[test]
@@ -354,7 +395,11 @@ fn a_leaf_can_want_finer_than_its_chain() {
             .flatten()
             .all(|d| *d <= stored_finest)
     );
-    assert_eq!(entries[0].stage, [false; 8]);
+    // The target is not reached while the wanted depth is not drawn (R3-Q3): a stage.
+    for o in 0..8 {
+        let wanted = entries[0].wanted[o].unwrap();
+        assert_eq!(entries[0].stage[o], wanted > stored_finest, "octant {o}");
+    }
 }
 
 #[test]

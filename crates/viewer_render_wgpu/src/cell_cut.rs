@@ -358,22 +358,22 @@ pub fn resident_depth(wanted: u8, resident: &[u8]) -> Option<(u8, bool)> {
 
 /// `(drawn, stage)` of a node from its `wanted` depths and `resident` levels, as `cell_cut`
 /// decides them; `node_depth` is the depth whose levels span octants. A wanted depth that is not
-/// `stored` is served by `served_depth`.
+/// `stored` is drawn from the level `served_depth` picks, and it is a stage while that level is
+/// coarser than the wanted depth itself.
 pub(crate) fn drawn_levels(
     wanted: &[Option<u8>; 8],
     stored: &[u8],
     resident: &[u8],
     node_depth: u8,
 ) -> ([Option<u8>; 8], [bool; 8]) {
-    let wanted: [Option<u8>; 8] = wanted.map(|w| w.map(|w| served_depth(stored, w)));
     let mut drawn = [None; 8];
     let mut stage = [false; 8];
     for o in 0..8 {
         if let Some(w) = wanted[o]
-            && let Some((depth, is_stage)) = resident_depth(w, resident)
+            && let Some((depth, _)) = resident_depth(served_depth(stored, w), resident)
         {
             drawn[o] = Some(depth);
-            stage[o] = is_stage;
+            stage[o] = depth < w;
         }
     }
     // A spanning level is drawn whole, so it must be the only level the node draws:
