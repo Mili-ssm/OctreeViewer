@@ -4172,3 +4172,73 @@ fn a_node_entering_the_cut_widens_its_window_one_level_per_frame() {
     assert_eq!(spans[1], [7, 8, 9, 10, 11], "one more level either side");
     assert_eq!(spans[2], spans[1], "the range is covered");
 }
+
+/// Children of node 2 (ids 10..=17) that store depths 4..=10, with node 2 drawing depth 6 under
+/// `[2, 3]` first. Returns the rig and the cut of the children.
+fn children_entering_below_node_2() -> (Rig, Vec<NodeId>) {
+    let mut nodes = two_regions_with_coarse_children();
+    for child in region_children(10) {
+        let node = nodes.get_mut(&NodeId::new(child)).expect("child");
+        node.stored = (4..=10).collect();
+        node.buildable = (4, 10);
+    }
+    let mut rig = Rig::new(nodes, 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    let plan = rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+    let drawn = depth_of(&plan, 2).into_iter().flatten().max().expect("node 2 draws");
+    assert_eq!(drawn, 6, "setup");
+    let mut cut = ids(&region_children(10));
+    cut.push(NodeId::new(3));
+    (rig, cut)
+}
+
+/// The first plan in which every child draws something, and what each child drew in it.
+fn first_drawn_children(rig: &mut Rig, cut: &[NodeId], target: f64) -> (FramePlan, Vec<u8>) {
+    for _ in 0..30 {
+        let plan = rig.step(cut, &camera("fit"), target);
+        let drawn: Vec<Vec<u8>> = region_children(10)
+            .into_iter()
+            .map(|child| {
+                plan.entries
+                    .iter()
+                    .find(|e| e.node.get() == child)
+                    .map_or_else(Vec::new, |e| e.drawn.iter().flatten().copied().collect())
+            })
+            .collect();
+        if drawn.iter().all(|d| !d.is_empty()) {
+            return (plan, drawn.into_iter().flatten().collect());
+        }
+    }
+    panic!("the children never drew");
+}
+
+#[test]
+fn an_entering_leaf_starts_one_level_below_its_ancestor() {
+    // Node 2 drew depth 6: its children enter at 6 or 7 (one level from it) although they want
+    // 10 and the level is as available as the others.
+    let (mut rig, cut) = children_entering_below_node_2();
+    let (_, drawn) = first_drawn_children(&mut rig, &cut, 0.25);
+    assert!(drawn.iter().all(|d| (6..=7).contains(d)), "{drawn:?}");
+}
+
+#[test]
+fn a_leaving_node_hands_back_one_level() {
+    // The children drew from depth 7 and the cut returns to node 2: it restarts one level below
+    // their coarsest drawn depth, not at the level closest to what it wants.
+    let (mut rig, cut) = children_entering_below_node_2();
+    first_drawn_children(&mut rig, &cut, 0.25);
+    // Node 2 has left the cut by now; the children are still at their first depth.
+    let last = rig.step(&cut, &camera("fit"), 0.25);
+    let coarsest = region_children(10)
+        .into_iter()
+        .flat_map(|child| depth_of(&last, child))
+        .flatten()
+        .min()
+        .expect("children draw");
+    let mut plan = rig.step(&ids(&[2, 3]), &camera("fit"), 64.0);
+    while !has_entry(&plan, 2) {
+        plan = rig.step(&ids(&[2, 3]), &camera("fit"), 64.0);
+    }
+    let first: Vec<u8> = depth_of(&plan, 2).into_iter().flatten().collect();
+    assert!(!first.is_empty() && first.iter().all(|d| *d + 1 == coarsest), "{first:?}");
+}
