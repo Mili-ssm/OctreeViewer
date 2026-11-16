@@ -163,11 +163,11 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Consumes: `MaskUpdate { slot, mask, active, node_depth }` (Task 3).
 - Produces: `pub fn node_record(node: &NodeLod) -> [u32; NODE_WORDS]` (E8 word order); `GpuTarget::set_node_record(&mut self, slot: u32, record: &[u32; NODE_WORDS])`.
 
-- [ ] **Step 1: Write the failing tests:** `node_record_round_trips` (all E8 words, mips equal `NodeLod::mips`); `anchors_follow_the_eye` (driver test: a camera move rewrites the anchor words).
-- [ ] **Step 2:** `--lib cell_codec`, `--lib cell_driver` → FAIL.
-- [ ] **Step 3:** implement.
-- [ ] **Step 4:** all lib tests → PASS unchanged.
-- [ ] **Step 5:** commit `refactor(render): store a per-node record next to the mask`.
+- [x] **Step 1: Write the failing tests:** `node_record_round_trips` (all E8 words, mips equal `NodeLod::mips`); `anchors_follow_the_eye` (driver test: a camera move rewrites the anchor words).
+- [x] **Step 2:** `--lib cell_codec`, `--lib cell_driver` → FAIL.
+- [x] **Step 3:** implement.
+- [x] **Step 4:** all lib tests → PASS unchanged.
+- [x] **Step 5:** commit `refactor(render): store a per-node record next to the mask`.
 
 ### Task 7: Per-cell decision in the slot pass and GPU partition test
 
