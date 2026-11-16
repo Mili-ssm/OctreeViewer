@@ -44,7 +44,10 @@
 //! mask hides the whole footprint of `C`. The levels of `C` are requested and uploaded as usual.
 //! Cell mode adds the D5 gate (E7): a `C` that would mask an ancestor of the real cut stays held
 //! (same mechanism) while that ancestor has no resident depth >= its `rep`; that depth is
-//! requested first and protected, and joins the ancestor's active set once its mask is set.
+//! requested first and protected, and joins the ancestor's active set once its mask is set. While
+//! the ancestor's fit cap (or source density) is below its `rep` there is no D5 depth to request,
+//! so the child stays held and the ancestor draws the zone, as the whole cloud is coarser under
+//! pressure (R3-Q11).
 //! Requests and uploads go coarse to fine: the first
 //! level of the nodes that draw nothing, then absolute level depth, then distance.
 //!
@@ -1359,8 +1362,11 @@ impl CellPool {
         nodes: &FastMap<NodeId, PoolNode>,
         caps: &FastMap<NodeId, u8>,
         grid: &CellGrid,
+        d5: &FastSet<LevelKey>,
     ) -> (FastSet<LevelKey>, u64) {
-        let needed = self.needed_levels(entries, nodes, caps, grid);
+        let mut needed = self.needed_levels(entries, nodes, caps, grid);
+        // Cell mode: the D5 levels of the gated ancestors take pages too, so the fit counts them.
+        needed.extend(d5.iter().copied());
         let total = needed
             .iter()
             .map(|key| self.pages_of(*key, &nodes[&key.node], grid) as u64)
@@ -1379,20 +1385,22 @@ impl CellPool {
         offenders: &mut BTreeSet<NodeId>,
         eye: [f64; 3],
         ctx: &Ctx,
+        d5: &FastSet<LevelKey>,
     ) -> Result<(FastSet<LevelKey>, FastSet<LevelKey>, bool), CellCutError> {
         let usable = self.usable();
         let (high, low) = (usable * HIGH_PERCENT / 100, usable * LOW_PERCENT / 100);
         let mut caps = std::mem::take(&mut self.caps);
         caps.retain(|id, _| nodes.contains_key(id));
         let mut entries = self.wanted_cut(cut, nodes, &caps, offenders, ctx)?;
-        let (mut needed, mut total) = self.needed_and_pages(&entries, nodes, &caps, ctx.grid);
+        let (mut needed, mut total) = self.needed_and_pages(&entries, nodes, &caps, ctx.grid, d5);
         // Lifting the caps needs the uncapped cut to fit under `low`. This runs only when the
         // wanted cut is recomputed (cut, sizes or depths changed), never on a reused frame; sizes
         // are not monotone in depth, so the capped total says nothing about the uncapped one.
         if !caps.is_empty() {
             let none = FastMap::default();
             let open = self.wanted_cut(cut, nodes, &none, offenders, ctx)?;
-            let (open_needed, open_total) = self.needed_and_pages(&open, nodes, &none, ctx.grid);
+            let (open_needed, open_total) =
+                self.needed_and_pages(&open, nodes, &none, ctx.grid, d5);
             if open_total <= low {
                 caps.clear();
                 entries = open;
@@ -1452,7 +1460,7 @@ impl CellPool {
                     break;
                 }
                 entries = self.wanted_cut(cut, nodes, &caps, offenders, ctx)?;
-                (needed, total) = self.needed_and_pages(&entries, nodes, &caps, ctx.grid);
+                (needed, total) = self.needed_and_pages(&entries, nodes, &caps, ctx.grid, d5);
             }
         }
         self.old_released
@@ -2381,10 +2389,17 @@ impl CellPool {
                     && memo.size_epoch == self.size_epoch
                     && !(memo.had_caps && moved > DRIFT_FRACTION * memo.min_depth && moved > 0.0)
             });
+        // E7: the D5 depth of every node of the real cut with descendants in the wanted cut is
+        // protected from eviction and requested before anything else; the fit counts its pages.
+        let d5 = if self.lod_mode == LodMode::Cell {
+            self.d5_keys(cut, &found.ancestors, nodes, grid)
+        } else {
+            FastSet::default()
+        };
         if !reusable {
             let mut offenders = BTreeSet::new();
             let (mut needed, mut requests, overflow) =
-                self.fit(cut, nodes, &mut offenders, eye, &ctx)?;
+                self.fit(cut, nodes, &mut offenders, eye, &ctx, &d5)?;
             needed.retain(|key| !offenders.contains(&key.node));
             requests.retain(|key| !offenders.contains(&key.node));
             self.wanted_generation += 1;
@@ -2599,20 +2614,22 @@ impl CellPool {
                                 let f = Footprint::new(grid, nodes[id].bounds);
                                 // A node held by the D5 gate is covered by an ancestor of the
                                 // real cut itself.
-                                f.gaps().any(|gap| {
-                                    entries.iter().any(|a| {
-                                        let af = Footprint::new(grid, nodes[&a.node].bounds);
-                                        (af.rep, af.lo) == f.ancestor(gap)
-                                            && covers_in(entries, &position, a.node, &f, gap)
+                                (self.lod_mode == LodMode::Cell
+                                    && f.gaps().any(|gap| {
+                                        entries.iter().any(|a| {
+                                            let af = Footprint::new(grid, nodes[&a.node].bounds);
+                                            (af.rep, af.lo) == f.ancestor(gap)
+                                                && covers_in(entries, &position, a.node, &f, gap)
+                                        })
+                                    }))
+                                    || f.gaps().any(|gap| {
+                                        self.applied_index.cells.get(&f.ancestor(gap)).is_some_and(
+                                            |a| covers_in(entries, &position, *a, &f, gap),
+                                        )
                                     })
-                                }) || f.gaps().any(|gap| {
-                                    self.applied_index
-                                        .cells
-                                        .get(&f.ancestor(gap))
-                                        .is_some_and(|a| covers_in(entries, &position, *a, &f, gap))
-                                }) || self.applied_index.below.get(&(f.rep, f.lo)).is_some_and(
-                                    |list| list.iter().any(|(d, _)| position.contains_key(d)),
-                                )
+                                    || self.applied_index.below.get(&(f.rep, f.lo)).is_some_and(
+                                        |list| list.iter().any(|(d, _)| position.contains_key(d)),
+                                    )
                             })
                 }),
             "an applied cut loses a zone, or a held node has nothing drawing its zone"
@@ -2670,13 +2687,6 @@ impl CellPool {
         // Overflow keeps only the previous cut: nothing of the new one is requested.
         let no_levels = FastSet::default();
         let want: &FastSet<LevelKey> = if overflow { &no_levels } else { &needed };
-        // E7: the D5 depth of every node of the real cut with descendants in the wanted cut is
-        // protected from eviction and requested before anything else.
-        let d5 = if self.lod_mode == LodMode::Cell {
-            self.d5_keys(cut, &found.ancestors, nodes, grid)
-        } else {
-            FastSet::default()
-        };
         protected.extend(want.iter().copied());
         protected.extend(d5.iter().copied());
         protected.extend(pinned.iter().copied());

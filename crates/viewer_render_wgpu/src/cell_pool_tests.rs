@@ -3434,6 +3434,58 @@ fn children_wait_for_the_parent_d5_level() {
 }
 
 #[test]
+fn the_d5_request_comes_first() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21, 22]);
+    let mut rig = d5_rig(HashMap::from([
+        (NodeId::new(1), d5_node(SIDE, &[2, 4, 5])),
+        (NodeId::new(21), d5_node(SIDE / 8.0, &[6, 7])),
+        // A node that already draws (level 5) and wants its coarser level 3, shallower than the D5
+        // depth (4): by depth alone that request would come before the parent's.
+        (
+            NodeId::new(22),
+            PoolNode {
+                bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
+                stored: vec![3, 5],
+                buildable: (3, 5),
+                points: 2000,
+            },
+        ),
+    ]));
+    seed_resident(&mut rig.pool, 1, &[2]);
+    seed_resident(&mut rig.pool, 21, &[6, 7]);
+    seed_resident(&mut rig.pool, 22, &[5]);
+    let plan = d5_step_at(&mut rig, &cut, &cam, 1.0e6);
+    let d5 = rig.pool.key(NodeId::new(1), 4);
+    let other = rig.pool.key(NodeId::new(22), 3);
+    let position = |key| plan.fetch_requests.iter().position(|k| *k == key);
+    assert!(position(other).is_some(), "{:?}", plan.fetch_requests);
+    assert_eq!(position(d5), Some(0), "{:?}", plan.fetch_requests);
+}
+
+#[test]
+fn the_pool_fit_counts_the_d5_level() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21]);
+    let nodes = HashMap::from([
+        (NodeId::new(1), d5_node(SIDE, &[2, 4, 5])),
+        (NodeId::new(21), d5_node(SIDE / 8.0, &[6, 7])),
+    ]);
+    let mut rig = Rig::new(nodes, 64, 8, 10_000);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2]);
+    seed_resident(&mut rig.pool, 21, &[6, 7]);
+    rig.pool
+        .set_level_sizes(NodeId::new(1), &[(2, 1), (4, 22), (5, 22)]);
+    // A coarse want: node 1 wants level 2 only, so its D5 level 4 is not wanted by the entry.
+    d5_step_at(&mut rig, &cut, &cam, 1.0e6);
+    let memo = rig.pool.wanted_memo.as_ref().expect("fit ran");
+    // The D5 level takes pages (a fetch under pressure), so the fit must count it.
+    let d5 = rig.pool.key(NodeId::new(1), 4);
+    assert!(memo.needed.contains(&d5), "{:?}", memo.needed);
+}
+
+#[test]
 fn the_d5_depth_joins_the_active_set_when_the_mask_is_set() {
     let cam = camera("fit");
     let cut = ids(&[1, 21]);
