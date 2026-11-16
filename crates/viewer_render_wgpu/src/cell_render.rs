@@ -500,8 +500,9 @@ fn finalize_main() {
 }
 
 // Cell mode (`lod_mode == 1`): the WGSL twin of `cell_lod`. Sums and products are written in the
-// same order as the Rust, with no `fma`. A corner at or behind the eye plane gives the largest
-// finite value (not `inf`, which WGSL does not guarantee), which refines like the Rust `+inf`.
+// same order as the Rust, with no `fma`. A corner at or behind the eye plane gives a finite value
+// far above any target (3.0e38, just under the f32 maximum of about 3.4e38; WGSL does not guarantee
+// `inf`), which refines like the Rust `+inf`.
 const CELL_NEAR_EDGE: f32 = 3.0e38;
 
 fn cell_dot(a: vec3<f32>, b: vec3<f32>) -> f32 {
@@ -556,7 +557,7 @@ fn cell_masked_any(record: u32, level: u32, rel: vec3<u32>) -> bool {
 
 // E4/E5: does this cell draw its points? Mirrors `cell_lod::draws`, ancestors from the coarsest.
 fn cell_draws(page: CellPage, cell: vec4<u32>) -> bool {
-    if page.rel.x == 0xffffffffu { return false; }
+    if all(page.rel == vec3<u32>(0xffffffffu)) { return false; }
     let record = page.node * 32u;
     let node_depth = masks[record + 19u];
     if page.depth < node_depth || page.depth - node_depth > 31u { return false; }
@@ -1514,7 +1515,7 @@ impl CellRenderer {
     }
 
     /// Page pass, finalize and slot pass of `phase` (0 plain, 1, 2).
-    fn encode_compaction(&self, encoder: &mut wgpu::CommandEncoder, phase: usize) {
+    pub(crate) fn encode_compaction(&self, encoder: &mut wgpu::CommandEncoder, phase: usize) {
         encoder.clear_buffer(&self.page_list, 0, Some(4));
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

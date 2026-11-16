@@ -5,10 +5,13 @@
 //! slot ids of the plain compaction, read back from the `visible` buffer; every cell whose
 //! decision does not hang on a float within `THRESHOLD_BAND` of the target must agree with
 //! `cell_lod::draws`. The scene, pose and readback helpers are shared with the larger partition
-//! test of Task 7b.
+//! test of Task 7b, which is the kill gate of phase 2: the drawn cells of a node must partition its
+//! unmasked points (see `cell_mode_draws_one_cell_per_point_on_every_adapter`).
 
 use super::*;
-use crate::cell_lod::{LodView, NodeLod, cell_lo, draws, edge_px, node_record};
+use crate::cell_lod::{
+    LodView, NodeLod, cell_lo, draws, edge_px, masked_any, node_record, refines,
+};
 use crate::representative_depth;
 
 /// A cell is skipped when `edge_px / target_px` of it or of an ancestor is this close to 1.
@@ -409,6 +412,639 @@ fn cell_mode_matches_the_twin_away_from_the_threshold() {
             total.drawn > 100 && total.compared > total.drawn * 2,
             "{total:?}"
         );
+        true
+    });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Task 7b: the drawn cells partition the points of a node
+// ---------------------------------------------------------------------------------------------
+
+type CellKey = (usize, usize, [u32; 3]);
+
+/// A scene of the partition test and how its poses are drawn.
+struct PartitionScene {
+    name: &'static str,
+    nodes: Vec<LodNodeScene>,
+    /// Log-uniform range of the pose's `target_px`.
+    target_px: (f32, f32),
+    /// Log-uniform range of the camera distance to its target, in root units.
+    distance: (f64, f64),
+    /// `min_side` of the view: the side of this level of node 0 (cells of that side never refine).
+    min_side_level: Option<usize>,
+    /// Some level of node 0 has two pages with the children of one ancestor on both.
+    split_family: bool,
+}
+
+/// A point of the data: it lies in the finest cell `fine` of `node` (integer coordinates relative
+/// to the node corner), so which cell of each level contains it never depends on a float.
+struct Sample {
+    node: usize,
+    fine: [u64; 3],
+    position: [f64; 3],
+    masked: bool,
+}
+
+#[derive(Debug, Default)]
+struct SceneStats {
+    poses: usize,
+    /// Drawn cells per (node, depth), plain frames.
+    drawn: std::collections::BTreeMap<(usize, u8), usize>,
+    /// Most depths of one node drawn in one pose.
+    max_depths: usize,
+    /// Drawn cells with an active ancestor two or more levels up.
+    far_ancestor: usize,
+    eye_inside: usize,
+}
+
+#[derive(Debug, Default)]
+struct PartitionReport {
+    frames: usize,
+    occlusion_frames: usize,
+    threshold_cases: usize,
+    points: usize,
+    masked_points: usize,
+    holes: usize,
+    doubles: usize,
+    masked_drawn: usize,
+    scenes: Vec<SceneStats>,
+    failures: Vec<String>,
+}
+
+fn node_side(node: &LodNodeScene) -> f64 {
+    node.grid.root_side / (1_u64 << node.node_depth) as f64
+}
+
+fn deepest(node: &LodNodeScene) -> u8 {
+    *node.offsets.iter().max().unwrap()
+}
+
+/// Index of the finest level of `node`.
+fn finest_level(node: &LodNodeScene) -> usize {
+    node.offsets
+        .iter()
+        .position(|&o| o == deepest(node))
+        .unwrap()
+}
+
+fn sample_at(node_index: usize, node: &LodNodeScene, fine: [u64; 3], frac: [f64; 3]) -> Sample {
+    let fine_side = node_side(node) / (1_u64 << deepest(node)) as f64;
+    let position =
+        std::array::from_fn(|a| node.corner()[a] + (fine[a] as f64 + frac[a]) * fine_side);
+    // Every scene's finest level is at least 3 below the node: its cells sit inside one mask bit.
+    let bit = fine.map(|f| (f >> (deepest(node) - 3)) as usize);
+    let masked = node.mask[bit[2]] >> (bit[0] + 8 * bit[1]) & 1 != 0;
+    Sample {
+        node: node_index,
+        fine,
+        position,
+        masked,
+    }
+}
+
+fn level_sides(nodes: &[LodNodeScene], pool: &LodPool) -> Vec<Vec<f32>> {
+    let mut sides: Vec<Vec<f32>> = nodes.iter().map(|n| vec![0.0; n.levels.len()]).collect();
+    for placed in &pool.placed {
+        sides[placed.node][placed.level] = page_entry(nodes, pool, placed, 0, [0.0; 3]).side();
+    }
+    sides
+}
+
+/// Camera at `distance` from `target` (or at a random point of `inside`), looking at it.
+fn pose_toward(
+    rng: &mut Rng,
+    target: [f64; 3],
+    inside: Option<([f64; 3], [f64; 3])>,
+    distance: (f64, f64),
+    target_px: (f32, f32),
+) -> Option<(OrbitCamera, LodView)> {
+    let unit = |rng: &mut Rng| rng.below(1 << 24) as f64 / (1_u64 << 24) as f64;
+    let position: [f64; 3] = if let Some((lo, hi)) = inside {
+        std::array::from_fn(|a| lo[a] + (hi[a] - lo[a]) * unit(rng))
+    } else {
+        let direction: [f64; 3] = std::array::from_fn(|_| unit(rng) * 2.0 - 1.0);
+        let length = direction.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if length < 0.1 {
+            return None;
+        }
+        let range = distance.0 * (distance.1 / distance.0).powf(unit(rng));
+        std::array::from_fn(|a| target[a] + direction[a] / length * range)
+    };
+    let mut camera = test_camera();
+    if !camera.set_pose(position, target) {
+        return None;
+    }
+    camera.eye_frame([WIDTH, HEIGHT])?;
+    let px = target_px.0 * (target_px.1 / target_px.0).powf(unit(rng) as f32);
+    Some((
+        camera,
+        LodView::from_camera(&camera, [WIDTH as f32, HEIGHT as f32], px, 0.0),
+    ))
+}
+
+/// At least 2 % of the viewport inside every side of the frustum.
+fn well_inside(matrix: &[[f32; 4]; 4], position: [f64; 3], eye: [f64; 3]) -> bool {
+    let p: [f64; 3] = std::array::from_fn(|a| position[a] - eye[a]);
+    let q: [f64; 4] = std::array::from_fn(|row| {
+        f64::from(matrix[0][row]) * p[0]
+            + f64::from(matrix[1][row]) * p[1]
+            + f64::from(matrix[2][row]) * p[2]
+            + f64::from(matrix[3][row])
+    });
+    q[3] > 0.0
+        && q[0].abs() <= 0.96 * q[3]
+        && q[1].abs() <= 0.96 * q[3]
+        && q[2] >= 1.0e-6 * q[3]
+        && q[2] <= (1.0 - 1.0e-6) * q[3]
+}
+
+/// Cells (node, level, rel) drawn by `lists`, with how many times each appears.
+fn drawn_cells(
+    nodes: &[LodNodeScene],
+    pool: &LodPool,
+    lists: &[Vec<u32>],
+) -> std::collections::HashMap<CellKey, u32> {
+    let mut by_page = std::collections::HashMap::new();
+    for (index, placed) in pool.placed.iter().enumerate() {
+        for (page, slot) in placed.slots.iter().enumerate() {
+            by_page.insert(*slot, (index, page));
+        }
+    }
+    let mut cells = std::collections::HashMap::new();
+    for slot in lists.iter().flatten() {
+        let (index, page) = by_page[&(slot / PAGE_SLOTS as u32)];
+        let placed = &pool.placed[index];
+        let node = &nodes[placed.node];
+        let local = *slot as usize % PAGE_SLOTS;
+        let coord =
+            node.levels[placed.level].cells[placed.packed.pages[page].first_cell + local].coord;
+        *cells
+            .entry((placed.node, placed.level, node.rel(placed.level, coord)))
+            .or_insert(0) += 1;
+    }
+    cells
+}
+
+/// `rel` of the cell of level `level` of `node` that contains `fine`.
+fn rel_at(node: &LodNodeScene, level: usize, fine: [u64; 3]) -> [u32; 3] {
+    let shift = deepest(node) - node.offsets[level];
+    fine.map(|f| (f >> shift) as u32)
+}
+
+struct FrameCheck<'a> {
+    adapter: &'a str,
+    scene: &'a PartitionScene,
+    scene_index: usize,
+    seed: u64,
+    label: &'static str,
+    pool: &'a LodPool,
+    lods: Vec<NodeLod>,
+    sides: &'a [Vec<f32>],
+    view: LodView,
+    samples: &'a [Sample],
+}
+
+impl FrameCheck<'_> {
+    /// Every sample point is covered by one drawn cell (`exact`: plain compaction) or by at most
+    /// one (occlusion, over the union of both phases); masked points by none.
+    fn run(&self, lists: &[Vec<u32>], exact: bool, report: &mut PartitionReport) {
+        let nodes = &self.scene.nodes;
+        let cells = drawn_cells(nodes, self.pool, lists);
+        report.frames += 1;
+        for sample in self.samples {
+            let node = &nodes[sample.node];
+            let covering: Vec<(usize, u32)> = (0..node.levels.len())
+                .filter_map(|level| {
+                    let key = (sample.node, level, rel_at(node, level, sample.fine));
+                    cells.get(&key).map(|n| (level, *n))
+                })
+                .collect();
+            let hits: u32 = covering.iter().map(|(_, n)| n).sum();
+            report.points += 1;
+            report.masked_points += usize::from(sample.masked);
+            let problem = if sample.masked && hits > 0 {
+                report.masked_drawn += 1;
+                "a masked point is drawn"
+            } else if hits >= 2 {
+                report.doubles += 1;
+                "double"
+            } else if exact && !sample.masked && hits == 0 {
+                report.holes += 1;
+                "hole"
+            } else {
+                continue;
+            };
+            if report.failures.len() < 6 {
+                report
+                    .failures
+                    .push(self.describe(problem, sample, &covering));
+            }
+        }
+        if exact {
+            self.count_drawn(&cells, report);
+        }
+    }
+
+    fn count_drawn(
+        &self,
+        cells: &std::collections::HashMap<CellKey, u32>,
+        report: &mut PartitionReport,
+    ) {
+        let stats = &mut report.scenes[self.scene_index];
+        let mut depths = std::collections::HashSet::new();
+        for &(node_index, level, _) in cells.keys() {
+            let node = &self.scene.nodes[node_index];
+            let depth = node.node_depth + node.offsets[level];
+            *stats.drawn.entry((node_index, depth)).or_insert(0) += 1;
+            depths.insert((node_index, depth));
+            stats.far_ancestor +=
+                usize::from(node.offsets.iter().any(|o| o + 2 <= node.offsets[level]));
+        }
+        for node_index in 0..self.scene.nodes.len() {
+            let count = depths.iter().filter(|(n, _)| *n == node_index).count();
+            stats.max_depths = stats.max_depths.max(count);
+        }
+    }
+
+    fn describe(&self, problem: &str, sample: &Sample, covering: &[(usize, u32)]) -> String {
+        let node = &self.scene.nodes[sample.node];
+        let lod = &self.lods[sample.node];
+        let mut text = format!(
+            "{problem}: adapter {}, scene {} (#{}), pose seed {:#x}, frame {}, node {} point {:?} (fine cell {:?}, masked {}), target_px {}\n",
+            self.adapter,
+            self.scene.name,
+            self.scene_index,
+            self.seed,
+            self.label,
+            sample.node,
+            sample.position,
+            sample.fine,
+            sample.masked,
+            self.view.target_px,
+        );
+        for (level, &offset) in node.offsets.iter().enumerate() {
+            let rel = rel_at(node, level, sample.fine);
+            let side = self.sides[sample.node][level];
+            let edge = edge_px(&self.view, cell_lo(lod, rel, side), side);
+            let drawn = covering
+                .iter()
+                .find(|(l, _)| *l == level)
+                .map_or(0, |(_, n)| *n);
+            text += &format!(
+                "    depth {} rel {rel:?}: edge_px {edge} ({}x target), refines {}, masked_any {}, drawn {drawn}\n",
+                node.node_depth + offset,
+                edge / self.view.target_px,
+                refines(&self.view, cell_lo(lod, rel, side), side),
+                masked_any(lod, node.node_depth + offset, rel),
+            );
+        }
+        text
+    }
+}
+
+/// The phase 2 list of the frame just rendered, then the phase 1 list, recomputed: the shared
+/// `visible` buffer only keeps the last phase, but phase 1 reads the previous half of the
+/// visibility bits, which the frame did not touch, so running it again gives the same list.
+fn read_both_phases(h: &Harness, pool: &mut CellRenderer, camera: &OrbitCamera) -> Vec<Vec<u32>> {
+    let (_, counts) = render_cells_phases(h, pool, camera, false);
+    let second = read_drawn_slots(h, pool, 6);
+    let mut encoder = h.device.create_command_encoder(&Default::default());
+    pool.encode_compaction(&mut encoder, 1);
+    h.queue.submit([encoder.finish()]);
+    let first = read_drawn_slots(h, pool, 1);
+    assert_eq!(
+        [first.len() as u32, second.len() as u32],
+        counts,
+        "phase 1 was not reproduced"
+    );
+    vec![first, second]
+}
+
+/// Does some cell of some level of `nodes` contain `eye`?
+fn eye_in_a_cell(nodes: &[LodNodeScene], cells: &HashSet<CellKey>, eye: [f64; 3]) -> bool {
+    nodes.iter().enumerate().any(|(index, node)| {
+        node.offsets.iter().enumerate().any(|(level, &offset)| {
+            let side = node_side(node) / (1_u64 << offset) as f64;
+            let rel: [f64; 3] =
+                std::array::from_fn(|a| ((eye[a] - node.corner()[a]) / side).floor());
+            let limit = (1_u64 << offset) as f64;
+            rel.iter().all(|r| (0.0..limit).contains(r))
+                && cells.contains(&(index, level, rel.map(|r| r as u32)))
+        })
+    })
+}
+
+/// Siblings of one ancestor (at a coarser level of node 0) on both sides of a page boundary of a
+/// level of node 0.
+fn split_families(scene: &PartitionScene, pool: &LodPool) -> usize {
+    let node = &scene.nodes[0];
+    let mut families = 0;
+    for placed in pool.placed.iter().filter(|p| p.node == 0) {
+        let offset = node.offsets[placed.level];
+        let cells = &node.levels[placed.level].cells;
+        for page in placed.packed.pages.iter().skip(1) {
+            let (a, b) = (&cells[page.first_cell - 1], &cells[page.first_cell]);
+            families += node
+                .offsets
+                .iter()
+                .filter(|&&up| up < offset)
+                .filter(|&&up| {
+                    (0..3).all(|ax| a.coord[ax] >> (offset - up) == b.coord[ax] >> (offset - up))
+                })
+                .count();
+        }
+    }
+    families
+}
+
+fn partition_scenes() -> Vec<PartitionScene> {
+    let mut rng = Rng(0x7b);
+    let unit = CellGrid {
+        root_min: [0.0; 3],
+        root_side: 1.0,
+    };
+    let offset_grid = CellGrid {
+        root_min: [0.137, -0.093, 0.211],
+        root_side: 0.9,
+    };
+    let dense = ((0.5, 40.0), (0.02, 3.0));
+    let scene = |name, nodes, (target_px, distance), min_side_level, split_family| PartitionScene {
+        name,
+        nodes,
+        target_px,
+        distance,
+        min_side_level,
+        split_family,
+    };
+    let mut random = |grid, depth, lo, offsets: &[u8], mask, points| {
+        LodNodeScene::random(&mut rng, grid, depth, lo, offsets, mask, points)
+    };
+    vec![
+        scene(
+            "three depths, non-contiguous, off-origin grid",
+            vec![random(offset_grid, 1, [0, 1, 0], &[1, 3, 6], 0, 400)],
+            dense,
+            None,
+            false,
+        ),
+        scene(
+            "masked node at offset 0 with its D5 level (1 % mask)",
+            vec![random(unit, 2, [1, 2, 0], &[0, 1, 2, 3, 5], 1, 500)],
+            dense,
+            None,
+            false,
+        ),
+        scene(
+            "a level split into pages",
+            vec![random(unit, 1, [0, 1, 0], &[0, 3, 6], 0, 1800)],
+            dense,
+            None,
+            true,
+        ),
+        scene(
+            "min_side above the two finest levels' sides",
+            vec![random(unit, 1, [1, 1, 0], &[0, 2, 4, 5], 0, 800)],
+            dense,
+            Some(2),
+            false,
+        ),
+        scene(
+            "span 25: rel above 2^24",
+            vec![random(unit, 0, [0, 0, 0], &[0, 12, 25], 2, 30)],
+            ((0.02, 6.0), (1.0e-5, 2.0)),
+            None,
+            false,
+        ),
+        scene(
+            "two nodes side by side",
+            vec![
+                random(unit, 1, [0, 0, 0], &[0, 2, 4], 0, 300),
+                random(unit, 1, [1, 0, 0], &[1, 3, 5], 2, 300),
+            ],
+            dense,
+            None,
+            false,
+        ),
+    ]
+}
+
+fn pose_count() -> usize {
+    std::env::var("CELL_LOD_POSES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200)
+}
+
+fn run_scene(
+    h: &Harness,
+    scene_index: usize,
+    scene: &PartitionScene,
+    poses: usize,
+    report: &mut PartitionReport,
+) {
+    let nodes = &scene.nodes;
+    let mut plain = new_pool(h);
+    let mut occluded = new_occlusion_pool(h);
+    let placed = place_lod(&mut plain, nodes);
+    let again = place_lod(&mut occluded, nodes);
+    assert_eq!(placed.node_slots, again.node_slots);
+    let sides = level_sides(nodes, &placed);
+    let min_side = scene.min_side_level.map_or(0.0, |level| sides[0][level]);
+    if scene.split_family {
+        assert!(
+            split_families(scene, &placed) > 0,
+            "{}: no family split across pages",
+            scene.name
+        );
+    }
+    let all_cells: HashSet<CellKey> = nodes
+        .iter()
+        .enumerate()
+        .flat_map(|(index, node)| {
+            (0..node.levels.len()).flat_map(move |level| {
+                node.levels[level]
+                    .cells
+                    .iter()
+                    .map(move |cell| (index, level, node.rel(level, cell.coord)))
+            })
+        })
+        .collect();
+    let finest: Vec<(usize, [u64; 3])> = nodes
+        .iter()
+        .enumerate()
+        .flat_map(|(index, node)| {
+            let level = finest_level(node);
+            node.levels[level]
+                .cells
+                .iter()
+                .map(move |cell| (index, node.rel(level, cell.coord).map(u64::from)))
+        })
+        .collect();
+    let union = (
+        std::array::from_fn(|a| nodes.iter().map(|n| n.corner()[a]).fold(f64::MAX, f64::min)),
+        std::array::from_fn(|a| {
+            nodes
+                .iter()
+                .map(|n| n.corner()[a] + node_side(n))
+                .fold(f64::MIN, f64::max)
+        }),
+    );
+    report.scenes.push(SceneStats::default());
+    let (mut done, mut attempt) = (0, 0_u64);
+    while done < poses {
+        attempt += 1;
+        let seed = 0x7b00_0000 + scene_index as u64 * 1_000_000 + attempt;
+        let mut rng = Rng(seed);
+        let kind = done % 4;
+        let anchor = finest[rng.below(finest.len() as u64) as usize];
+        let target = sample_at(anchor.0, &nodes[anchor.0], anchor.1, [0.5; 3]).position;
+        let Some((camera, mut view)) = pose_toward(
+            &mut rng,
+            target,
+            (kind == 3).then_some(union),
+            scene.distance,
+            scene.target_px,
+        ) else {
+            continue;
+        };
+        view.min_side = min_side;
+        done += 1;
+        let eye = camera.position();
+        let matrix = camera.eye_frame([WIDTH, HEIGHT]).unwrap().view_projection;
+        let mut samples: Vec<Sample> = finest
+            .iter()
+            .map(|&(node, fine)| sample_at(node, &nodes[node], fine, [0.5; 3]))
+            .collect();
+        let unit = |rng: &mut Rng| rng.below(1 << 24) as f64 / (1_u64 << 24) as f64;
+        for _ in 0..finest.len() {
+            let (node, fine) = finest[rng.below(finest.len() as u64) as usize];
+            // Some points hug a face of their cell.
+            let frac = std::array::from_fn(|_| match rng.below(6) {
+                0 => 1.0e-3,
+                1 => 1.0 - 1.0e-3,
+                _ => unit(&mut rng),
+            });
+            samples.push(sample_at(node, &nodes[node], fine, frac));
+        }
+        samples.retain(|s| well_inside(&matrix, s.position, eye));
+        let check = |label: &'static str, view: &LodView, lods: &[NodeLod]| FrameCheck {
+            adapter: &h.label,
+            scene,
+            scene_index,
+            seed,
+            label,
+            pool: &placed,
+            lods: lods.to_vec(),
+            sides: &sides,
+            view: *view,
+            samples: &samples,
+        };
+        report.scenes[scene_index].poses += 1;
+        report.scenes[scene_index].eye_inside +=
+            usize::from(kind == 3 && eye_in_a_cell(nodes, &all_cells, eye));
+
+        let lods = set_pose(&mut plain, nodes, &placed, &camera, view);
+        render_cells(h, &mut plain, &camera, false);
+        let slots = read_drawn_slots(h, &plain, 1);
+        check("plain", &view, &lods).run(&[slots], true, report);
+
+        if kind == 2 {
+            // The 1-ULP boundary of the edge of the cell of a random point, or of one of its
+            // ancestors: a hair under, on and a hair over the target.
+            let unmasked: Vec<&Sample> = samples.iter().filter(|s| !s.masked).collect();
+            if !unmasked.is_empty() {
+                let s = unmasked[rng.below(unmasked.len() as u64) as usize];
+                let node = &nodes[s.node];
+                let level = rng.below(node.levels.len() as u64) as usize;
+                let side = sides[s.node][level];
+                let rel = rel_at(node, level, s.fine);
+                let edge = edge_px(&view, cell_lo(&lods[s.node], rel, side), side);
+                if edge.is_finite() && edge > 0.0 && edge < 1.0e38 {
+                    for bits in [edge.to_bits() - 1, edge.to_bits(), edge.to_bits() + 1] {
+                        let mut at = view;
+                        at.target_px = f32::from_bits(bits);
+                        let lods = set_pose(&mut plain, nodes, &placed, &camera, at);
+                        render_cells(h, &mut plain, &camera, false);
+                        let slots = read_drawn_slots(h, &plain, 1);
+                        report.threshold_cases += 1;
+                        check("threshold", &at, &lods).run(&[slots], true, report);
+                    }
+                }
+            }
+        }
+
+        // Two frames of the same pose: the second one has the first one's visibility bits.
+        let lods = set_pose(&mut occluded, nodes, &placed, &camera, view);
+        for _ in 0..2 {
+            let lists = read_both_phases(h, &mut occluded, &camera);
+            report.occlusion_frames += 1;
+            check("occlusion", &view, &lods).run(&lists, false, report);
+        }
+    }
+}
+
+#[test]
+fn cell_mode_draws_one_cell_per_point_on_every_adapter() {
+    let poses = pose_count();
+    for_each_adapter(CellLimitMode::Auto, |h| {
+        if !h.runs_test_pool {
+            return false;
+        }
+        let start = std::time::Instant::now();
+        let mut report = PartitionReport::default();
+        let scenes = partition_scenes();
+        for (index, scene) in scenes.iter().enumerate() {
+            run_scene(h, index, scene, poses, &mut report);
+        }
+        println!(
+            "# adapter {}: {poses} poses per scene x {} scenes, {} frames ({} occlusion), {} points \
+             ({} masked), {} holes, {} doubles, {} masked drawn, {} threshold cases, {:.1} s",
+            h.label,
+            scenes.len(),
+            report.frames,
+            report.occlusion_frames,
+            report.points,
+            report.masked_points,
+            report.holes,
+            report.doubles,
+            report.masked_drawn,
+            report.threshold_cases,
+            start.elapsed().as_secs_f32(),
+        );
+        for (scene, stats) in scenes.iter().zip(&report.scenes) {
+            println!(
+                "#   {}: eye inside a cell in {} poses, up to {} depths of a node drawn at once, {} drawn cells with an ancestor 2+ levels up, drawn per (node, depth) {:?}",
+                scene.name, stats.eye_inside, stats.max_depths, stats.far_ancestor, stats.drawn
+            );
+        }
+        assert!(
+            report.failures.is_empty(),
+            "{}: {} holes, {} doubles, {} masked points drawn:\n{}",
+            h.label,
+            report.holes,
+            report.doubles,
+            report.masked_drawn,
+            report.failures.join("\n")
+        );
+        for (scene, stats) in scenes.iter().zip(&report.scenes) {
+            let levels = scene.nodes.iter().map(|n| n.offsets.len()).max().unwrap();
+            if levels >= 2 {
+                assert!(
+                    stats.max_depths >= 2,
+                    "{}: never drew two depths of a node",
+                    scene.name
+                );
+            }
+            if scene.nodes.iter().any(|n| n.offsets.len() >= 3) {
+                assert!(
+                    stats.far_ancestor > 0,
+                    "{}: no ancestor 2+ levels up was decisive",
+                    scene.name
+                );
+            }
+        }
+        assert!(report.scenes.iter().map(|s| s.eye_inside).sum::<usize>() > 0);
+        assert!(report.threshold_cases > 0);
         true
     });
 }
