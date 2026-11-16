@@ -49,7 +49,7 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   bordes de banda y ojo dentro de una celda. Contadores de GPU (instancias por profundidad, celdas por encima del
   objetivo) leídos en `perf`; la señal «en reposo» pasa a un resumen del gemelo; se actualizan
   `probe-cells-parity`, `PROBES.md` y `REGIONAL_VOXEL_LOD.md`.
-- [ ] **2b. Residencia D4 y transiciones de un nivel ([ADR 0053](../adr/0053-transiciones-de-un-nivel.md), RF-31).** Conjunto de niveles por nodo contiguo entre el más grueso y el más fino dibujado (intermedios a demanda), un nivel por paso al acercarse y al alejarse, y medida de la cola bajo la separación (pendiente de revisión).
+- [ ] **2b. Residencia D4 y transiciones de un nivel ([ADR 0053](../adr/0053-transiciones-de-un-nivel.md), RF-31).** Conjunto de niveles por nodo contiguo entre el más grueso y el más fino dibujado (intermedios a demanda), como mucho un nivel por frame al acercarse y al alejarse, evaluar la derivación de niveles gruesos desde los hijos residentes (sin releer bloques), y medida de la cola bajo la separación (pendiente de revisión).
 - [ ] **2c. Activar `cell` por defecto tras medir.** Comprobación según el ADR 0050: Playwright acercándose a la
   muestra (bandas), y ningún octante **ni nodo** cambia entero en un frame, medido con una diferencia de frames
   cuando entra un nodo hijo, y ninguna celda cambia más de un nivel entre frames ni difiere en más de uno de sus vecinas (ADR 0053); si la máscara por nodo no lo permite, abrir una pregunta antes de seguir.
