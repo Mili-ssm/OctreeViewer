@@ -615,13 +615,11 @@ fn synthetic_dolly_in(mode: LodMode) {
 }
 
 #[test]
-#[ignore = "closest-resident jump (10→7) until phase 2b Task 3, ADR 0053"]
 fn sim_synthetic_dolly_reaches_the_in_process_digest() {
     synthetic_dolly_in(LodMode::Octant);
 }
 
 #[test]
-#[ignore = "closest-resident jump (10→7) until phase 2b Task 3, ADR 0053"]
 fn sim_synthetic_dolly_reaches_the_in_process_digest_in_cell_mode() {
     synthetic_dolly_in(LodMode::Cell);
 }

@@ -122,6 +122,9 @@ pub struct CellCutEntry {
     pub drawn: [Option<u8>; 8],
     /// `drawn` is coarser than `wanted`, per octant (R3-Q3).
     pub stage: [bool; 8],
+    /// The depth each octant waits for to take its next step towards `wanted` (ADR 0053): the
+    /// adjacent depth, drawn once resident. `None` when the octant is not stepping.
+    pub step: [Option<u8>; 8],
     /// Cell mode only: the depths `(lo, hi)` the node spans on screen, `lo <= hi`. `hi` is the
     /// finest near depth of its octants wholly in front of the eye plane, `lo` the depth wanted at its corner
     /// farthest along the view (ADR 0054 rule). `None` in octant mode, for a node with no
@@ -507,43 +510,121 @@ pub fn resident_depth(wanted: u8, resident: &[u8]) -> Option<(u8, bool)> {
         .map(|depth| (depth, depth < wanted))
 }
 
-/// `(drawn, stage)` of a node from its `wanted` depths and `resident` levels, as `cell_cut`
+/// `drawn`, `stage` and `step` per octant (see `CellCutEntry`).
+pub(crate) type DrawnLevels = ([Option<u8>; 8], [bool; 8], [Option<u8>; 8]);
+
+/// Frames an octant waits for its adjacent depth before it gives up stepping (ADR 0053): about
+/// 0.5 s at 60 fps. The ADR allows a longer total latency, but never a view stuck behind a
+/// depth that does not arrive (refused, over the CPU budget or build cap, or evicted).
+pub const STEP_WAIT_FRAMES: u32 = 30;
+
+/// The stepping rule (ADR 0053): `(draw, next)` for one octant that drew `prev` in the last
+/// applied cut and now wants the stored depth `w`. A `prev` that is absent or no longer resident
+/// draws the resident level closest to `w` (R3-Q21). Otherwise the octant moves at most one level
+/// towards `w` and never past it: `next` is the adjacent servable depth in that direction (depths
+/// that are neither resident nor buildable are skipped; `w` when none is servable), drawn once
+/// resident; until then `prev` keeps drawing. `next` is `None` when nothing is pending.
+/// `buildable` is the depth range the node can serve. `timed_out`: the adjacent depth did not
+/// arrive in `STEP_WAIT_FRAMES`, so the octant draws the resident level of the interval between
+/// `prev` and `w` closest to `w` (the finer on a tie).
+pub(crate) fn stepped_depth(
+    prev: Option<u8>,
+    w: u8,
+    buildable: (u8, u8),
+    resident: &[u8],
+    timed_out: bool,
+) -> Option<(u8, Option<u8>)> {
+    let servable = |d: u8| resident.contains(&d) || (buildable.0..=buildable.1).contains(&d);
+    // The adjacent servable depth from `from` towards `w` (`w` itself when none is).
+    let adjacent = |from: u8| {
+        if w > from {
+            (from + 1..=w).find(|d| servable(*d))
+        } else {
+            (w..from).rev().find(|d| servable(*d))
+        }
+        .unwrap_or(w)
+    };
+    let Some(prev) = prev.filter(|prev| resident.contains(prev)) else {
+        let (depth, _) = resident_depth(w, resident)?;
+        return Some((depth, (depth != w).then(|| adjacent(depth))));
+    };
+    if w == prev {
+        return Some((prev, None));
+    }
+    if timed_out {
+        let (lo, hi) = (prev.min(w), prev.max(w));
+        let closest = resident
+            .iter()
+            .copied()
+            .filter(|d| (lo..=hi).contains(d))
+            .min_by_key(|d| (d.abs_diff(w), std::cmp::Reverse(*d)))
+            .unwrap_or(prev);
+        return Some((closest, None));
+    }
+    let next = adjacent(prev);
+    let draw = if resident.contains(&next) { next } else { prev };
+    // Pending while the octant has not reached `w`: the depth it takes after `draw`.
+    Some((draw, (draw != w).then(|| adjacent(draw))))
+}
+
+/// `(drawn, stage, step)` of a node, `DrawnLevels`, from its `wanted` depths and `resident` levels, as `cell_cut`
 /// decides them; `node_depth` is the depth whose levels span octants. A wanted depth that is not
 /// `stored` is drawn from the level `served_depth` picks, and it is a stage while that level is
-/// coarser than the wanted depth itself.
+/// coarser than the wanted depth itself. `prev` is what each octant drew in the last applied cut:
+/// an octant steps one level at a time towards its wanted depth (`stepped_depth`); `step` is the
+/// depth it waits for to take the next step.
 pub(crate) fn drawn_levels(
     wanted: &[Option<u8>; 8],
     stored: &[u8],
+    buildable: (u8, u8),
     resident: &[u8],
+    prev: &PrevState,
     node_depth: u8,
     mode: LodMode,
-) -> ([Option<u8>; 8], [bool; 8]) {
+) -> DrawnLevels {
     let mut drawn = [None; 8];
     let mut stage = [false; 8];
+    let mut step = [None; 8];
     if mode == LodMode::Cell {
         // No level below the node or beyond its span can draw, and no depth is forced on the
         // others: the node draws the closest resident level of each octant.
         let stored = in_cell_range(stored, node_depth);
         let resident = in_cell_range(resident, node_depth);
         if stored.is_empty() {
-            return (drawn, stage);
+            return (drawn, stage, step);
         }
+        let (lo, hi) = cell_depth_range(node_depth);
+        let buildable = (buildable.0.max(lo), buildable.1.min(hi));
         for o in 0..8 {
             if let Some(w) = wanted[o]
-                && let Some((depth, _)) = resident_depth(served_depth(&stored, w), &resident)
+                && let Some((depth, next)) = stepped_depth(
+                    prev.drawn[o],
+                    served_depth(&stored, w),
+                    buildable,
+                    &resident,
+                    prev.timed_out[o],
+                )
             {
                 drawn[o] = Some(depth);
                 stage[o] = depth < w;
+                step[o] = next;
             }
         }
-        return (drawn, stage);
+        return (drawn, stage, step);
     }
     for o in 0..8 {
         if let Some(w) = wanted[o]
-            && let Some((depth, _)) = resident_depth(served_depth(stored, w), resident)
+            && let Some((depth, next)) = stepped_depth(
+                prev.drawn[o],
+                served_depth(stored, w),
+                buildable,
+                resident,
+                prev.timed_out[o],
+            )
         {
             drawn[o] = Some(depth);
             stage[o] = depth < w;
+            step[o] = next;
         }
     }
     // A spanning level is drawn whole, so it must be the only level the node draws:
@@ -557,7 +638,7 @@ pub(crate) fn drawn_levels(
             }
         }
     }
-    (drawn, stage)
+    (drawn, stage, step)
 }
 
 struct Placed {
@@ -599,14 +680,25 @@ pub(crate) fn cell_cut_with(
     mode: LodMode,
     wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
 ) -> Result<Vec<CellCutEntry>, CellCutError> {
-    cell_cut_ranged(cut, node, grid, mode, wanted_depth, None)
+    cell_cut_ranged(cut, node, grid, mode, wanted_depth, None, None)
 }
 
 /// `(far, front)` of a node, as `node_far_depth` returns them.
 pub(crate) type FarDepth<'a> = dyn Fn(NodeId, &CellCutNode) -> (u8, u8) + 'a;
 
+/// What each octant of a node drew in the last applied cut (the stepping rule's `prev`).
+pub(crate) type PrevDrawn<'a> = dyn Fn(NodeId) -> PrevState + 'a;
+
+/// What an octant drew in the last applied cut and whether its step timed out.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct PrevState {
+    pub drawn: [Option<u8>; 8],
+    pub timed_out: [bool; 8],
+}
+
 /// `cell_cut_with` that also fills `CellCutEntry::range` in cell mode from `far(node, data)` =
-/// `(far, front)` as `node_far_depth` returns them (`None`: no range).
+/// `(far, front)` as `node_far_depth` returns them (`None`: no range), and steps each octant from
+/// `prev(node)` (`None`: every octant draws its closest resident level).
 pub(crate) fn cell_cut_ranged(
     cut: &[NodeId],
     node: &dyn Fn(NodeId) -> Option<CellCutNode>,
@@ -614,6 +706,7 @@ pub(crate) fn cell_cut_ranged(
     mode: LodMode,
     wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
     far: Option<&FarDepth<'_>>,
+    prev: Option<&PrevDrawn<'_>>,
 ) -> Result<Vec<CellCutEntry>, CellCutError> {
     let mut entries = Vec::with_capacity(cut.len());
     let mut nodes = Vec::with_capacity(cut.len());
@@ -629,6 +722,7 @@ pub(crate) fn cell_cut_ranged(
             wanted: [None; 8],
             drawn: [None; 8],
             stage: [false; 8],
+            step: [None; 8],
             range: None,
             mask: [0; 8],
         });
@@ -743,10 +837,12 @@ pub(crate) fn cell_cut_ranged(
             let drawn_any = entry.wanted.iter().any(Option::is_some);
             entry.range = drawn_any.then_some((far.min(hi_wanted), hi_wanted));
         }
-        (entry.drawn, entry.stage) = drawn_levels(
+        (entry.drawn, entry.stage, entry.step) = drawn_levels(
             &entry.wanted,
             &data.stored,
+            data.buildable,
             &data.resident,
+            &prev.map_or_else(PrevState::default, |prev| prev(entry.node)),
             node_depth,
             mode,
         );

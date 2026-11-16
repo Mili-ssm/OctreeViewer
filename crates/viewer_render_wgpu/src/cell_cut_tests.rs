@@ -558,6 +558,7 @@ fn digest_tells_a_hidden_octant_from_depth_zero() {
         wanted: [wanted; 8],
         drawn: [wanted; 8],
         stage: [false; 8],
+        step: [None; 8],
         range: None,
         mask: [0; 8],
     };
@@ -1503,6 +1504,7 @@ fn ranged_entry(
             octant_wanted_depth(view, grid, [0.0; 3], bounds, octant, data.buildable, target)
         },
         Some(&|_, data| node_far_depth(view, grid, [0.0; 3], bounds, data.buildable, target, None)),
+        None,
     )
     .unwrap()
     .remove(0)
@@ -1599,6 +1601,7 @@ fn an_octant_behind_the_eye_does_not_widen_the_range() {
             LodMode::Cell,
             &|_, octant, _| if octant < 4 { 12 } else { 5 },
             Some(&|_, _| (4, front)),
+            None,
         )
         .unwrap()[0]
             .range
@@ -1622,4 +1625,132 @@ fn octant_mode_entries_have_no_range() {
     )
     .unwrap();
     assert!(entries.iter().all(|entry| entry.range.is_none()));
+}
+
+/// One octant drawing `prev` that wants `w`, over `stored` buildable in `3..=12`.
+fn step_one(
+    prev: Option<u8>,
+    w: u8,
+    stored: &[u8],
+    resident: &[u8],
+    mode: LodMode,
+) -> (Option<u8>, Option<u8>) {
+    let (drawn, _, step) = drawn_levels(
+        &[Some(w); 8],
+        stored,
+        (3, 12),
+        resident,
+        &PrevState {
+            drawn: [prev; 8],
+            timed_out: [false; 8],
+        },
+        // Octant mode: a node depth that spans nothing here.
+        0,
+        mode,
+    );
+    (drawn[0], step[0])
+}
+
+#[test]
+fn stepping_never_jumps_past_the_wanted_depth() {
+    let stored = [7, 8, 9, 10];
+    // Drew 10, now wants 8: only {7, 10} resident keeps 10 and waits for 9.
+    assert_eq!(
+        step_one(Some(10), 8, &stored, &[7, 10], LodMode::Octant),
+        (Some(10), Some(9))
+    );
+    assert_eq!(
+        step_one(Some(10), 8, &stored, &[7, 9, 10], LodMode::Octant),
+        (Some(9), Some(8))
+    );
+    // Then 9 -> 8 once 8 is resident, and it stops there.
+    assert_eq!(
+        step_one(Some(9), 8, &stored, &[7, 8, 9, 10], LodMode::Octant),
+        (Some(8), None)
+    );
+    assert_eq!(
+        step_one(Some(8), 8, &stored, &[7, 8, 9, 10], LodMode::Octant),
+        (Some(8), None)
+    );
+}
+
+#[test]
+fn stepping_refines_one_level_per_frame() {
+    let stored = [3, 4, 5, 6, 7];
+    let resident = [3, 4, 5, 6, 7];
+    assert_eq!(
+        step_one(Some(3), 7, &stored, &resident, LodMode::Octant),
+        (Some(4), Some(5))
+    );
+    assert_eq!(
+        step_one(Some(4), 7, &stored, &resident, LodMode::Octant),
+        (Some(5), Some(6))
+    );
+    // The adjacent level is not resident yet: keep drawing, and ask for it.
+    assert_eq!(
+        step_one(Some(3), 7, &stored, &[3, 5, 7], LodMode::Octant),
+        (Some(3), Some(4))
+    );
+    // A chain pruned to {3, 7} whose depths in between are buildable asks for the adjacent one.
+    assert_eq!(
+        step_one(Some(3), 7, &[3, 7], &[3, 7], LodMode::Octant),
+        (Some(3), Some(4))
+    );
+}
+
+#[test]
+fn a_first_draw_uses_the_closest_resident() {
+    let stored = [7, 8, 9, 10];
+    assert_eq!(
+        step_one(None, 8, &stored, &[7, 10], LodMode::Octant),
+        (Some(7), Some(8))
+    );
+    // A previous depth that is no longer resident counts as no previous.
+    assert_eq!(
+        step_one(Some(9), 8, &stored, &[7, 10], LodMode::Octant),
+        (Some(7), Some(8))
+    );
+}
+
+#[test]
+fn cell_mode_keeps_the_stepped_depth_active() {
+    // A cell-mode node of depth 7 (span 7..=10) that drew 10 in every octant and wants 8: it keeps
+    // drawing 10 while 9 is missing, and the step it waits for is reported.
+    let (drawn, _, step) = drawn_levels(
+        &[Some(8); 8],
+        &[7, 8, 9, 10],
+        (7, 10),
+        &[7, 10],
+        &PrevState {
+            drawn: [Some(10); 8],
+            timed_out: [false; 8],
+        },
+        7,
+        LodMode::Cell,
+    );
+    assert_eq!(drawn, [Some(10); 8]);
+    assert_eq!(step, [Some(9); 8]);
+}
+
+#[test]
+fn stepping_skips_unservable_depths_and_times_out() {
+    // 8 and 9 are neither resident nor buildable: the step from 10 towards 7 waits for 7 itself.
+    assert_eq!(
+        stepped_depth(Some(10), 7, (3, 6), &[10], false),
+        Some((10, Some(7)))
+    );
+    // Timed out: the closest resident of 7..=10 to the wanted depth, never past it.
+    assert_eq!(
+        stepped_depth(Some(10), 8, (3, 12), &[6, 9, 10], true),
+        Some((9, None))
+    );
+    assert_eq!(
+        stepped_depth(Some(6), 8, (3, 12), &[6, 9, 10], true),
+        Some((6, None))
+    );
+    // A tie draws the finer depth.
+    assert_eq!(
+        stepped_depth(Some(10), 8, (3, 12), &[7, 9, 10], true),
+        Some((9, None))
+    );
 }

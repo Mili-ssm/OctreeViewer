@@ -1344,16 +1344,17 @@ fn an_arrived_level_is_offered_on_the_next_frame() {
     let before = fx.run(4, &cut, &cam, 1.0);
     let wanted = before.plan.entries[0].wanted[0].expect("wanted");
     assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, wanted)]));
+    // The node steps one level at a time (ADR 0053): it needs the levels in between too.
+    let steps: Vec<u8> = (5..=wanted).collect();
     assert_eq!(before.plan.entries[0].drawn[0], Some(4));
     assert!(before.plan.entries[0].stage[0]);
     assert_eq!(
-        fx.driver
-            .add_packed_levels(g0, on_demand_node(&[wanted], 0)),
-        Ok(LevelsAdded::Added(1))
+        fx.driver.add_packed_levels(g0, on_demand_node(&steps, 0)),
+        Ok(LevelsAdded::Added(steps.len()))
     );
     let mut offered = false;
     let mut last = before;
-    for _ in 0..4 {
+    for _ in 0..12 {
         last = fx.step(&cut, &cam, 1.0);
         offered |= last
             .plan
@@ -1377,9 +1378,9 @@ fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours
     let id = NodeId::new(2);
     let wanted = fx.run(4, &cut, &cam, 1.0).plan.entries[0].wanted[0].expect("wanted");
     fx.driver
-        .add_packed_levels(g0, on_demand_node(&[wanted], 0))
+        .add_packed_levels(g0, on_demand_node(&(5..=wanted).collect::<Vec<u8>>(), 0))
         .unwrap();
-    fx.run(6, &cut, &cam, 1.0);
+    fx.run(12, &cut, &cam, 1.0);
     let key = fx.driver.pool.key(id, wanted);
     assert!(fx.driver.pool.is_resident(key));
     let _ = fx.driver.take_level_requests();
@@ -1391,9 +1392,9 @@ fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours
     fx.run(2, &cut, &cam, 1.0);
     assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, wanted)]));
     fx.driver
-        .add_packed_levels(g1, on_demand_node(&[wanted], 9))
+        .add_packed_levels(g1, on_demand_node(&(5..=wanted).collect::<Vec<u8>>(), 9))
         .unwrap();
-    fx.run(6, &cut, &cam, 1.0);
+    fx.run(12, &cut, &cam, 1.0);
     let colour = fx
         .driver
         .pool

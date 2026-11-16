@@ -1078,7 +1078,12 @@ impl CellDriver {
             || plan.apply == CutApply::RetainedPrevious
             // Nodes waiting outside the cut or held back (R3-Q20/Q21) enter on a later frame.
             || plan.counters.excluded_nodes > 0
-            || plan.counters.held_nodes > 0;
+            || plan.counters.held_nodes > 0
+            // An octant still stepping towards its wanted depth moves on the next frame (ADR 0053).
+            || plan
+                .entries
+                .iter()
+                .any(|entry| entry.step.iter().any(Option::is_some));
         self.level_requests = plan
             .level_requests
             .iter()

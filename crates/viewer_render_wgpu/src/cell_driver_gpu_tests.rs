@@ -402,9 +402,19 @@ fn the_driver_in_cell_mode_partitions_the_view() {
             root_side: 1.0,
         };
         let mut rng = Rng(0xd2_1ee);
+        // Contiguous depths: a node steps one level at a time (ADR 0053) and nothing here builds
+        // the levels in between on demand.
         let scene = [
-            LodNodeScene::random(&mut rng, unit, 1, [0, 1, 0], &[0, 2, 4, 6], 0, 1200),
-            LodNodeScene::random(&mut rng, unit, 1, [1, 0, 0], &[1, 3, 5], 0, 500),
+            LodNodeScene::random(
+                &mut rng,
+                unit,
+                1,
+                [0, 1, 0],
+                &[0, 1, 2, 3, 4, 5, 6],
+                0,
+                1200,
+            ),
+            LodNodeScene::random(&mut rng, unit, 1, [1, 0, 0], &[1, 2, 3, 4, 5], 0, 500),
         ];
         let mut driver = CellDriver::new(DriverConfig {
             pool: PoolConfig {
@@ -529,9 +539,9 @@ fn the_driver_in_cell_mode_partitions_a_parent_and_its_children() {
         // Children are dense over their footprint (60000 points over at most 16^3 cells), so a
         // parent cell hidden under a child is always covered by a drawn child cell.
         let scene = [
-            LodNodeScene::random(&mut rng, unit, 1, [0, 0, 0], &[0, 2, 3, 5], 0, 1500),
-            LodNodeScene::random(&mut rng, unit, 2, [0, 0, 0], &[1, 2, 4], 0, 60_000),
-            LodNodeScene::random(&mut rng, unit, 2, [1, 1, 1], &[1, 2, 4], 0, 60_000),
+            LodNodeScene::random(&mut rng, unit, 1, [0, 0, 0], &[0, 1, 2, 3, 4, 5], 0, 1500),
+            LodNodeScene::random(&mut rng, unit, 2, [0, 0, 0], &[1, 2, 3, 4], 0, 60_000),
+            LodNodeScene::random(&mut rng, unit, 2, [1, 1, 1], &[1, 2, 3, 4], 0, 60_000),
         ];
         let mut driver = CellDriver::new(DriverConfig {
             pool: PoolConfig {

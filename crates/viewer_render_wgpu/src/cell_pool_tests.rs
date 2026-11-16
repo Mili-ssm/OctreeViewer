@@ -169,7 +169,7 @@ fn levels_become_active_only_with_all_pages_and_uploads_span_frames() {
     let mut first_complete = None;
     let mut max_stages = 0;
     let mut last = None;
-    for frame in 0..80 {
+    for frame in 0..200 {
         let plan = rig.step(&cut, &cam, 4.0);
         if frame == 0 {
             assert_eq!(
@@ -220,7 +220,7 @@ fn uploads_give_every_node_its_first_level_before_refining_and_go_nearest_first(
     let cut = ids(&CHILDREN);
     let cam = camera("zoom");
     let mut started: Vec<(u64, u8)> = Vec::new();
-    for _ in 0..60 {
+    for _ in 0..200 {
         for upload in rig.step(&cut, &cam, 4.0).uploads {
             if upload.page_range.start == 0 {
                 started.push((upload.key.node.get(), upload.key.depth));
@@ -231,6 +231,9 @@ fn uploads_give_every_node_its_first_level_before_refining_and_go_nearest_first(
     let expected: Vec<(u64, u8)> = near
         .iter()
         .map(|id| (*id, 4))
+        // One level at a time (ADR 0053): each intermediate depth is a step, nearest first.
+        .chain(near.iter().map(|id| (*id, 5)))
+        .chain(near.iter().map(|id| (*id, 6)))
         .chain(near.iter().map(|id| (*id, 7)))
         .collect();
     assert_ne!(
@@ -387,18 +390,28 @@ fn regraft_mid_cut_keeps_coverage() {
 
 #[test]
 fn slots_of_an_evicted_level_return_two_frames_after_it_last_drew() {
-    // Node 2 at 4 px: depth 7 (4 pages) + depth 4 (1 page) in 8 pages; reuse needs the delay.
-    let mut rig = Rig::new(octant_nodes(), 8, 8, 0);
+    // Node 2 at 4 px: depth 7 (4 pages) + depth 4 (1 page); reuse needs the delay.
+    // Stepping down from 7 also needs the pages of the levels in between (ADR 0053), so the pool
+    // has room for them.
+    let mut rig = Rig::new(octant_nodes(), 16, 16, 0);
     let cut = ids(&[2]);
     let cam = camera("zoom");
-    let plan = rig.run(8, &cut, &cam, 4.0);
+    let plan = rig.run(24, &cut, &cam, 4.0);
     assert_eq!(plan.counters.nodes_without_level, 0);
     let key = rig.pool.key(NodeId::new(2), 7);
     assert!(plan.active.iter().any(|a| a.key == key));
     let slots: Vec<u32> = (0..4).map(|p| rig.gpu.slot_of[&(key, p)]).collect();
-    // The level draws until frame `last`; far away it is unused and may go.
-    let last = rig.frame;
-    rig.step(&cut, &cam, 64.0);
+    // The level draws until frame `last`; far away the node steps down one level per frame
+    // (ADR 0053) and then the level is unused and may go.
+    let mut last = rig.frame;
+    for _ in 0..8 {
+        let plan = rig.step(&cut, &cam, 64.0);
+        if plan.active.iter().any(|a| a.key == key) {
+            last = rig.frame;
+        } else {
+            break;
+        }
+    }
     assert!(rig.pool.evict(key));
     // Pages return two frames after the last draw, not before, and they are not rewritten sooner.
     let mut freed_at = None;
@@ -828,7 +841,7 @@ fn a_steady_frame_calls_cell_cut_at_most_once_and_changes_invalidate_the_reuse()
     let mut rig = Rig::new(octant_nodes(), 256, 64, 0);
     let cut = ids(&CHILDREN);
     let zoom = camera("zoom");
-    rig.run(12, &cut, &zoom, 4.0);
+    rig.run(40, &cut, &zoom, 4.0);
     let steady = rig.step(&cut, &zoom, 4.0);
     assert!(steady.counters.cut_evaluations <= 1);
     assert!(steady.counters.wanted_reused && steady.counters.real_reused);
@@ -844,7 +857,7 @@ fn a_steady_frame_calls_cell_cut_at_most_once_and_changes_invalidate_the_reuse()
 
     // Residency changes redo the real cut (here also the wanted one: an evicted level is back to
     // its estimated size).
-    rig.run(8, &cut[..7], &zoom, 64.0);
+    rig.run(16, &cut[..7], &zoom, 64.0);
     let key = rig.pool.key(NodeId::new(2), 7);
     assert!(rig.pool.evict(key));
     let plan = rig.step(&cut[..7], &zoom, 64.0);
@@ -853,7 +866,7 @@ fn a_steady_frame_calls_cell_cut_at_most_once_and_changes_invalidate_the_reuse()
     // A camera that stops is exact: it refreshes once, then everything is reused again.
     let moved = camera("fit");
     rig.step(&cut[..7], &moved, 64.0);
-    let still = rig.run(3, &cut[..7], &moved, 64.0);
+    let still = rig.run(16, &cut[..7], &moved, 64.0);
     assert!(still.counters.wanted_reused && still.counters.real_reused);
     assert!(still.counters.cut_evaluations <= 1);
 }
@@ -1639,8 +1652,8 @@ fn resident_levels(rig: &Rig) -> HashMap<NodeId, Vec<u8>> {
 
 /// Depth the plan really draws at `point`: the unhidden octant of an entry that has a resident
 /// level in `active` there (geometry computed here). `resident` is `resident_levels` taken
-/// before the step: each drawn depth is checked against it and `resident_depth`, and no point may
-/// be drawn by two entries.
+/// before the step: each drawn depth must be one of them, and no point may be drawn by two
+/// entries.
 fn drawn_at(
     plan: &FramePlan,
     nodes: &HashMap<NodeId, PoolNode>,
@@ -1662,10 +1675,10 @@ fn drawn_at(
                 .then(|| entry.drawn[octant])
                 .flatten()
                 .inspect(|depth| {
-                    let wanted = entry.wanted[octant].expect("a drawn octant is wanted");
-                    assert_eq!(
-                        crate::resident_depth(wanted, &resident[&entry.node]).map(|(d, _)| d),
-                        Some(*depth),
+                    // The octant may be stepping (ADR 0053): it draws a resident level, and the
+                    // stepping rule has its own tests.
+                    assert!(
+                        resident[&entry.node].contains(depth),
                         "node {:?} octant {octant}",
                         entry.node
                     );
@@ -2186,8 +2199,7 @@ fn observe(rig: &mut Rig, cut: &[NodeId], camera: &OrbitCamera, target: f64) -> 
 
 /// `(drawn, wanted)` depth of the entry that really draws `point` (not masked, octant in
 /// `active`); the geometry is computed here from the bounds. The drawn depth must be the one
-/// `resident_depth` gives for the wanted one over the levels that were resident, and no point may
-/// be drawn by two entries.
+/// level that was resident, and no point may be drawn by two entries.
 fn drawn_and_wanted_at(
     plan: &FramePlan,
     nodes: &HashMap<NodeId, PoolNode>,
@@ -2210,9 +2222,10 @@ fn drawn_and_wanted_at(
                 .flatten()
                 .inspect(|(drawn, wanted)| {
                     let levels = capped(&seen.resident[&entry.node], seen.caps.get(&entry.node));
-                    assert_eq!(
-                        crate::resident_depth(*wanted, &levels).map(|(d, _)| d),
-                        Some(*drawn),
+                    // The octant may be stepping (ADR 0053): it draws a resident level.
+                    let _ = wanted;
+                    assert!(
+                        levels.contains(drawn),
                         "node {:?} octant {octant}",
                         entry.node
                     );
@@ -2705,6 +2718,7 @@ fn drawing(node: u64, octants: &[usize]) -> CellCutEntry {
         wanted: [Some(7); 8],
         drawn: std::array::from_fn(|o| octants.contains(&o).then_some(7)),
         stage: [false; 8],
+        step: [None; 8],
         range: None,
         mask: [0; 8],
     }
@@ -3689,12 +3703,18 @@ fn cell_mode_fetches_stored_depths_across_the_range() {
     let wanted = plan.entries[0].required_levels();
     let fetched: Vec<u8> = plan.fetch_requests.iter().map(|key| key.depth).collect();
     for depth in (lo..=hi).filter(|d| *d != 2) {
-        assert!(fetched.contains(&depth), "depth {depth} of {lo}..{hi}: {fetched:?}");
+        assert!(
+            fetched.contains(&depth),
+            "depth {depth} of {lo}..{hi}: {fetched:?}"
+        );
     }
     assert!(
         (lo..=hi).any(|d| !wanted.contains(&d)),
         "the range reaches depths no octant wants: {lo}..{hi} vs {wanted:?}"
     );
     // Coarse to fine.
-    assert!(fetched.windows(2).all(|pair| pair[0] <= pair[1]), "{fetched:?}");
+    assert!(
+        fetched.windows(2).all(|pair| pair[0] <= pair[1]),
+        "{fetched:?}"
+    );
 }
