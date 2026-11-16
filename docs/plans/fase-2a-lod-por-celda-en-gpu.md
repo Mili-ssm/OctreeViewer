@@ -132,11 +132,11 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Consumes: `cell_lod::drawn_depth_at` (Task 1), `LodMode` (Task 3).
 - Produces: in cell mode the oracle samples a 7³ lattice over the *whole cut* (all nodes, so overlap between nodes is visible) and gets each sample's drawn depth from the twin over the plan's active sets and masks. Gates: no sample drawn twice, no hole outside lost zones, R3-Q21 per sample with `wanted` = the twin's per-cell wanted depth (first depth of the node span whose cell at the sample does not refine, capped by the buildable range) (`now ≥ min(before, wanted)`, existing excuses for counted stages), `staged_coarsenings == 0` unexcused. Depths the bound wants but the cut does not activate are a reported counter, not a failure. Octant mode keeps its oracle.
 
-- [ ] **Step 1: Write the failing tests:** the existing streaming scenarios and the 18 seeded sims parametrised by mode; `cell_mode_bands_follow_the_distance` (straight zoom over a flat node: the drawn depth does not increase with sample distance within a node).
-- [ ] **Step 2:** `cargo test -p viewer_wasm --profile fast --offline --lib lod_cells` → FAIL.
-- [ ] **Step 3:** implement; a real violation is a defect of Tasks 1–3: stop and report it, never excuse it in the oracle.
-- [ ] **Step 4:** same → PASS in both modes.
-- [ ] **Step 5:** commit `test(wasm): run the streaming simulations in cell mode`.
+- [x] **Step 1: Write the failing tests:** the existing streaming scenarios and the 18 seeded sims parametrised by mode; `cell_mode_bands_follow_the_distance` (straight zoom over a flat node: the drawn depth does not increase with sample distance within a node).
+- [x] **Step 2:** `cargo test -p viewer_wasm --profile fast --offline --lib lod_cells` → FAIL.
+- [x] **Step 3:** implement; a real violation is a defect of Tasks 1–3: stop and report it, never excuse it in the oracle.
+- [x] **Step 4:** same → PASS in both modes.
+- [x] **Step 5:** commit `test(wasm): run the streaming simulations in cell mode`.
 
 ### Task 5: Page entry and frame uniform layout (no behaviour change)
 
@@ -205,7 +205,7 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 
 **Interfaces:**
 - Consumes: Tasks 3, 5–7.
-- Produces: `CellDriver::set_lod_mode(&mut self, mode: LodMode)` (forwards to the pool, marks page table and records dirty).
+- Produces: `CellDriver::set_lod_mode` already exists (forwards to the pool, e13e54b); this task makes a mode switch rewrite every node record, and derives each record's `active` bits from the `ActiveLevel`s emitted that frame (retained frames rebuild the active list but send no `MaskUpdate`, so the two can drift).
 
 - [ ] **Step 1: Write the failing tests:** `driver_in_cell_mode_writes_records_and_uniform`; `pick_in_cell_mode_hits_the_drawn_cell` (GPU, against the twin).
 - [ ] **Step 2:** `--lib cell_driver`, `--lib cell_pick` → FAIL.
