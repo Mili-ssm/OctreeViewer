@@ -62,6 +62,10 @@ struct StrictTarget {
     uploads_total: usize,
     /// Hash of the cells each slot holds (colours included), to tell recoloured pages apart.
     page_cells: HashMap<u32, u64>,
+    /// Node records and page tables written, and the last LOD view the driver passed.
+    records_written: usize,
+    tables_written: usize,
+    lod_view: Option<LodView>,
 }
 
 impl CellTarget for StrictTarget {
@@ -155,9 +159,13 @@ impl CellTarget for StrictTarget {
         if slot >= self.next_mask {
             return Err(CellPoolError::MaskSlotNotAllocated(slot));
         }
+        self.records_written += 1;
         self.masks
             .insert(slot, record[..MASK_WORDS].try_into().unwrap());
         Ok(())
+    }
+    fn set_lod_view(&mut self, view: Option<LodView>) {
+        self.lod_view = view;
     }
     fn set_active_pages(
         &mut self,
@@ -189,6 +197,7 @@ impl CellTarget for StrictTarget {
         }
         self.frame_writes.clear();
         self.prev_active = current;
+        self.tables_written += 1;
         self.table = pages.to_vec();
         self.page_frame = Some(*frame);
         Ok(())

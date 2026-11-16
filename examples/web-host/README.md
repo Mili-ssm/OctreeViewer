@@ -231,7 +231,7 @@ viewer.on("pick", (hit) => console.log(hit?.position, hit?.voxelCenter));
 ```
 
 The API also provides `setMode("bird" | "observer")`, `setCamera(position, target)`, `fit()`,
-`pick(x, y)`, `getStats()`, `on(type, callback)`, and `dispose()`. `pick(x, y)` uses CSS pixels
+`pick(x, y)`, `getStats()`, `setCellLod("octant" | "cell")`, `on(type, callback)`, and `dispose()`. `pick(x, y)` uses CSS pixels
 relative to the canvas and resolves to `null` or `{ position, voxelCenter, voxelSize, distance,
 instanceIndex, sceneGeneration }`; observer clicks perform the same pick and move the orbit center.
 An instance index is valid only for its returned LOD scene generation. The GPU readback copies at
@@ -239,6 +239,9 @@ most 65,536 candidate instances per pick and returns an error if that safety cap
 Camera positions/targets returned as arrays by the API
 are in source dataset coordinates, with the file's coordinate origin and visual scale applied.
 `getCamera()` also returns the active mode, fixed Z-up vector, and bird movement speed.
+`setCellLod` picks the level selection of the cells path: `"octant"` (default) or `"cell"` (per cell); an
+unknown mode rejects and keeps the current one, and the choice survives "Recreate viewer". The demo reads
+`?cellLod=cell` from the page URL at start; it has no UI control.
 `renderedVoxels` reports submitted/current HZB-visible instances; it does not guarantee each voxel
 contributes a final pixel. Metadata reports bounds and coordinate origin; a CRS is not inferred when
 the file does not provide one. The canvas is transferred to a worker and cannot be reused after

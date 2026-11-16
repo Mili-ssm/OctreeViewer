@@ -513,6 +513,9 @@ function handleWorkerMessage(event) {
             });
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
+        // `?cellLod=cell|octant` picks the cells path's level selection (no UI control yet).
+        const cellLod = new URLSearchParams(location.search).get("cellLod");
+        if (cellLod !== null) worker.postMessage({ type: "setCellLod", mode: cellLod });
         requestFrameOnce();
         if (reopenAfterRecreate) {
             const { file, name, attributes } = reopenAfterRecreate;

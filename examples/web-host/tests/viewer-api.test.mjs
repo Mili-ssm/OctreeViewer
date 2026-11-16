@@ -215,6 +215,11 @@ test("embeddable API converts CSS pick coordinates and disposes its worker resou
         assert.equal(pickMessage.cssHeight, 360);
         await viewer.setMode("bird");
         assert.ok(FakeWorker.instance.messages.some((message) => message.operation === "birdView"));
+        await viewer.setCellLod("cell");
+        assert.ok(FakeWorker.instance.messages.some((message) => message.operation === "setCellLod" && message.mode === "cell"));
+        const posted = FakeWorker.instance.messages.length;
+        await assert.rejects(viewer.setCellLod("Cell"), /'octant' or 'cell'/);
+        assert.equal(FakeWorker.instance.messages.length, posted, "an unknown mode is not sent");
         FakeWorker.instance.holdApi = true;
         const pending = viewer.getStats();
         const loading = viewer.load(new Blob());

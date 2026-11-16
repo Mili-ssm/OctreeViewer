@@ -1675,3 +1675,14 @@ fn an_exempt_cut_request_is_retried_while_blocked() {
     assert_eq!(shipped_depths(&second).len(), 1);
     assert!(!dataset.has_pending_level_requests(true));
 }
+
+#[test]
+fn set_cell_lod_rejects_unknown_modes() {
+    use crate::cells_glue::parse_lod_mode;
+    use viewer_render_wgpu::LodMode;
+    assert_eq!(parse_lod_mode("octant"), Ok(LodMode::Octant));
+    assert_eq!(parse_lod_mode("cell"), Ok(LodMode::Cell));
+    for bad in ["", "Cell", "OCTANT", " cell", "cells", "per-cell"] {
+        assert!(parse_lod_mode(bad).is_err(), "{bad:?} was accepted");
+    }
+}

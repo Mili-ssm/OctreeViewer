@@ -58,6 +58,8 @@ let renderCanvas = null;
 let framebufferSize = [1, 1];
 let depthShadingOn = true;
 let continuitySetting = null;
+// "octant" | "cell" once the host chose one; re-applied to every viewer the worker creates.
+let cellLodSetting = null;
 let cellNodeBytes = 0;
 let builtOpened = null;
 let lastScene = null;
@@ -1306,6 +1308,15 @@ async function recoverFromDeviceLoss(loss) {
     return false;
 }
 
+// The viewer refuses an unknown mode and keeps its own, so the stored setting only changes after it
+// accepted the new one.
+function applyCellLod(mode) {
+    viewer.setCellLod(mode);
+    cellLodSetting = mode;
+    advanceSceneGeneration();
+    return mode;
+}
+
 // New adapter, device and surface on the same canvas, then the open dataset again without reading
 // the file anew: the build worker resends cells (driverReplaced) or the last scene is uploaded.
 async function recreateViewer(pose) {
@@ -1323,6 +1334,7 @@ async function recreateViewer(pose) {
     viewer.resize(framebufferSize[0], framebufferSize[1]);
     viewer.setDepthShading(depthShadingOn);
     if (continuitySetting) viewer.setContinuity(...continuitySetting);
+    if (cellLodSetting) viewer.setCellLod(cellLodSetting);
     viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
     advanceSceneGeneration();
     if (buildOptions && buildOpened && builtOpened) {
@@ -1451,6 +1463,9 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         setPxMode(data.mode);
                         value = pxStats();
                         break;
+                    case "setCellLod":
+                        value = applyCellLod(data.mode);
+                        break;
                     case "setGpuFrameTiming":
                         hostGpuTiming = Boolean(data.enabled);
                         viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
@@ -1525,6 +1540,9 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 continuitySetting = [Boolean(data.enabled), data.factor ?? undefined];
                 viewer.setContinuity(...continuitySetting);
                 advanceSceneGeneration();
+                break;
+            case "setCellLod":
+                applyCellLod(data.mode);
                 break;
             case "metrics":
                 if (data.reset) resetWorkerMetrics();
