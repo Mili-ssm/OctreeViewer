@@ -697,7 +697,9 @@ fn in_process_drawn_depths(max_level_builds: usize) -> (u8, usize, u64) {
             target.eye = view.camera().position();
             let step = CellStep {
                 view,
-                target_pixels: 2.0,
+                // 1 px: with the px target as a minimum (ADR 0054) the view must want a depth finer
+                // than the pruned chain holds, which 2 px no longer does in this scene.
+                target_pixels: 1.0,
                 config,
                 can_load_blocks: true,
             };
@@ -731,7 +733,6 @@ fn in_process_drawn_depths(max_level_builds: usize) -> (u8, usize, u64) {
 }
 
 #[test]
-#[ignore = "closest-resident jump (10→7) until phase 2b Task 3, ADR 0053"]
 fn update_cells_staged_serves_a_level_request() {
     // Without level builds a requested depth the nodes did not ship is never available: the cut
     // draws only what the chains hold.
@@ -1141,10 +1142,10 @@ fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
 /// the path the build worker uses (`levelsRefused`) for the deeper depths the viewer asks for;
 /// the coarsest buildable depth is real and the builder serves it.
 #[test]
-#[ignore = "closest-resident jump (10→7) until phase 2b Task 3, ADR 0053"]
 fn a_refused_depth_stops_being_wanted_and_the_view_settles() {
     let mut pair = Pair::with_harness(close_pair_leaf());
-    pair.target_px = 4.0;
+    // 2 px: with the px target as a minimum (ADR 0054) 4 px wants nothing past the first refusal.
+    pair.target_px = 2.0;
     let c = SIDE / 2.0;
     pair.view = synth_view([c + 4.0 * SIDE, c + 0.5 * SIDE, c + 1.0 * SIDE], [c; 3]);
     pair.target.eye = pair.view.camera().position();
