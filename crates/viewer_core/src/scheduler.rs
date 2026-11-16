@@ -192,7 +192,7 @@ impl BlockRequestScheduler {
         self.failed
             .retain(|block_id| desired_ids.contains(block_id));
         self.selected = desired_ids;
-        self.priorities = desired.clone();
+        self.priorities.clone_from(&desired);
         for (block_id, distance) in desired {
             if self.active_by_block.contains_key(&block_id)
                 || self.completed.contains(&block_id)
@@ -599,7 +599,7 @@ mod tests {
             scheduler.complete(ticket, Err(())).unwrap(),
             RequestCompletion::Failed
         );
-        assert!(scheduler.pending_blocks().is_empty());
+        assert_eq!(scheduler.pending_blocks(), [] as [BlockId; 0]);
         assert!(scheduler.retry(block_id));
         assert_eq!(scheduler.pending_blocks(), vec![block_id]);
     }

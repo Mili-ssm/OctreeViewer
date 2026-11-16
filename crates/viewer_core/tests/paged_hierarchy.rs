@@ -13,7 +13,7 @@ const MAX_LEVEL: u32 = 6;
 const PAGE_DEPTH: u32 = 2;
 
 fn level(id: u64) -> u32 {
-    63 - id.leading_zeros()
+    id.ilog2()
 }
 
 fn node(id: u64) -> SpatialNode {
@@ -96,7 +96,7 @@ fn unloaded_anchor_is_reported_and_not_resolution_limited() {
             .unwrap()
             .0,
     ] {
-        assert!(selection.resolution_limited().is_empty());
+        assert_eq!(selection.resolution_limited(), []);
         let mut anchors = selection.unloaded_anchors().to_vec();
         anchors.sort_unstable();
         assert_eq!(anchors, (4..8).map(NodeId::new).collect::<Vec<_>>());
@@ -108,7 +108,7 @@ fn true_leaves_stay_resolution_limited() {
     let selection = full()
         .select_lod(&frustum(), config(), refine_everything)
         .unwrap();
-    assert!(selection.unloaded_anchors().is_empty());
+    assert_eq!(selection.unloaded_anchors(), []);
     assert_eq!(selection.resolution_limited().len(), 64);
 }
 
@@ -134,7 +134,7 @@ fn fully_grown_hierarchy_selects_like_the_whole_one() {
         let expected = whole.select_lod(&frustum(), config(), project).unwrap();
         let actual = grown.select_lod(&frustum(), config(), project).unwrap();
         assert_eq!(actual, expected);
-        assert!(actual.unloaded_anchors().is_empty());
+        assert_eq!(actual.unloaded_anchors(), []);
     }
 }
 
@@ -259,7 +259,7 @@ fn random_load_and_evict_sequences_leave_no_orphans() {
                     "orphan {id:?}"
                 );
                 if hierarchy.is_unloaded(*id) {
-                    assert!(hierarchy.child_ids(*id).is_empty());
+                    assert_eq!(hierarchy.child_ids(*id), []);
                 }
             }
             for retained in planner.retained_nodes() {

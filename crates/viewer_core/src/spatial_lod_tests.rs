@@ -499,7 +499,7 @@ fn visible_frontier_scratch_clears_residue_and_reuses_capacity_in_order() {
     let frontier_capacity = frontier.capacity();
 
     hierarchy.visible_frontier_into([hierarchy.root], frustum, &mut pending, &mut frontier);
-    assert!(pending.is_empty());
+    assert_eq!(pending, [] as [NodeId; 0]);
     assert_eq!(frontier, expected);
     assert!(
         hierarchy
@@ -515,7 +515,7 @@ fn visible_frontier_scratch_clears_residue_and_reuses_capacity_in_order() {
     pending.extend([NodeId::new(50), NodeId::new(51)]);
     frontier.extend([NodeId::new(52), NodeId::new(53)]);
     hierarchy.visible_frontier_into([hierarchy.root], frustum, &mut pending, &mut frontier);
-    assert!(pending.is_empty());
+    assert_eq!(pending, [] as [NodeId; 0]);
     assert_eq!(frontier, expected);
     assert_eq!(frontier.capacity(), frontier_capacity);
     assert_eq!(pending.capacity(), pending_capacity);
@@ -618,7 +618,7 @@ fn reference_select_lod(
                     .iter()
                     .position(|selected_id| *selected_id == frontier[index])
                     .expect("frontier payload is selected");
-                selected.splice(selected_index + 1..selected_index + 1, replacement.clone());
+                selected.splice((selected_index + 1)..=selected_index, replacement.clone());
             }
         }
         frontier.splice(index..=index, replacement);

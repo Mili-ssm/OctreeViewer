@@ -50,7 +50,8 @@ fn uniform_subdivision_maps_points_and_bounds_consistently() {
         for index in 0..subdivision.cell_count() {
             let cell = subdivision.cell_bounds(index).unwrap();
             assert!(bounds.contains(&cell));
-            let center = std::array::from_fn(|axis| (cell.min()[axis] + cell.max()[axis]) / 2.0);
+            let center =
+                std::array::from_fn(|axis| f64::midpoint(cell.min()[axis], cell.max()[axis]));
             assert_eq!(subdivision.cell_index(center), index);
         }
         assert_eq!(
@@ -252,7 +253,7 @@ fn hierarchy_block_catalog_is_empty_when_no_node_references_blocks() {
         None,
     )
     .unwrap();
-    assert!(hierarchy.block_ids().is_empty());
+    assert_eq!(hierarchy.block_ids(), []);
     assert!(!hierarchy.references_block(BlockId::new(u64::MAX)));
 }
 
@@ -351,7 +352,7 @@ fn validates_attribute_schema_and_allows_payload_free_internal_nodes() {
     )
     .unwrap();
 
-    assert!(hierarchy.node(NodeId::new(1)).unwrap().blocks().is_empty());
+    assert_eq!(hierarchy.node(NodeId::new(1)).unwrap().blocks(), []);
     assert_eq!(hierarchy.attributes()[0].component_count(), 1);
 }
 

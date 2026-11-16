@@ -27,11 +27,11 @@ fn categorization_densifies_sparse_values_and_preserves_complete_tuple_bits() {
     .unwrap();
     assert_eq!(summary.record(0, 0), Some([3].as_slice()));
     let bits = [
-        0x7ff8000000000001_u64,
+        0x7ff8_0000_0000_0001_u64,
         0,
-        0x7ff8000000000002,
+        0x7ff8_0000_0000_0002,
         1 << 63,
-        0x7ff8000000000001,
+        0x7ff8_0000_0000_0001,
         0,
     ];
     let source = column(AttributeValues::F64(bits.map(f64::from_bits).to_vec()), 2);
@@ -260,15 +260,15 @@ fn empty_depth_zero_and_bad_alignment() {
         [VoxelCoord::new(0, 0, 0)],
     )
     .unwrap();
-    assert!(
+    assert_eq!(
         summarize_attribute(
             &index,
             &column(AttributeValues::U8(vec![1]), 1),
             Policy::Mean
         )
         .unwrap()
-        .levels()
-        .is_empty()
+        .levels(),
+        [] as [Vec<u8>; 0]
     );
     assert_eq!(
         summarize_colors(&index, &[]).unwrap_err(),

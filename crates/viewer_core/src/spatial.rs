@@ -678,9 +678,9 @@ impl SpatialHierarchy {
                 .push(node_id);
         }
 
-        let mut attribute_names = HashMap::with_capacity(attributes.len());
+        let mut attribute_names = HashSet::with_capacity(attributes.len());
         for attribute in &attributes {
-            if attribute_names.insert(attribute.name(), ()).is_some() {
+            if !attribute_names.insert(attribute.name()) {
                 return Err(SpatialError::DuplicateAttributeName(
                     attribute.name().to_owned(),
                 ));
@@ -777,7 +777,7 @@ impl SpatialHierarchy {
             .is_some_and(|node| node.children.is_empty())
     }
 
-    /// Structural children in stable NodeId order; empty for leaves or unknown IDs.
+    /// Structural children in stable `NodeId` order; empty for leaves or unknown IDs.
     /// Traversal is independent of storage block ordering and hierarchy semantics.
     pub fn child_ids(&self, id: NodeId) -> &[NodeId] {
         self.nodes
@@ -1115,7 +1115,7 @@ impl SpatialHierarchy {
                         .position(|selected_id| *selected_id == frontier[index])
                         .expect("frontier payload is selected");
                     selected.splice(
-                        selected_index + 1..selected_index + 1,
+                        (selected_index + 1)..=selected_index,
                         best_children.iter().copied(),
                     );
                 }

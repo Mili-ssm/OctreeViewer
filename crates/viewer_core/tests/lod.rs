@@ -69,8 +69,8 @@ fn refines_a_parent_atomically_when_the_full_child_cut_fits() {
     assert_eq!(selection.point_count(), 12);
     assert_eq!(selection.point_budget(), 22);
     assert_eq!(selection.max_error_pixels(), 0.5);
-    assert!(selection.budget_limited().is_empty());
-    assert!(selection.resolution_limited().is_empty());
+    assert_eq!(selection.budget_limited(), []);
+    assert_eq!(selection.resolution_limited(), []);
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn frustum_exclusion_consumes_no_budget_and_leaves_report_unsatisfied_error() {
     let empty = hierarchy
         .select_lod(&outside, LodSelectionConfig::new(0.0, 0).unwrap(), |_| 0.0)
         .unwrap();
-    assert!(empty.node_ids().is_empty());
+    assert_eq!(empty.node_ids(), []);
     assert_eq!(empty.point_count(), 0);
 
     let leaf = SpatialHierarchy::new(
@@ -337,7 +337,7 @@ fn equal_error_budget_tie_refines_the_smallest_sibling_id_for_both_semantics() {
                 assert_eq!(selection.point_count(), budget);
                 assert_eq!(selection.point_budget(), budget);
                 assert_eq!(selection.budget_limited(), [NodeId::new(20)]);
-                assert!(selection.resolution_limited().is_empty());
+                assert_eq!(selection.resolution_limited(), []);
                 assert_eq!(selection.max_error_pixels(), tied_error);
             }
         }

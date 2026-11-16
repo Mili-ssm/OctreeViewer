@@ -53,15 +53,15 @@ impl AttributeValues {
     /// Stored typed values remain unchanged.
     pub fn scalar_as_f64(&self, index: usize) -> Option<f64> {
         Some(match self {
-            Self::U8(v) => *v.get(index)? as f64,
-            Self::I8(v) => *v.get(index)? as f64,
-            Self::U16(v) => *v.get(index)? as f64,
-            Self::I16(v) => *v.get(index)? as f64,
-            Self::U32(v) => *v.get(index)? as f64,
-            Self::I32(v) => *v.get(index)? as f64,
+            Self::U8(v) => f64::from(*v.get(index)?),
+            Self::I8(v) => f64::from(*v.get(index)?),
+            Self::U16(v) => f64::from(*v.get(index)?),
+            Self::I16(v) => f64::from(*v.get(index)?),
+            Self::U32(v) => f64::from(*v.get(index)?),
+            Self::I32(v) => f64::from(*v.get(index)?),
             Self::U64(v) => *v.get(index)? as f64,
             Self::I64(v) => *v.get(index)? as f64,
-            Self::F32(v) => *v.get(index)? as f64,
+            Self::F32(v) => f64::from(*v.get(index)?),
             Self::F64(v) => *v.get(index)?,
         })
     }
