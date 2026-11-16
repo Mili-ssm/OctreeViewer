@@ -1231,6 +1231,46 @@ fn an_unservable_request_is_reported_as_refused_on_the_next_update() {
     assert!(second.refused.is_empty() && second.levels.is_empty());
 }
 
+/// A request for a depth so deep that the leaf's cells would take a page each (what a strong zoom
+/// asked for, and trapped the build worker out of memory when packed) is refused, not built: the
+/// refusal reaches the render side like any unservable depth, which then stops wanting it.
+#[test]
+fn a_level_too_sparse_to_page_is_refused_not_built() {
+    let mut pair = Pair::with_harness(close_pair_leaf());
+    let leaf = NodeId::new(1);
+    pair.send_round(0, false);
+    let block = BlockId::new(101);
+    let mut state = 12_345_u64;
+    let mut unit = move || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((state >> 40) as f32) / ((1_u64 << 24) as f32)
+    };
+    let points = (0..3_000)
+        .map(|_| {
+            let at = [0; 3].map(|_| 1.0 + unit() * (SIDE as f32 - 2.0));
+            Point::new(at, ColorRgb::new(1, 2, 3))
+        })
+        .collect();
+    pair.h.dataset.cache.remove(block);
+    pair.h
+        .dataset
+        .insert_block(PointBlock::new(block, PointBatch::new(points), Vec::new()))
+        .unwrap();
+    pair.builder
+        .level_requests(&mut pair.h.dataset, &[(leaf, 40)]);
+    pair.builder.mark_dirty();
+    let out = pair.plan();
+    assert!(out.levels.is_empty(), "the sparse level was built");
+    // The asked depth, then the first sparse one: the render side's maximum drops there at once.
+    assert_eq!(out.refused[0], (leaf, 40));
+    let [(_, first_sparse)] = out.refused[1..] else {
+        panic!("expected the first sparse depth: {:?}", out.refused);
+    };
+    assert!((10..40).contains(&first_sparse), "{first_sparse}");
+}
+
 /// Negative control: this is the #35 bug, a leaf drawing its fine levels from far.
 #[test]
 fn without_on_demand_builds_a_close_pair_leaf_draws_too_fine() {

@@ -1086,7 +1086,7 @@ impl LodDataset {
             }
             match node_cell_level(&local_grid, local, node.spacing(), is_leaf, &blocks, depth) {
                 Ok(level) => cells.levels.push(level),
-                Err(NodeCellError::AbsoluteDepthExceeded) => {}
+                Err(NodeCellError::AbsoluteDepthExceeded | NodeCellError::TooSparseToPage) => {}
                 Err(error) => return Err(LodDatasetError::CellDriver(error.to_string())),
             }
         }
@@ -1176,6 +1176,36 @@ impl LodDataset {
             match node_cell_level(&local_grid, local, node.spacing(), is_leaf, &blocks, depth) {
                 Ok(level) => levels.push(level),
                 Err(NodeCellError::AbsoluteDepthExceeded) => unservable.push(depth),
+                Err(NodeCellError::TooSparseToPage) => {
+                    // Sparser with depth: refuse down to the first sparse depth too, so the
+                    // render side's maximum drops there at once instead of one depth per round.
+                    let sparse = |depth| {
+                        matches!(
+                            node_cell_level(
+                                &local_grid,
+                                local,
+                                node.spacing(),
+                                is_leaf,
+                                &blocks,
+                                depth
+                            ),
+                            Err(NodeCellError::TooSparseToPage)
+                        )
+                    };
+                    let (mut ok, mut first_sparse) = (0, depth);
+                    while first_sparse - ok > 1 {
+                        let middle = ok + (first_sparse - ok) / 2;
+                        if sparse(middle) {
+                            first_sparse = middle;
+                        } else {
+                            ok = middle;
+                        }
+                    }
+                    unservable.push(depth);
+                    if first_sparse < depth {
+                        unservable.push(first_sparse);
+                    }
+                }
                 Err(error) => return Err(LodDatasetError::CellDriver(error.to_string())),
             }
         }

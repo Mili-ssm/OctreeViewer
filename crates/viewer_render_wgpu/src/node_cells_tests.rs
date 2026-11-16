@@ -5,10 +5,12 @@ use viewer_core::{
     NodeId, Point, PointBatch, PointBlock, SpatialBounds,
 };
 
+use crate::cell_pages::{packs_efficiently, page_count};
 use crate::{
     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCellError, NodeCellSource,
-    NodeCells, OrbitCamera, PointNodeCellSource, SceneBounds, chain_keep_mask, node_cell_level,
-    node_cells_digest, representative_depth, representative_depth_for_spacing,
+    NodeCells, OrbitCamera, PAGE_SLOTS, PointNodeCellSource, SceneBounds, chain_keep_mask,
+    node_cell_level, node_cells_digest, pack_level, representative_depth,
+    representative_depth_for_spacing,
 };
 
 const SIDE: f64 = 64.0;
@@ -1313,4 +1315,44 @@ fn a_leaf_level_at_max_depth_with_merged_positions_is_an_error() {
         MAX_CELL_DEPTH,
     );
     assert_eq!(result, Err(NodeCellError::AbsoluteDepthExceeded));
+}
+
+/// Root cause of the wasm OOM on a strong zoom: a leaf level so deep that neighbouring cells sit
+/// farther apart than `MAX_PAGE_EXTENT` packs one page (8 KiB) per cell.
+#[test]
+fn a_leaf_level_too_sparse_to_page_is_refused_before_packing() {
+    let mut rng = Lcg(7);
+    let bounds = cube([8.0; 3], 8.0);
+    let block = plain_block(random_points(&mut rng, [8.0; 3], 8.0, 64_000));
+    let blocks = std::slice::from_ref(&block);
+    let chain = PointNodeCellSource::default()
+        .node_cells(&grid(), NodeId::new(0), bounds, None, true, blocks)
+        .unwrap();
+    for depth in [12_u8, 16, 20, 22] {
+        let level = node_cell_level(&grid(), bounds, None, true, blocks, depth).unwrap();
+        let packed = pack_level(&grid(), bounds, NodeId::new(0), &level);
+        assert_eq!(
+            page_count(&level.cells),
+            packed.pages.len(),
+            "depth {depth}"
+        );
+        assert!(packed.pages.len() <= 8 * level.cells.len().div_ceil(PAGE_SLOTS));
+    }
+    for depth in [24_u8, 28, 32, 63] {
+        // Mechanism, measured: unrefused these pack to about one page per cell (64 000 cells,
+        // 24 774 pages at 24, 63 900 at 28, 64 000 from 32: 524 MB at 63).
+        assert_eq!(
+            node_cell_level(&grid(), bounds, None, true, blocks, depth),
+            Err(NodeCellError::TooSparseToPage),
+            "depth {depth}"
+        );
+    }
+    // Stored chain levels were pruned already: none of them is too sparse.
+    for level in &chain.levels {
+        assert!(
+            packs_efficiently(&level.cells),
+            "chain depth {}",
+            level.depth
+        );
+    }
 }
