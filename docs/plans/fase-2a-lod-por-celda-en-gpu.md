@@ -175,14 +175,14 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Modify: `crates/viewer_render_wgpu/src/cell_render.rs` (`cell_refines`, `cell_draws` in WGSL; `slot_state` uses `cell_draws` when `lod_mode == 1`, before the phase split; `visible` gets `COPY_SRC`)
 - Test: `crates/viewer_render_wgpu/src/cell_render_tests.rs` (scene builder with per-level `rel` origins, node records, a level split into 2 pages)
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `cell_mode_draws_one_cell_per_point_on_every_adapter`: read back `visible`; 200 seeded poses by default and 1000 with `CELL_LOD_POSES=1000`, over the Task 1 scene kinds plus a 2-page level, the eye inside a cell, and 1-ULP threshold poses (bisect `target_px`); occlusion off → each sample point inside the frustum (2 % viewport margin) is covered by exactly one drawn cell; occlusion on → no point covered twice.
   - `cell_mode_matches_the_twin_away_from_the_threshold`: GPU decision equals `cell_lod::draws` whenever the cell's and its ancestors' `edge_px/target` differ from 1 by more than 1e-4.
   - `octant_mode_is_unchanged`: `compaction_count_matches_a_cpu_count_on_every_adapter` passes.
-- [ ] **Step 2:** `cargo test -p viewer_render_wgpu --profile fast --offline --lib cell_render` → FAIL.
-- [ ] **Step 3:** implement.
-- [ ] **Step 4:** same command → PASS (record the adapters that ran); clippy clean.
-- [ ] **Step 5:** commit `feat(render): decide the drawn level per cell in the slot pass`.
+- [x] **Step 2:** `cargo test -p viewer_render_wgpu --profile fast --offline --lib cell_render` → FAIL.
+- [x] **Step 3:** implement.
+- [x] **Step 4:** same command → PASS (record the adapters that ran); clippy clean.
+- [x] **Step 5:** commit `feat(render): decide the drawn level per cell in the slot pass`.
 
 ### Task 8: Per-depth counters
 
