@@ -515,7 +515,12 @@ function handleWorkerMessage(event) {
         statusRoot.textContent = "Renderer ready · synthetic sample";
         // `?cellLod=cell|octant` picks the cells path's level selection (no UI control yet).
         const cellLod = new URLSearchParams(location.search).get("cellLod");
-        if (cellLod !== null) worker.postMessage({ type: "setCellLod", mode: cellLod });
+        if (cellLod === "octant" || cellLod === "cell") {
+            worker.postMessage({ type: "setCellLod", mode: cellLod });
+        } else if (cellLod !== null) {
+            // A bad value would come back as a worker error and stop the render loop.
+            console.warn(`ignoring ?cellLod=${cellLod}: expected "octant" or "cell"`);
+        }
         requestFrameOnce();
         if (reopenAfterRecreate) {
             const { file, name, attributes } = reopenAfterRecreate;

@@ -504,13 +504,19 @@ test("the setCellLod command reaches the viewer, an unknown mode is rejected and
     assert.ok(render.messages.some(m => m.type === "apiResult" && m.requestId === 1 && m.value === "octant"));
     // The rejected mode did not replace the stored one: a recreated viewer gets the last accepted.
     await render.send("setCellLod", { mode: "cell" });
+    const errorsBefore = render.messages.filter(m => m.type === "error").length;
     await render.send("setCellLod", { mode: "bogus" });
+    const rejected = render.messages.filter(m => m.type === "error").slice(errorsBefore);
+    assert.equal(rejected.length, 1);
+    assert.equal(rejected[0].operation, "setCellLod");
+    const callsBeforeLoss = render.calls("setCellLod").length;
     render.loseDevice();
     await render.frame();
     await new Promise(resolve => setTimeout(resolve, 20));
     await settle();
     assert.equal(render.creates(), 2);
-    assert.deepEqual(render.calls("setCellLod").at(-1), ["setCellLod", "cell"], "re-applied to the new viewer");
+    const afterLoss = render.calls("setCellLod").slice(callsBeforeLoss);
+    assert.deepEqual(afterLoss, [["setCellLod", "cell"]], "re-applied once to the new viewer, and only the accepted mode");
 });
 
 test("every open sends the build worker the render side's pool pages, also on a respawned worker", async () => {

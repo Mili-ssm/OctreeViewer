@@ -321,13 +321,8 @@ fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject, m
     for (i, seed) in GLUE_SEEDS.iter().enumerate() {
         // A cap of one byte applies one node per frame; the other seeds apply bursts.
         let cap = if i == 0 { 1 } else { 256 << 10 };
-        let mut sim = GlueSim::new(
-            synthetic_harness(1 << 20, 2.0).in_mode(mode),
-            budget,
-            *seed,
-            cap,
-        )
-        .in_mode(mode);
+        let mut sim =
+            GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, *seed, cap).in_mode(mode);
         let digest = sim.run(&views, inject, 200_000);
         println!("glue {name} seed {seed} {mode:?}: {:?}", sim.stats);
         assert_eq!(digest, expected, "{name} seed {seed} {mode:?}");
@@ -630,6 +625,44 @@ fn switching_mode_rewrites_the_page_table() {
         );
         assert_eq!(target.lod_view.is_some(), has_view, "{mode:?}");
         assert!(!target.table.is_empty(), "{mode:?}: the frame drew nothing");
+    }
+}
+
+#[test]
+fn switching_mode_rewrites_the_page_table_through_the_glue() {
+    let views = synth_orbit();
+    let view = views.last().unwrap();
+    let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), u64::MAX, 3, 1 << 20);
+    sim.run(&views, Inject::default(), 200_000);
+    assert!(!sim.h.target.table.is_empty(), "octant mode drew nothing");
+    assert!(
+        sim.h.target.lod_view.is_none(),
+        "octant mode passes no LOD view"
+    );
+    for (mode, has_view) in [(LodMode::Cell, true), (LodMode::Octant, false)] {
+        let (records, tables) = (sim.h.target.records_written, sim.h.target.tables_written);
+        let nodes = sim.stats.node_messages;
+        sim.mode = mode;
+        sim.viewer.set_lod_mode(mode);
+        // `settle` runs StrictTarget's plan checks on every frame drawn after the switch.
+        sim.settle(view, 200_000);
+        assert!(
+            sim.h.target.tables_written > tables,
+            "{mode:?}: no new page table"
+        );
+        assert!(
+            sim.h.target.records_written > records,
+            "{mode:?}: records not rewritten"
+        );
+        assert_eq!(sim.h.target.lod_view.is_some(), has_view, "{mode:?}");
+        assert!(
+            !sim.h.target.table.is_empty(),
+            "{mode:?}: the frame drew nothing"
+        );
+        assert_eq!(
+            sim.stats.node_messages, nodes,
+            "{mode:?}: no node is built again"
+        );
     }
 }
 
@@ -1328,8 +1361,7 @@ fn glue_real_case(
     inject: Inject,
     mode: LodMode,
 ) {
-    let open =
-        || open_real("belvedere-v7.oct", 4.0, 256 << 20).map(|real| real.harness.in_mode(mode));
+    let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20).map(|real| real.harness);
     let Some(real) = open_real("belvedere-v7.oct", 4.0, 256 << 20) else {
         return;
     };
@@ -1341,7 +1373,7 @@ fn glue_real_case(
     }
     unlimited.settle(views.last().unwrap(), 3, 20_000);
     let budget = unlimited.driver.cpu_bytes() * budget_percent / 100;
-    let expected = in_process_digest(open().unwrap(), budget, &views);
+    let expected = in_process_digest(open().unwrap().in_mode(mode), budget, &views);
     for seed in seeds {
         let mut sim = GlueSim::new(open().unwrap(), budget, *seed, 4 << 20).in_mode(mode);
         let digest = sim.run(&views, inject, 400_000);
