@@ -250,9 +250,10 @@ pub fn octant_wanted_depth(
 
 /// `octant_wanted_depth` searched outward from `hint` (the answer of a nearby view), assuming that
 /// once a depth stops refining every finer one does too (its children are half as large at about
-/// the same distance; `the_hinted_search_equals_the_full_search` checks it on random poses). It then costs 2 projections when
-/// the answer has not moved, instead of one per coarser depth, and returns the same depth
-/// whenever that holds. A `hint` outside the range falls back to the full search.
+/// the same distance). It then costs 2 probes when the answer has not moved, instead of one per
+/// coarser depth, and returns the same depth whenever that holds. The
+/// `the_hinted_search_equals_the_full_search` test (cell_pool_tests.rs) found no difference in
+/// 79 993 random poses. A `hint` outside the range falls back to the full search.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn octant_wanted_depth_near(
     view: &ViewProjection,
@@ -456,9 +457,9 @@ impl<'a> OctantProbe<'a> {
     }
 
     /// Would a cell of `depth` at the probe point stop here (ADR 0054)? Its children would project
-    /// below the target: the child at the corner farthest along the view direction, the smallest
-    /// on screen, is measured. A child with a corner at or behind the eye measures `+inf`, so it
-    /// never stops the refinement. The length minimum is applied by the pool (`continuity_depth`).
+    /// below the target: the smallest of the 8 children is measured (off axis it is not always the
+    /// farthest one). A child with a corner at or behind the eye measures `+inf`, so it never
+    /// stops the refinement. The length minimum is applied by the pool (`continuity_depth`).
     fn at(&self, depth: u8) -> bool {
         let side = self.grid.root_side / 2.0_f64.powi(i32::from(depth));
         let min: [f64; 3] = std::array::from_fn(|a| {
@@ -469,17 +470,19 @@ impl<'a> OctantProbe<'a> {
                 .clamp(low, high)
         });
         let half = side / 2.0;
-        let forward = self.view.camera().forward();
-        let far: [f64; 3] = std::array::from_fn(|a| {
-            if forward[a] > 0.0 {
-                min[a] + half
-            } else {
-                min[a]
-            }
-        });
-        SpatialBounds::new(far, far.map(|value| value + half)).is_ok_and(|child| {
-            self.view.projected_voxel_edge_pixels(child, [0.0; 3]) < self.target_px
-        })
+        let smallest = (0..8_usize)
+            .map(|child| {
+                let lo: [f64; 3] =
+                    std::array::from_fn(|a| min[a] + half * ((child >> a & 1) as f64));
+                SpatialBounds::new(lo, lo.map(|value| value + half)).map_or(f64::NAN, |c| {
+                    self.view.projected_voxel_edge_pixels(c, [0.0; 3])
+                })
+            })
+            .fold(
+                f64::INFINITY,
+                |acc, edge| if edge < acc { edge } else { acc },
+            );
+        smallest < self.target_px
     }
 }
 

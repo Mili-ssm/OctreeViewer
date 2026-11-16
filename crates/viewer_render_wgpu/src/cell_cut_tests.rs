@@ -114,8 +114,8 @@ fn fixture_cuts() -> Vec<(&'static str, Vec<NodeId>)> {
 }
 
 /// Brute-force oracle with its own cube placement, in the dataset frame: the first stored depth
-/// whose cube, at the octant point nearest the eye, would not refine (ADR 0054: its child at the
-/// corner farthest along the view direction projects below `target`), else the finest.
+/// whose cube, at the octant point nearest the eye, would not refine (ADR 0054: its smallest of 8
+/// children projects below `target`), else the finest.
 fn oracle_octant(
     view: &ViewProjection,
     origin: [f64; 3],
@@ -158,16 +158,15 @@ fn oracle_octant(
             }
             cube_min[a] = v;
         }
-        let forward = view.camera().forward();
         let half = side / 2.0;
-        let mut child_min = cube_min;
-        for a in 0..3 {
-            if forward[a] > 0.0 {
-                child_min[a] += half;
-            }
+        let mut smallest = f64::INFINITY;
+        for child in 0..8_usize {
+            let child_min: [f64; 3] =
+                std::array::from_fn(|a| cube_min[a] + half * ((child >> a & 1) as f64));
+            let bounds = SpatialBounds::new(child_min, child_min.map(|v| v + half)).unwrap();
+            smallest = smallest.min(view.projected_voxel_edge_pixels(bounds, origin));
         }
-        let child = SpatialBounds::new(child_min, child_min.map(|v| v + half)).unwrap();
-        view.projected_voxel_edge_pixels(child, origin)
+        smallest
     };
     // Brute force: test every stored depth; the choice is the coarsest passing one.
     let passing: Vec<u8> = stored
