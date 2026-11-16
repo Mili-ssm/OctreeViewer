@@ -2381,7 +2381,6 @@ fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in(mode: LodMode) {
         256 << 20,
     )
     .with_global_frame(reader.format_version().uses_global_frame());
-    let paged = reader.page_source().is_some();
     if let Some(source) = reader.page_source().cloned() {
         dataset = dataset
             .with_pages(
@@ -2395,7 +2394,6 @@ fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in(mode: LodMode) {
             .unwrap();
     }
     let origin = dataset.coordinate_origin();
-    let _ = paged;
     let reader = Rc::new(RefCell::new(reader));
     let for_blocks = Rc::clone(&reader);
     let for_pages = Rc::clone(&reader);
@@ -2423,8 +2421,11 @@ fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in(mode: LodMode) {
         })
     });
     let mut h = Harness::new(dataset, 4.0, blocks, pages).in_mode(mode);
-    h.soft_checks = true;
     let viewport = [870, 750];
+    // Measured at this pose: probing the data wants depth 11-13 in these leaves (cells near the
+    // px target), while probing the node box wants the finest depth, 19 (cells of ~0.003 px).
+    // 14 is one level of margin over the former and far from the latter.
+    const MAX_DEPTH: u8 = 14;
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
     let mk = |eye: [f64; 3], target: [f64; 3]| {
         let root = h.dataset.metadata.hierarchy().stats().root_bounds;
@@ -2451,20 +2452,27 @@ fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in(mode: LodMode) {
     h.settle(&v0, 3, 5000);
     h.camera_moved();
     h.settle(&v4, 3, 5000);
+    let mut seen = std::collections::BTreeSet::new();
     for (node, wanted, drawn) in &h.last_entries {
         if [13, 14, 17, 18].contains(&node.get()) {
             for o in 0..8 {
                 let (Some(w), Some(d)) = (wanted[o], drawn[o]) else {
                     continue;
                 };
+                seen.insert(node.get());
                 assert!(
-                    w <= 14 && d <= 14,
+                    w <= MAX_DEPTH && d <= MAX_DEPTH,
                     "node {} octant {o} wants {w} and draws {d} in {mode:?}",
                     node.get()
                 );
             }
         }
     }
+    assert_eq!(
+        seen.into_iter().collect::<Vec<_>>(),
+        [13, 14, 17, 18],
+        "every leaf must have an octant with a wanted and drawn depth, or the check is vacuous"
+    );
 }
 
 #[test]

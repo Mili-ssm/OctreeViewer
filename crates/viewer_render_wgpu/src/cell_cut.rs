@@ -228,7 +228,8 @@ pub(crate) fn octant_box(bounds: SpatialBounds, octant: usize) -> Option<Spatial
 /// stored data (dataset frame, like the node bounds).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ProbeBox {
-    /// No level is stored yet: the octant's geometric box stands in for its data.
+    /// No tighter extent is known (no frame data extent): the octant's geometric box stands in
+    /// for its data.
     Geometric,
     Data(SpatialBounds),
     /// The octant holds no data: nothing to draw, so the coarsest depth.

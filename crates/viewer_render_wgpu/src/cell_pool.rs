@@ -165,9 +165,10 @@ pub struct PoolNode {
     pub buildable: (u8, u8),
     /// Points of the node, for the size estimate of levels that have not arrived.
     pub points: u64,
-    /// Tight box of the cells of each octant (dataset frame, from the finest stored level,
-    /// `None` for an octant without cells); `None` while no level gives one. The LOD probes
-    /// these instead of the geometric octant, which can reach the eye while the data is far.
+    /// Box each octant's LOD probe looks at (dataset frame): the octant box clipped to the frame
+    /// data extent, computed once per node and independent of the stored levels; `None` for an
+    /// octant outside the extent. `None` overall when no tighter extent is known, and the probes
+    /// then use the geometric octant, which can reach the eye while the data is far.
     pub octant_data_bounds: Option<[Option<SpatialBounds>; 8]>,
 }
 

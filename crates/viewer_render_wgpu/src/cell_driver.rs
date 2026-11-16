@@ -558,8 +558,6 @@ impl CellDriver {
         self.config.pool.capacity_pages
     }
 
-    /// Continuity (RF-05): the smallest cell side the pool draws, or `None` for the literal mode.
-    /// Takes effect on the next frame; no node is rebuilt or re-sent ([`CellPool::set_min_side`]).
     /// Sets the tight extent of the data (`SpatialStats::data_bounds`; `None` when it is the
     /// root cube itself) that the octant probes clip to, for the nodes held and the ones to come.
     pub fn set_data_bounds(&mut self, data: Option<SpatialBounds>) {
@@ -573,6 +571,8 @@ impl CellDriver {
         self.dirty = true;
     }
 
+    /// Continuity (RF-05): the smallest cell side the pool draws, or `None` for the literal mode.
+    /// Takes effect on the next frame; no node is rebuilt or re-sent ([`CellPool::set_min_side`]).
     pub fn set_min_side(&mut self, min_side: Option<f64>) {
         if self.pool.min_side() != min_side {
             self.pool.set_min_side(min_side);
