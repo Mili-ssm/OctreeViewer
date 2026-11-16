@@ -1112,7 +1112,8 @@ impl Harness {
         self.frame_capped = plan.coarsened_nodes.clone();
         self.frame_stage_px = out.stage_pixels;
         if self.mode == LodMode::Cell {
-            self.set_cell_ctx(view, out.stage_pixels);
+            // The driver draws with the final target; the ladder rung only picks the nodes.
+            self.set_cell_ctx(view, self.target_px);
         }
         self.check_drawn_cut(number, plan, digest);
         if let Some(last) = self.last_stage
