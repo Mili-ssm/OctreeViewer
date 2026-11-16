@@ -113,7 +113,7 @@ pub struct PageInfo {
     /// Page minimum relative to the node corner at the page depth, in cells (`origin - node_lo <<
     /// (depth - node_depth)`). `u32::MAX` per axis when the page is above the node depth or more
     /// than 31 levels below it (octant-mode leaf tails): cell mode never activates those depths.
-    /// Also `u32::MAX` for a node whose corner is off the global grid (see [`is_grid_aligned`]):
+    /// Also `u32::MAX` for a node whose corner is off the global grid (see `is_grid_aligned`):
     /// the origin is only meaningful for grid-aligned nodes, which every V7 node is (ADR 0029).
     pub rel_origin: [u32; 3],
 }
