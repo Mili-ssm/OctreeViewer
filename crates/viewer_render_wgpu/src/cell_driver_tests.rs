@@ -1493,3 +1493,234 @@ fn anchors_follow_the_eye() {
     assert_eq!(written, slots.keys().copied().collect::<HashSet<_>>());
     assert_eq!(fx.gpu.record_writes.len(), slots.len());
 }
+
+/// The anchor the driver must write for a node: its corner in the frame of the renderer.
+fn expected_anchor(
+    fx: &Fixture,
+    node: NodeId,
+    node_depth: u8,
+    origin: [f64; 3],
+    eye: [f64; 3],
+) -> [f32; 3] {
+    let grid = fx.driver.config.grid;
+    let side = grid.root_side / (1_u64 << node_depth) as f64;
+    std::array::from_fn(|axis| {
+        let lo = crate::node_cells::node_range(&grid, fx.nodes[&node].bounds, node_depth, axis).0;
+        let corner = grid.root_min[axis] + lo as f64 * side;
+        ((corner - origin[axis]) * fx.scale - eye[axis]) as f32
+    })
+}
+
+/// Checks the anchor of every active slot against the frame `(origin, eye)`.
+fn assert_anchors(fx: &Fixture, report: &FrameReport, origin: [f64; 3], eye: [f64; 3]) {
+    for active in &report.plan.active {
+        let words = fx.gpu.mask_words[&active.mask_slot];
+        let expected = expected_anchor(fx, active.key.node, words[19] as u8, origin, eye);
+        let anchor: [f32; 3] = std::array::from_fn(|axis| f32::from_bits(words[16 + axis]));
+        assert_eq!(anchor, expected, "slot {}", active.mask_slot);
+    }
+}
+
+#[test]
+fn anchors_follow_the_origin_and_the_scale() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    let cam = camera("zoom");
+    let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
+    assert!(!report.plan.active.is_empty());
+    let eye = cam.position();
+    assert_anchors(&fx, &report, ORIGIN, eye);
+    let before = fx.gpu.mask_words.clone();
+
+    // A new coordinate origin moves every corner; the eye, the cut and the masks stay.
+    let origin = std::array::from_fn(|axis| ORIGIN[axis] + [0.5, -0.25, 0.125][axis]);
+    fx.driver.config.coordinate_origin = origin;
+    let view = fx.view(&cam);
+    let report = fx
+        .driver
+        .frame(&mut fx.gpu, &ids(&CHILDREN), &view, 4.0)
+        .expect("frame");
+    assert!(report.plan.mask_updates.is_empty());
+    assert_anchors(&fx, &report, origin, eye);
+    for active in &report.plan.active {
+        let slot = active.mask_slot;
+        assert_ne!(
+            fx.gpu.mask_words[&slot][16..19],
+            before[&slot][16..19],
+            "slot {slot}"
+        );
+    }
+
+    // A new visual scale does too.
+    let origin_before = fx.gpu.mask_words.clone();
+    fx.scale = 2.0;
+    let view = fx.view(&cam);
+    let report = fx
+        .driver
+        .frame(&mut fx.gpu, &ids(&CHILDREN), &view, 4.0)
+        .expect("frame");
+    assert_anchors(&fx, &report, origin, eye);
+    for active in &report.plan.active {
+        let slot = active.mask_slot;
+        assert_ne!(
+            fx.gpu.mask_words[&slot][16..19],
+            origin_before[&slot][16..19],
+            "slot {slot}"
+        );
+    }
+}
+
+#[test]
+fn records_are_rewritten_after_a_reset() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    let cam = camera("zoom");
+    fx.run(40, &ids(&CHILDREN), &cam, 4.0);
+
+    let events = fx.driver.reset();
+    assert!(!events.is_empty());
+    fx.gpu.lose_pool();
+    // The eye moved meanwhile: a frame stamp surviving the reset would skip the anchors.
+    let moved: [f64; 3] =
+        std::array::from_fn(|axis| cam.position()[axis] + [0.5, 0.25, -0.125][axis]);
+    let mut drawn = false;
+    for _ in 0..60 {
+        fx.gpu.eye = moved;
+        let view = fx.view(&cam);
+        let report = fx
+            .driver
+            .frame(&mut fx.gpu, &ids(&CHILDREN), &view, 4.0)
+            .expect("frame");
+        // Every page of the table reads a record that was written this life of the target.
+        for (_, entry) in &fx.gpu.table {
+            let slot = entry.0[4];
+            assert!(fx.gpu.mask_words.contains_key(&slot), "slot {slot}");
+        }
+        assert_anchors(&fx, &report, ORIGIN, moved);
+        drawn |= !report.plan.active.is_empty();
+    }
+    assert!(drawn);
+
+    // Same when only the target lost its pool.
+    fx.gpu.lose_pool();
+    let mut last = None;
+    for _ in 0..60 {
+        fx.gpu.eye = cam.position();
+        let view = fx.view(&cam);
+        let report = fx
+            .driver
+            .frame(&mut fx.gpu, &ids(&CHILDREN), &view, 4.0)
+            .expect("frame");
+        assert_anchors(&fx, &report, ORIGIN, cam.position());
+        last = Some(report);
+    }
+    assert!(!last.unwrap().plan.active.is_empty());
+}
+
+#[test]
+fn a_reused_mask_slot_gets_the_full_record_of_its_new_node() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    let cam = camera("zoom");
+    let first = fx.run(40, &ids(&[2, 3]), &cam, 4.0);
+    let first_slots: HashSet<u32> = first.plan.active.iter().map(|a| a.mask_slot).collect();
+    assert!(!first_slots.is_empty());
+
+    // The cut changes to other nodes: the slots of 2 and 3 are freed and taken again.
+    let mut latest: HashMap<u32, crate::MaskUpdate> = HashMap::new();
+    let mut report = None;
+    for _ in 0..60 {
+        let step = fx.step(&ids(&[4]), &cam, 4.0);
+        for update in &step.plan.mask_updates {
+            latest.insert(update.slot, update.clone());
+        }
+        report = Some(step);
+    }
+    let report = report.unwrap();
+    let slots: HashSet<u32> = report.plan.active.iter().map(|a| a.mask_slot).collect();
+    assert!(!slots.is_empty());
+    assert!(!slots.is_disjoint(&first_slots), "no slot was reused");
+    let eye = cam.position();
+    for active in &report.plan.active {
+        let update = &latest[&active.mask_slot];
+        let anchor = expected_anchor(&fx, active.key.node, update.node_depth, ORIGIN, eye);
+        let expected = node_record(&NodeLod {
+            anchor,
+            node_depth: update.node_depth,
+            active: update.active,
+            mask: update.mask,
+        });
+        assert_eq!(
+            fx.gpu.mask_words[&active.mask_slot], expected,
+            "slot {}",
+            active.mask_slot
+        );
+    }
+
+    // Moving the eye rewrites only slots a node holds: the freed ones stay untouched.
+    fx.gpu.record_writes.clear();
+    fx.gpu.eye = std::array::from_fn(|axis| eye[axis] + 0.25);
+    let view = fx.view(&cam);
+    fx.driver
+        .frame(&mut fx.gpu, &ids(&[4]), &view, 4.0)
+        .expect("frame");
+    let written: HashSet<u32> = fx.gpu.record_writes.iter().map(|(slot, _)| *slot).collect();
+    let free: HashSet<u32> = fx.driver.pool().free_mask_slots().collect();
+    assert!(!free.is_empty() && written.is_disjoint(&free));
+    assert!(written.is_superset(&slots));
+}
+
+/// Pages of a node at its own corner plus a relative offset, as the packer writes them.
+fn corner_level(fx: &Fixture, node: NodeId, depth: u8, rel: [u32; 3]) -> PackedLevel {
+    let grid = fx.driver.config.grid;
+    let bounds = fx.nodes[&node].bounds;
+    let node_depth = 1;
+    let mut level = level_of(node, depth, 1);
+    for page in &mut level.pages {
+        page.origin = std::array::from_fn(|axis| {
+            let lo = crate::node_cells::node_range(&grid, bounds, node_depth, axis).0;
+            (lo << (depth - node_depth)) + u64::from(rel[axis])
+        });
+        page.rel_origin = rel;
+    }
+    level
+}
+
+#[test]
+fn anchor_plus_relative_origin_is_the_page_origin() {
+    let nodes = octant_nodes();
+    let mut fx = Fixture::new(HashMap::new(), config(128, 8, u64::MAX));
+    fx.nodes = nodes.clone();
+    let rel = [3, 5, 1];
+    for (id, node) in &nodes {
+        let levels = node
+            .stored
+            .iter()
+            .map(|depth| corner_level(&fx, *id, *depth, rel))
+            .collect();
+        fx.driver
+            .add_packed(*id, node.bounds, node.points, levels)
+            .unwrap();
+    }
+    let cam = camera("zoom");
+    // A scale other than 1 so the check is not a coincidence of the identity.
+    fx.scale = 1.5;
+    let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
+    assert!(!fx.gpu.table.is_empty());
+    for (_, entry) in &fx.gpu.table {
+        let words = fx.gpu.mask_words[&entry.0[4]];
+        assert_eq!(words[19], 1, "node depth");
+        let depth = entry.0[11];
+        assert!(depth >= 4);
+        let side = entry.side();
+        let anchor: [f32; 3] = std::array::from_fn(|axis| f32::from_bits(words[16 + axis]));
+        let origin = entry.origin();
+        for axis in 0..3 {
+            let rebuilt = anchor[axis] + entry.0[8 + axis] as f32 * side;
+            let ulp = (origin[axis].abs().max(rebuilt.abs())) * f32::EPSILON;
+            assert!(
+                (rebuilt - origin[axis]).abs() <= ulp,
+                "axis {axis}: {rebuilt} vs {}",
+                origin[axis]
+            );
+        }
+    }
+    assert!(!report.plan.active.is_empty());
+}

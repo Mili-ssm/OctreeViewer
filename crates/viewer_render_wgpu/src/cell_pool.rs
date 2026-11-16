@@ -1006,6 +1006,12 @@ impl CellPool {
         self.levels.get(&key)?.data.as_deref()
     }
 
+    /// Mask slots that no node of the applied cut holds: their record is dead until a node
+    /// takes the slot again.
+    pub fn free_mask_slots(&self) -> impl Iterator<Item = u32> + '_ {
+        self.free_masks.iter().copied()
+    }
+
     pub fn resident_pages(&self) -> u32 {
         self.levels
             .values()

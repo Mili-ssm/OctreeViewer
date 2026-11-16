@@ -1135,6 +1135,10 @@ impl CellDriver {
         // The anchors of the live slots follow the frame like the page origins do: a changed eye,
         // origin or scale rewrites them below, after the records of this plan.
         let anchors_stale = self.anchor_frame != Some(stamp);
+        // A slot the pool freed holds no node: it needs no anchor until a node takes it again.
+        for slot in self.pool.free_mask_slots() {
+            self.node_slots.remove(&slot);
+        }
         for update in &plan.mask_updates {
             self.ensure_mask(target, update.slot)?;
             let grid = &self.config.grid;
