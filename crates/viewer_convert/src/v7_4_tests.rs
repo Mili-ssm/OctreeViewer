@@ -223,6 +223,10 @@ fn local_cloud_near_zero_has_its_root_at_its_own_first_split() {
     assert_eq!(frame.root_prefix(), [0; 3]);
     assert_eq!(frame.lattice_base(), frame.frame_origin_quanta());
     let hierarchy = metadata.dataset().hierarchy();
+    #[expect(
+        clippy::maybe_infinite_iter,
+        reason = "ends at the first node id the hierarchy does not hold"
+    )]
     let nodes = (0..)
         .map(NodeId::new)
         .take_while(|id| hierarchy.node(*id).is_some())

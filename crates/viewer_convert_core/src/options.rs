@@ -91,6 +91,7 @@ impl ConvertOptions {
     /// For tests and benchmarks: caps `v7.5-pre` pages at about `bytes`, so small files still
     /// need several pages. Production output keeps the default.
     #[doc(hidden)]
+    #[must_use]
     pub const fn with_page_target_bytes(mut self, bytes: usize) -> Self {
         self.page_target_bytes = Some(bytes);
         self
@@ -197,6 +198,7 @@ impl ConvertOptions {
 
     /// Overlap ordered output with preparation of one following batch.
     /// The planner reserves two batches; this is an estimate, not an RSS limit.
+    #[must_use]
     pub fn with_pipelined_writes(mut self, enabled: bool) -> Self {
         self.pipelined_writes = enabled;
         self

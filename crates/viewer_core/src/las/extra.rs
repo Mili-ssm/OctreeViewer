@@ -252,6 +252,10 @@ impl LasExtraByte {
 /// Which LAS-derived columns a schema holds, in on-disk order: the seven base columns, then
 /// `gps_time`, `rgb`, `nir`, `las_flags` and the Extra Bytes.
 #[derive(Debug, Clone, Copy)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "one flag per optional LAS column group; part of the public API"
+)]
 pub struct LasSchemaSpec<'a> {
     pub has_gps_time: bool,
     pub has_color: bool,
@@ -404,7 +408,10 @@ mod tests {
             extra_bytes: &extras,
         })
         .unwrap();
-        let names: Vec<_> = schema.iter().map(|d| d.name()).collect();
+        let names: Vec<_> = schema
+            .iter()
+            .map(crate::spatial::AttributeDescriptor::name)
+            .collect();
         assert_eq!(
             &names[7..],
             ["gps_time", "las_flags", "extra:a", "extra:a#1", "extra:#2"]

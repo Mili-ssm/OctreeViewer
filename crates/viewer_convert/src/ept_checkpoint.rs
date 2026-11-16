@@ -176,7 +176,7 @@ impl EptCheckpoint {
                 Err(e) => return Err(e.into()),
             },
             CheckpointMode::Resume if !root.is_dir() => return Err(CheckpointError::Missing(root)),
-            _ => (),
+            CheckpointMode::Resume => (),
         }
         let lock = OpenOptions::new()
             .create(true)
@@ -279,6 +279,10 @@ impl EptCheckpoint {
         self.manifest.attributes_len = attributes_len;
         self.persist()
     }
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "the journal record is consumed by the append"
+    )]
     pub(crate) fn append_committed_block(
         &mut self,
         record: EptJournalRecord,
@@ -348,7 +352,7 @@ impl EptCheckpoint {
         for ordinal in 0..self.manifest.records {
             let mut lb = [0; 4];
             f.read_exact(&mut lb)?;
-            let len = u32::from_le_bytes(lb) as u64;
+            let len = u64::from(u32::from_le_bytes(lb));
             if len > MAX_RECORD {
                 return Err(invalid("journal record too large"));
             }
@@ -570,7 +574,7 @@ fn compare_source_catalog(
             }
             Err(e) => return Err(e.into()),
         }
-        let len = u32::from_le_bytes(len_bytes) as u64;
+        let len = u64::from(u32::from_le_bytes(len_bytes));
         consumed = consumed
             .checked_add(4)
             .ok_or_else(|| invalid("source catalog length overflow"))?;

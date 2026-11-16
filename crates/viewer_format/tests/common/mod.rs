@@ -1,5 +1,8 @@
 //! Fixtures and helpers shared by the integration tests.
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "each test binary uses a different subset of these helpers"
+)]
 
 use std::io::Cursor;
 

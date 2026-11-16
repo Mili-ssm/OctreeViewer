@@ -246,9 +246,9 @@ fn decode_impl(bytes: &[u8], points: usize, compact: bool) -> Result<Vec<[u32; 3
         let mut prefix = 0;
         for i in 0..levels[d].count {
             let (mask, meta, first) = node(bytes, levels[d], i, compact, d == depth);
-            let count = usize::from(meta & 15);
-            if meta & 128 != 0
-                || (!own_octant && meta & 112 != 0)
+            let count = usize::from(meta & 0x0F);
+            if meta & 0x80 != 0
+                || (!own_octant && meta & 0x70 != 0)
                 || count != mask.count_ones() as usize
             {
                 return Err(malformed());
@@ -470,7 +470,7 @@ mod tests {
         bad.push(0);
         assert!(decode_compact(&bad, 129).is_err());
         let source =
-            quantize_local_positions(&[[0.; 3], [u32::MAX as f64; 3], [0.; 3]], 2.).unwrap();
+            quantize_local_positions(&[[0.; 3], [f64::from(u32::MAX); 3], [0.; 3]], 2.).unwrap();
         for bits in 0..=32 {
             let candidate = QuantizedOccupancy::new(&source, bits).unwrap();
             let bytes = encode_compact(&candidate, 1 << 24).unwrap().unwrap();

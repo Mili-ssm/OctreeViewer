@@ -156,7 +156,10 @@ impl AttributeEncoderProfile {
             );
         }
         // Index spans two arrays (`times[variant][repetition]`) and drives the run order; iterators would obscure that.
-        #[allow(clippy::needless_range_loop)]
+        #[expect(
+            clippy::needless_range_loop,
+            reason = "index spans two arrays and drives the run order"
+        )]
         for repetition in 0..3 {
             let order = if repetition % 2 == 0 { [0, 1] } else { [1, 0] };
             for variant in order {
@@ -184,8 +187,9 @@ fn profile_attribute_encoders_on_split_corpus() {
     );
     let limit = std::env::var("VIEWER_ATTRIBUTE_PROFILE_BLOCKS")
         .ok()
-        .map(|value| value.parse::<usize>().expect("valid block limit"))
-        .unwrap_or(128);
+        .map_or(128, |value| {
+            value.parse::<usize>().expect("valid block limit")
+        });
     assert!(limit > 0, "block limit must be positive");
     let mut reader = crate::FormatReader::new(BufReader::new(File::open(&path).unwrap())).unwrap();
     reader
@@ -427,10 +431,10 @@ fn integer_dictionary_matches_old_slice_encoder_byte_for_byte() {
     }
     // Distinct IEEE encodings, including signed zeros and NaN payloads.
     let patterns = [
-        0x0000000000000000_u64,
-        0x8000000000000000,
-        0x7ff8000000000001,
-        0x7ff8000000000042,
+        0x0000_0000_0000_0000_u64,
+        0x8000_0000_0000_0000,
+        0x7ff8_0000_0000_0001,
+        0x7ff8_0000_0000_0042,
     ];
     cases.push((
         8,
@@ -442,7 +446,7 @@ fn integer_dictionary_matches_old_slice_encoder_byte_for_byte() {
     for width in [2, 3, 4, 6, 8, 12] {
         let data = (0..4096 * width)
             .map(|_| {
-                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
                 (state >> 24) as u8
             })
             .collect();
@@ -668,7 +672,7 @@ fn packed_ids_match_independent_bit_oracle_at_every_width() {
         for rows in [0, 1, 7, 8, 9, 257] {
             let mask = ((1_u64 << bits) - 1) as u32;
             let ids: Vec<_> = (0..rows)
-                .map(|row| (row as u32).wrapping_mul(0x9e3779b9) & mask)
+                .map(|row| (row as u32).wrapping_mul(0x9e37_79b9) & mask)
                 .collect();
             let mut oracle = vec![0; (rows * bits).div_ceil(8)];
             for (row, &id) in ids.iter().enumerate() {
@@ -727,8 +731,8 @@ fn pre4_byte_planes_preserve_bits_and_never_exceed_pre3() {
     let mut state = 1234_u32;
     let raw: Vec<_> = (0..4096)
         .flat_map(|_| {
-            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
-            (0x7ff8000000000000_u64 | u64::from(state)).to_le_bytes()
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (0x7ff8_0000_0000_0000_u64 | u64::from(state)).to_le_bytes()
         })
         .collect();
     let new = encode_pre4(&raw, 8).unwrap();

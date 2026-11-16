@@ -386,7 +386,11 @@ fn converts_laz_in_bounded_blocks_and_preserves_intensity_and_rgb16() {
     let root_sample = reader.read_block(root_block_ids[0]).unwrap();
     assert!(root_sample.points().len() <= 512);
     for index in 0..5 {
-        let source_position = [index as f64 * 0.25, (index % 3) as f64, (index % 5) as f64];
+        let source_position = [
+            f64::from(index) * 0.25,
+            f64::from(index % 3),
+            f64::from(index % 5),
+        ];
         let nearest_distance = root_sample
             .points()
             .points()
@@ -441,7 +445,7 @@ fn converts_laz_in_bounded_blocks_and_preserves_intensity_and_rgb16() {
             panic!("RGB must remain u16");
         };
         let (colors, remainder) = rgb.as_chunks::<3>();
-        assert!(remainder.is_empty());
+        assert!(remainder.is_empty(), "{remainder:?}");
         assert!(
             colors
                 .iter()
@@ -837,7 +841,7 @@ fn v6_serial_and_parallel_conversion_outputs_are_identical_and_readable() {
                 panic!("RGB must remain u16");
             };
             let (colors, remainder) = rgb.as_chunks::<3>();
-            assert!(remainder.is_empty());
+            assert!(remainder.is_empty(), "{remainder:?}");
             assert!(
                 colors
                     .iter()
@@ -1408,7 +1412,7 @@ fn pair_output_refuses_existing_companion_and_geometry_alone_is_gray() {
     let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
     for block in reader.block_storage_stats().unwrap() {
         let data = reader.read_block(block.id).unwrap();
-        assert!(data.attributes().is_empty());
+        assert!(data.attributes().is_empty(), "{:?}", data.attributes());
         assert!(
             data.points()
                 .points()
@@ -1582,20 +1586,80 @@ fn node_spool_events_match_child_spool_totals() {
 
 fn sha256_hex(data: &[u8]) -> String {
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
-        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
-        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
-        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
-        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-        0xc67178f2,
+        0x428a_2f98,
+        0x7137_4491,
+        0xb5c0_fbcf,
+        0xe9b5_dba5,
+        0x3956_c25b,
+        0x59f1_11f1,
+        0x923f_82a4,
+        0xab1c_5ed5,
+        0xd807_aa98,
+        0x1283_5b01,
+        0x2431_85be,
+        0x550c_7dc3,
+        0x72be_5d74,
+        0x80de_b1fe,
+        0x9bdc_06a7,
+        0xc19b_f174,
+        0xe49b_69c1,
+        0xefbe_4786,
+        0x0fc1_9dc6,
+        0x240c_a1cc,
+        0x2de9_2c6f,
+        0x4a74_84aa,
+        0x5cb0_a9dc,
+        0x76f9_88da,
+        0x983e_5152,
+        0xa831_c66d,
+        0xb003_27c8,
+        0xbf59_7fc7,
+        0xc6e0_0bf3,
+        0xd5a7_9147,
+        0x06ca_6351,
+        0x1429_2967,
+        0x27b7_0a85,
+        0x2e1b_2138,
+        0x4d2c_6dfc,
+        0x5338_0d13,
+        0x650a_7354,
+        0x766a_0abb,
+        0x81c2_c92e,
+        0x9272_2c85,
+        0xa2bf_e8a1,
+        0xa81a_664b,
+        0xc24b_8b70,
+        0xc76c_51a3,
+        0xd192_e819,
+        0xd699_0624,
+        0xf40e_3585,
+        0x106a_a070,
+        0x19a4_c116,
+        0x1e37_6c08,
+        0x2748_774c,
+        0x34b0_bcb5,
+        0x391c_0cb3,
+        0x4ed8_aa4a,
+        0x5b9c_ca4f,
+        0x682e_6ff3,
+        0x748f_82ee,
+        0x78a5_636f,
+        0x84c8_7814,
+        0x8cc7_0208,
+        0x90be_fffa,
+        0xa450_6ceb,
+        0xbef9_a3f7,
+        0xc671_78f2,
     ];
     let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
+        0x6a09_e667,
+        0xbb67_ae85,
+        0x3c6e_f372,
+        0xa54f_f53a,
+        0x510e_527f,
+        0x9b05_688c,
+        0x1f83_d9ab,
+        0x5be0_cd19,
     ];
     let mut padded = data.to_vec();
     padded.push(0x80);
@@ -1644,7 +1708,9 @@ fn sha256_hex(data: &[u8]) -> String {
             *slot = slot.wrapping_add(value);
         }
     }
-    h.iter().map(|word| format!("{word:08x}")).collect()
+    #[expect(clippy::format_collect, reason = "test output, not a hot path")]
+    let hex = h.iter().map(|word| format!("{word:08x}")).collect();
+    hex
 }
 
 /// One line per node in id order, plus the SHA-256 of `.oct` followed by its attributes file.
@@ -1658,7 +1724,7 @@ fn planner_snapshot(output: &std::path::Path) -> (Vec<String>, String) {
         .map(|id| {
             let node = hierarchy.node(NodeId::new(id)).unwrap();
             let blocks = node.blocks().iter().map(|b| b.get()).collect::<Vec<_>>();
-            let parent = node.parent().map(|p| p.get());
+            let parent = node.parent().map(viewer_core::NodeId::get);
             let children = hierarchy
                 .child_ids(node.id())
                 .iter()
@@ -2179,7 +2245,9 @@ fn assert_preorder_structure(output: &std::path::Path, divisions: u8) {
                 let child = hierarchy.node(*child).unwrap();
                 assert!(child.parent() == Some(id) && child.id().get() > id.get());
                 let (min, max) = (child.bounds().min(), child.bounds().max());
-                subdivision.cell_index(std::array::from_fn(|axis| (min[axis] + max[axis]) / 2.0))
+                subdivision.cell_index(std::array::from_fn(|axis| {
+                    f64::midpoint(min[axis], max[axis])
+                }))
             })
             .collect::<Vec<_>>();
         assert!(keys.windows(2).all(|pair| pair[0] < pair[1]), "{keys:?}");
@@ -2188,16 +2256,16 @@ fn assert_preorder_structure(output: &std::path::Path, divisions: u8) {
     assert_eq!(visited, (0..count).collect::<Vec<_>>(), "ids are preorder");
     let blocks = (0..count)
         .flat_map(|id| hierarchy.node(NodeId::new(id)).unwrap().blocks().to_vec())
-        .map(|block| block.get())
+        .map(viewer_core::BlockId::get)
         .collect::<Vec<_>>();
     assert_eq!(blocks, (0..blocks.len() as u64).collect::<Vec<_>>());
 }
 
 #[test]
 fn node_jobs_commit_nodes_and_blocks_in_preorder() {
+    type WriteFixture = fn(&std::path::Path);
     let tmp = test_dir();
     let dir = tmp.path();
-    type WriteFixture = fn(&std::path::Path);
     let fixtures: [(&str, WriteFixture); 5] = [
         ("dense.las", |path| fixture(path, false, true, 4_000)),
         ("clusters.las", eight_cluster_fixture),
@@ -2317,7 +2385,11 @@ fn a_child_with_all_points_equal_becomes_a_leaf() {
     let hierarchy = reader.metadata().hierarchy();
     let node = hierarchy.node(NodeId::new(equal[0].node_id)).unwrap();
     assert_eq!(node.point_count(), 600);
-    assert!(hierarchy.child_ids(node.id()).is_empty());
+    assert!(
+        hierarchy.child_ids(node.id()).is_empty(),
+        "{:?}",
+        hierarchy.child_ids(node.id())
+    );
 }
 
 /// A `MemSpoolStore` whose `reader` fails once for each listed point count (after its delay), so

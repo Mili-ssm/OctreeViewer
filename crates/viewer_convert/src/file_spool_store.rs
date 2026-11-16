@@ -152,7 +152,7 @@ impl SpoolStore for FileSpoolStore {
         if let Some(writer) = writer {
             writer
                 .into_inner()
-                .map_err(|error| error.into_error())?
+                .map_err(std::io::IntoInnerError::into_error)?
                 .sync_all()?;
         }
         Ok(())

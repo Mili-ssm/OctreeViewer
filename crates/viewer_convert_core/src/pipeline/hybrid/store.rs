@@ -292,8 +292,7 @@ impl<R: RamTier + Send + Sync, P: PageTier + Send + Sync> HybridSpoolStore<R, P>
         state
             .spools
             .get(&id)
-            .map(|spool| spool.segments.iter().map(|s| s.capacity).collect())
-            .unwrap_or_default()
+            .map_or_default(|spool| spool.segments.iter().map(|s| s.capacity).collect())
     }
 }
 
@@ -1124,7 +1123,7 @@ mod tests {
         filled(&store, 2, 40_000);
         let id = SpoolId(3);
         store.create(id).unwrap();
-        store.append(id, &[9; 40_000]).unwrap();
+        store.append(id, &vec![9; 40_000]).unwrap();
         let error = store.close(id).unwrap_err().to_string();
         assert!(error.contains("spill zones exhausted"), "{error}");
     }

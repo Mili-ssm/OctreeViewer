@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SpatialNode::new(
                     node_ids[index],
                     (index != 0).then_some(node_ids[0]),
-                    if index == 0 { 0 } else { 1 },
+                    u32::from(index != 0),
                     bounds,
                     0,
                     0.0,

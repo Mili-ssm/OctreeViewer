@@ -913,7 +913,7 @@ pub(crate) fn assemble_with(
         root_frame.frame_origin_quanta(),
         root_frame.data_max_quanta(),
         root_frame.crs().clone(),
-        root_frame.source_scale_offset().cloned(),
+        root_frame.source_scale_offset().copied(),
         cells,
     )
     .map_err(|_| FormatError::MalformedIndex("repeated node identity"))?;
@@ -936,7 +936,7 @@ pub(crate) fn assemble_with(
         )?);
         node_ranges.push((node.id, node.ranges.clone()));
     }
-    nodes.sort_unstable_by_key(|node| node.id());
+    nodes.sort_unstable_by_key(viewer_core::SpatialNode::id);
     let node_refs: Vec<&SpatialNode> = nodes.iter().collect();
     crate::global_frame::validate_nodes(&frame, header.dataset_origin, &node_refs)
         .map_err(FormatError::MalformedIndex)?;
@@ -1065,6 +1065,10 @@ fn base_record_len(
 }
 
 /// Where the paged index ended up, for the footer.
+#[expect(
+    clippy::struct_field_names,
+    reason = "field names mirror the footer fields"
+)]
 pub(crate) struct PagedIndexWritten {
     pub(crate) index_offset: u64,
     pub(crate) index_length: u64,
@@ -1110,7 +1114,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
             .node_cell(node.id())
             .ok_or(FormatError::UnknownNode(node.id()))?;
         let mut ranges = metadata.node_attribute_ranges(node.id()).to_vec();
-        ranges.sort_unstable_by_key(|range| range.schema_index());
+        ranges.sort_unstable_by_key(super::metadata::NodeAttributeRange::schema_index);
         plan.push(PlanNode {
             node,
             prefix: cell.prefix(),
@@ -1254,7 +1258,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
                 id += 1;
             }
             let mut ranges = metadata.node_attribute_ranges(node.id()).to_vec();
-            ranges.sort_unstable_by_key(|range| range.schema_index());
+            ranges.sort_unstable_by_key(super::metadata::NodeAttributeRange::schema_index);
             nodes.push(PageNode {
                 id: page_node_id(index as u32, position as u32),
                 parent: None,

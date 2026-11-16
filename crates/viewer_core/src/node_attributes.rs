@@ -10,7 +10,7 @@ pub enum NodeAttributePolicy {
     Mean,
     /// Per component: finite-value count u64, then min/max in the original primitive type.
     Range,
-    /// Scalar unsigned dense codes in [0, category_count), not arbitrary numeric labels.
+    /// Scalar unsigned dense codes in [0, `category_count`), not arbitrary numeric labels.
     Categories { category_count: u32 },
 }
 

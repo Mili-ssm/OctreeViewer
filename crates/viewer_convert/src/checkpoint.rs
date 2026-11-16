@@ -11,8 +11,8 @@ use viewer_format::{FormatVersion, HEADER_ENVELOPE_VERSION, RowOrder};
 
 // V6 adds `row_order`; V5 bound resumable state to the exact output header identity and envelope.
 const MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V6";
-const HASH_OFFSET: u128 = 0x6c62272e07bb014262b821756295c58d;
-const HASH_PRIME: u128 = 0x0000000001000000000000000000013b;
+const HASH_OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
+const HASH_PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckpointMode {
@@ -284,7 +284,7 @@ impl Drop for Checkpoint {
 
 pub(crate) fn fingerprint_file(path: &Path) -> Result<FileFingerprint, CheckpointError> {
     let mut file = File::open(path)?;
-    let mut bytes = [0_u8; 64 * 1024];
+    let mut bytes = vec![0_u8; 64 * 1024];
     let mut fingerprint = HASH_OFFSET;
     let mut length = 0_u64;
     loop {

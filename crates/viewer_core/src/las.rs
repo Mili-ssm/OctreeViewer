@@ -153,7 +153,6 @@ pub fn check_chunk_bytes(points: u64, point_size: u64) -> Result<(), LasPrefligh
 
 fn min_point_record_len(format_id: u8) -> u64 {
     match format_id {
-        0 => 20,
         1 => 28,
         2 => 26,
         3 => 34,
@@ -486,11 +485,10 @@ fn preflight_inner<R: Read + Seek>(
                     // their type, so both sums must agree with the record length.
                     let size = match item_type {
                         6 => 20,
-                        7 => 8,
+                        7 | 12 => 8,
                         8 | 11 => 6,
                         9 | 13 => 29,
                         10 => 30,
-                        12 => 8,
                         _ => declared,
                     };
                     laz_items_size += size;

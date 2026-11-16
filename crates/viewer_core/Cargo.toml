@@ -24,3 +24,6 @@ required-features = ["experimental"]
 [[test]]
 name = "occupied_point_block"
 required-features = ["experimental"]
+
+[lints]
+workspace = true

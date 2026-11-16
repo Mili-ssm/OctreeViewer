@@ -31,7 +31,7 @@ pub trait OctreeReader: DatasetSource {
     /// One complete column by index in the dataset schema, without XYZ or other columns.
     fn read_attribute(&mut self, id: BlockId, index: u32) -> Result<AttributeColumn, Self::Error>;
 
-    /// Components of one row. FormatReader decodes the whole column, the compression unit.
+    /// Components of one row. `FormatReader` decodes the whole column, the compression unit.
     fn read_attribute_row(
         &mut self,
         id: BlockId,

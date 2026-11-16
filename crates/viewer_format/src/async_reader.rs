@@ -160,13 +160,10 @@ impl AsyncFormatReader {
             tokio::pin!(notified);
             notified.as_mut().enable();
 
-            let reservation = match self.inner.budget.try_reserve(requested)? {
-                Some(reservation) => reservation,
-                None => {
-                    drop(slot);
-                    notified.await;
-                    continue;
-                }
+            let Some(reservation) = self.inner.budget.try_reserve(requested)? else {
+                drop(slot);
+                notified.await;
+                continue;
             };
 
             let primary_cursor = PositionedCursor::new(Arc::clone(&self.inner.primary));

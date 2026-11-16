@@ -1,7 +1,7 @@
 //! RF-24 round trip: LAS flags and Extra Bytes survive `--format-version v7.5-pre` exactly
 //! (no LAS exporter exists, so converter -> reader is the verification).
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeSet, fs, path::Path};
 
 use las::{Builder, Point, Vlr, Writer, point::Format};
 use viewer_core::{AttributeValues, las::LasExtraBytesError};
@@ -186,7 +186,7 @@ fn round_trip(format_id: u8) {
         .flat_map(|node| node.blocks().to_vec())
         .collect();
     let mut rows = 0;
-    let mut sources = BTreeMap::<u64, ()>::new();
+    let mut sources = BTreeSet::<u64>::new();
     for block in blocks {
         let [flags, amplitude, pair, key, small] =
             columns.map(|index| reader.read_attribute(block, index).unwrap());
@@ -213,7 +213,7 @@ fn round_trip(format_id: u8) {
                 "pair of point {index}"
             );
             assert_eq!(small[row], want.small, "small of point {index}");
-            sources.insert(index as u64, ());
+            sources.insert(index as u64);
             rows += 1;
         }
     }
@@ -244,7 +244,11 @@ fn flags_without_extra_bytes_are_kept_and_older_formats_are_unchanged() {
     let paged = dir.path().join("p.oct");
     convert_file(&input, &paged, options(FormatVersion::V7_PRE5)).unwrap();
     let mut reader = open(&paged);
-    assert!(reader.format_metadata().las_extra_bytes().is_empty());
+    assert!(
+        reader.format_metadata().las_extra_bytes().is_empty(),
+        "{:?}",
+        reader.format_metadata().las_extra_bytes()
+    );
     let hierarchy = reader.format_metadata().dataset().hierarchy();
     let block = hierarchy.node(hierarchy.root_id()).unwrap().blocks()[0];
     let last = hierarchy.attributes().last().unwrap().name().to_owned();
@@ -373,6 +377,10 @@ fn undocumented_extra_bytes_are_dropped_and_reported() {
         report.omitted_dimensions
     );
     let reader = open(&output);
-    assert!(reader.format_metadata().las_extra_bytes().is_empty());
+    assert!(
+        reader.format_metadata().las_extra_bytes().is_empty(),
+        "{:?}",
+        reader.format_metadata().las_extra_bytes()
+    );
     column_index(&reader, "las_flags");
 }

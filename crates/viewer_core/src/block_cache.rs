@@ -408,7 +408,11 @@ mod tests {
             result.rejection(),
             Some(CacheInsertRejection::ProtectedEntries)
         );
-        assert!(result.evicted_blocks().is_empty());
+        assert!(
+            result.evicted_blocks().is_empty(),
+            "{:?}",
+            result.evicted_blocks()
+        );
         assert!(cache.contains(BlockId::new(1)));
         assert!(!cache.contains(BlockId::new(2)));
         assert_eq!(cache.used_bytes(), size);

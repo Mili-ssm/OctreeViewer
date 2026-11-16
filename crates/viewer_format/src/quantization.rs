@@ -363,8 +363,16 @@ mod tests {
     #[test]
     fn empty_blocks_have_an_empty_transform_and_zero_error() {
         let encoded = quantize_local_positions(&[], 0.0).unwrap();
-        assert!(encoded.coordinates().is_empty());
-        assert!(encoded.decode_local().unwrap().is_empty());
+        assert!(
+            encoded.coordinates().is_empty(),
+            "{:?}",
+            encoded.coordinates()
+        );
+        assert!(
+            encoded.decode_local().unwrap().is_empty(),
+            "{:?}",
+            encoded.decode_local().unwrap()
+        );
         assert_eq!(encoded.max_error(), 0.0);
     }
 

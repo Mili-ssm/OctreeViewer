@@ -13,6 +13,44 @@ members = [
 resolver = "2"
 exclude = ["vendor/lz4_flex"]
 
+# Opted in per crate with `[lints] workspace = true`. viewer_render_wgpu and viewer_wasm join
+# after the phase-2b branch merges (it edits them); see CONTRIBUTING, "Clippy".
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Allowed pedantic lints.
+# Numeric/graphics code: casts are deliberate and reviewed.
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+# Exact float equality is intended (e.g. bit-identical GPU/CPU twins in tests).
+float_cmp = "allow"
+# Mathematical notation uses short, similar names.
+similar_names = "allow"
+many_single_char_names = "allow"
+# `assert!(x.is_empty(), "{x:?}")` reads better than comparing with an empty array.
+assert_is_empty = "allow"
+# Noise.
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+# Revisit with the public API project.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Many long functions: a separate refactoring; revisit.
+too_many_lines = "allow"
+# Restriction lints, cherry-picked (never the group).
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"
+# Configured by each crate's clippy.toml.
+disallowed_methods = "deny"
+disallowed_types = "deny"
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

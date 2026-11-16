@@ -246,7 +246,10 @@ pub fn parity_digest_of_blocks(serialized: &[u8]) -> u64 {
         .iter()
         .map(|column| column.descriptor().clone())
         .collect::<Vec<_>>();
-    let ids = blocks.iter().map(|block| block.id()).collect::<Vec<_>>();
+    let ids = blocks
+        .iter()
+        .map(viewer_format::SourcePointBlock::id)
+        .collect::<Vec<_>>();
     let metadata = metadata_for([0.0; 3], bounds, ids, total, schema);
     digest_versions(|version| {
         encode_with(version, metadata.clone(), deserialize_blocks(serialized))
@@ -403,5 +406,7 @@ pub extern "C" fn format_parity_alloc(len: usize) -> *mut u8 {
 /// `ptr..ptr+len` must come from `format_parity_alloc(len)` and be fully written by the host.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn format_parity_digest_blocks(ptr: *const u8, len: usize) -> u64 {
+    // SAFETY: the function contract (see `# Safety`) says `ptr..ptr+len` comes from
+    // `format_parity_alloc(len)` and is fully written, so it is a valid, initialized `[u8]`.
     parity_digest_of_blocks(unsafe { std::slice::from_raw_parts(ptr, len) })
 }

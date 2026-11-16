@@ -24,6 +24,10 @@ fn main() -> ExitCode {
     }
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the arguments are handed over by `main`"
+)]
 fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Error>> {
     if arguments.len() == 1 && arguments[0] == "--help" {
         print_help();

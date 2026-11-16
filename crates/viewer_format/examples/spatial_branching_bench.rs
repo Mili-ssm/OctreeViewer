@@ -182,7 +182,7 @@ fn generate_points(distribution: &str) -> Vec<Point> {
             next_random(&mut state),
             next_random(&mut state),
         ];
-        let uniform = random.map(|value| value as f64 / u32::MAX as f64);
+        let uniform = random.map(|value| f64::from(value) / f64::from(u32::MAX));
         let position = match distribution {
             "clustered" if index % 10 != 0 => uniform.map(|value| 0.45 + value * 0.1),
             "plane" => [uniform[0], uniform[1], 0.5 + (uniform[2] - 0.5) * 0.001],
@@ -284,7 +284,7 @@ fn encode_leaf(points: &[Point], bounds: Bounds) -> Vec<u8> {
             let quantized = if span == 0.0 {
                 0
             } else {
-                (((point.position[axis] - bounds.min[axis]) / span) * u32::MAX as f64).round()
+                (((point.position[axis] - bounds.min[axis]) / span) * f64::from(u32::MAX)).round()
                     as u32
             };
             payload.extend_from_slice(&quantized.to_le_bytes());

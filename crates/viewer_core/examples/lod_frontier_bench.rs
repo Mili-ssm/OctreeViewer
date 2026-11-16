@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     case.nodes.iter().map(SpatialNode::point_count).sum()
                 }
             };
-            let partial_budget = (case.base_points + full_budget) / 2;
+            let partial_budget = u64::midpoint(case.base_points, full_budget);
             let hierarchy = SpatialHierarchy::new_with_semantics(
                 case.nodes.clone(),
                 Vec::new(),
@@ -78,14 +78,14 @@ fn measure(
             project(node, distance_model)
         })?;
         let projected_nodes = visited.borrow().iter().filter(|visited| **visited).count();
-        let mut checksum = 0xcbf29ce484222325_u64;
+        let mut checksum = 0xcbf2_9ce4_8422_2325_u64;
         for ids in [
             expected.node_ids(),
             expected.budget_limited(),
             expected.resolution_limited(),
         ] {
             for value in std::iter::once(ids.len() as u64).chain(ids.iter().map(|id| id.get())) {
-                checksum = (checksum ^ value).wrapping_mul(0x100000001b3);
+                checksum = (checksum ^ value).wrapping_mul(0x0100_0000_01b3);
             }
         }
         for value in [
@@ -93,7 +93,7 @@ fn measure(
             expected.point_budget(),
             expected.max_error_pixels().to_bits(),
         ] {
-            checksum = (checksum ^ value).wrapping_mul(0x100000001b3);
+            checksum = (checksum ^ value).wrapping_mul(0x0100_0000_01b3);
         }
         let priority_stats = if stable {
             let (selection, stats) = hierarchy.select_lod_stable_projector(
@@ -172,7 +172,7 @@ fn project(node: &SpatialNode, distance_model: bool) -> f64 {
     let camera = [0.5, 0.5, 2.0];
     let distance_squared = (0..3)
         .map(|axis| {
-            let delta = (bounds.min()[axis] + bounds.max()[axis]) * 0.5 - camera[axis];
+            let delta = f64::midpoint(bounds.min()[axis], bounds.max()[axis]) - camera[axis];
             delta * delta
         })
         .sum::<f64>();
@@ -219,8 +219,8 @@ fn wide(branches: usize) -> Case {
         for child in 0..2 {
             let mut min = min;
             let mut max = max;
-            min[1] = child as f64 * 0.5;
-            max[1] = (child + 1) as f64 * 0.5;
+            min[1] = f64::from(child) * 0.5;
+            max[1] = f64::from(child + 1) * 0.5;
             nodes.push(node(
                 nodes.len(),
                 Some(id),
@@ -247,7 +247,7 @@ fn binary(depth: u32) -> Case {
         let bounds = if let Some(parent) = parent {
             let parent_bounds = nodes[parent].bounds();
             let axis = (level as usize - 1) % 3;
-            let middle = (parent_bounds.min()[axis] + parent_bounds.max()[axis]) * 0.5;
+            let middle = f64::midpoint(parent_bounds.min()[axis], parent_bounds.max()[axis]);
             let mut min = parent_bounds.min();
             let mut max = parent_bounds.max();
             if id % 2 == 1 {

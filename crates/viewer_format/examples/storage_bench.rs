@@ -600,14 +600,14 @@ struct Checksum(u64);
 
 impl Default for Checksum {
     fn default() -> Self {
-        Self(0xcbf29ce484222325)
+        Self(0xcbf2_9ce4_8422_2325)
     }
 }
 
 impl Checksum {
     fn write(&mut self, bytes: &[u8]) {
         for byte in bytes {
-            self.0 = (self.0 ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
+            self.0 = (self.0 ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3);
         }
     }
     fn finish(self) -> u64 {

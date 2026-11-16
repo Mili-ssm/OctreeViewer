@@ -38,6 +38,10 @@ fn main() {
     }
 }
 
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "the `LazItem` module is private, so its method path cannot be named"
+)]
 fn info(laz: &str) {
     let opened = OpenedLaz::open(Path::new(laz)).unwrap();
     let counts: Vec<u64> = opened
