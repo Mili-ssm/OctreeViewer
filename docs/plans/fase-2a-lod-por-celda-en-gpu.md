@@ -82,17 +82,17 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
   - `pub fn drawn_depth_at(view: &LodView, node: &NodeLod, point: [f64; 3], node_lo: [f64; 3], side_at_node_depth: f64) -> Option<u8>` (oracle: the depth whose cell draws a point given in node-local scaled units).
   - `pub const MAX_NODE_SPAN: u8 = 31`.
 
-- [ ] **Step 1: Write the failing tests** in `cell_lod_tests.rs`:
+- [x] **Step 1: Write the failing tests** in `cell_lod_tests.rs`:
   - `the_bound_covers_the_projected_edge`: 10 000 seeded cubes with `zmin ≥ near` under random cameras; `edge_bound ≥ projected_voxel_edge_pixels` of the same cube (same frame via `ViewProjection`) with relative slack 1e-5.
   - `refines_is_monotone_from_child_to_parent`: random chains, including `‖anchor‖ = 1e4` with `d − node_depth = 29`.
   - `a_cell_around_the_eye_refines`: eye inside the cube, and cube crossing `near` → `true`, finite bound, never NaN.
   - `min_side_stops_refinement`: `side ≤ min_side` → `false` at any distance.
   - `exactly_one_cell_draws_each_point`: ≥ 1000 seeded poses × scenes with ≥ 3 active depths, non-contiguous depths, a gap ≥ 16, a partially masked node, the eye inside a cell, and band borders (target within 1e-3 of `edge_bound`); every sample point outside set mask bits is drawn by exactly one active depth, points under a set bit by none.
   - `masked_any_matches_brute_force` for every depth from `node_depth` to `node_depth + 5`.
-- [ ] **Step 2:** `cargo test -p viewer_render_wgpu --profile fast --offline --lib cell_lod` → FAIL (module missing).
-- [ ] **Step 3:** implement.
-- [ ] **Step 4:** same command → PASS; `cargo clippy -p viewer_render_wgpu --offline --all-targets` clean.
-- [ ] **Step 5:** commit `feat(render): add the per-cell LOD decision and its tests`.
+- [x] **Step 2:** `cargo test -p viewer_render_wgpu --profile fast --offline --lib cell_lod` → FAIL (module missing).
+- [x] **Step 3:** implement.
+- [x] **Step 4:** same command → PASS; `cargo clippy -p viewer_render_wgpu --offline --all-targets` clean.
+- [x] **Step 5:** commit `feat(render): add the per-cell LOD decision and its tests`.
 
 ### Task 2: Measure the metric on Majadas and Belvedere (gate)
 
