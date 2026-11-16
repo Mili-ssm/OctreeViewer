@@ -2028,6 +2028,32 @@ fn the_hold_threshold_is_the_depth_the_ancestor_drew_over_the_octant_of_the_chil
 }
 
 #[test]
+fn in_cell_mode_the_hold_threshold_is_the_finest_depth_active_in_the_ancestor() {
+    // The GPU picks the depth per cell among the active ones of a node, so node 2 may have drawn
+    // its finest active depth (6) over an octant whose nominal depth is 5. Child 10 stores 5 and
+    // 6, has only 5 resident and wants 6: short of what was really drawn there, held. In octant
+    // mode the nominal depth is the threshold and the child is not held.
+    let nodes = two_regions_with_coarse_children();
+    let mut held = Vec::new();
+    for mode in [LodMode::Octant, LodMode::Cell] {
+        let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
+        rig.pool.set_lod_mode(mode);
+        rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+        let child = nodes[&NodeId::new(10)].clone();
+        seed_resident(&mut rig.pool, 10, &[child.stored[0]]);
+        rig.pool.residency_epoch += 1;
+        let nominal = child.stored[0];
+        rig.pool
+            .applied_drawn
+            .insert(NodeId::new(2), [Some(nominal); 8]);
+        rig.pool.applied_finest.insert(NodeId::new(2), nominal + 1);
+        let (eval, _) = eval_with(&rig, &ids(&[10]), nominal + 1);
+        held.push((mode, eval.hold.contains(&NodeId::new(10))));
+    }
+    assert_eq!(held, [(LodMode::Octant, false), (LodMode::Cell, true)]);
+}
+
+#[test]
 fn octants_of_a_node_touch_the_ancestor_octants_below_them() {
     let f = Footprint {
         rep: 6,

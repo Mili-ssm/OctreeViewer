@@ -714,6 +714,10 @@ pub struct CellPool {
     old_released: FastMap<NodeId, u8>,
     /// Drawn depths per octant of each node of the applied cut, and their digest.
     applied_drawn: FastMap<NodeId, [Option<u8>; 8]>,
+    /// Cell mode: the finest depth active in each node of the applied cut. The GPU picks the
+    /// drawing depth per cell among the active ones, so it can exceed the octant's `applied_drawn`
+    /// depth wherever a finer active depth (another octant's, or D5) still refines.
+    applied_finest: FastMap<NodeId, u8>,
     applied_digest: u64,
     /// `RealMemo::hold_ancestors` of the applied cut.
     applied_cover: FastSet<NodeId>,
@@ -835,6 +839,7 @@ impl CellPool {
             hold: FastSet::default(),
             wait_ages: FastMap::default(),
             applied_drawn: FastMap::default(),
+            applied_finest: FastMap::default(),
             applied_digest: 0,
             applied_cover: FastSet::default(),
             hold_passes: HOLD_PASSES,
@@ -921,6 +926,18 @@ impl CellPool {
             depths.sort_unstable();
         }
         depths
+    }
+
+    /// The depth the applied cut may have drawn over an octant of `id` where it drew `drawn`: in
+    /// cell mode up to the finest active depth of the node (R3-Q21 needs what was actually drawn,
+    /// not the octant's nominal depth).
+    fn drawn_ceiling(&self, id: NodeId, drawn: Option<u8>) -> Option<u8> {
+        match self.lod_mode {
+            LodMode::Octant => drawn,
+            LodMode::Cell => {
+                drawn.map(|depth| depth.max(self.applied_finest.get(&id).copied().unwrap_or(depth)))
+            }
+        }
     }
 
     /// Stored depths of `node` that cell mode can use (inside its span, under the fit cap).
@@ -1177,6 +1194,7 @@ impl CellPool {
         self.applied_cover.clear();
         self.overflow_frame = 0;
         self.applied_drawn.clear();
+        self.applied_finest.clear();
         self.old_released.clear();
         self.applied_digest = 0;
         self.carry = Carry::default();
@@ -1920,24 +1938,30 @@ impl CellPool {
                 && let Some(drawn) = self.applied_drawn.get(&ancestor)
             {
                 for (o, slot) in limit.iter_mut().enumerate() {
-                    *slot = f.octants_of(gap, o).filter_map(|a| drawn[a]).max();
+                    *slot = f
+                        .octants_of(gap, o)
+                        .filter_map(|a| self.drawn_ceiling(ancestor, drawn[a]))
+                        .max();
                 }
             }
             // The covering node may not have drawn over this zone before (it is new in the cut
             // or drew elsewhere): what drew there was the nearest applied ancestor above it.
             if let Some((_, gap)) = above {
                 for k in f.gaps().filter(|k| *k > gap) {
-                    let Some(drawn) = self
+                    let Some((far, drawn)) = self
                         .applied_index
                         .cells
                         .get(&f.ancestor(k))
-                        .and_then(|a| self.applied_drawn.get(a))
+                        .and_then(|a| Some((*a, self.applied_drawn.get(a)?)))
                     else {
                         continue;
                     };
                     for (o, slot) in limit.iter_mut().enumerate() {
                         if slot.is_none() {
-                            *slot = f.octants_of(k, o).filter_map(|a| drawn[a]).max();
+                            *slot = f
+                                .octants_of(k, o)
+                                .filter_map(|a| self.drawn_ceiling(far, drawn[a]))
+                                .max();
                         }
                     }
                 }
@@ -1945,9 +1969,9 @@ impl CellPool {
             for (d, k) in &below {
                 let df = Footprint::new(grid, self.applied_index.nodes[d].bounds);
                 for (o, drawn) in self.applied_drawn[d].iter().enumerate() {
-                    if let Some(depth) = drawn {
+                    if let Some(depth) = self.drawn_ceiling(*d, *drawn) {
                         for a in df.octants_of(*k, o) {
-                            limit[a] = limit[a].max(Some(*depth));
+                            limit[a] = limit[a].max(Some(depth));
                         }
                     }
                 }
@@ -2957,6 +2981,7 @@ impl CellPool {
                     self.free_masks.insert(old.slot);
                 }
             }
+            let mut finest = FastMap::default();
             for index in 0..self.applied.len() {
                 let (id, mask) = (self.applied[index].node, self.applied[index].mask);
                 let bounds = nodes
@@ -2982,6 +3007,9 @@ impl CellPool {
                         })
                         .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth))
                 };
+                if self.lod_mode == LodMode::Cell && active_bits != 0 {
+                    finest.insert(id, node_depth + (63 - active_bits.leading_zeros()) as u8);
+                }
                 let next = |slot: u32| MaskSlot {
                     slot,
                     mask,
@@ -3015,6 +3043,7 @@ impl CellPool {
                     }
                 }
             }
+            self.applied_finest = finest;
         }
         let mut applied_levels = FastSet::default();
         for entry in &self.applied {
