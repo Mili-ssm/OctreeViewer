@@ -1492,7 +1492,30 @@ impl CellPool {
         )
         .into_iter()
         .filter(|depth| !stored.contains(depth))
-        .collect();
+        .collect::<Vec<u8>>();
+        // Contiguous span (ADR 0053): every buildable depth between the coarsest and the finest
+        // active one (drawn or resident) is wanted too, below the spacing depth as well.
+        // `buildable` already holds the 0.1 mm minimum side and the sparse-page refusals.
+        let node_depth = Self::node_depth(grid, node.bounds);
+        let (span_lo, span_hi) = cell_depth_range(node_depth);
+        // Active depths are the drawn ones and the resident ones inside the range (the pinned
+        // coarsest level outside it is not active).
+        let active: Vec<u8> = (lo.max(span_lo)..=hi.min(span_hi))
+            .filter(|depth| self.is_resident(self.key(entry.node, *depth)))
+            .chain(entry.required_levels())
+            .collect();
+        let mut missing = missing;
+        if let (Some(first), Some(last)) = (active.iter().min(), active.iter().max()) {
+            for depth in (*first).max(buildable.0)..=(*last).min(buildable.1) {
+                if (span_lo..=span_hi).contains(&depth)
+                    && !stored.contains(&depth)
+                    && !missing.contains(&depth)
+                {
+                    missing.push(depth);
+                }
+            }
+            missing.sort_unstable();
+        }
         (in_range, missing)
     }
 

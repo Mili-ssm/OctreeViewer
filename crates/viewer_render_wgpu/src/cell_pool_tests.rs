@@ -3926,6 +3926,46 @@ fn cell_mode_requests_missing_depths_across_the_range_down_to_spacing() {
     );
 }
 
+/// Node with stored {2, 3, 4, 9}, buildable 2..=14; `resident` are seeded before the frame.
+fn gap_rig_with(resident: &[u8]) -> Rig {
+    let mut node = d5_node(SIDE, &[2, 3, 4, 9]);
+    node.buildable = (2, 14);
+    node.points = 512 * 64;
+    let mut rig = Rig::new(HashMap::from([(NodeId::new(1), node)]), 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, resident);
+    rig.pool.residency_epoch += 1;
+    rig
+}
+
+#[test]
+fn cell_mode_fills_gaps_between_active_depths() {
+    // 7 and 11 are resident and active (range 7..=11): 8 and 10 lie between them, so they are
+    // requested although 10 is below the spacing depth 9; 9 is stored and fetched instead.
+    let mut rig = gap_rig_with(&[2, 7, 11]);
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
+    let requested: Vec<u8> = plan.level_requests.iter().map(|key| key.depth).collect();
+    for depth in [8, 10] {
+        assert!(requested.contains(&depth), "{depth} missing: {requested:?}");
+    }
+    assert!(!requested.contains(&9), "{requested:?}");
+    assert!(
+        !requested.contains(&12),
+        "nothing past the finest active depth: {requested:?}"
+    );
+}
+
+#[test]
+fn cell_mode_fills_gaps_below_spacing_for_a_leaf() {
+    // A leaf whose stored chain ends at 9 and whose resident depths are 9 and 11: 10 is below
+    // the spacing depth and gets built because it lies between two active depths.
+    let mut rig = gap_rig_with(&[2, 9, 11]);
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
+    let requested: Vec<u8> = plan.level_requests.iter().map(|key| key.depth).collect();
+    assert!(requested.contains(&10), "{requested:?}");
+    assert!(!requested.contains(&12), "{requested:?}");
+}
+
 #[test]
 fn the_fit_counts_requested_range_depths() {
     let mut rig = range_gap_rig();
