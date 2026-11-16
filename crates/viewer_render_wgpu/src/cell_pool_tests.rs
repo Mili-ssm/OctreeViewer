@@ -4082,3 +4082,53 @@ fn an_adjacent_level_arriving_during_the_wait_is_taken_and_restarts_the_wait() {
     );
     assert_eq!(frames.iter().map(|f| f.2).sum::<u32>(), OCTANTS);
 }
+
+#[test]
+fn retained_frames_advance_the_step_wait() {
+    // 7 waits for 6, which never arrives. A pose jump to a cut that cannot draw yet keeps the
+    // previous one on screen (`RetainedPrevious`); those frames count towards the wait, so back
+    // on node 2 the octants hop at once to the resident 4.
+    let mut rig = node_2_drawing_7(&[5, 6], &[5, 6]);
+    assert_eq!(
+        step_node_2(&mut rig, 64.0),
+        (Some(7), Some(6), 0),
+        "the wait starts"
+    );
+    rig.held.extend([NodeId::new(6), NodeId::new(7)]);
+    for frame in 1..STEP_WAIT_FRAMES {
+        let plan = rig.step(&ids(&[6, 7]), &camera("zoom"), 64.0);
+        assert_eq!(plan.apply, CutApply::RetainedPrevious, "frame {frame}");
+        assert_eq!(plan.counters.step_hops, 0, "frame {frame}");
+    }
+    assert_eq!(
+        step_node_2(&mut rig, 64.0),
+        (Some(4), None, OCTANTS),
+        "the retained frames waited"
+    );
+}
+
+#[test]
+fn a_node_entering_the_cut_widens_its_window_one_level_per_frame() {
+    // Only depth 9 serves the node when it enters the cut (range 7..=11), so it draws 9 alone.
+    // The other depths of the range become resident afterwards: the active span takes one level
+    // at each end per frame, not the whole range at once (ADR 0053).
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+    )]);
+    let mut rig = Rig::new(nodes, 4096, 64, 10_000);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2, 9]);
+    rig.pool.residency_epoch += 1;
+    let cam = camera("zoom");
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
+    assert_eq!(plan.entries[0].range, Some((7, 11)), "setup");
+    assert_eq!(active_depths(&plan, &rig, 1), [9], "entering the cut");
+    seed_more(&mut rig, 1, &[7, 8, 10, 11]);
+    let spans: Vec<Vec<u8>> = (0..3)
+        .map(|_| active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1))
+        .collect();
+    assert_eq!(spans[0], [8, 9, 10], "one level either side");
+    assert_eq!(spans[1], [7, 8, 9, 10, 11], "one more level either side");
+    assert_eq!(spans[2], spans[1], "the range is covered");
+}
