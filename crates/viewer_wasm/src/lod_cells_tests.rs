@@ -1484,20 +1484,24 @@ fn level_builds_respect_their_own_budget() {
 }
 
 #[test]
-fn a_colour_change_clears_pending_requests() {
+fn pending_requests_survive_a_colour_change() {
     let (mut dataset, sent, view) = built_for_levels();
     let leaf = NodeId::new(3);
     let depth = unsent_depths(&sent[&leaf], 1)[0];
     dataset.apply_level_requests(&[(leaf, depth)]);
-    assert!(dataset.has_pending_level_requests());
+    assert!(dataset.has_pending_level_requests(true));
     assert!(dataset.set_cell_paint(Some((0, 0))));
-    assert!(!dataset.has_pending_level_requests());
-    // The node is rebuilt with the new colours; no level of the cleared request ships, because
-    // the render side has not asked again.
+    assert!(dataset.has_pending_level_requests(true));
+    // The node is rebuilt with the new colours and the pending depth is built after it, with
+    // them, without the render side asking again.
     load_all(&mut dataset);
     let (nodes, levels) = run_levels(&mut dataset, &view);
-    assert!(levels.is_empty());
     assert!(nodes.iter().any(|node| node.id == leaf), "not rebuilt");
+    assert!(
+        levels.contains(&(leaf, depth)),
+        "the pending depth was lost"
+    );
+    assert!(!dataset.has_pending_level_requests(true));
 }
 
 #[test]
@@ -1522,17 +1526,63 @@ fn a_rebuilt_node_keeps_its_on_demand_depths_with_the_new_colours() {
 fn an_unservable_depth_is_not_retried() {
     let (mut dataset, sent, view) = built_for_levels();
     let leaf = NodeId::new(3);
-    // Past the last depth the node can build: `node_cell_level` refuses it, like a leaf whose
-    // positions are still merged at `MAX_CELL_DEPTH`.
+    // Past the last depth the node can build: the range check refuses it.
     let depth = sent[&leaf].buildable.1 + 1;
     dataset.apply_level_requests(&[(leaf, depth)]);
     let first = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
     assert!(first.new_levels.is_empty());
-    assert!(!dataset.has_pending_level_requests());
+    assert!(!dataset.has_pending_level_requests(true));
     // Asked again by the render side: no rebuild, nothing shipped.
     dataset.apply_level_requests(&[(leaf, depth)]);
-    assert!(!dataset.has_pending_level_requests());
+    assert!(!dataset.has_pending_level_requests(true));
     let again = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
     assert!(again.new_levels.is_empty());
     assert!(again.new_nodes.is_empty());
+}
+
+#[test]
+fn a_depth_still_merged_at_the_deepest_level_is_requested_once() {
+    let (mut dataset, sent, view) = built_for_levels();
+    let leaf = NodeId::new(3);
+    // In range (`buildable.1 == MAX_CELL_DEPTH` for a leaf), but two distinct positions share a
+    // cell there: `node_cell_level` fails with `AbsoluteDepthExceeded`.
+    let depth = sent[&leaf].buildable.1;
+    assert_eq!(depth, viewer_render_wgpu::MAX_CELL_DEPTH);
+    // Two f32 positions closer than a depth-63 cell (7e-18 of the 64-wide root), next to the
+    // origin where f32 resolves them (the block need not lie in the node's bounds for this).
+    let block = BlockId::new(103);
+    let at = |value: f32| [value; 3];
+    let merged = PointBlock::new(
+        block,
+        PointBatch::new(vec![
+            Point::new(at(1.0e-19), ColorRgb::new(1, 2, 3)),
+            Point::new(at(2.0e-19), ColorRgb::new(4, 5, 6)),
+        ]),
+        Vec::new(),
+    );
+    dataset.cache.remove(block);
+    dataset.insert_block(merged).unwrap();
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    assert!(dataset.has_pending_level_requests(true));
+    let first = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+    assert!(first.new_levels.is_empty());
+    assert!(!dataset.has_pending_level_requests(true));
+    // Asked again, and after more updates: remembered, not rebuilt, nothing pending or shipped.
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    assert!(!dataset.has_pending_level_requests(true));
+    for _ in 0..3 {
+        let again = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+        assert!(again.new_levels.is_empty() && again.new_nodes.is_empty());
+    }
+}
+
+#[test]
+fn pending_levels_with_uncached_blocks_need_a_reader_to_be_work() {
+    let (mut dataset, sent, _) = built_for_levels();
+    let leaf = NodeId::new(3);
+    let depth = unsent_depths(&sent[&leaf], 1)[0];
+    dataset.cache.remove(BlockId::new(103));
+    dataset.apply_level_requests(&[(leaf, depth)]);
+    assert!(dataset.has_pending_level_requests(true));
+    assert!(!dataset.has_pending_level_requests(false));
 }

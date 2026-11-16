@@ -378,6 +378,21 @@ impl CutView {
             .max()
     }
 
+    /// The (entry, octant) drawing the finest depth at `p` (unhidden), if any.
+    fn drawer_at(&self, p: [f64; 3]) -> Option<(usize, usize)> {
+        (0..self.nodes.len())
+            .filter_map(|i| {
+                let c = self.cell_at(i, p)?;
+                if cell_hidden(&self.entries[i].mask, c) {
+                    return None;
+                }
+                let octant = octant_of_cell(c);
+                Some((self.active[i][octant]?, i, octant))
+            })
+            .max()
+            .map(|(_, i, octant)| (i, octant))
+    }
+
     /// Finest depth drawn at `p` (unhidden), if any.
     fn depth_at(&self, p: [f64; 3]) -> Option<u8> {
         (0..self.nodes.len())
@@ -507,14 +522,15 @@ struct Harness {
     zone_coarsenings: usize,
     /// `zone_coarsenings` without the stage excuse: a staged octant drawn coarser than before,
     /// while its raw wanted depth did not get coarser, counts too. Each such drop is excused when
-    /// the fit capped nodes that frame
-    /// or the ladder ran coarser than the target; the rest are `unexcused_drops` (asserted 0).
+    /// the fit capped nodes that frame or the ladder ran coarser than the target, and the octant
+    /// that draws the sample is itself staged below its wish (a capped node, or an octant whose
+    /// depth the stage pixels explain, is staged by construction); the rest are
+    /// `unexcused_drops` (asserted 0).
     staged_coarsenings: usize,
     stage_excused_drops: usize,
     unexcused_drops: usize,
     frame_coarsened: u32,
     frame_stage_px: f64,
-    frame_stage_drop: bool,
     /// Sample points drawn in the previous cut, still inside the planner's cut, drawn by nothing.
     lost_samples: usize,
     /// The planner's nodes of the cut being drawn, when the dataset has already planned further
@@ -580,7 +596,6 @@ impl Harness {
             unexcused_drops: 0,
             frame_coarsened: 0,
             frame_stage_px: 0.0,
-            frame_stage_drop: false,
             lost_samples: 0,
             planner_of_drawn_cut: None,
             hole_frames: 0,
@@ -693,10 +708,16 @@ impl Harness {
                     if let (Some(before), Some(after)) = (self.sample_depths[i], now)
                         && after < before.min(cut.wanted_at(*p, true).unwrap_or(u8::MAX))
                     {
-                        // Only a counted stage explains a drop below the raw wish: the fit capped
-                        // nodes this frame (R3-Q11) or the ladder runs coarser than the target
-                        // (R3-Q3 stage pixels).
-                        if self.frame_coarsened > 0 || self.frame_stage_px > self.target_px {
+                        // Only a counted stage explains a drop below the raw wish, and only for
+                        // the octant that draws the point: the fit capped nodes this frame
+                        // (R3-Q11) or the ladder runs coarser than the target (R3-Q3 stage
+                        // pixels), and that octant is staged below its wish.
+                        let staged = cut
+                            .drawer_at(*p)
+                            .is_some_and(|(node, octant)| cut.entries[node].stage[octant]);
+                        let counted_stage =
+                            self.frame_coarsened > 0 || self.frame_stage_px > self.target_px;
+                        if staged && counted_stage {
                             self.stage_excused_drops += 1;
                         } else {
                             self.unexcused_drops += 1;
@@ -755,7 +776,6 @@ impl Harness {
         let digest = cell_cut_digest(&plan.entries);
         self.frame_coarsened = stats.counters.pool_coarsened;
         self.frame_stage_px = out.stage_pixels;
-        self.frame_stage_drop = self.last_stage.is_some_and(|l| out.stage_pixels > l);
         self.check_drawn_cut(number, plan, digest);
         if let Some(last) = self.last_stage
             && out.stage_pixels > last

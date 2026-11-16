@@ -604,9 +604,8 @@ impl LodDataset {
         }
         self.cells.paint = paint;
         self.cells.color_gen = self.cells.color_gen.saturating_add(1);
-        // The requests name levels painted with the old attribute: the render side asks again
-        // for what the rebuilt nodes still lack.
-        self.cells.level_requests.clear();
+        // Pending requests survive: the rebuilt node (swapped whole) is served them later with
+        // the current colours, and the render side does not ask again for an unchanged set.
         self.clear_loaded_blocks();
         true
     }
@@ -620,12 +619,26 @@ impl LodDataset {
         self.cells.level_requests = requests.to_vec();
     }
 
-    /// Whether requested levels wait to be built (they need another update).
+    /// Whether requested levels wait to be built and another update can make progress: not while
+    /// a budget blocks builds or holds the levels, and a request with uncached blocks only when
+    /// the host can read them (`can_load_blocks`).
     #[cfg(any(target_arch = "wasm32", test))]
-    pub(crate) fn has_pending_level_requests(&self) -> bool {
+    pub(crate) fn has_pending_level_requests(&self, can_load_blocks: bool) -> bool {
+        if self.cells.cpu_blocked || self.cells.gpu_blocked {
+            return false;
+        }
         self.cells.level_requests.iter().any(|request| {
             !self.cells.unservable_levels.contains(request)
                 && self.level_node_state(request.0).is_some()
+                && (can_load_blocks || self.level_blocks_cached(request.0))
+        })
+    }
+
+    fn level_blocks_cached(&self, id: NodeId) -> bool {
+        self.metadata.hierarchy().node(id).is_some_and(|node| {
+            node.blocks()
+                .iter()
+                .all(|block| self.cache.contains(*block))
         })
     }
 
@@ -684,12 +697,7 @@ impl LodDataset {
                 }
                 Some(true) => {}
             }
-            let cached = self.metadata.hierarchy().node(id).is_some_and(|node| {
-                node.blocks()
-                    .iter()
-                    .all(|block| self.cache.contains(*block))
-            });
-            if !cached {
+            if !self.level_blocks_cached(id) {
                 keep.push(request);
                 continue;
             }
@@ -705,15 +713,23 @@ impl LodDataset {
             }
         }
         let mut served = Vec::new();
-        for (id, depths) in chosen {
+        let mut chosen = chosen.into_iter();
+        let mut failure = None;
+        while let Some((id, depths)) = chosen.next() {
             let outcome = self.build_node_levels(id, &depths);
             let (packed, unservable) = match outcome {
                 Ok(built) => built,
                 Err(error) => {
-                    // Nothing was sent: the whole set is asked for again by the next update.
+                    // The packs already served ship; this node and the rest stay pending and
+                    // the next update tries them again.
                     keep.extend(depths.iter().map(|depth| (id, *depth)));
-                    self.cells.level_requests = keep;
-                    return Err(error);
+                    for (rest, depths) in chosen.by_ref() {
+                        keep.extend(depths.iter().map(|depth| (rest, *depth)));
+                        deferred += depths.len();
+                    }
+                    deferred += depths.len();
+                    failure = Some(error);
+                    break;
                 }
             };
             self.cells
@@ -731,7 +747,10 @@ impl LodDataset {
             }
         }
         self.cells.level_requests = keep;
-        Ok((served, deferred))
+        match failure {
+            Some(error) if served.is_empty() => Err(error),
+            _ => Ok((served, deferred)),
+        }
     }
 
     /// The attribute the cells are painted with.
