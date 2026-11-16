@@ -320,6 +320,9 @@ struct WantedMemo {
     eye: [f64; 3],
     min_depth: f64,
     had_caps: bool,
+    /// D5 levels (cell mode) the fit counted: they belong to ancestors outside `cut`, which the
+    /// driver can forget while the cut stays the same, so a different set invalidates the memo.
+    d5: FastSet<LevelKey>,
 }
 
 /// Result of the real cut, valid for one wanted generation and one residency epoch.
@@ -2382,13 +2385,6 @@ impl CellPool {
         self.release(frame, &mut page_frees);
 
         // Wanted cut and fit, reused while nothing they read has changed.
-        let reusable = !depths_changed
-            && self.wanted_memo.as_ref().is_some_and(|memo| {
-                let moved = distance(memo.eye, eye);
-                memo.cut == cut
-                    && memo.size_epoch == self.size_epoch
-                    && !(memo.had_caps && moved > DRIFT_FRACTION * memo.min_depth && moved > 0.0)
-            });
         // E7: the D5 depth of every node of the real cut with descendants in the wanted cut is
         // protected from eviction and requested before anything else; the fit counts its pages.
         let d5 = if self.lod_mode == LodMode::Cell {
@@ -2396,6 +2392,14 @@ impl CellPool {
         } else {
             FastSet::default()
         };
+        let reusable = !depths_changed
+            && self.wanted_memo.as_ref().is_some_and(|memo| {
+                let moved = distance(memo.eye, eye);
+                memo.cut == cut
+                    && memo.size_epoch == self.size_epoch
+                    && memo.d5 == d5
+                    && !(memo.had_caps && moved > DRIFT_FRACTION * memo.min_depth && moved > 0.0)
+            });
         if !reusable {
             let mut offenders = BTreeSet::new();
             let (mut needed, mut requests, overflow) =
@@ -2427,6 +2431,7 @@ impl CellPool {
                 eye,
                 min_depth,
                 had_caps: !self.caps.is_empty(),
+                d5: d5.clone(),
             });
         }
         let memo = self.wanted_memo.as_ref().expect("set above");
