@@ -1268,7 +1268,17 @@ fn a_level_too_sparse_to_page_is_refused_not_built() {
     let [(_, first_sparse)] = out.refused[1..] else {
         panic!("expected the first sparse depth: {:?}", out.refused);
     };
-    assert!((10..40).contains(&first_sparse), "{first_sparse}");
+    assert_eq!(first_sparse, 19, "first sparse depth of this fixture");
+    // The depth just above it packs: it is servable.
+    pair.builder
+        .level_requests(&mut pair.h.dataset, &[(leaf, first_sparse - 1)]);
+    pair.builder.mark_dirty();
+    let out = pair.plan();
+    assert!(out.refused.is_empty(), "{:?}", out.refused);
+    assert!(
+        !out.levels.is_empty(),
+        "the depth above the first sparse one was not built"
+    );
 }
 
 /// Negative control: this is the #35 bug, a leaf drawing its fine levels from far.

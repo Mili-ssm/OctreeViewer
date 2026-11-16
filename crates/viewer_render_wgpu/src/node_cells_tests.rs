@@ -1356,3 +1356,74 @@ fn a_leaf_level_too_sparse_to_page_is_refused_before_packing() {
         );
     }
 }
+
+/// The stored chain of a leaf with two nearly coincident points reaches a depth too sparse to
+/// page; packing it would allocate a page per cell when the node is built, with no zoom involved.
+#[test]
+fn a_leaf_chain_never_stores_a_level_too_sparse_to_page() {
+    let mut rng = Lcg(7);
+    let bounds = cube([8.0; 3], 8.0);
+    let mut points = random_points(&mut rng, [8.0; 3], 8.0, 64_000);
+    points.push(Point::new([12.0; 3], ColorRgb::new(1, 2, 3)));
+    points.push(Point::new([12.000_001; 3], ColorRgb::new(4, 5, 6)));
+    let block = plain_block(points);
+    let chain = PointNodeCellSource::default()
+        .node_cells(
+            &grid(),
+            NodeId::new(0),
+            bounds,
+            None,
+            true,
+            std::slice::from_ref(&block),
+        )
+        .unwrap();
+    assert!(!chain.levels.is_empty());
+    for level in &chain.levels {
+        assert!(
+            packs_efficiently(&level.cells),
+            "chain depth {}",
+            level.depth
+        );
+    }
+    assert!(
+        chain.buildable.1 < 26
+            && chain
+                .levels
+                .iter()
+                .all(|level| level.depth <= chain.buildable.1),
+        "the buildable maximum excludes the sparse depths: {:?}",
+        chain.buildable
+    );
+    let bytes: usize = chain
+        .levels
+        .iter()
+        .map(|level| {
+            pack_level(&grid(), bounds, NodeId::new(0), level)
+                .pages
+                .len()
+                * PAGE_SLOTS
+                * 16
+        })
+        .sum();
+    assert!(bytes < 16 << 20, "packed chain is {bytes} bytes");
+}
+
+/// A level that costs at most `MIN_PAGES_ALWAYS_OK` pages is accepted however scattered, and the
+/// first level over both limits is refused.
+#[test]
+fn a_few_scattered_cells_always_pack_and_many_do_not() {
+    let cell = |coord: [u64; 3]| crate::NodeCell {
+        coord,
+        rgb_sum: [0; 3],
+        intensity_sum: 0.0,
+        intensity_count: 0,
+        count: 1,
+        classification: -1,
+        z_min: 0.0,
+        z_max: 0.0,
+    };
+    let scattered = |n: u64| -> Vec<_> { (0..n).map(|i| cell([i << 20, 0, 0])).collect() };
+    assert!(packs_efficiently(&scattered(9)));
+    assert!(packs_efficiently(&scattered(128)));
+    assert!(!packs_efficiently(&scattered(129)));
+}

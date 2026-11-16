@@ -1086,6 +1086,7 @@ impl LodDataset {
             }
             match node_cell_level(&local_grid, local, node.spacing(), is_leaf, &blocks, depth) {
                 Ok(level) => cells.levels.push(level),
+                // Unservable depths (merged or too sparse to page) are skipped, not an error.
                 Err(NodeCellError::AbsoluteDepthExceeded | NodeCellError::TooSparseToPage) => {}
                 Err(error) => return Err(LodDatasetError::CellDriver(error.to_string())),
             }

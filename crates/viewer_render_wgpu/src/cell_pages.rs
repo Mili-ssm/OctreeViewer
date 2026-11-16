@@ -340,16 +340,20 @@ fn page_is_full(min: [u64; 3], max: [u64; 3], coord: [u64; 3], len: usize) -> bo
     too_wide || len == PAGE_SLOTS
 }
 
-/// Page-use limit of a level, worth its `PAGE_SLOTS` slots per page: a
-/// level that needs more than `MAX_PAGE_FILL_RATIO` times the pages its cells would fill packed
-/// tight is too sparse to page. Neighbouring cells of such a level sit farther apart than
-/// `MAX_PAGE_EXTENT`, so each cell takes a whole page (512 slots, 8 KiB): a 64 000-point leaf at
-/// cell depth 63 asks for ~500 MiB, which traps the wasm build worker. Those depths are cubes
-/// thousands of times smaller than the point spacing, so nothing is lost by drawing the closest
-/// servable level instead (R3-Q21).
+/// Page-use limit of a level: it may take at most `MAX_PAGE_FILL_RATIO` times the pages its cells
+/// would fill packed tight (`ceil(cells / PAGE_SLOTS)`), or `MIN_PAGES_ALWAYS_OK` pages if that
+/// is more; beyond it the level is too sparse to page. Neighbouring cells of such a level sit
+/// farther apart than `MAX_PAGE_EXTENT`, so each cell takes a whole page (512 slots, 8 KiB): a
+/// 64 000-point leaf at cell depth 63 asks for ~500 MiB, which traps the wasm build worker.
+/// Those depths are cubes thousands of times smaller than the point spacing, so nothing is lost
+/// by drawing the closest servable level instead (R3-Q21).
 pub const MAX_PAGE_FILL_RATIO: usize = 8;
 
-/// Pages [`pack_level`] makes for `cells` (sorted as the builder returns them), counted with the
+/// A level that takes at most this many pages (128 pages = 1 MiB) is always accepted, however
+/// scattered, so tiny nodes keep their deep levels.
+pub const MIN_PAGES_ALWAYS_OK: usize = 128;
+
+/// Pages [`pack_level`] makes for `cells` (in Morton order, as the builder returns them), counted with the
 /// same split rule and without allocating them.
 pub(crate) fn page_count(cells: &[NodeCell]) -> usize {
     let (mut pages, mut start) = (0, 0);
@@ -374,7 +378,8 @@ pub(crate) fn page_count(cells: &[NodeCell]) -> usize {
 
 /// Whether `cells` fill their pages well enough to pack (see [`MAX_PAGE_FILL_RATIO`]).
 pub(crate) fn packs_efficiently(cells: &[NodeCell]) -> bool {
-    page_count(cells) <= 4.max(MAX_PAGE_FILL_RATIO * cells.len().div_ceil(PAGE_SLOTS))
+    page_count(cells)
+        <= MIN_PAGES_ALWAYS_OK.max(MAX_PAGE_FILL_RATIO * cells.len().div_ceil(PAGE_SLOTS))
 }
 
 #[allow(clippy::too_many_arguments)] // private helper of `pack_level`
