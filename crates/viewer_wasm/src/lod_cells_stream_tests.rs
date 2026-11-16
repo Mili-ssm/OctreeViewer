@@ -650,6 +650,10 @@ struct StepGate {
     cell_border_pairs: usize,
     /// ... whose drawn depths differ by more than one level (ADR 0053, between neighbouring cells).
     cell_border_over_one: usize,
+    /// ... the same two counts over the pairs whose both samples are on screen (inside the
+    /// frustum, between the render near and far planes): RF-31 concerns what the viewer sees.
+    cell_border_visible_pairs: usize,
+    cell_border_visible_over_one: usize,
 }
 
 /// Cell-mode counters of the sample oracle.
@@ -681,6 +685,23 @@ struct CellCtx {
     scale: f64,
     origin: [f64; 3],
     root_side: f64,
+    /// Viewport size in pixels and render clip distances (scaled units) for the visibility test.
+    viewport: [f64; 2],
+    clip: (f64, f64),
+}
+
+impl CellCtx {
+    /// Whether an eye-relative point lies inside the view frustum and between the render clip
+    /// planes.
+    fn on_screen(&self, rel: [f64; 3]) -> bool {
+        let dot = |v: [f32; 3]| (0..3).map(|a| rel[a] * f64::from(v[a])).sum::<f64>();
+        let depth = dot(self.lod.forward);
+        let focal = f64::from(self.lod.focal);
+        depth >= self.clip.0
+            && depth <= self.clip.1
+            && dot(self.lod.right).abs() * focal <= depth * self.viewport[0] * 0.5
+            && dot(self.lod.up).abs() * focal <= depth * self.viewport[1] * 0.5
+    }
 }
 
 impl Harness {
@@ -1057,6 +1078,7 @@ impl Harness {
         let mut memory = HashMap::new();
         let mut seen = HashMap::new();
         let mut gate_prev = HashMap::new();
+        let mut on_screen: HashSet<(NodeId, u16)> = HashSet::new();
         let mut within_node = 0;
         let mut node_changed = 0;
         let mut lost = 0;
@@ -1146,6 +1168,9 @@ impl Harness {
                         }
                     }
                     gate_prev.insert(key, (node.id, *depth));
+                    if ctx.on_screen(rel) {
+                        on_screen.insert(key);
+                    }
                     memory.insert(key, (p, *depth));
                     seen.insert(key, (p, *depth));
                 }
@@ -1184,7 +1209,14 @@ impl Harness {
                     && other != drawer
                 {
                     self.gate.cell_border_pairs += 1;
-                    self.gate.cell_border_over_one += usize::from(depth.abs_diff(other_depth) > 1);
+                    let over_one = usize::from(depth.abs_diff(other_depth) > 1);
+                    self.gate.cell_border_over_one += over_one;
+                    if on_screen.contains(&(lattice, n))
+                        && on_screen.contains(&(lattice, n + stride))
+                    {
+                        self.gate.cell_border_visible_pairs += 1;
+                        self.gate.cell_border_visible_over_one += over_one;
+                    }
                 }
             }
         }
@@ -1214,6 +1246,8 @@ impl Harness {
             scale,
             origin: self.dataset.coordinate_origin(),
             root_side: grid.root_side,
+            viewport: viewport.map(f64::from),
+            clip: view.camera().clip_distances(),
         });
     }
 

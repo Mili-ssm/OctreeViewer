@@ -565,7 +565,7 @@ impl OrbitCamera {
         self.lod_min_depth()
     }
 
-    pub(crate) fn clip_distances(&self) -> (f64, f64) {
+    pub fn clip_distances(&self) -> (f64, f64) {
         // Panning/recentering moves the orbit pivot, not the dataset bounds.
         let (position, forward, _, _) = self.basis();
         let center_depth = (self.scene_center - position).dot(forward);
