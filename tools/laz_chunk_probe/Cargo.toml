@@ -13,3 +13,6 @@ las = { workspace = true }
 # Same version as the lock via `las`; the probe needs `laz`'s chunk-table and decompressor types.
 laz = "0.13"
 thiserror = { workspace = true }
+
+[lints]
+workspace = true
