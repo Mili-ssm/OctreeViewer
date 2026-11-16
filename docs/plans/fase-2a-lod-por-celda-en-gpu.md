@@ -147,11 +147,11 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 **Interfaces:**
 - Produces: `PageEntry(pub [u32; 12])`; `PageInfo::entry(&self, frame, mask_slot, octant_bits, rel_origin: [u32; 3]) -> PageEntry` (`rel_origin` = page minimum relative to the node corner at the page depth, E2); `PAGE_BYTES = 48`; `FrameUniform` gains `forward`, `right`, `up: [f32; 3]`, `focal`, `target_px`, `min_side`, `lod_mode: u32` (0 octant, 1 cell), `counters: u32` (0 off), 176 B.
 
-- [ ] **Step 1: Write the failing tests:** `page_entry_round_trips_the_relative_origin_and_depth`; `frame_uniform_is_176_bytes_and_matches_the_wgsl_layout`.
-- [ ] **Step 2:** `--lib cell_codec`, `--lib cell_render` → FAIL.
-- [ ] **Step 3:** implement; `slot_state` does not use the new fields yet.
-- [ ] **Step 4:** all lib tests of both crates → PASS unchanged; the storage-buffer test passes.
-- [ ] **Step 5:** commit `refactor(render): widen page entries and the frame uniform for per-cell LOD`.
+- [x] **Step 1: Write the failing tests:** `page_entry_round_trips_the_relative_origin_and_depth`; `frame_uniform_is_176_bytes_and_matches_the_wgsl_layout`.
+- [x] **Step 2:** `--lib cell_codec`, `--lib cell_render` → FAIL.
+- [x] **Step 3:** implement; `slot_state` does not use the new fields yet.
+- [x] **Step 4:** all lib tests of both crates → PASS unchanged; the storage-buffer test passes.
+- [x] **Step 5:** commit `refactor(render): widen page entries and the frame uniform for per-cell LOD`.
 
 ### Task 6: Node records (no behaviour change)
 
