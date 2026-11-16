@@ -4,7 +4,8 @@
 // Run from the repository root while a static server serves the worktree root (with pkg/), over http:
 // the nested build worker disables itself on file://.
 //   node examples/web-host/probe-cells-parity.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4]
-//        [--rest-timeout-s=180] [--chrome-bin=PATH]
+//        [--rest-timeout-s=180] [--chrome-bin=PATH] [--cell-lod=octant|cell]
+// `--cell-lod` sets the cells path's level selection at start through `?cellLod=` (default octant).
 // Runs four arms on the same dataset and two fixed poses (the fitted pose, then a deterministic
 // orbit step from it): cells + build worker, cells without it (gate: CPU path), the CPU path
 // (cells off) as the frame-time reference, and cells + build worker again (parity). Cells arms wait for a non-null `cutDigestAtRest` that repeats over two
@@ -20,8 +21,10 @@ const positional = args.filter(arg => !arg.startsWith("--"));
 const option = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
 const [input, output] = positional;
 if (!input || !output) {
-    throw new Error("Usage: node examples/web-host/probe-cells-parity.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--rest-timeout-s=180]");
+    throw new Error("Usage: node examples/web-host/probe-cells-parity.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--rest-timeout-s=180] [--cell-lod=octant|cell]");
 }
+const cellLod = option("cell-lod", "octant");
+if (cellLod !== "octant" && cellLod !== "cell") throw new Error(`--cell-lod must be "octant" or "cell", got "${cellLod}"`);
 const baseUrl = option("url", "http://127.0.0.1:8767/examples/web-host/index.html");
 const targetPixels = Number(option("px", "4"));
 const restTimeoutMs = Number(option("rest-timeout-s", "180")) * 1000;
@@ -57,6 +60,7 @@ async function runArm(chromium, arm) {
     url.searchParams.set("buildWorker", arm.buildWorker ? "1" : "0");
     // Cells are the default path (R3-Q35): the CPU arm must opt out explicitly.
     url.searchParams.set("cells", arm.cells ? "1" : "0");
+    url.searchParams.set("cellLod", cellLod);
     const consoleMessages = [];
     const instance = await chromium.launch({
         executablePath: CHROME_BIN,
@@ -155,7 +159,7 @@ async function runArm(chromium, arm) {
 }
 
 const { chromium } = createRequire(PLAYWRIGHT_CORE)("playwright-core");
-const report = { schemaVersion: 1, probe: "probe-cells-parity", startedAt: new Date().toISOString(), input: path.resolve(input), targetPixels, restTimeoutMs, arms: [] };
+const report = { schemaVersion: 1, probe: "probe-cells-parity", startedAt: new Date().toISOString(), input: path.resolve(input), cellLod, targetPixels, restTimeoutMs, arms: [] };
 // --arms=0,2 runs a subset (indices into ARMS); the gate check needs arm 1, parity arms 0 and 3.
 const selected = option("arms", "0,1,2,3").split(",").map(Number);
 for (const arm of ARMS.filter((_, index) => selected.includes(index))) {
@@ -169,7 +173,7 @@ for (const arm of ARMS.filter((_, index) => selected.includes(index))) {
         console: armResult.consoleMessages.length,
     }));
 }
-const armByName = name => report.arms.find(arm => arm.name === name);
+const armByName = name => report.arms.find(arm => arm.arm === name);
 const gated = armByName("cells+noBuildWorker");
 if (gated) {
     // R3-Q24: cells requested without a build worker must run the CPU path and say why.

@@ -1,0 +1,1105 @@
+{
+  "schemaVersion": 1,
+  "probe": "probe-cells-parity",
+  "startedAt": "2026-11-16T11:52:26.564Z",
+  "input": "/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct",
+  "cellLod": "cell",
+  "targetPixels": 4,
+  "restTimeoutMs": 120000,
+  "arms": [
+    {
+      "arm": "cells+buildWorker",
+      "url": "http://127.0.0.1:8791/examples/web-host/index.html?buildWorker=1&cells=1&cellLod=cell",
+      "poses": [
+        {
+          "label": "fitted",
+          "pose": {
+            "position": [
+              412817.4521301963,
+              5089674.240005493,
+              8271.655413105644
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "digest": "e67592d26da97ab3",
+          "settled": true,
+          "timeToRestMs": 2225,
+          "frames": {
+            "replies": 35,
+            "intervalMs": {
+              "count": 34,
+              "p50": 16.699951171875,
+              "p95": 61.400146484375,
+              "max": 640
+            },
+            "roundTripMs": {
+              "count": 35,
+              "p50": 1.5999999642372131,
+              "p95": 7.5,
+              "max": 7.800000011920929
+            },
+            "renderCallMs": {
+              "count": 35,
+              "p50": 1.0999999642372131,
+              "p95": 7,
+              "max": 7.300000011920929
+            }
+          },
+          "stats": {
+            "cellsBusy": false,
+            "cellsStuck": false,
+            "viewEpoch": 4,
+            "cutEpochSent": 19,
+            "cutEpochApplied": 19,
+            "cellPath": "enabled",
+            "cutDigestAtRest": "e67592d26da97ab3",
+            "sceneDigest": null,
+            "cellStats": {
+              "cellPath": "enabled",
+              "cellsBusy": false,
+              "cellsNeedFrame": false,
+              "cutDigestAtRest": "e67592d26da97ab3",
+              "cutApply": "applied",
+              "viewEpoch": 4,
+              "cutEpochSent": 19,
+              "cutEpochApplied": 19,
+              "queuedNodeCells": 0,
+              "queuedNodeBytes": 0,
+              "cellsForgottenTotal": 0,
+              "cellNodesReceivedTotal": 22,
+              "cellCpuBytes": 21052800,
+              "poolCapacityPages": 65535,
+              "poolStages": 0,
+              "poolNodesWithoutLevel": 0,
+              "poolCoarsened": 0,
+              "poolOverflow": 0,
+              "poolResidentPages": 875,
+              "poolUploadedBytes": 0,
+              "wasmLinearMemoryBytes": 37617664,
+              "continuity": false,
+              "continuityFactor": 1,
+              "continuityMinSide": null,
+              "poolDescendantTooFine": false
+            },
+            "cellCounters": {
+              "nodeCellMessages": 13,
+              "nodeCells": 22,
+              "nodeCellBytes": 21015482,
+              "cellCuts": 19,
+              "cellCutsSuperseded": 0,
+              "strayScenes": 0,
+              "messagesSent": 28,
+              "cellsStuckFrames": 0
+            }
+          },
+          "wasmLinearMemoryBytes": {
+            "render": 37617664,
+            "build": 51904512
+          },
+          "traceTail": [
+            {
+              "t": 1218,
+              "samePose": true,
+              "cellsBusy": false,
+              "digest": "e67592d26da97ab3"
+            },
+            {
+              "t": 2225,
+              "samePose": true,
+              "cellsBusy": false,
+              "digest": "e67592d26da97ab3"
+            }
+          ]
+        },
+        {
+          "label": "orbit-step",
+          "pose": {
+            "position": [
+              413403.3285903141,
+              5087816.077269757,
+              8271.655413105644
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "digest": "2058d40e998e328d",
+          "settled": true,
+          "timeToRestMs": 2017,
+          "frames": {
+            "replies": 5,
+            "intervalMs": {
+              "count": 4,
+              "p50": 14.800048828125,
+              "p95": 969,
+              "max": 969
+            },
+            "roundTripMs": {
+              "count": 5,
+              "p50": 1.5999999642372131,
+              "p95": 3,
+              "max": 3
+            },
+            "renderCallMs": {
+              "count": 5,
+              "p50": 1.2000000476837158,
+              "p95": 2.800000011920929,
+              "max": 2.800000011920929
+            }
+          },
+          "stats": {
+            "cellsBusy": false,
+            "cellsStuck": false,
+            "viewEpoch": 5,
+            "cutEpochSent": 24,
+            "cutEpochApplied": 24,
+            "cellPath": "enabled",
+            "cutDigestAtRest": "2058d40e998e328d",
+            "sceneDigest": null,
+            "cellStats": {
+              "cellPath": "enabled",
+              "cellsBusy": false,
+              "cellsNeedFrame": false,
+              "cutDigestAtRest": "2058d40e998e328d",
+              "cutApply": "applied",
+              "viewEpoch": 5,
+              "cutEpochSent": 24,
+              "cutEpochApplied": 24,
+              "queuedNodeCells": 0,
+              "queuedNodeBytes": 0,
+              "cellsForgottenTotal": 0,
+              "cellNodesReceivedTotal": 23,
+              "cellCpuBytes": 21160128,
+              "poolCapacityPages": 65535,
+              "poolStages": 0,
+              "poolNodesWithoutLevel": 0,
+              "poolCoarsened": 0,
+              "poolOverflow": 0,
+              "poolResidentPages": 975,
+              "poolUploadedBytes": 0,
+              "wasmLinearMemoryBytes": 37617664,
+              "continuity": false,
+              "continuityFactor": 1,
+              "continuityMinSide": null,
+              "poolDescendantTooFine": false
+            },
+            "cellCounters": {
+              "nodeCellMessages": 14,
+              "nodeCells": 23,
+              "nodeCellBytes": 21122858,
+              "cellCuts": 24,
+              "cellCutsSuperseded": 0,
+              "strayScenes": 0,
+              "messagesSent": 32,
+              "cellsStuckFrames": 0
+            }
+          },
+          "wasmLinearMemoryBytes": {
+            "render": 37617664,
+            "build": 51904512
+          },
+          "traceTail": [
+            {
+              "t": 1011,
+              "samePose": true,
+              "cellsBusy": false,
+              "digest": "2058d40e998e328d"
+            },
+            {
+              "t": 2017,
+              "samePose": true,
+              "cellsBusy": false,
+              "digest": "2058d40e998e328d"
+            }
+          ]
+        }
+      ],
+      "consoleMessages": [],
+      "browserVersion": "157.0.8103.78",
+      "adapter": {
+        "vendor": "amd",
+        "architecture": "rdna-3",
+        "device": "",
+        "description": ""
+      },
+      "fittedPose": {
+        "position": [
+          412817.4521301963,
+          5089674.240005493,
+          8271.655413105644
+        ],
+        "target": [
+          416057.0599975586,
+          5089674.240005493,
+          2660.489990234375
+        ]
+      },
+      "metadata": {
+        "name": "belvedere-v7.oct",
+        "bytes": 530962031,
+        "nodeCount": 3941
+      },
+      "finalLod": {
+        "pendingBlockIds": [],
+        "pendingPageAnchors": [],
+        "builtNodes": 1,
+        "buildDeferred": 0,
+        "buildMs": 1.699999988079071,
+        "cutNodes": 12,
+        "maxGap": 0,
+        "gapsOverOne": 0,
+        "uncoveredNodes": 0,
+        "cpuCoarsened": 0,
+        "gpuCoarsened": 0,
+        "gpuPoolPages": 65535,
+        "lodStagePixels": 4,
+        "forgottenSelected": 0,
+        "forgottenWaiter": 0,
+        "forgottenAncestor": 0,
+        "rebuiltTotal": 0,
+        "selectionNodes": 12,
+        "selectedBuiltNotInCut": 0,
+        "selectedBuiltBlocksMissing": 0,
+        "cpuNeededBytes": 13589376,
+        "blockCacheBytes": 15221232,
+        "blockCacheLimitBytes": 268435456,
+        "blockEvictions": 0,
+        "buildCapped": false,
+        "cellPath": "enabled",
+        "cellsBusy": false,
+        "cellsNeedFrame": false,
+        "cutDigestAtRest": "2058d40e998e328d",
+        "cutApply": "applied",
+        "viewEpoch": 5,
+        "cutEpochSent": 24,
+        "cutEpochApplied": 24,
+        "queuedNodeCells": 0,
+        "queuedNodeBytes": 0,
+        "cellsForgottenTotal": 0,
+        "cellNodesReceivedTotal": 23,
+        "cellCpuBytes": 21160128,
+        "poolCapacityPages": 65535,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolResidentPages": 975,
+        "poolUploadedBytes": 0,
+        "wasmLinearMemoryBytes": 37617664,
+        "continuity": false,
+        "continuityFactor": 1,
+        "continuityMinSide": null,
+        "poolDescendantTooFine": false,
+        "targetVoxelPixels": 4,
+        "sceneDigest": null,
+        "attributeRange": null,
+        "cellsStuck": false,
+        "cellsStuckFrames": 0
+      }
+    },
+    {
+      "arm": "cells+noBuildWorker",
+      "url": "http://127.0.0.1:8791/examples/web-host/index.html?buildWorker=0&cells=1&cellLod=cell",
+      "poses": [
+        {
+          "label": "fitted",
+          "pose": {
+            "position": [
+              412817.4521301963,
+              5089674.240005493,
+              8271.655413105644
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "digest": "0607cfbaf95adbee",
+          "settled": true,
+          "timeToRestMs": 5384,
+          "frames": {
+            "replies": 10,
+            "intervalMs": {
+              "count": 9,
+              "p50": 202.5,
+              "p95": 1571.199951171875,
+              "max": 1571.199951171875
+            },
+            "roundTripMs": {
+              "count": 10,
+              "p50": 40.40000003576279,
+              "p95": 1557.699999988079,
+              "max": 1557.699999988079
+            },
+            "renderCallMs": {
+              "count": 10,
+              "p50": 0.30000001192092896,
+              "p95": 362.5,
+              "max": 362.5
+            }
+          },
+          "stats": {
+            "cellsBusy": null,
+            "cellsStuck": null,
+            "viewEpoch": null,
+            "cutEpochSent": null,
+            "cutEpochApplied": null,
+            "cellPath": "needsBuildWorker",
+            "cutDigestAtRest": null,
+            "sceneDigest": "0607cfbaf95adbee",
+            "cellStats": null,
+            "cellCounters": null
+          },
+          "wasmLinearMemoryBytes": null,
+          "traceTail": [
+            {
+              "t": 4004,
+              "samePose": true,
+              "cellsBusy": null,
+              "digest": "0607cfbaf95adbee"
+            },
+            {
+              "t": 5384,
+              "samePose": true,
+              "cellsBusy": null,
+              "digest": "0607cfbaf95adbee"
+            }
+          ]
+        },
+        {
+          "label": "orbit-step",
+          "pose": {
+            "position": [
+              413403.3285903141,
+              5087816.077269757,
+              8271.655413105644
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "digest": "67a5fd55114f6ffd",
+          "settled": true,
+          "timeToRestMs": 2126,
+          "frames": {
+            "replies": 4,
+            "intervalMs": {
+              "count": 3,
+              "p50": 10.60009765625,
+              "p95": 550.800048828125,
+              "max": 550.800048828125
+            },
+            "roundTripMs": {
+              "count": 4,
+              "p50": 2.300000011920929,
+              "p95": 553.3000000119209,
+              "max": 553.3000000119209
+            },
+            "renderCallMs": {
+              "count": 4,
+              "p50": 0.30000001192092896,
+              "p95": 552.8999999761581,
+              "max": 552.8999999761581
+            }
+          },
+          "stats": {
+            "cellsBusy": null,
+            "cellsStuck": null,
+            "viewEpoch": null,
+            "cutEpochSent": null,
+            "cutEpochApplied": null,
+            "cellPath": "needsBuildWorker",
+            "cutDigestAtRest": null,
+            "sceneDigest": "67a5fd55114f6ffd",
+            "cellStats": null,
+            "cellCounters": null
+          },
+          "wasmLinearMemoryBytes": null,
+          "traceTail": [
+            {
+              "t": 1114,
+              "samePose": true,
+              "cellsBusy": null,
+              "digest": "67a5fd55114f6ffd"
+            },
+            {
+              "t": 2126,
+              "samePose": true,
+              "cellsBusy": null,
+              "digest": "67a5fd55114f6ffd"
+            }
+          ]
+        }
+      ],
+      "consoleMessages": [],
+      "browserVersion": "157.0.8103.78",
+      "adapter": {
+        "vendor": "amd",
+        "architecture": "rdna-3",
+        "device": "",
+        "description": ""
+      },
+      "fittedPose": {
+        "position": [
+          412817.4521301963,
+          5089674.240005493,
+          8271.655413105644
+        ],
+        "target": [
+          416057.0599975586,
+          5089674.240005493,
+          2660.489990234375
+        ]
+      },
+      "metadata": {
+        "name": "belvedere-v7.oct",
+        "bytes": 530962031,
+        "nodeCount": 3941
+      },
+      "finalLod": {
+        "minVoxelEdgePixels": 1.993242451003514,
+        "maxVoxelEdgePixels": 3.999975268625637,
+        "oversizedVoxels": 0,
+        "projectionCachePeakEntries": 182608,
+        "voxelBuildBudgetBytes": "268435456",
+        "voxelBuildEstimatedPeakBytes": "56533376",
+        "voxelInstanceCapacityBytes": "5471160",
+        "targetVoxelPixels": 4,
+        "visibleBlocks": 12,
+        "visiblePoints": "597651",
+        "renderedVoxels": 136779,
+        "voxelBudget": 8000000,
+        "lodStagePixels": 4,
+        "maxVisibleLevel": 3,
+        "cacheBytes": "14326256",
+        "cacheBudgetBytes": "268435456",
+        "pendingBlockIds": [],
+        "pendingPageAnchors": [],
+        "pageBudgetExhausted": false,
+        "uncoveredNodes": 0,
+        "coverageComplete": true,
+        "budgetOmittedNodes": 0,
+        "refinementWork": {
+          "updateCalls": 31,
+          "blockLoadCalls": 27,
+          "loadedBlocks": 0,
+          "evictedPendingBlocks": 0,
+          "sceneBuilds": 23,
+          "prefixRebuilds": 7,
+          "prefixVoxelBuildMs": 1211.5,
+          "reusedSceneUpdates": 6,
+          "selections": 5,
+          "prepares": 32,
+          "selectionsPerUpdate": 0.16129032258064516,
+          "preparesPerUpdate": 1.032258064516129,
+          "selectionMs": 0.5000000596046448,
+          "planningMs": 1.9999998211860657,
+          "blockLoadMs": 0,
+          "rangeReadMs": 0,
+          "decodeAndOtherCpuMs": 0,
+          "voxelBuildMs": 6249.500000059605,
+          "uploadMs": 104.80000019073486,
+          "unchangedCutBuilds": 2,
+          "reusableSceneBuilds": 0,
+          "reusableVoxelBuildMs": 0,
+          "rangeReadCalls": 0,
+          "rangeReadBytes": "0",
+          "voxelSourcePoints": "6861604",
+          "reusableVoxelSourcePoints": "0",
+          "reusedSourcePoints": "1758010",
+          "prefixRetainedSourcePoints": "889694",
+          "prefixAddedSourcePoints": "136008"
+        },
+        "hzbActive": true,
+        "cacheActivity": {
+          "insertions": "20",
+          "evictions": "0",
+          "rejectedOversize": "0",
+          "rejectedProtected": "0"
+        },
+        "pageActivity": {
+          "residentPages": 0,
+          "pageBytes": 0,
+          "pageEvictions": 0,
+          "residentNodes": 268
+        },
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false,
+        "lodError": null,
+        "sceneDigest": "67a5fd55114f6ffd",
+        "attributeRange": null,
+        "cellPath": "needsBuildWorker"
+      }
+    },
+    {
+      "arm": "cpu+buildWorker",
+      "url": "http://127.0.0.1:8791/examples/web-host/index.html?buildWorker=1&cells=0&cellLod=cell",
+      "poses": [
+        {
+          "label": "fitted",
+          "pose": {
+            "position": [
+              412817.4521301963,
+              5089674.240005493,
+              8271.655413105644
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "digest": "0607cfbaf95adbee",
+          "settled": true,
+          "timeToRestMs": 2221,
+          "frames": {
+            "replies": 124,
+            "intervalMs": {
+              "count": 123,
+              "p50": 16.60009765625,
+              "p95": 17.699951171875,
+              "max": 18.199951171875
+            },
+            "roundTripMs": {
+              "count": 124,
+              "p50": 0.5,
+              "p95": 1.4000000357627869,
+              "max": 2.599999964237213
+            },
+            "renderCallMs": {
+              "count": 124,
+              "p50": 0.19999998807907104,
+              "p95": 0.5,
+              "max": 0.6000000238418579
+            }
+          },
+          "stats": {
+            "cellsBusy": null,
+            "cellsStuck": null,
+            "viewEpoch": null,
+            "cutEpochSent": null,
+            "cutEpochApplied": null,
+            "cellPath": null,
+            "cutDigestAtRest": null,
+            "sceneDigest": "0607cfbaf95adbee",
+            "cellStats": null,
+            "cellCounters": null
+          },
+          "wasmLinearMemoryBytes": {
+            "render": 8978432,
+            "build": 53411840
+          },
+          "traceTail": [
+            {
+              "t": 1213,
+              "samePose": true,
+              "cellsBusy": null,
+              "digest": "0607cfbaf95adbee"
+            },
+            {
+              "t": 2221,
+              "samePose": true,
+              "cellsBusy": null,
+              "digest": "0607cfbaf95adbee"
+            }
+          ]
+        },
+        {
+          "label": "orbit-step",
+          "pose": {
+            "position": [
+              413403.3285903141,
+              5087816.077269757,
+              8271.655413105644
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "digest": "67a5fd55114f6ffd",
+          "settled": true,
+          "timeToRestMs": 2017,
+          "frames": {
+            "replies": 35,
+            "intervalMs": {
+              "count": 34,
+              "p50": 16.60009765625,
+              "p95": 18.39990234375,
+              "max": 558.10009765625
+            },
+            "roundTripMs": {
+              "count": 35,
+              "p50": 0.6000000238418579,
+              "p95": 1.5,
+              "max": 2.5
+            },
+            "renderCallMs": {
+              "count": 35,
+              "p50": 0.30000001192092896,
+              "p95": 0.5,
+              "max": 0.699999988079071
+            }
+          },
+          "stats": {
+            "cellsBusy": null,
+            "cellsStuck": null,
+            "viewEpoch": null,
+            "cutEpochSent": null,
+            "cutEpochApplied": null,
+            "cellPath": null,
+            "cutDigestAtRest": null,
+            "sceneDigest": "67a5fd55114f6ffd",
+            "cellStats": null,
+            "cellCounters": null
+          },
+          "wasmLinearMemoryBytes": {
+            "render": 8978432,
+            "build": 53411840
+          },
+          "traceTail": [
+            {
+              "t": 1009,
+              "samePose": true,
+              "cellsBusy": null,
+              "digest": "67a5fd55114f6ffd"
+            },
+            {
+              "t": 2017,
+              "samePose": true,
+              "cellsBusy": null,
+              "digest": "67a5fd55114f6ffd"
+            }
+          ]
+        }
+      ],
+      "consoleMessages": [],
+      "browserVersion": "157.0.8103.78",
+      "adapter": {
+        "vendor": "amd",
+        "architecture": "rdna-3",
+        "device": "",
+        "description": ""
+      },
+      "fittedPose": {
+        "position": [
+          412817.4521301963,
+          5089674.240005493,
+          8271.655413105644
+        ],
+        "target": [
+          416057.0599975586,
+          5089674.240005493,
+          2660.489990234375
+        ]
+      },
+      "metadata": {
+        "name": "belvedere-v7.oct",
+        "bytes": 530962031,
+        "nodeCount": 3941
+      },
+      "finalLod": {
+        "minVoxelEdgePixels": 1.993242451003514,
+        "maxVoxelEdgePixels": 3.999975268625637,
+        "oversizedVoxels": 0,
+        "projectionCachePeakEntries": 182608,
+        "voxelBuildBudgetBytes": "268435456",
+        "voxelBuildEstimatedPeakBytes": "56533376",
+        "voxelInstanceCapacityBytes": "5471160",
+        "targetVoxelPixels": 4,
+        "visibleBlocks": 12,
+        "visiblePoints": "597651",
+        "renderedVoxels": 136779,
+        "voxelBudget": 8000000,
+        "lodStagePixels": 4,
+        "maxVisibleLevel": 3,
+        "cacheBytes": "14326256",
+        "cacheBudgetBytes": "268435456",
+        "pendingBlockIds": [],
+        "pendingPageAnchors": [],
+        "pageBudgetExhausted": false,
+        "uncoveredNodes": 0,
+        "coverageComplete": true,
+        "budgetOmittedNodes": 0,
+        "refinementWork": {
+          "updateCalls": 19,
+          "blockLoadCalls": 15,
+          "loadedBlocks": 0,
+          "evictedPendingBlocks": 0,
+          "sceneBuilds": 11,
+          "prefixRebuilds": 1,
+          "prefixVoxelBuildMs": 18.600000023841858,
+          "reusedSceneUpdates": 5,
+          "selections": 5,
+          "prepares": 20,
+          "selectionsPerUpdate": 0.2631578947368421,
+          "preparesPerUpdate": 1.0526315789473684,
+          "selectionMs": 0.7999999523162842,
+          "planningMs": 1.7999999523162842,
+          "blockLoadMs": 0,
+          "rangeReadMs": 0,
+          "decodeAndOtherCpuMs": 0,
+          "voxelBuildMs": 2989.80000013113,
+          "uploadMs": 0,
+          "unchangedCutBuilds": 2,
+          "reusableSceneBuilds": 0,
+          "reusableVoxelBuildMs": 0,
+          "rangeReadCalls": 0,
+          "rangeReadBytes": "0",
+          "voxelSourcePoints": "3436400",
+          "reusableVoxelSourcePoints": "0",
+          "reusedSourcePoints": "2975435",
+          "prefixRetainedSourcePoints": "2131",
+          "prefixAddedSourcePoints": "57842"
+        },
+        "cacheActivity": {
+          "insertions": "20",
+          "evictions": "0",
+          "rejectedOversize": "0",
+          "rejectedProtected": "0"
+        },
+        "pageActivity": {
+          "residentPages": 0,
+          "pageBytes": 0,
+          "pageEvictions": 0,
+          "residentNodes": 268
+        },
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false,
+        "lodError": null,
+        "sceneDigest": "67a5fd55114f6ffd",
+        "attributeRange": null
+      }
+    },
+    {
+      "arm": "cells+buildWorker#2",
+      "url": "http://127.0.0.1:8791/examples/web-host/index.html?buildWorker=1&cells=1&cellLod=cell",
+      "poses": [
+        {
+          "label": "fitted",
+          "pose": {
+            "position": [
+              412817.4521301963,
+              5089674.240005493,
+              8271.655413105644
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "digest": "e67592d26da97ab3",
+          "settled": true,
+          "timeToRestMs": 2224,
+          "frames": {
+            "replies": 48,
+            "intervalMs": {
+              "count": 47,
+              "p50": 16.5,
+              "p95": 24.199951171875,
+              "max": 390.800048828125
+            },
+            "roundTripMs": {
+              "count": 48,
+              "p50": 1.699999988079071,
+              "p95": 5.399999976158142,
+              "max": 9.600000023841858
+            },
+            "renderCallMs": {
+              "count": 48,
+              "p50": 1,
+              "p95": 4.199999988079071,
+              "max": 8.800000011920929
+            }
+          },
+          "stats": {
+            "cellsBusy": false,
+            "cellsStuck": false,
+            "viewEpoch": 4,
+            "cutEpochSent": 19,
+            "cutEpochApplied": 19,
+            "cellPath": "enabled",
+            "cutDigestAtRest": "e67592d26da97ab3",
+            "sceneDigest": null,
+            "cellStats": {
+              "cellPath": "enabled",
+              "cellsBusy": false,
+              "cellsNeedFrame": false,
+              "cutDigestAtRest": "e67592d26da97ab3",
+              "cutApply": "applied",
+              "viewEpoch": 4,
+              "cutEpochSent": 19,
+              "cutEpochApplied": 19,
+              "queuedNodeCells": 0,
+              "queuedNodeBytes": 0,
+              "cellsForgottenTotal": 0,
+              "cellNodesReceivedTotal": 22,
+              "cellCpuBytes": 21052800,
+              "poolCapacityPages": 65535,
+              "poolStages": 0,
+              "poolNodesWithoutLevel": 0,
+              "poolCoarsened": 0,
+              "poolOverflow": 0,
+              "poolResidentPages": 875,
+              "poolUploadedBytes": 0,
+              "wasmLinearMemoryBytes": 35651584,
+              "continuity": false,
+              "continuityFactor": 1,
+              "continuityMinSide": null,
+              "poolDescendantTooFine": false
+            },
+            "cellCounters": {
+              "nodeCellMessages": 13,
+              "nodeCells": 22,
+              "nodeCellBytes": 21015482,
+              "cellCuts": 19,
+              "cellCutsSuperseded": 0,
+              "strayScenes": 0,
+              "messagesSent": 30,
+              "cellsStuckFrames": 0
+            }
+          },
+          "wasmLinearMemoryBytes": {
+            "render": 35651584,
+            "build": 51904512
+          },
+          "traceTail": [
+            {
+              "t": 1218,
+              "samePose": true,
+              "cellsBusy": false,
+              "digest": "e67592d26da97ab3"
+            },
+            {
+              "t": 2224,
+              "samePose": true,
+              "cellsBusy": false,
+              "digest": "e67592d26da97ab3"
+            }
+          ]
+        },
+        {
+          "label": "orbit-step",
+          "pose": {
+            "position": [
+              413403.3285903141,
+              5087816.077269757,
+              8271.655413105644
+            ],
+            "target": [
+              416057.0599975586,
+              5089674.240005493,
+              2660.489990234375
+            ]
+          },
+          "digest": "2058d40e998e328d",
+          "settled": true,
+          "timeToRestMs": 2015,
+          "frames": {
+            "replies": 5,
+            "intervalMs": {
+              "count": 4,
+              "p50": 15.099853515625,
+              "p95": 966.5,
+              "max": 966.5
+            },
+            "roundTripMs": {
+              "count": 5,
+              "p50": 1.699999988079071,
+              "p95": 2.899999976158142,
+              "max": 2.899999976158142
+            },
+            "renderCallMs": {
+              "count": 5,
+              "p50": 1.0999999642372131,
+              "p95": 2.600000023841858,
+              "max": 2.600000023841858
+            }
+          },
+          "stats": {
+            "cellsBusy": false,
+            "cellsStuck": false,
+            "viewEpoch": 5,
+            "cutEpochSent": 23,
+            "cutEpochApplied": 23,
+            "cellPath": "enabled",
+            "cutDigestAtRest": "2058d40e998e328d",
+            "sceneDigest": null,
+            "cellStats": {
+              "cellPath": "enabled",
+              "cellsBusy": false,
+              "cellsNeedFrame": false,
+              "cutDigestAtRest": "2058d40e998e328d",
+              "cutApply": "applied",
+              "viewEpoch": 5,
+              "cutEpochSent": 23,
+              "cutEpochApplied": 23,
+              "queuedNodeCells": 0,
+              "queuedNodeBytes": 0,
+              "cellsForgottenTotal": 0,
+              "cellNodesReceivedTotal": 23,
+              "cellCpuBytes": 21160128,
+              "poolCapacityPages": 65535,
+              "poolStages": 0,
+              "poolNodesWithoutLevel": 0,
+              "poolCoarsened": 0,
+              "poolOverflow": 0,
+              "poolResidentPages": 975,
+              "poolUploadedBytes": 0,
+              "wasmLinearMemoryBytes": 35651584,
+              "continuity": false,
+              "continuityFactor": 1,
+              "continuityMinSide": null,
+              "poolDescendantTooFine": false
+            },
+            "cellCounters": {
+              "nodeCellMessages": 14,
+              "nodeCells": 23,
+              "nodeCellBytes": 21122858,
+              "cellCuts": 23,
+              "cellCutsSuperseded": 0,
+              "strayScenes": 0,
+              "messagesSent": 34,
+              "cellsStuckFrames": 0
+            }
+          },
+          "wasmLinearMemoryBytes": {
+            "render": 35651584,
+            "build": 51904512
+          },
+          "traceTail": [
+            {
+              "t": 1008,
+              "samePose": true,
+              "cellsBusy": false,
+              "digest": "2058d40e998e328d"
+            },
+            {
+              "t": 2015,
+              "samePose": true,
+              "cellsBusy": false,
+              "digest": "2058d40e998e328d"
+            }
+          ]
+        }
+      ],
+      "consoleMessages": [],
+      "browserVersion": "157.0.8103.78",
+      "adapter": {
+        "vendor": "amd",
+        "architecture": "rdna-3",
+        "device": "",
+        "description": ""
+      },
+      "fittedPose": {
+        "position": [
+          412817.4521301963,
+          5089674.240005493,
+          8271.655413105644
+        ],
+        "target": [
+          416057.0599975586,
+          5089674.240005493,
+          2660.489990234375
+        ]
+      },
+      "metadata": {
+        "name": "belvedere-v7.oct",
+        "bytes": 530962031,
+        "nodeCount": 3941
+      },
+      "finalLod": {
+        "pendingBlockIds": [],
+        "pendingPageAnchors": [],
+        "builtNodes": 1,
+        "buildDeferred": 0,
+        "buildMs": 2.300000011920929,
+        "cutNodes": 12,
+        "maxGap": 0,
+        "gapsOverOne": 0,
+        "uncoveredNodes": 0,
+        "cpuCoarsened": 0,
+        "gpuCoarsened": 0,
+        "gpuPoolPages": 65535,
+        "lodStagePixels": 4,
+        "forgottenSelected": 0,
+        "forgottenWaiter": 0,
+        "forgottenAncestor": 0,
+        "rebuiltTotal": 0,
+        "selectionNodes": 12,
+        "selectedBuiltNotInCut": 0,
+        "selectedBuiltBlocksMissing": 0,
+        "cpuNeededBytes": 13589376,
+        "blockCacheBytes": 15221232,
+        "blockCacheLimitBytes": 268435456,
+        "blockEvictions": 0,
+        "buildCapped": false,
+        "cellPath": "enabled",
+        "cellsBusy": false,
+        "cellsNeedFrame": false,
+        "cutDigestAtRest": "2058d40e998e328d",
+        "cutApply": "applied",
+        "viewEpoch": 5,
+        "cutEpochSent": 23,
+        "cutEpochApplied": 23,
+        "queuedNodeCells": 0,
+        "queuedNodeBytes": 0,
+        "cellsForgottenTotal": 0,
+        "cellNodesReceivedTotal": 23,
+        "cellCpuBytes": 21160128,
+        "poolCapacityPages": 65535,
+        "poolStages": 0,
+        "poolNodesWithoutLevel": 0,
+        "poolCoarsened": 0,
+        "poolOverflow": 0,
+        "poolResidentPages": 975,
+        "poolUploadedBytes": 0,
+        "wasmLinearMemoryBytes": 35651584,
+        "continuity": false,
+        "continuityFactor": 1,
+        "continuityMinSide": null,
+        "poolDescendantTooFine": false,
+        "targetVoxelPixels": 4,
+        "sceneDigest": null,
+        "attributeRange": null,
+        "cellsStuck": false,
+        "cellsStuckFrames": 0
+      }
+    }
+  ],
+  "gate": [
+    {
+      "pose": "fitted",
+      "cellPath": "needsBuildWorker",
+      "sceneDigest": "0607cfbaf95adbee",
+      "ok": true
+    },
+    {
+      "pose": "orbit-step",
+      "cellPath": "needsBuildWorker",
+      "sceneDigest": "67a5fd55114f6ffd",
+      "ok": true
+    }
+  ],
+  "parity": [
+    {
+      "pose": "fitted",
+      "equal": true
+    },
+    {
+      "pose": "orbit-step",
+      "equal": true
+    }
+  ]
+}

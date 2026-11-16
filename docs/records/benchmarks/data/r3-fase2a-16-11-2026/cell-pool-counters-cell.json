@@ -1,0 +1,379 @@
+{
+  "adapter": "AMD Radeon 880M Graphics (RADV STRIX1) (Vulkan, IntegratedGpu)",
+  "cases": [
+    {
+      "active_levels": 6,
+      "case": "belvedere-grazing-1px",
+      "converged": true,
+      "convergence_frames": 2,
+      "counter_cells_total": 172802,
+      "counter_per_depth": [
+        [
+          9,
+          4787
+        ],
+        [
+          10,
+          166698
+        ],
+        [
+          17,
+          1317
+        ]
+      ],
+      "cut_nodes": 6,
+      "instances_drawn": 172802,
+      "lod_mode": "cell",
+      "target_px": 1.0
+    },
+    {
+      "active_levels": 2,
+      "case": "belvedere-grazing-4px",
+      "converged": true,
+      "convergence_frames": 2,
+      "counter_cells_total": 8208,
+      "counter_per_depth": [
+        [
+          7,
+          1145
+        ],
+        [
+          8,
+          7063
+        ]
+      ],
+      "cut_nodes": 1,
+      "instances_drawn": 8208,
+      "lod_mode": "cell",
+      "target_px": 4.0
+    },
+    {
+      "active_levels": 334,
+      "case": "belvedere-inside-leaf-1px",
+      "converged": true,
+      "convergence_frames": 10,
+      "counter_cells_total": 3550817,
+      "counter_per_depth": [
+        [
+          14,
+          85351
+        ],
+        [
+          16,
+          38
+        ],
+        [
+          17,
+          3465427
+        ],
+        [
+          29,
+          1
+        ]
+      ],
+      "cut_nodes": 334,
+      "instances_drawn": 3550817,
+      "lod_mode": "cell",
+      "target_px": 1.0
+    },
+    {
+      "active_levels": 83,
+      "case": "belvedere-inside-leaf-4px",
+      "converged": true,
+      "convergence_frames": 4,
+      "counter_cells_total": 420314,
+      "counter_per_depth": [
+        [
+          12,
+          58815
+        ],
+        [
+          13,
+          270236
+        ],
+        [
+          14,
+          47788
+        ],
+        [
+          15,
+          4453
+        ],
+        [
+          17,
+          39022
+        ]
+      ],
+      "cut_nodes": 73,
+      "instances_drawn": 420314,
+      "lod_mode": "cell",
+      "target_px": 4.0
+    },
+    {
+      "active_levels": 7,
+      "case": "belvedere-orbit-0-1px",
+      "converged": true,
+      "convergence_frames": 2,
+      "counter_cells_total": 47825,
+      "counter_per_depth": [
+        [
+          9,
+          46508
+        ],
+        [
+          17,
+          1317
+        ]
+      ],
+      "cut_nodes": 6,
+      "instances_drawn": 47825,
+      "lod_mode": "cell",
+      "target_px": 1.0
+    },
+    {
+      "active_levels": 6,
+      "case": "belvedere-orbit-0-4px",
+      "converged": true,
+      "convergence_frames": 2,
+      "counter_cells_total": 2921,
+      "counter_per_depth": [
+        [
+          7,
+          2921
+        ]
+      ],
+      "cut_nodes": 4,
+      "instances_drawn": 2921,
+      "lod_mode": "cell",
+      "target_px": 4.0
+    },
+    {
+      "active_levels": 11,
+      "case": "majadas-grazing-1px",
+      "converged": true,
+      "convergence_frames": 2,
+      "counter_cells_total": 54495,
+      "counter_per_depth": [
+        [
+          9,
+          23195
+        ],
+        [
+          10,
+          153
+        ],
+        [
+          11,
+          123
+        ],
+        [
+          13,
+          28
+        ],
+        [
+          19,
+          30996
+        ]
+      ],
+      "cut_nodes": 11,
+      "instances_drawn": 54495,
+      "lod_mode": "cell",
+      "target_px": 1.0
+    },
+    {
+      "active_levels": 2,
+      "case": "majadas-grazing-4px",
+      "converged": true,
+      "convergence_frames": 2,
+      "counter_cells_total": 3872,
+      "counter_per_depth": [
+        [
+          7,
+          3872
+        ]
+      ],
+      "cut_nodes": 1,
+      "instances_drawn": 3872,
+      "lod_mode": "cell",
+      "target_px": 4.0
+    },
+    {
+      "active_levels": 826,
+      "case": "majadas-inside-leaf-1px",
+      "converged": true,
+      "convergence_frames": 22,
+      "counter_cells_total": 8029044,
+      "counter_per_depth": [
+        [
+          7,
+          4
+        ],
+        [
+          11,
+          5
+        ],
+        [
+          14,
+          652752
+        ],
+        [
+          15,
+          1506066
+        ],
+        [
+          16,
+          108298
+        ],
+        [
+          17,
+          321376
+        ],
+        [
+          18,
+          95342
+        ],
+        [
+          19,
+          411616
+        ],
+        [
+          20,
+          1940254
+        ],
+        [
+          21,
+          2993325
+        ],
+        [
+          26,
+          6
+        ]
+      ],
+      "cut_nodes": 814,
+      "instances_drawn": 8029044,
+      "lod_mode": "cell",
+      "target_px": 1.0
+    },
+    {
+      "active_levels": 267,
+      "case": "majadas-inside-leaf-4px",
+      "converged": true,
+      "convergence_frames": 10,
+      "counter_cells_total": 1672890,
+      "counter_per_depth": [
+        [
+          11,
+          207
+        ],
+        [
+          12,
+          138488
+        ],
+        [
+          13,
+          215703
+        ],
+        [
+          14,
+          118897
+        ],
+        [
+          15,
+          330625
+        ],
+        [
+          16,
+          134067
+        ],
+        [
+          17,
+          94234
+        ],
+        [
+          18,
+          30136
+        ],
+        [
+          19,
+          47639
+        ],
+        [
+          20,
+          128926
+        ],
+        [
+          21,
+          433967
+        ],
+        [
+          26,
+          1
+        ]
+      ],
+      "cut_nodes": 232,
+      "instances_drawn": 1672890,
+      "lod_mode": "cell",
+      "target_px": 4.0
+    },
+    {
+      "active_levels": 11,
+      "case": "majadas-orbit-0-1px",
+      "converged": true,
+      "convergence_frames": 2,
+      "counter_cells_total": 54495,
+      "counter_per_depth": [
+        [
+          9,
+          23195
+        ],
+        [
+          10,
+          153
+        ],
+        [
+          11,
+          123
+        ],
+        [
+          13,
+          28
+        ],
+        [
+          19,
+          30996
+        ]
+      ],
+      "cut_nodes": 11,
+      "instances_drawn": 54495,
+      "lod_mode": "cell",
+      "target_px": 1.0
+    },
+    {
+      "active_levels": 5,
+      "case": "majadas-orbit-0-4px",
+      "converged": true,
+      "convergence_frames": 2,
+      "counter_cells_total": 3921,
+      "counter_per_depth": [
+        [
+          7,
+          3759
+        ],
+        [
+          9,
+          138
+        ],
+        [
+          13,
+          24
+        ]
+      ],
+      "cut_nodes": 4,
+      "instances_drawn": 3921,
+      "lod_mode": "cell",
+      "target_px": 4.0
+    }
+  ],
+  "pool_pages": 65535,
+  "timestamp_period_ns": 10.019036293029785
+}
