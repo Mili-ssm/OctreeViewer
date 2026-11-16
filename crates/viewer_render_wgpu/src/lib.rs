@@ -12,6 +12,7 @@ mod cell_codec;
 mod cell_cull;
 mod cell_cut;
 mod cell_driver;
+mod cell_lod;
 mod cell_pages;
 #[cfg(test)]
 mod cell_pages_tests;
