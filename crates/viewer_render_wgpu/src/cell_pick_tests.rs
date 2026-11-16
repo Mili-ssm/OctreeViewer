@@ -32,6 +32,10 @@ fn crafted_page(origin: [f32; 3], octants: u32) -> PageEntry {
         octants,
         20 | 20 << 16,
         20,
+        0,
+        0,
+        0,
+        0,
     ])
 }
 

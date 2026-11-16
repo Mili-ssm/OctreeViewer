@@ -369,7 +369,7 @@ fn layout_literals_are_fixed() {
     assert_eq!(CellInstance::EMPTY.0, [0xFFFF_FFFF, 0xFFFF_FFFF, 0, 0]);
     assert_eq!((PAGE_HAS_INTENSITY, PAGE_HAS_CLASS), (1, 2));
     assert_eq!(size_of::<CellInstance>(), 16);
-    assert_eq!(size_of::<PageEntry>(), 32);
+    assert_eq!(size_of::<PageEntry>(), 48);
     let mut cells = line(12, 3, 0, 0).cells;
     cells[1].intensity_sum = 9.0;
     cells[1].intensity_count = 1;
@@ -1017,4 +1017,69 @@ fn the_packed_intensity_word_rounds_half_away_from_zero_and_marks_missing() {
         MAX_INTENSITY,
         "above the u16 range saturates"
     );
+}
+
+/// Words 8-10 of the entry carry the page minimum relative to the node corner at the page depth,
+/// word 11 the depth; `(rel_origin + cell rel) >> (depth - rep)` is the cell's 8^3 mask coordinate.
+#[test]
+fn page_entry_round_trips_the_relative_origin_and_depth() {
+    let (grid, bounds, node_depth) = small_node();
+    let rep = representative_depth(&grid, bounds);
+    let frame = PageFrame {
+        grid,
+        coordinate_origin: [0.0; 3],
+        visual_scale: 1.0,
+        eye_scaled: [0.0; 3],
+    };
+    let node_lo: [u64; 3] = std::array::from_fn(|a| node_range(&grid, bounds, node_depth, a).0);
+    let mut rng = Lcg(5);
+    for depth in [
+        rep,
+        rep + 2,
+        node_depth,
+        node_depth + 31,
+        node_depth + 32,
+        node_depth - 2,
+    ] {
+        let lo: [u64; 3] = std::array::from_fn(|a| node_range(&grid, bounds, depth, a).0);
+        let width = 1_u64 << depth.saturating_sub(node_depth).min(20);
+        let mut cells = vec![cell(lo)];
+        for _ in 0..700 {
+            cells.push(cell(std::array::from_fn(|a| lo[a] + rng.next() % width)));
+        }
+        // The packer wants the cells in order of their node-relative Morton key.
+        let level = level(depth, cells);
+        let packed = pack_level(&grid, bounds, NodeId::new(1), &level);
+        for page in &packed.pages {
+            let entry = page.entry(&frame, 3, 0);
+            assert_eq!(entry.0[11], u32::from(depth));
+            let expected: [u32; 3] = if depth < node_depth || depth - node_depth > 31 {
+                [u32::MAX; 3]
+            } else {
+                std::array::from_fn(|a| {
+                    (page.origin[a] - (node_lo[a] << (depth - node_depth))) as u32
+                })
+            };
+            assert_eq!(page.rel_origin, expected, "depth {depth}");
+            assert_eq!(entry.0[8..11], expected, "depth {depth}");
+        }
+        if depth >= rep && depth - node_depth <= 31 {
+            for (index, cell) in level.cells.iter().enumerate() {
+                let page =
+                    &packed.pages[packed.pages.partition_point(|p| p.first_cell <= index) - 1];
+                let instance = packed.instances[slot_of(&packed, index)];
+                let rel = instance.rel();
+                let mask = instance.mask_index();
+                for a in 0..3 {
+                    let at_corner = page.rel_origin[a] + u32::from(rel[a]);
+                    assert_eq!(
+                        at_corner >> (depth - rep),
+                        [mask & 7, (mask >> 3) & 7, mask >> 6][a],
+                        "depth {depth} axis {a} cell {:?}",
+                        cell.coord
+                    );
+                }
+            }
+        }
+    }
 }

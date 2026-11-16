@@ -37,7 +37,7 @@ use crate::{CellColorRanges, ColorMode};
 pub(crate) const fn pool_resource_bytes(pages: u32) -> u64 {
     let pages = pages as u64;
     pages * PAGE_BYTES // instances
-        + pages * 32 // page table
+        + pages * size_of::<PageEntry>() as u64 // page table
         + pages * (MASK_WORDS as u64 * 4) // masks
         + 1024 // sRGB table
         + size_of::<FrameUniform>() as u64
@@ -351,7 +351,17 @@ pub(crate) struct FrameUniform {
     intensity_max: f32,
     height_offset: f32,
     height_span: f32,
-    _padding_end: [u32; 3],
+    /// 0 octant mode, 1 cell mode.
+    lod_mode: u32,
+    /// 0 off.
+    counters: u32,
+    target_px: f32,
+    forward: [f32; 3],
+    focal: f32,
+    right: [f32; 3],
+    min_side: f32,
+    up: [f32; 3],
+    _padding_end: u32,
 }
 
 pub(crate) const COMMON_WGSL: &str = r"
@@ -369,6 +379,15 @@ struct CellFrame {
     intensity_max: f32,
     height_offset: f32,
     height_span: f32,
+    lod_mode: u32,
+    counters: u32,
+    target_px: f32,
+    forward: vec3<f32>,
+    focal: f32,
+    right: vec3<f32>,
+    min_side: f32,
+    up: vec3<f32>,
+    pad1: u32,
 };
 
 @group(0) @binding(1)
@@ -1331,7 +1350,15 @@ impl CellRenderer {
                 intensity_max: self.color.intensity_range[1],
                 height_offset: self.color.height_offset,
                 height_span: self.color.height_span,
-                _padding_end: [0; 3],
+                lod_mode: 0,
+                counters: 0,
+                target_px: 0.0,
+                forward: [0.0; 3],
+                focal: 0.0,
+                right: [0.0; 3],
+                min_side: 0.0,
+                up: [0.0; 3],
+                _padding_end: 0,
             }),
         );
         if self.occlusion {

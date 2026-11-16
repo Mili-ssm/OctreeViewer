@@ -32,10 +32,10 @@ use crate::{
 
 const MAGIC: [u8; 4] = *b"R3NC";
 /// Version of the byte format.
-pub const CODEC_VERSION: u32 = 2;
+pub const CODEC_VERSION: u32 = 3;
 const HEADER_BYTES: usize = 4 + 4 + 8 + 8 + 48 + 2 + 4;
 const LEVEL_BYTES: usize = 8;
-const PAGE_RECORD_BYTES: usize = 46;
+const PAGE_RECORD_BYTES: usize = 58;
 const INSTANCE_BYTES: usize = size_of::<CellInstance>();
 const PAGE_BYTES: usize = PAGE_RECORD_BYTES + PAGE_SLOTS * INSTANCE_BYTES;
 /// Deepest level a cell coordinate (`u64`) can address.
@@ -190,6 +190,9 @@ pub fn encode_node_levels(node: &PackedNode) -> Result<Vec<u8>, CodecError> {
                 out.extend_from_slice(&value.to_le_bytes());
             }
             out.extend_from_slice(&page.flags.to_le_bytes());
+            for value in page.rel_origin {
+                out.extend_from_slice(&value.to_le_bytes());
+            }
             for instance in slots {
                 for word in instance.0 {
                     out.extend_from_slice(&word.to_le_bytes());
@@ -299,6 +302,7 @@ pub fn decode_node_levels(bytes: &[u8]) -> Result<PackedNode, CodecError> {
             let cells = reader.u32()?;
             let box_max = [reader.u16()?, reader.u16()?, reader.u16()?];
             let flags = reader.u32()?;
+            let rel_origin = [reader.u32()?, reader.u32()?, reader.u32()?];
             for _ in 0..PAGE_SLOTS {
                 instances.push(CellInstance([
                     reader.u32()?,
@@ -315,6 +319,7 @@ pub fn decode_node_levels(bytes: &[u8]) -> Result<PackedNode, CodecError> {
                 cells,
                 box_max,
                 flags,
+                rel_origin,
             });
         }
         validate_level(id, depth, &pages, &instances)?;

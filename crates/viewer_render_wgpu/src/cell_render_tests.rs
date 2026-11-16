@@ -1031,6 +1031,68 @@ fn cell_shaders_validate_with_naga() {
     }
 }
 
+/// Byte offset of every member of the WGSL struct `name`, and its size, from naga's layout.
+fn wgsl_struct_layout(name: &str) -> (Vec<(String, u32)>, u32) {
+    for source in shader_sources() {
+        let module = naga::front::wgsl::parse_str(&source).unwrap();
+        for (_, ty) in module.types.iter() {
+            if let (Some(n), naga::TypeInner::Struct { members, span }) = (&ty.name, &ty.inner)
+                && n == name
+            {
+                let members = members
+                    .iter()
+                    .map(|m| (m.name.clone().unwrap(), m.offset))
+                    .collect();
+                return (members, *span);
+            }
+        }
+    }
+    panic!("no WGSL struct {name}");
+}
+
+#[test]
+fn frame_uniform_is_176_bytes_and_matches_the_wgsl_layout() {
+    assert_eq!(size_of::<crate::cell_render::FrameUniform>(), 176);
+    let (members, span) = wgsl_struct_layout("CellFrame");
+    assert_eq!(span, 176);
+    let expected = [
+        ("view_proj", 0),
+        ("num_pages", 64),
+        ("shading", 68),
+        ("prev", 72),
+        ("capacity", 76),
+        ("viewport", 80),
+        ("mip_count", 88),
+        ("pad0", 92),
+        ("color_mode", 96),
+        ("intensity_min", 100),
+        ("intensity_max", 104),
+        ("height_offset", 108),
+        ("height_span", 112),
+        ("lod_mode", 116),
+        ("counters", 120),
+        ("target_px", 124),
+        ("forward", 128),
+        ("focal", 140),
+        ("right", 144),
+        ("min_side", 156),
+        ("up", 160),
+        ("pad1", 172),
+    ];
+    let found: Vec<(&str, u32)> = members.iter().map(|(n, o)| (n.as_str(), *o)).collect();
+    assert_eq!(found, expected);
+}
+
+#[test]
+fn cell_page_is_48_bytes_in_wgsl() {
+    assert_eq!(size_of::<PageEntry>(), 48);
+    let (members, span) = wgsl_struct_layout("CellPage");
+    assert_eq!(span, 48);
+    let rel = members.iter().find(|(n, _)| n == "rel").unwrap();
+    let depth = members.iter().find(|(n, _)| n == "depth").unwrap();
+    assert_eq!((rel.1, depth.1), (32, 44));
+}
+
 #[test]
 fn pool_constants_follow_the_adr() {
     assert_eq!(PAGE_BYTES, 8192);

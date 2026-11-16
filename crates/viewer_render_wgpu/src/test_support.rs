@@ -75,6 +75,7 @@ pub(crate) fn fake_level(key: LevelKey, pages: usize) -> PackedLevel {
                 cells: 0,
                 box_max: [page as u16, u16::from(key.depth), key.node.get() as u16],
                 flags: 0,
+                rel_origin: [0; 3],
             })
             .collect(),
     }
@@ -82,7 +83,7 @@ pub(crate) fn fake_level(key: LevelKey, pages: usize) -> PackedLevel {
 
 /// The (level, page) a fake entry names (see `fake_level`).
 fn fake_entry_target(entry: &PageEntry) -> (LevelKey, usize) {
-    let [.., word6, word7] = entry.0;
+    let (word6, word7) = (entry.0[6], entry.0[7]);
     (
         LevelKey {
             session: 0,

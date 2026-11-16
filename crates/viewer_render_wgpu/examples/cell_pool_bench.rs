@@ -202,6 +202,8 @@ impl Case {
                     box_max: std::array::from_fn(|a| {
                         u16::from_le_bytes([b[base + 40 + a * 2], b[base + 41 + a * 2]])
                     }),
+                    // The fixture predates the field; the bench never reads it.
+                    rel_origin: [u32::MAX; 3],
                 }
             })
             .collect();
