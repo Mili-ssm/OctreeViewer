@@ -1,0 +1,190 @@
+# cell_lod: reference spacing Some(0.001953125) (viewer_core::reference_spacing over the leaves, dataset units); focal 869.1169 px; near/eye per pose in the case table; metric Bound
+# coverage_spike /home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct
+# viewport 1280x720; root_side 2048; origin (262305.1880,4424149.7540,164.3530)
+# point budget (viewer) 18446744073709551615 from crates/viewer_wasm/src/lod_dataset.rs:517; budgets run: [18446744073709551615]
+# selector: select_lod_stable_projector as lod_dataset.rs:517-522; visual_scale 0.07882686703405224 (dataset metadata, bindings/lod.rs:240); voxel limits max_voxels 8000000 (min of voxel_grid.rs:64 and budget.rs:19-22, via gpu.rs:721), max_estimated_bytes 268435456 (voxel_grid.rs:65); RendererConfig defaults, the web host may override
+# pose orbit-0: position (80.7187,283.3858,283.3858) target (80.7187,80.7187,80.7187) (local coords x visual_scale)
+# pose orbit-90: position (-121.9484,80.7187,283.3858) target (80.7187,80.7187,80.7187) (local coords x visual_scale)
+# pose grazing: position (80.7187,366.2426,105.6988) target (80.7187,80.7187,80.7187) (local coords x visual_scale)
+# pose inside-leaf: position (48.9515,48.7938,12.2182) target (59.0413,48.7938,12.2182) (local coords x visual_scale)
+# inside-leaf: node 51539608302 with 63998 points, bounds SpatialBounds { min: [620.0, 618.0, 154.0], max: [622.0, 620.0, 156.0] }
+# grazing: eye 0.0873 rad above the horizontal plane through the root centre, looking down, fitted distance 286.6146
+# orbit-90: OrbitCamera::orbit(0.25, 0.0) (quarter turn in normalized units)
+# block case
+dataset_file	pose	target_px	budget	variant	cut_nodes	cut_points	cells_total	cells_on_screen	bytes12	bytes16	cpu_instances	ratio_on_screen_vs_cpu	stage_octants	build_ms	over_target_cells	over_target_frac	over_target_source_limited	cpu_oversized	resident_bytes12	resident_levels	draw_ranges
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	1	18446744073709551615	pyramid	11	111030	54495	54495	653940	871920	23982	2.272	0	8.5	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	1	18446744073709551615	tight	11	111030	54495	54495	653940	871920	23982	2.272	0	8.5	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	1	18446744073709551615	octant	11	111030	110064	110064	1320768	1761024	23982	4.589	0	17.1	0	0.0000	0	0	1346712	12	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	1	18446744073709551615	octant_tight	11	111030	54495	54495	653940	871920	23982	2.272	0	8.5	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	1	18446744073709551615	octant_tight_guard	11	111030	54495	54495	653940	871920	23982	2.272	0	8.7	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	1	18446744073709551615	octant_tight_offaxis	11	111030	110064	110064	1320768	1761024	23982	4.589	0	17.5	0	0.0000	0	0	1346712	12	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	1	18446744073709551615	octant_tight_near	11	111030	54495	54495	653940	871920	23982	2.272	0	8.8	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	2	18446744073709551615	pyramid	4	24978	8578	8578	102936	137248	8504	1.009	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	2	18446744073709551615	tight	4	24978	8578	8578	102936	137248	8504	1.009	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	2	18446744073709551615	octant	4	24978	24023	24023	288276	384368	8504	2.825	0	3.8	0	0.0000	0	0	288276	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	2	18446744073709551615	octant_tight	4	24978	8578	8578	102936	137248	8504	1.009	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	2	18446744073709551615	octant_tight_guard	4	24978	8578	8578	102936	137248	8504	1.009	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	2	18446744073709551615	octant_tight_offaxis	4	24978	24023	24023	288276	384368	8504	2.825	0	3.8	0	0.0000	0	0	288276	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	2	18446744073709551615	octant_tight_near	4	24978	8578	8578	102936	137248	8504	1.009	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	4	18446744073709551615	pyramid	4	24978	3921	3921	47052	62736	3872	1.013	0	0.6	0	0.0000	0	0	47052	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	4	18446744073709551615	tight	4	24978	3972	3972	47664	63552	3872	1.026	0	0.6	0	0.0000	0	0	47664	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	4	18446744073709551615	octant	4	24978	8578	8578	102936	137248	3872	2.215	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	4	18446744073709551615	octant_tight	4	24978	3921	3921	47052	62736	3872	1.013	0	0.6	0	0.0000	0	0	48888	5	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	4	18446744073709551615	octant_tight_guard	4	24978	3921	3921	47052	62736	3872	1.013	0	0.6	0	0.0000	0	0	48888	5	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	4	18446744073709551615	octant_tight_offaxis	4	24978	8578	8578	102936	137248	3872	2.215	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	4	18446744073709551615	octant_tight_near	4	24978	3921	3921	47052	62736	3872	1.013	0	0.6	0	0.0000	0	0	48888	5	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	8	18446744073709551615	pyramid	1	8504	1951	1951	23412	31216	1951	1.000	0	0.3	0	0.0000	0	0	23412	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	8	18446744073709551615	tight	1	8504	3872	3872	46464	61952	1951	1.985	0	0.6	0	0.0000	0	0	46464	1	1
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	8	18446744073709551615	octant	1	8504	3872	3872	46464	61952	1951	1.985	0	0.7	0	0.0000	0	0	148512	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	8	18446744073709551615	octant_tight	1	8504	1976	1976	23712	31616	1951	1.013	0	0.4	0	0.0000	0	0	69876	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	8	18446744073709551615	octant_tight_guard	1	8504	1976	1976	23712	31616	1951	1.013	0	0.4	0	0.0000	0	0	69876	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	8	18446744073709551615	octant_tight_offaxis	1	8504	3872	3872	46464	61952	1951	1.985	0	0.7	0	0.0000	0	0	148512	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	8	18446744073709551615	octant_tight_near	1	8504	1976	1976	23712	31616	1951	1.013	0	0.4	0	0.0000	0	0	69876	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	1	18446744073709551615	pyramid	11	111030	54495	54495	653940	871920	23982	2.272	0	9.0	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	1	18446744073709551615	tight	11	111030	54495	54495	653940	871920	23982	2.272	0	8.8	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	1	18446744073709551615	octant	11	111030	110078	110078	1320936	1761248	23982	4.590	0	17.6	0	0.0000	0	0	1320936	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	1	18446744073709551615	octant_tight	11	111030	54495	54495	653940	871920	23982	2.272	0	8.8	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	1	18446744073709551615	octant_tight_guard	11	111030	54495	54495	653940	871920	23982	2.272	0	8.8	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	1	18446744073709551615	octant_tight_offaxis	11	111030	110078	110078	1320936	1761248	23982	4.590	0	17.6	0	0.0000	0	0	1320936	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	1	18446744073709551615	octant_tight_near	11	111030	54495	54495	653940	871920	23982	2.272	0	8.7	0	0.0000	0	0	653940	11	11
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	2	18446744073709551615	pyramid	4	24978	8578	8578	102936	137248	8504	1.009	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	2	18446744073709551615	tight	4	24978	8578	8578	102936	137248	8504	1.009	0	1.3	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	2	18446744073709551615	octant	4	24978	24023	24023	288276	384368	8504	2.825	0	3.8	0	0.0000	0	0	288276	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	2	18446744073709551615	octant_tight	4	24978	8578	8578	102936	137248	8504	1.009	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	2	18446744073709551615	octant_tight_guard	4	24978	8578	8578	102936	137248	8504	1.009	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	2	18446744073709551615	octant_tight_offaxis	4	24978	24023	24023	288276	384368	8504	2.825	0	3.9	0	0.0000	0	0	288276	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	2	18446744073709551615	octant_tight_near	4	24978	8578	8578	102936	137248	8504	1.009	0	1.4	0	0.0000	0	0	102936	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	4	18446744073709551615	pyramid	1	8504	3872	3872	46464	61952	3872	1.000	0	0.6	0	0.0000	0	0	46464	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	4	18446744073709551615	tight	1	8504	8504	8504	102048	136064	3872	2.196	0	1.4	0	0.0000	0	0	102048	1	1
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	4	18446744073709551615	octant	1	8504	8504	8504	102048	136064	3872	2.196	0	1.4	0	0.0000	0	0	102048	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	4	18446744073709551615	octant_tight	1	8504	3883	3883	46596	62128	3872	1.003	0	0.7	0	0.0000	0	0	148512	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	4	18446744073709551615	octant_tight_guard	1	8504	3883	3883	46596	62128	3872	1.003	0	0.7	0	0.0000	0	0	148512	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	4	18446744073709551615	octant_tight_offaxis	1	8504	8504	8504	102048	136064	3872	2.196	0	1.4	0	0.0000	0	0	102048	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	4	18446744073709551615	octant_tight_near	1	8504	3883	3883	46596	62128	3872	1.003	0	0.7	0	0.0000	0	0	148512	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	8	18446744073709551615	pyramid	1	8504	1951	1951	23412	31216	1951	1.000	0	0.3	0	0.0000	0	0	23412	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	8	18446744073709551615	tight	1	8504	3872	3872	46464	61952	1951	1.985	0	0.6	0	0.0000	0	0	46464	1	1
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	8	18446744073709551615	octant	1	8504	3872	3872	46464	61952	1951	1.985	0	0.6	0	0.0000	0	0	46464	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	8	18446744073709551615	octant_tight	1	8504	1976	1976	23712	31616	1951	1.013	0	0.4	0	0.0000	0	0	69876	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	8	18446744073709551615	octant_tight_guard	1	8504	1976	1976	23712	31616	1951	1.013	0	0.4	0	0.0000	0	0	69876	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	8	18446744073709551615	octant_tight_offaxis	1	8504	3872	3872	46464	61952	1951	1.985	0	0.6	0	0.0000	0	0	46464	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	8	18446744073709551615	octant_tight_near	1	8504	1976	1976	23712	31616	1951	1.013	0	0.4	0	0.0000	0	0	69876	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	1	18446744073709551615	pyramid	814	23913885	20502013	17310571	246024156	328032208	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	2912.5	96896	0.0056	90784	NA	246024156	814	828
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	1	18446744073709551615	tight	814	23913885	20452521	17261079	245430252	327240336	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	2889.1	101048	0.0059	90784	NA	245430252	814	814
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	1	18446744073709551615	octant	814	23913885	23269331	20147011	279231972	372309296	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	3366.8	90784	0.0045	90784	NA	284781252	821	828
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	1	18446744073709551615	octant_tight	814	23913885	20296731	17117706	243560772	324747696	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	2931.3	92963	0.0054	90784	NA	250485456	826	828
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	1	18446744073709551615	octant_tight_guard	814	23913885	20296731	17117706	243560772	324747696	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	2905.0	92963	0.0054	90784	NA	250485456	826	828
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	1	18446744073709551615	octant_tight_offaxis	814	23913885	23440461	20241984	281285532	375047376	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	3433.0	90784	0.0045	90784	NA	285033900	819	828
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	1	18446744073709551615	octant_tight_near	814	23913885	20296731	17117706	243560772	324747696	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	2814.6	92963	0.0054	90784	NA	250485456	826	828
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	2	18446744073709551615	pyramid	450	14276758	12933154	10043731	155197848	206930464	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1633.1	15696	0.0016	9472	NA	155197848	450	486
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	2	18446744073709551615	tight	450	14276758	12827066	9937643	153924792	205233056	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1626.1	18730	0.0019	9472	NA	153924792	450	450
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	2	18446744073709551615	octant	450	14276758	13830322	11017216	165963864	221285152	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1821.5	14157	0.0013	9472	NA	177282072	471	486
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	2	18446744073709551615	octant_tight	450	14276758	12374810	9494669	148497720	197996960	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1551.2	18414	0.0019	9472	NA	165044040	484	486
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	2	18446744073709551615	octant_tight_guard	450	14276758	12374810	9494669	148497720	197996960	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1556.6	18414	0.0019	9472	NA	165044040	484	486
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	2	18446744073709551615	octant_tight_offaxis	450	14276758	14001987	11102747	168023844	224031792	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1797.8	9472	0.0009	9472	NA	175270284	466	486
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	2	18446744073709551615	octant_tight_near	450	14276758	12374810	9494669	148497720	197996960	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1571.4	18414	0.0019	9472	NA	165044040	484	486
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	4	18446744073709551615	pyramid	232	8079250	7476796	5219223	89721552	119628736	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	854.1	38752	0.0074	34943	NA	89721552	232	276
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	4	18446744073709551615	tight	232	8079250	7476688	5219115	89720256	119627008	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	869.4	38769	0.0074	34943	NA	89720256	232	232
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	4	18446744073709551615	octant	232	8079250	7549555	5427550	90594660	120792880	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	913.9	35119	0.0065	34943	NA	99908352	251	276
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	4	18446744073709551615	octant_tight	232	8079250	6793731	4550968	81524772	108699696	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	788.0	40102	0.0088	34943	NA	100214784	267	276
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	4	18446744073709551615	octant_tight_guard	232	8079250	6793731	4550968	81524772	108699696	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	780.2	40102	0.0088	34943	NA	100214784	267	276
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	4	18446744073709551615	octant_tight_offaxis	232	8079250	7775938	5490041	93311256	124415008	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	905.7	34972	0.0064	34943	NA	99904644	252	276
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	4	18446744073709551615	octant_tight_near	232	8079250	6793731	4550968	81524772	108699696	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	764.5	40102	0.0088	34943	NA	100214784	267	276
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	8	18446744073709551615	pyramid	131	5761364	4287440	2454314	51449280	68599040	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	412.1	38350	0.0156	38087	NA	51449280	131	179
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	8	18446744073709551615	tight	131	5761364	4287440	2454314	51449280	68599040	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	412.3	38350	0.0156	38087	NA	51449280	131	131
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	8	18446744073709551615	octant	131	5761364	3943580	2278720	47322960	63097280	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	389.2	38140	0.0167	38087	NA	54540048	151	179
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	8	18446744073709551615	octant_tight	131	5761364	3653363	1852493	43840356	58453808	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	334.4	40017	0.0216	38087	NA	61920624	179	179
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	8	18446744073709551615	octant_tight_guard	131	5761364	3653363	1852493	43840356	58453808	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	334.0	40017	0.0216	38087	NA	61920624	179	179
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	8	18446744073709551615	octant_tight_offaxis	131	5761364	4206633	2328833	50479596	67306128	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	404.8	38088	0.0164	38087	NA	64030464	158	179
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	8	18446744073709551615	octant_tight_near	131	5761364	3653363	1852493	43840356	58453808	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	333.8	40017	0.0216	38087	NA	61920624	179	179
+# block cell_lod
+dataset_file	pose	target_px	mode	cut_nodes	drawn_instances	octant_tight_instances	ratio_vs_octant_tight	cpu_instances	ratio_vs_cpu	resident_bytes	on_demand_bytes	octant_tight_resident_bytes	drawn_depths_only_bytes	r2_bytes	r3_bytes	r3_coarser_only_bytes	deepest_depth	resident_levels	over_target_cells	beyond_chain_cells	below_separation_cells	unbuilt_nodes	lod_ms	over_1p5_target_cells	non_monotone_pairs
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	1	px	11	54457	54495	0.999	23982	2.271	972320	16480	972320	972320	972320	3609120	1672720	19	11	0	0	0	0	16	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	2	px	4	8538	8578	0.995	8504	1.004	164800	8240	164800	164800	164800	667440	255440	13	4	0	0	0	0	3	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	4	px	4	3921	3921	1.000	3872	1.013	90640	0	98880	90640	90640	313120	148320	13	4	0	0	0	0	1	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	orbit-0	8	px	1	1951	1976	0.987	1951	1.000	32960	0	98880	32960	32960	115360	49440	6	1	0	0	0	0	1	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	1	px	11	54457	54495	0.999	23982	2.271	980560	16480	972320	980560	980560	3617360	1680960	19	12	0	0	0	0	13	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	2	px	4	8542	8578	0.996	8504	1.004	173040	16480	164800	173040	173040	675680	263680	13	5	0	0	0	0	3	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	4	px	1	3873	3883	0.997	3872	1.000	206000	0	206000	206000	206000	379040	238960	8	2	0	0	0	0	1	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	grazing	8	px	1	1957	1976	0.990	1951	1.003	98880	0	98880	98880	98880	255440	115360	7	2	0	0	0	0	1	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	1	px	814	18530206	17117706	1.083	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	428447040	52752480	339751680	402474560	428447040	1046512960	687603280	26	947	27982	264697	264697	0	4622	13969	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	2	px	450	10141684	9494669	1.068	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	281651440	44982160	223666560	259469360	281651440	625144080	418748560	26	541	6339	83506	83506	0	2226	1923	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	4	px	232	4694554	4550968	1.032	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	182120480	39535520	135836400	162443360	182120480	348848640	239610960	26	317	1063	89724	89724	0	1187	546	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/majadas-v7.oct	inside-leaf	8	px	131	1843890	1852493	0.995	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	119587120	36725680	84138640	101277840	119587120	218046880	144191760	26	216	10993	66457	66457	0	554	3312	0
+# block cell_lod_zoom
+dataset_file	pose	cut_nodes	drawn_instances	resident_bytes	on_demand_bytes	deepest_depth	resident_levels	new_levels	new_on_demand_levels	new_level_bytes	eye_to_inside_leaf	near	min_side
+# block cell_lod_stop_criteria
+PASS	[cell_lod px] resident bytes <= 460 MiB (>= 2 px) / 512 MiB (1 px) in every pose
+PASS	[cell_lod px] drawn instances <= 2.5x (1 px) / 2x (2-8 px) the CPU path in the grazing pose
+# block octant_mismatches
+octant_mismatches	215	(compared 13312 (node, octant) pairs of octant_tight; 0 fully masked octants skipped)
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 12 octant 0: library 9, spike 11
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 12 octant 4: library 9, spike 11
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 12 octant 2: library 9, spike 11
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 12 octant 6: library 9, spike 11
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 12 octant 1: library 9, spike 11
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 12 octant 5: library 9, spike 11
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 12 octant 3: library 9, spike 11
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 12 octant 7: library 9, spike 11
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 3 octant 0: library 9, spike 10
+#   mismatch: orbit-0 1px budget 18446744073709551615 node 3 octant 4: library 9, spike 10
+#   mismatch: orbit-0 2px budget 18446744073709551615 node 3 octant 0: library 8, spike 10
+#   mismatch: orbit-0 2px budget 18446744073709551615 node 3 octant 4: library 8, spike 10
+#   mismatch: orbit-0 2px budget 18446744073709551615 node 3 octant 2: library 9, spike 10
+#   mismatch: orbit-0 2px budget 18446744073709551615 node 3 octant 6: library 9, spike 10
+#   mismatch: orbit-0 2px budget 18446744073709551615 node 3 octant 1: library 9, spike 10
+#   mismatch: orbit-0 2px budget 18446744073709551615 node 3 octant 5: library 9, spike 10
+#   mismatch: orbit-0 2px budget 18446744073709551615 node 3 octant 3: library 9, spike 10
+#   mismatch: orbit-0 2px budget 18446744073709551615 node 3 octant 7: library 9, spike 10
+#   mismatch: orbit-0 4px budget 18446744073709551615 node 3 octant 2: library 8, spike 10
+#   mismatch: orbit-0 4px budget 18446744073709551615 node 3 octant 6: library 8, spike 10
+# block transitions
+transition	budget	variant	prev_nodes	next_nodes	union_nodes	result	offending_pairs
+within orbit-0 8->4px	18446744073709551615	pyramid	1	4	5	ok	0
+within orbit-0 4->2px	18446744073709551615	pyramid	4	4	4	ok	0
+within orbit-0 2->1px	18446744073709551615	pyramid	4	11	12	ok	0
+within grazing 8->4px	18446744073709551615	pyramid	1	1	1	ok	0
+within grazing 4->2px	18446744073709551615	pyramid	1	4	5	ok	0
+within grazing 2->1px	18446744073709551615	pyramid	4	11	12	ok	0
+within inside-leaf 8->4px	18446744073709551615	pyramid	131	232	262	ok	0
+within inside-leaf 4->2px	18446744073709551615	pyramid	232	450	509	ok	0
+within inside-leaf 2->1px	18446744073709551615	pyramid	450	814	909	ok	0
+between grazing->inside-leaf 1px	18446744073709551615	pyramid	11	814	820	DescendantTooFine	768
+between grazing->inside-leaf 2px	18446744073709551615	pyramid	4	450	451	DescendantTooFine	430
+between grazing->inside-leaf 4px	18446744073709551615	pyramid	1	232	233	DescendantTooFine	218
+between grazing->inside-leaf 8px	18446744073709551615	pyramid	1	131	132	DescendantTooFine	115
+# transitions evaluated per variant: 13 of 24 expected (the rest involve skipped cases)
+# pyramid: DescendantTooFine in 4/13 transitions (frequency 0.3077)
+#   fails: between grazing->inside-leaf 1px budget 18446744073709551615: 768 pairs
+#   fails: between grazing->inside-leaf 2px budget 18446744073709551615: 430 pairs
+#   fails: between grazing->inside-leaf 4px budget 18446744073709551615: 218 pairs
+#   fails: between grazing->inside-leaf 8px budget 18446744073709551615: 115 pairs
+# block stop_criteria
+FAIL	[octant_tight] draw_ranges <= 3 x cut_nodes at 4 px in every case (worst grazing budget 18446744073709551615: draw_ranges 4, cut_nodes 1, limit 3): grazing budget 18446744073709551615: 4 ranges vs 1 nodes
+PASS	[pyramid] cut bytes (12 B) <= 256 MiB in every case
+PASS	[pyramid] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+FAIL	[pyramid] on-screen instances <= 2x CPU instances in the grazing pose: 1px budget 18446744073709551615: on-screen 54495 vs CPU 23982
+PASS	[tight] cut bytes (12 B) <= 256 MiB in every case
+PASS	[tight] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+FAIL	[tight] on-screen instances <= 2x CPU instances in the grazing pose: 1px budget 18446744073709551615: on-screen 54495 vs CPU 23982; 4px budget 18446744073709551615: on-screen 8504 vs CPU 3872
+FAIL	[octant] cut bytes (12 B) <= 256 MiB in every case: inside-leaf 1px budget 18446744073709551615: 279231972 B
+FAIL	[octant] resident_bytes12 (whole drawn levels) <= 256 MiB in every case: inside-leaf 1px budget 18446744073709551615: 284781252 B
+FAIL	[octant] on-screen instances <= 2x CPU instances in the grazing pose: 1px budget 18446744073709551615: on-screen 110078 vs CPU 23982; 2px budget 18446744073709551615: on-screen 24023 vs CPU 8504; 4px budget 18446744073709551615: on-screen 8504 vs CPU 3872
+PASS	[octant_tight] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+PASS	[octant_tight_guard] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight_guard] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight_guard] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+FAIL	[octant_tight_offaxis] cut bytes (12 B) <= 256 MiB in every case: inside-leaf 1px budget 18446744073709551615: 281285532 B
+FAIL	[octant_tight_offaxis] resident_bytes12 (whole drawn levels) <= 256 MiB in every case: inside-leaf 1px budget 18446744073709551615: 285033900 B
+FAIL	[octant_tight_offaxis] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose: 1px budget 18446744073709551615: on-screen 110078 vs CPU 23982; 2px budget 18446744073709551615: on-screen 24023 vs CPU 8504; 4px budget 18446744073709551615: on-screen 8504 vs CPU 3872
+PASS	[octant_tight_near] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight_near] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+FAIL	[octant_tight_near] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose: 1px budget 18446744073709551615: on-screen 54495 vs CPU 23982
+FAIL	DescendantTooFine in <= 5 % of cut updates (worst variant 0.3077)
+# cell cache: 1006 nodes, 858536448 bytes (nothing evicted, so peak = final)
+# nodes whose first stored level is coarser than their 8^3 grid: 3
+# nodes with a first stored level coarser than their 8^3 grid:
+#   node 51539607795 node_depth 9 first_stored_depth 11 leaf true
+#   node 124 node_depth 5 first_stored_depth 7 leaf true
+#   node 125 node_depth 5 first_stored_depth 7 leaf true

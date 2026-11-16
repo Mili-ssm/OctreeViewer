@@ -3,8 +3,13 @@
 //! out of scope. Throwaway: not part of `scripts/check.sh`.
 //!
 //! Usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR [--check-cell-pages]]
-//!        [--export-pool DIR]
+//!        [--export-pool DIR] [--cell-lod]
 //! (0 = no limit; larger cuts skip the case).
+//!
+//! `--cell-lod` (plan `nivel-pedido-y-lod-por-celda`, phase 0a) adds the `cell_lod` measurement
+//! next to `octant_tight`: every cell of a cut node draws the depth its own distance asks for
+//! (rule D3), at any depth, with the levels the stored chain lacks derived from the node's
+//! points. It also runs a synthetic 10-pose zoom at 4 px. See the `cell_lod` section at the end.
 //!
 //! `--export DIR` writes, for the `octant_tight` variant only and for the poses/targets in
 //! `EXPORT_POSES`/`EXPORT_TARGETS` plus the 4 px `DIRECTION_POSES`, the cube-pool files of
@@ -39,14 +44,15 @@ use std::{
 
 use viewer_core::{
     BlockId, DEFAULT_LOD_PRIORITY_BYTES, DatasetSource, LodSelectionConfig, NodeId, PointBlock,
-    ResidentBlockSource, SpatialBounds,
+    ResidentBlockSource, SpatialBounds, SpatialFrustum,
 };
 use viewer_format::{FormatReader, OctreeReader, PagedReader};
 use viewer_render_wgpu::{
-    CellCutEntry, CellCutNode, CellGrid, InstanceRaw, NodeCell, NodeCellLevel, NodeCellSource,
-    OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PointNodeCellSource,
-    RendererConfig, SceneBounds, ViewProjection, VoxelBuildLimits, build_voxel_scene_with_limits,
-    cell_cut, decode_cell, octant_ranges, pack_level, representative_depth, srgb_to_linear_table,
+    CellCutEntry, CellCutNode, CellGrid, InstanceRaw, MAX_CELL_DEPTH, NodeCell, NodeCellLevel,
+    NodeCellSource, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame,
+    PointNodeCellSource, RendererConfig, SceneBounds, ViewProjection, VoxelBuildLimits,
+    build_voxel_scene_with_limits, cell_cut, cell_lod, decode_cell, octant_ranges, pack_level,
+    representative_depth, srgb_to_linear_table,
 };
 
 const VIEWPORT: [u32; 2] = [1280, 720];
@@ -363,6 +369,70 @@ fn main() -> Result<()> {
         export_pool_dir = Some(PathBuf::from(args.remove(at + 1)));
         args.remove(at);
     }
+    let cell_lod_on = args
+        .iter()
+        .position(|a| a == "--cell-lod")
+        .map(|at| args.remove(at))
+        .is_some();
+    // Residency of the primary `cell_lod` columns: r1 (range, default), r2 (drawn depths plus the
+    // next one below the separation depth), r3 (r2 plus the next finer and coarser of every drawn
+    // depth); r2 and r3 bytes are always printed. `--centre-distance` restores the centre distance
+    // of the first run (default: nearest point of the cell).
+    let mut lod_opts = LodOpts {
+        residency: 1,
+        nearest: true,
+        metric: Metric::Distance,
+        px_only: false,
+    };
+    // `--metric bound|edge|distance` picks the refine rule (default: the phase 0a one);
+    // `--px-only` skips the spacing mode; `--poses a,b` limits the poses (no synthetic zoom).
+    if let Some(at) = args.iter().position(|a| a == "--metric") {
+        if at + 1 >= args.len() {
+            return Err("--metric needs bound, edge or distance".into());
+        }
+        lod_opts.metric = match args.remove(at + 1).to_string_lossy().as_ref() {
+            "bound" => Metric::Bound,
+            "edge" => Metric::Edge,
+            "distance" => Metric::Distance,
+            other => return Err(format!("unknown metric {other}").into()),
+        };
+        args.remove(at);
+    }
+    if let Some(at) = args.iter().position(|a| a == "--px-only") {
+        args.remove(at);
+        lod_opts.px_only = true;
+    }
+    let mut pose_filter: Option<Vec<String>> = None;
+    if let Some(at) = args.iter().position(|a| a == "--poses") {
+        if at + 1 >= args.len() {
+            return Err("--poses needs a comma separated list".into());
+        }
+        pose_filter = Some(
+            args.remove(at + 1)
+                .to_string_lossy()
+                .split(',')
+                .map(str::to_string)
+                .collect(),
+        );
+        args.remove(at);
+    }
+    if let Some(at) = args.iter().position(|a| a == "--residency") {
+        if at + 1 >= args.len() {
+            return Err("--residency needs r1, r2 or r3".into());
+        }
+        lod_opts.residency = match args.remove(at + 1).to_string_lossy().as_ref() {
+            "r1" => 1,
+            "r2" => 2,
+            "r3" => 3,
+            "r3c" => 4,
+            other => return Err(format!("unknown residency {other}").into()),
+        };
+        args.remove(at);
+    }
+    if let Some(at) = args.iter().position(|a| a == "--centre-distance") {
+        args.remove(at);
+        lod_opts.nearest = false;
+    }
     let exporting = export_dir.is_some() || export_pool_dir.is_some();
     let check_cell_pages = args
         .iter()
@@ -374,7 +444,7 @@ fn main() -> Result<()> {
     }
     if args.is_empty() || args.len() > 2 {
         return Err(
-            "usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR [--check-cell-pages]] [--export-pool DIR]"
+            "usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR [--check-cell-pages]] [--export-pool DIR] [--cell-lod [--residency r1|r2|r3|r3c] [--centre-distance] [--metric bound|edge|distance] [--px-only] [--poses a,b]]"
                 .into(),
         );
     }
@@ -533,6 +603,49 @@ fn main() -> Result<()> {
             poses.push(Pose { name, camera });
         }
     }
+    // Synthetic zoom (`--cell-lod`): the eye covers half of the remaining way to the inside-leaf eye
+    // each step, so the 10th pose is the inside-leaf pose itself; the target moves with the same
+    // fraction. Zoom poses only run at 4 px, px-only, for `octant_tight` and `cell_lod`.
+    let zoom_start = poses.len();
+    if cell_lod_on && pose_filter.is_none() {
+        for step in 0..ZOOM_STEPS {
+            let t = if step + 1 == ZOOM_STEPS {
+                1.0
+            } else {
+                1.0 - 0.5_f64.powi(step as i32)
+            };
+            let camera = if step == 0 {
+                fitted
+            } else if step + 1 == ZOOM_STEPS {
+                inside
+            } else {
+                let eye: [f64; 3] =
+                    std::array::from_fn(|a| fit_pos[a] + t * (leaf_eye[a] - fit_pos[a]));
+                let target: [f64; 3] =
+                    std::array::from_fn(|a| fit_target[a] + t * (leaf_target[a] - fit_target[a]));
+                let mut camera = fitted;
+                if !camera.set_pose(eye, target) {
+                    return Err(format!("zoom pose {step} rejected").into());
+                }
+                camera
+            };
+            let name: &'static str = Box::leak(format!("zoom-{step}").into_boxed_str());
+            poses.push(Pose { name, camera });
+        }
+    }
+    let reference_spacing = hierarchy.reference_spacing();
+    if cell_lod_on {
+        println!(
+            "# cell_lod: reference spacing {reference_spacing:?} (viewer_core::reference_spacing over the leaves, dataset units); focal {:.4} px; near/eye per pose in the case table; metric {:?}",
+            lod_focal(),
+            lod_opts.metric
+        );
+    }
+    let mut lod_rows: Vec<String> = Vec::new();
+    let mut lod_records: Vec<LodRecord> = Vec::new();
+    let mut zoom_rows: Vec<String> = Vec::new();
+    let mut zoom_prev: Option<HashSet<(u64, u8)>> = None;
+    let mut fine: HashMap<NodeId, FineNode> = HashMap::new();
     let mut budgets = vec![VIEWER_BUDGET];
     if VIEWER_BUDGET != u64::MAX {
         budgets.push(u64::MAX);
@@ -592,6 +705,13 @@ fn main() -> Result<()> {
     let started_all = Instant::now();
 
     for (pose_index, pose) in poses.iter().enumerate() {
+        if pose_filter
+            .as_ref()
+            .is_some_and(|f| !f.iter().any(|n| n == pose.name))
+        {
+            continue;
+        }
+        let is_zoom = pose_index >= zoom_start;
         let view = ViewProjection::new(pose.camera, VIEWPORT, visual_scale, build_limits);
         // Dataset-unit frustum for the selector; unscaled-local one for cells and bounds.
         let wf = view.spatial_frustum(origin).ok_or("no frustum")?;
@@ -713,10 +833,35 @@ fn main() -> Result<()> {
                     );
                 }
 
+                if cell_lod_on {
+                    for id in &cut {
+                        if fine.contains_key(id) {
+                            continue;
+                        }
+                        let n = &cache[id];
+                        let blocks: Vec<PointBlock> = hierarchy
+                            .node(*id)
+                            .ok_or("cut node missing")?
+                            .blocks()
+                            .iter()
+                            .map(|b| reader.read_block(*b))
+                            .collect::<std::result::Result<_, _>>()?;
+                        let finest = n.levels.last().map_or(0, |l| l.depth);
+                        match build_fine(&grid, *id, n.bounds, finest, &blocks) {
+                            Ok(node) => {
+                                fine.insert(*id, node);
+                            }
+                            Err(e) => eprintln!("  cell_lod: node {} not buildable: {e}", id.get()),
+                        }
+                    }
+                }
+
                 // CPU baseline.
                 let decoded_estimate = selection.point_count() * POINT_BYTES;
                 let cpu = if exporting {
                     Err("NA(export)".to_string())
+                } else if is_zoom {
+                    Err("NA(zoom)".to_string())
                 } else if decoded_estimate > MAX_DECODED_BYTES {
                     Err(format!("NA(decoded>{}GiB)", MAX_DECODED_BYTES >> 30))
                 } else {
@@ -753,7 +898,7 @@ fn main() -> Result<()> {
                 };
 
                 for (vi, variant) in RUN_VARIANTS.iter().copied().enumerate() {
-                    if exporting && variant != Variant::OctantTight {
+                    if (exporting || is_zoom) && variant != Variant::OctantTight {
                         continue;
                     }
                     let t0 = Instant::now();
@@ -796,6 +941,39 @@ fn main() -> Result<()> {
                                 variant.name()
                             )
                         })?;
+                    if is_zoom {
+                        let lv = lod_view(&view, &local_frustum, &grid, target, 0.0, lod_opts)?;
+                        let res = cell_lod_case(&lv, &entries, &cache, &mut fine);
+                        let now: HashSet<(u64, u8)> =
+                            res.resident.iter().map(|r| (r.node, r.depth)).collect();
+                        let (mut new_levels, mut new_on_demand, mut new_bytes) = (0, 0, 0);
+                        for r in &res.resident {
+                            if zoom_prev
+                                .as_ref()
+                                .is_none_or(|p| !p.contains(&(r.node, r.depth)))
+                            {
+                                new_levels += 1;
+                                new_on_demand += usize::from(r.on_demand);
+                                new_bytes += r.bytes;
+                            }
+                        }
+                        zoom_rows.push(format!(
+                            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{new_levels}\t{new_on_demand}\t{new_bytes}\t{:.2}\t{:.4}\t{:.4}",
+                            args[0].to_string_lossy(),
+                            pose.name,
+                            cut.len(),
+                            res.drawn,
+                            res.resident_bytes,
+                            res.on_demand_bytes,
+                            res.deepest,
+                            res.resident.len(),
+                            dist3(lv.eye, leaf_eye.map(|v| v / visual_scale)),
+                            lv.near,
+                            lv.min_side,
+                        ));
+                        zoom_prev = Some(now);
+                        continue;
+                    }
                     if let Some(dir) = &export_dir {
                         let (mismatches, groups) = export_case(&ExportCase {
                             dir: dir.join(format!("{dataset_name}-{}-{target}px", pose.name)),
@@ -1036,6 +1214,60 @@ fn main() -> Result<()> {
                         total * 16,
                         over as f64 / on_screen.max(1) as f64,
                     ));
+                    if cell_lod_on && variant == Variant::OctantTight {
+                        for (mode, spacing_mode) in LOD_MODES {
+                            if lod_opts.px_only && spacing_mode {
+                                continue;
+                            }
+                            let min_side = if spacing_mode {
+                                reference_spacing.ok_or("no reference spacing for spacing mode")?
+                            } else {
+                                0.0
+                            };
+                            let lv =
+                                lod_view(&view, &local_frustum, &grid, target, min_side, lod_opts)?;
+                            let t_lod = Instant::now();
+                            let res = cell_lod_case(&lv, &entries, &cache, &mut fine);
+                            let lod_ms = t_lod.elapsed().as_secs_f64() * 1000.0;
+                            let vs_ot = res.drawn as f64 / on_screen.max(1) as f64;
+                            let vs_cpu = match &cpu {
+                                Ok((count, _)) => Some(res.drawn as f64 / (*count).max(1) as f64),
+                                Err(_) => None,
+                            };
+                            lod_rows.push(format!(
+                                "{}\t{}\t{target}\t{mode}\t{}\t{}\t{on_screen}\t{vs_ot:.3}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{lod_ms:.0}\t{}\t{}",
+                                args[0].to_string_lossy(),
+                                pose.name,
+                                cut.len(),
+                                res.drawn,
+                                cpu_text,
+                                vs_cpu.map_or("NA".to_string(), |v| format!("{v:.3}")),
+                                res.resident_bytes,
+                                res.on_demand_bytes,
+                                res.baseline_bytes,
+                                res.drawn_only_bytes,
+                                res.r2_bytes,
+                                res.r3_bytes,
+                                res.r4_bytes,
+                                res.deepest,
+                                res.resident.len(),
+                                res.over,
+                                res.beyond_chain,
+                                res.below_s,
+                                res.unbuilt,
+                                res.over_1p5,
+                                res.non_monotone,
+                            ));
+                            lod_records.push(LodRecord {
+                                dataset: args[0].to_string_lossy().into_owned(),
+                                pose: pose.name,
+                                target,
+                                mode,
+                                vs_cpu,
+                                resident_bytes: res.resident_bytes,
+                            });
+                        }
+                    }
                 }
                 cases.push(Case {
                     pose: pose_index,
@@ -1053,6 +1285,27 @@ fn main() -> Result<()> {
     );
     for row in &rows {
         println!("{row}");
+    }
+
+    if cell_lod_on {
+        println!("# block cell_lod");
+        println!(
+            "dataset_file\tpose\ttarget_px\tmode\tcut_nodes\tdrawn_instances\toctant_tight_instances\tratio_vs_octant_tight\tcpu_instances\tratio_vs_cpu\tresident_bytes\ton_demand_bytes\toctant_tight_resident_bytes\tdrawn_depths_only_bytes\tr2_bytes\tr3_bytes\tr3_coarser_only_bytes\tdeepest_depth\tresident_levels\tover_target_cells\tbeyond_chain_cells\tbelow_separation_cells\tunbuilt_nodes\tlod_ms\tover_1p5_target_cells\tnon_monotone_pairs"
+        );
+        for row in &lod_rows {
+            println!("{row}");
+        }
+        println!("# block cell_lod_zoom");
+        println!(
+            "dataset_file\tpose\tcut_nodes\tdrawn_instances\tresident_bytes\ton_demand_bytes\tdeepest_depth\tresident_levels\tnew_levels\tnew_on_demand_levels\tnew_level_bytes\teye_to_inside_leaf\tnear\tmin_side"
+        );
+        for row in &zoom_rows {
+            println!("{row}");
+        }
+        println!("# block cell_lod_stop_criteria");
+        for line in lod_verdicts(&lod_records) {
+            println!("{line}");
+        }
     }
 
     println!("# block octant_mismatches");
@@ -2083,4 +2336,566 @@ fn export_pool_case(case: &PoolCase) -> Result<()> {
         offset >> 20
     );
     Ok(())
+}
+
+// ---- `--cell-lod`: per-cell level of detail on the CPU (plan nivel-pedido-y-lod-por-celda, 0a) ----
+//
+// Model, all in the unscaled local frame of the grid:
+// - `refines(c) := side(c) > max(min_side, target * max(dist(centre(c), eye), near) / focal)` (D3).
+// - Per cut node, the descent starts at the coarsest stored depth and splits a cell while it
+//   refines, down to `MAX_CELL_DEPTH`. Children come from the node's points: the cells of the
+//   deepest depth `S` where its points separate (built once with the library, `min_growth` 1.0),
+//   sorted by an absolute Morton order, so the cell of any depth `d <= S` is a contiguous range
+//   and its coordinate is `coord_S >> (S - d)`. Below `S` a cell holds one point, so its only
+//   child is the sub-cell of that point; the spike keeps the centre of the `S` cell for it (the
+//   point position is not kept), which only matters for cells within a few `S` cells of the eye.
+// - A cell is dropped when it is outside the frustum or under a resident descendant node (the
+//   mask of `cell_cut`, as in `octant_tight`); a cell coarser than the node's 8^3 grid under a
+//   non-empty mask is forced to refine (D5). Only cells in the frustum are counted or required.
+// - Residency (D4): per node the depths from the coarsest to the finest drawn one, except that
+//   below `S` only the drawn depths and the next one count. Bytes are `pack_level` pages times
+//   `PAGE_BYTES`; levels missing from the stored chain are "on demand".
+
+const ZOOM_STEPS: usize = 10;
+const LOD_MODES: [(&str, bool); 2] = [("px", false), ("spacing", true)];
+/// Page of 512 slots of 16 B plus its 48 B record (`--export-pool` format).
+const PAGE_BYTES: u64 = PAGE_SLOTS as u64 * 16 + 48;
+const MIB: f64 = 1024.0 * 1024.0;
+
+/// Vertical focal length in pixels (`projected_voxel_edge_pixels`, VERTICAL_FOV = 45 degrees).
+fn lod_focal() -> f64 {
+    f64::from(VIEWPORT[1]) / (2.0 * (45.0_f64.to_radians() * 0.5).tan())
+}
+
+fn dist3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
+}
+
+struct LodView<'a> {
+    view: &'a ViewProjection,
+    frustum: &'a SpatialFrustum,
+    grid: &'a CellGrid,
+    eye: [f64; 3],
+    focal: f64,
+    near: f64,
+    target: f64,
+    min_side: f64,
+    opts: LodOpts,
+    /// The eye-relative scaled view `cell_lod::refines` takes (`Metric::Bound`).
+    bound: cell_lod::LodView,
+    eye_scaled: [f64; 3],
+    scale: f64,
+}
+
+/// Refine rule of the descent: `Bound` is `cell_lod::refines` (phase 2a E1), `Edge` refines while
+/// the actual projected edge is above the target, `Distance` is the phase 0a rule.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Metric {
+    Bound,
+    Edge,
+    Distance,
+}
+
+#[derive(Clone, Copy)]
+struct LodOpts {
+    residency: u8,
+    nearest: bool,
+    metric: Metric,
+    px_only: bool,
+}
+
+fn lod_view<'a>(
+    view: &'a ViewProjection,
+    frustum: &'a SpatialFrustum,
+    grid: &'a CellGrid,
+    target: f64,
+    min_side: f64,
+    opts: LodOpts,
+) -> Result<LodView<'a>> {
+    let scale = view.visual_scale();
+    let eye = view.camera().position().map(|v| v / scale);
+    // Plane 4 of the frustum is the near plane (`spatial_frustum_with_near`); its normal is scaled by
+    // `scale` and the plane equation then gives the signed distance in scaled units.
+    let near_plane = frustum
+        .planes()
+        .get(4)
+        .ok_or("frustum without near plane")?;
+    let n = near_plane.normal();
+    let near = -((0..3).map(|i| n[i] * eye[i]).sum::<f64>() + near_plane.offset()) / scale;
+    Ok(LodView {
+        view,
+        frustum,
+        grid,
+        eye,
+        focal: lod_focal(),
+        near,
+        target,
+        min_side,
+        opts,
+        bound: cell_lod::LodView::from_camera(
+            &view.camera(),
+            [VIEWPORT[0] as f32, VIEWPORT[1] as f32],
+            target as f32,
+            (min_side * scale) as f32,
+        ),
+        eye_scaled: view.camera().position(),
+        scale,
+    })
+}
+
+impl LodView<'_> {
+    fn refines(&self, side: f64, min: [f64; 3]) -> bool {
+        match self.opts.metric {
+            Metric::Bound => {
+                // Eye-relative scaled f32 coordinates, as the cut computes them.
+                let lo: [f32; 3] =
+                    std::array::from_fn(|i| (min[i] * self.scale - self.eye_scaled[i]) as f32);
+                cell_lod::refines(&self.bound, lo, (side * self.scale) as f32)
+            }
+            Metric::Edge => {
+                let Ok(bounds) = SpatialBounds::new(min, min.map(|v| v + side)) else {
+                    return false;
+                };
+                side > self.min_side
+                    && self.view.projected_voxel_edge_pixels(bounds, [0.0; 3]) > self.target
+            }
+            Metric::Distance => self.refines_distance(side, min),
+        }
+    }
+
+    fn refines_distance(&self, side: f64, min: [f64; 3]) -> bool {
+        let dist = if self.opts.nearest {
+            // Nearest point of the cell to the eye (ADR 0034): zero when the eye is inside.
+            (0..3)
+                .map(|i| (self.eye[i].clamp(min[i], min[i] + side) - self.eye[i]).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        } else {
+            dist3(min.map(|v| v + side / 2.0), self.eye)
+        };
+        let threshold = (self.target * dist.max(self.near) / self.focal).max(self.min_side);
+        side > threshold
+    }
+}
+
+/// Cells of the deepest depth `S` of one node where its points separate.
+struct FineNode {
+    s: u8,
+    coords: Vec<[u64; 3]>,
+    counts: Vec<u32>,
+    /// Packed bytes per depth, filled on demand.
+    bytes: HashMap<u8, u64>,
+}
+
+/// Morton order on absolute coordinates without interleaving: the axis of the most significant
+/// differing bit decides.
+fn morton_cmp(a: &[u64; 3], b: &[u64; 3]) -> std::cmp::Ordering {
+    let x: [u64; 3] = std::array::from_fn(|i| a[i] ^ b[i]);
+    let mut best = 0;
+    for i in 1..3 {
+        if x[best] < x[i] && x[best] < (x[best] ^ x[i]) {
+            best = i;
+        }
+    }
+    a[best].cmp(&b[best])
+}
+
+fn build_fine(
+    grid: &CellGrid,
+    id: NodeId,
+    bounds: SpatialBounds,
+    finest_stored: u8,
+    blocks: &[PointBlock],
+) -> Result<FineNode> {
+    // Asking for a leaf chain that starts at the finest stored depth makes the library build only
+    // the levels from there to the separation depth; `is_leaf` is true for internal nodes too,
+    // which only changes where the chain may end.
+    let spacing = grid.root_side / (1_u64 << finest_stored) as f64;
+    let cells = PointNodeCellSource { min_growth: 1.0 }.node_cells(
+        grid,
+        id,
+        bounds,
+        Some(spacing),
+        true,
+        blocks,
+    )?;
+    let last = cells
+        .levels
+        .into_iter()
+        .last()
+        .ok_or("node without levels")?;
+    let mut sorted: Vec<([u64; 3], u32)> = last.cells.iter().map(|c| (c.coord, c.count)).collect();
+    sorted.sort_unstable_by(|a, b| morton_cmp(&a.0, &b.0));
+    Ok(FineNode {
+        s: last.depth,
+        coords: sorted.iter().map(|c| c.0).collect(),
+        counts: sorted.iter().map(|c| c.1).collect(),
+        bytes: HashMap::new(),
+    })
+}
+
+#[derive(Default)]
+struct NodeDraw {
+    drawn: u64,
+    over: u64,
+    /// Drawn cells above 1.5 times the target.
+    over_1p5: u64,
+    /// Bit `d` set when a cell of depth `d` is drawn.
+    depths: u64,
+    /// Drawn cells deeper than the finest stored level of the node.
+    beyond_chain: u64,
+    /// Drawn cells deeper than the separation depth `S`.
+    below_s: u64,
+    /// Drawn cells with a child (in the frustum, holding points) that refines: the child refines
+    /// while its parent does not.
+    non_monotone: u64,
+}
+
+fn draw_cell(
+    lv: &LodView,
+    dn: &DescentNode,
+    bounds: &SpatialBounds,
+    depth: u8,
+    out: &mut NodeDraw,
+) {
+    out.drawn += 1;
+    out.beyond_chain += u64::from(dn.node.levels.last().is_some_and(|l| depth > l.depth));
+    out.below_s += u64::from(depth > dn.fine.s);
+    out.depths |= 1 << depth;
+    let edge = lv.view.projected_voxel_edge_pixels(*bounds, [0.0; 3]);
+    if edge > lv.target * (1.0 + 1e-6) {
+        out.over += 1;
+    }
+    out.over_1p5 += u64::from(edge > lv.target * 1.5);
+}
+
+struct DescentNode<'a> {
+    node: &'a NodeData,
+    fine: &'a FineNode,
+    mask: Option<&'a [u64; 8]>,
+}
+
+fn descend(lv: &LodView, dn: &DescentNode, d: u8, a: usize, b: usize, out: &mut NodeDraw) {
+    let (n, f) = (dn.node, dn.fine);
+    let coord: [u64; 3] = f.coords[a].map(|c| c >> (f.s - d));
+    let side = lv.grid.root_side / (1_u64 << d) as f64;
+    let min: [f64; 3] = std::array::from_fn(|i| lv.grid.root_min[i] + coord[i] as f64 * side);
+    let Ok(bounds) = SpatialBounds::new(min, min.map(|v| v + side)) else {
+        return;
+    };
+    if !lv.frustum.intersects(&bounds) {
+        return;
+    }
+    let mut forced = false;
+    if let Some(mask) = dn.mask {
+        if d < n.rep {
+            forced = true;
+        } else {
+            let m: [u64; 3] =
+                std::array::from_fn(|i| (coord[i] >> (d - n.rep)).wrapping_sub(n.rep_lo[i]));
+            if m.iter().all(|v| *v < 8) && mask[m[2] as usize] >> (m[0] + 8 * m[1]) & 1 == 1 {
+                return;
+            }
+        }
+    }
+    let centre: [f64; 3] = min.map(|v| v + side / 2.0);
+    if d < f.s {
+        if forced || lv.refines(side, min) {
+            let shift = f.s - d - 1;
+            let mut i = a;
+            while i < b {
+                let key = f.coords[i].map(|c| c >> shift);
+                let mut j = i + 1;
+                while j < b && f.coords[j].map(|c| c >> shift) == key {
+                    j += 1;
+                }
+                descend(lv, dn, d + 1, i, j, out);
+                i = j;
+            }
+        } else {
+            draw_cell(lv, dn, &bounds, d, out);
+            let shift = f.s - d - 1;
+            let mut i = a;
+            while i < b {
+                let key = f.coords[i].map(|c| c >> shift);
+                let mut j = i + 1;
+                while j < b && f.coords[j].map(|c| c >> shift) == key {
+                    j += 1;
+                }
+                let child_side = side / 2.0;
+                let child_min: [f64; 3] =
+                    std::array::from_fn(|k| lv.grid.root_min[k] + key[k] as f64 * child_side);
+                let in_frustum = SpatialBounds::new(child_min, child_min.map(|v| v + child_side))
+                    .is_ok_and(|c| lv.frustum.intersects(&c));
+                out.non_monotone += u64::from(in_frustum && lv.refines(child_side, child_min));
+                i = j;
+            }
+        }
+        return;
+    }
+    // d == S: one cell. Several points on one position cannot separate: it stays.
+    let mut depth = d;
+    if f.counts[a] == 1 {
+        while depth < MAX_CELL_DEPTH
+            && lv.refines(
+                lv.grid.root_side / (1_u64 << depth) as f64,
+                centre.map(|v| v - lv.grid.root_side / (1_u64 << depth) as f64 / 2.0),
+            )
+        {
+            depth += 1;
+        }
+    }
+    if depth == d {
+        draw_cell(lv, dn, &bounds, d, out);
+        return;
+    }
+    let tail_side = lv.grid.root_side / (1_u64 << depth) as f64;
+    let tail = SpatialBounds::new(
+        centre.map(|v| v - tail_side / 2.0),
+        centre.map(|v| v + tail_side / 2.0),
+    );
+    if let Ok(tail) = tail
+        && lv.frustum.intersects(&tail)
+    {
+        draw_cell(lv, dn, &tail, depth, out);
+    }
+}
+
+/// Depths that must be resident for a node that draws `depths` (bit set). r1: the D4 range, plus
+/// the next one when the finest is at or below `S`. r2: the drawn depths plus the next finer one of
+/// every drawn depth below `S`. r3: the drawn depths plus the next finer and the next coarser one
+/// of every drawn depth. r4: r2 plus the next coarser one of every drawn depth.
+fn resident_depths(depths: u64, s: u8, residency: u8) -> Vec<u8> {
+    if depths == 0 {
+        return Vec::new();
+    }
+    let lo = depths.trailing_zeros() as u8;
+    let hi = 63 - depths.leading_zeros() as u8;
+    let mut set = depths;
+    let below_s = depths & !((1_u64 << s) | ((1_u64 << s) - 1));
+    match residency {
+        1 => {
+            for d in lo..=hi {
+                if d <= s {
+                    set |= 1 << d;
+                }
+            }
+            if hi >= s {
+                set |= 1 << (hi + 1).min(MAX_CELL_DEPTH);
+            }
+        }
+        2 => set |= below_s << 1,
+        3 => set |= (depths << 1) | (depths >> 1),
+        _ => set |= (below_s << 1) | (depths >> 1),
+    }
+    (0..=MAX_CELL_DEPTH).filter(|d| set >> d & 1 == 1).collect()
+}
+
+/// Packed bytes of one (node, depth): cells from the `S` level (shifted right above it, left below).
+fn level_bytes(f: &mut FineNode, grid: &CellGrid, n: &NodeData, id: NodeId, depth: u8) -> u64 {
+    if let Some(bytes) = f.bytes.get(&depth) {
+        return *bytes;
+    }
+    let mut coords: Vec<[u64; 3]> = if depth <= f.s {
+        f.coords
+            .iter()
+            .map(|c| c.map(|v| v >> (f.s - depth)))
+            .collect()
+    } else {
+        f.coords
+            .iter()
+            .map(|c| c.map(|v| v << (depth - f.s)))
+            .collect()
+    };
+    coords.dedup();
+    let level = NodeCellLevel {
+        depth,
+        cells: coords
+            .iter()
+            .map(|coord| NodeCell {
+                coord: *coord,
+                rgb_sum: [0; 3],
+                intensity_sum: 0.0,
+                intensity_count: 0,
+                count: 1,
+                classification: -1,
+                z_min: 0.0,
+                z_max: 0.0,
+            })
+            .collect(),
+        octant_offsets: None,
+    };
+    let bytes = pack_level(grid, n.bounds, id, &level).pages.len() as u64 * PAGE_BYTES;
+    f.bytes.insert(depth, bytes);
+    bytes
+}
+
+struct ResidentLevel {
+    node: u64,
+    depth: u8,
+    bytes: u64,
+    on_demand: bool,
+}
+
+#[derive(Default)]
+struct LodCase {
+    drawn: u64,
+    over: u64,
+    deepest: u8,
+    over_1p5: u64,
+    beyond_chain: u64,
+    below_s: u64,
+    resident: Vec<ResidentLevel>,
+    resident_bytes: u64,
+    on_demand_bytes: u64,
+    /// Same accounting for the whole levels `octant_tight` keeps resident (`required_levels`).
+    baseline_bytes: u64,
+    /// Bytes if only the drawn depths and the next one below `S` were resident (no depths in
+    /// between): a lower bound that shows how much of D4 is the contiguous range.
+    drawn_only_bytes: u64,
+    r2_bytes: u64,
+    r3_bytes: u64,
+    r4_bytes: u64,
+    /// Cut nodes whose points could not be separated by the library: not measured.
+    unbuilt: usize,
+    non_monotone: u64,
+}
+
+fn cell_lod_case(
+    lv: &LodView,
+    entries: &[CellCutEntry],
+    cache: &HashMap<NodeId, NodeData>,
+    fine: &mut HashMap<NodeId, FineNode>,
+) -> LodCase {
+    let mut case = LodCase::default();
+    for entry in entries {
+        let n = &cache[&entry.node];
+        let Some(f) = fine.get(&entry.node) else {
+            case.unbuilt += 1;
+            continue;
+        };
+        let mask = entry.mask.iter().any(|w| *w != 0).then_some(&entry.mask);
+        let dn = DescentNode {
+            node: n,
+            fine: f,
+            mask,
+        };
+        let first = n.levels[0].depth;
+        let mut out = NodeDraw::default();
+        let shift = f.s - first;
+        let mut i = 0;
+        while i < f.coords.len() {
+            let key = f.coords[i].map(|c| c >> shift);
+            let mut j = i + 1;
+            while j < f.coords.len() && f.coords[j].map(|c| c >> shift) == key {
+                j += 1;
+            }
+            descend(lv, &dn, first, i, j, &mut out);
+            i = j;
+        }
+        case.drawn += out.drawn;
+        case.over += out.over;
+        case.over_1p5 += out.over_1p5;
+        case.beyond_chain += out.beyond_chain;
+        case.below_s += out.below_s;
+        case.non_monotone += out.non_monotone;
+        if out.depths != 0 {
+            case.deepest = case.deepest.max(63 - out.depths.leading_zeros() as u8);
+        }
+        let s = f.s;
+        let f = fine.get_mut(&entry.node).expect("checked above");
+        for depth in (0..=MAX_CELL_DEPTH).filter(|d| out.depths >> d & 1 == 1) {
+            case.drawn_only_bytes += level_bytes(f, lv.grid, n, entry.node, depth);
+        }
+        for depth in entry.required_levels() {
+            case.baseline_bytes += level_bytes(f, lv.grid, n, entry.node, depth);
+        }
+        for (r, total) in [
+            (2, &mut case.r2_bytes),
+            (3, &mut case.r3_bytes),
+            (4, &mut case.r4_bytes),
+        ] {
+            for depth in resident_depths(out.depths, s, r) {
+                *total += level_bytes(f, lv.grid, n, entry.node, depth);
+            }
+        }
+        for depth in resident_depths(out.depths, s, lv.opts.residency) {
+            let bytes = level_bytes(f, lv.grid, n, entry.node, depth);
+            let on_demand = !n.levels.iter().any(|l| l.depth == depth);
+            case.resident_bytes += bytes;
+            case.on_demand_bytes += if on_demand { bytes } else { 0 };
+            case.resident.push(ResidentLevel {
+                node: entry.node.get(),
+                depth,
+                bytes,
+                on_demand,
+            });
+        }
+    }
+    case
+}
+
+struct LodRecord {
+    dataset: String,
+    pose: &'static str,
+    target: f64,
+    mode: &'static str,
+    vs_cpu: Option<f64>,
+    resident_bytes: u64,
+}
+
+/// Kill criteria of phase 0a: resident bytes above 460 MiB at >= 2 px or 512 MiB at 1 px in any
+/// pose; instances above 2.5x the CPU path at 1 px or 2x at 2-8 px in the grazing pose.
+fn lod_verdicts(records: &[LodRecord]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (mode, _) in LOD_MODES {
+        let rows: Vec<&LodRecord> = records.iter().filter(|r| r.mode == mode).collect();
+        if rows.is_empty() {
+            continue;
+        }
+        let over: Vec<String> = rows
+            .iter()
+            .filter(|r| {
+                let limit = if r.target == 1.0 { 512.0 } else { 460.0 } * MIB;
+                r.resident_bytes as f64 > limit
+            })
+            .map(|r| {
+                format!(
+                    "{} {} {}px: {:.1} MiB",
+                    r.dataset,
+                    r.pose,
+                    r.target,
+                    r.resident_bytes as f64 / MIB
+                )
+            })
+            .collect();
+        lines.push(format!(
+            "{}\t[cell_lod {mode}] resident bytes <= 460 MiB (>= 2 px) / 512 MiB (1 px) in every pose{}",
+            if over.is_empty() { "PASS" } else { "FAIL" },
+            if over.is_empty() { String::new() } else { format!(": {}", over.join("; ")) }
+        ));
+        let graze: Vec<&&LodRecord> = rows.iter().filter(|r| r.pose == "grazing").collect();
+        let failing: Vec<String> = graze
+            .iter()
+            .filter_map(|r| {
+                let limit = if r.target == 1.0 { 2.5 } else { 2.0 };
+                r.vs_cpu.filter(|ratio| *ratio > limit).map(|ratio| {
+                    format!("{} {}px: {ratio:.3}x (limit {limit})", r.dataset, r.target)
+                })
+            })
+            .collect();
+        let unknown = graze.iter().any(|r| r.vs_cpu.is_none());
+        let verdict = if !failing.is_empty() {
+            "FAIL"
+        } else if unknown || graze.is_empty() {
+            "UNKNOWN"
+        } else {
+            "PASS"
+        };
+        lines.push(format!(
+            "{verdict}\t[cell_lod {mode}] drawn instances <= 2.5x (1 px) / 2x (2-8 px) the CPU path in the grazing pose{}",
+            if failing.is_empty() { String::new() } else { format!(": {}", failing.join("; ")) }
+        ));
+    }
+    lines
 }
