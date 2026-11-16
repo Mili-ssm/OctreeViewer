@@ -390,8 +390,20 @@ fn check_partition(
     out
 }
 
+/// Contiguous chains: a node steps one level at a time (ADR 0053) through levels it stores.
 #[test]
 fn the_driver_in_cell_mode_partitions_the_view() {
+    partitions_the_view(&[0, 1, 2, 3, 4, 5, 6], &[1, 2, 3, 4, 5]);
+}
+
+/// Gapped chains: nothing here builds the levels in between on demand, so each hop over a gap
+/// is a timeout hop (`STEP_WAIT_FRAMES`) and the view still settles and partitions.
+#[test]
+fn the_driver_in_cell_mode_partitions_the_view_over_gapped_chains() {
+    partitions_the_view(&[0, 2, 4, 6], &[1, 3, 5]);
+}
+
+fn partitions_the_view(first: &[u8], second: &[u8]) {
     use super::lod::{LodNodeScene, random_pose};
     for_each_adapter(CellLimitMode::Auto, |h| {
         if !h.runs_test_pool {
@@ -402,19 +414,9 @@ fn the_driver_in_cell_mode_partitions_the_view() {
             root_side: 1.0,
         };
         let mut rng = Rng(0xd2_1ee);
-        // Contiguous depths: a node steps one level at a time (ADR 0053) and nothing here builds
-        // the levels in between on demand.
         let scene = [
-            LodNodeScene::random(
-                &mut rng,
-                unit,
-                1,
-                [0, 1, 0],
-                &[0, 1, 2, 3, 4, 5, 6],
-                0,
-                1200,
-            ),
-            LodNodeScene::random(&mut rng, unit, 1, [1, 0, 0], &[1, 2, 3, 4, 5], 0, 500),
+            LodNodeScene::random(&mut rng, unit, 1, [0, 1, 0], first, 0, 1200),
+            LodNodeScene::random(&mut rng, unit, 1, [1, 0, 0], second, 0, 500),
         ];
         let mut driver = CellDriver::new(DriverConfig {
             pool: PoolConfig {
@@ -526,6 +528,16 @@ fn the_driver_in_cell_mode_partitions_the_view() {
 /// stay at coarser depths. The partition must hold on every drawn frame, not only at rest.
 #[test]
 fn the_driver_in_cell_mode_partitions_a_parent_and_its_children() {
+    partitions_a_parent_and_its_children(&[0, 1, 2, 3, 4, 5], &[1, 2, 3, 4]);
+}
+
+/// The same over gapped chains, whose hops over a gap are timeout hops (ADR 0053).
+#[test]
+fn the_driver_in_cell_mode_partitions_a_parent_and_its_children_over_gapped_chains() {
+    partitions_a_parent_and_its_children(&[0, 2, 3, 5], &[1, 2, 4]);
+}
+
+fn partitions_a_parent_and_its_children(parent: &[u8], children: &[u8]) {
     use super::lod::{LodNodeScene, random_pose};
     for_each_adapter(CellLimitMode::Auto, |h| {
         if !h.runs_test_pool {
@@ -539,9 +551,9 @@ fn the_driver_in_cell_mode_partitions_a_parent_and_its_children() {
         // Children are dense over their footprint (60000 points over at most 16^3 cells), so a
         // parent cell hidden under a child is always covered by a drawn child cell.
         let scene = [
-            LodNodeScene::random(&mut rng, unit, 1, [0, 0, 0], &[0, 1, 2, 3, 4, 5], 0, 1500),
-            LodNodeScene::random(&mut rng, unit, 2, [0, 0, 0], &[1, 2, 3, 4], 0, 60_000),
-            LodNodeScene::random(&mut rng, unit, 2, [1, 1, 1], &[1, 2, 3, 4], 0, 60_000),
+            LodNodeScene::random(&mut rng, unit, 1, [0, 0, 0], parent, 0, 1500),
+            LodNodeScene::random(&mut rng, unit, 2, [0, 0, 0], children, 0, 60_000),
+            LodNodeScene::random(&mut rng, unit, 2, [1, 1, 1], children, 0, 60_000),
         ];
         let mut driver = CellDriver::new(DriverConfig {
             pool: PoolConfig {

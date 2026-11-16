@@ -1354,7 +1354,9 @@ fn an_arrived_level_is_offered_on_the_next_frame() {
     );
     let mut offered = false;
     let mut last = before;
-    for _ in 0..12 {
+    // Budget: each of the `wanted - 4` steps takes one frame to arrive and one to draw (the step
+    // is taken once the level is resident), so 6 frames for depth 7.
+    for _ in 0..6 {
         last = fx.step(&cut, &cam, 1.0);
         offered |= last
             .plan
@@ -1380,7 +1382,7 @@ fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours
     fx.driver
         .add_packed_levels(g0, on_demand_node(&(5..=wanted).collect::<Vec<u8>>(), 0))
         .unwrap();
-    fx.run(12, &cut, &cam, 1.0);
+    fx.run(6, &cut, &cam, 1.0);
     let key = fx.driver.pool.key(id, wanted);
     assert!(fx.driver.pool.is_resident(key));
     let _ = fx.driver.take_level_requests();
@@ -1394,7 +1396,7 @@ fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours
     fx.driver
         .add_packed_levels(g1, on_demand_node(&(5..=wanted).collect::<Vec<u8>>(), 9))
         .unwrap();
-    fx.run(12, &cut, &cam, 1.0);
+    fx.run(6, &cut, &cam, 1.0);
     let colour = fx
         .driver
         .pool

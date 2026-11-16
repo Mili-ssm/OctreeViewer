@@ -334,7 +334,9 @@ fn levels_become_active_only_with_all_pages_and_uploads_span_frames() {
     let mut first_complete = None;
     let mut max_stages = 0;
     let mut last = None;
-    for frame in 0..200 {
+    // Budget: one page per frame, and ADR 0053 makes every node load its whole chain 4..=7
+    // (8 nodes x (1 + 3 x 3) pages, one less per level with `shrink`) before reaching depth 7.
+    for frame in 0..100 {
         let plan = rig.step(&cut, &cam, 4.0);
         if frame == 0 {
             assert_eq!(
@@ -385,7 +387,8 @@ fn uploads_give_every_node_its_first_level_before_refining_and_go_nearest_first(
     let cut = ids(&CHILDREN);
     let cam = camera("zoom");
     let mut started: Vec<(u64, u8)> = Vec::new();
-    for _ in 0..200 {
+    // Budget: one page per frame and the whole chain 4..=7 per node, 8 x (1 + 3 x 4) = 104 pages.
+    for _ in 0..120 {
         for upload in rig.step(&cut, &cam, 4.0).uploads {
             if upload.page_range.start == 0 {
                 started.push((upload.key.node.get(), upload.key.depth));
