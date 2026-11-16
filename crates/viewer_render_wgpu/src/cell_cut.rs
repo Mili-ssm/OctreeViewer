@@ -9,7 +9,8 @@
 //! {0, 1} (the Morton order of `node_cells`). Mask bit `x + 8y + 64z` of the 8^3 grid belongs to
 //! octant `4 * (x >> 2) + 2 * (y >> 2) + (z >> 2)`. The level choice is per octant in the data
 //! model and in the rule (ADR 0034): each octant asks for the coarsest stored level whose cell,
-//! placed at the octant point nearest the eye, projects to at most the target.
+//! placed at the octant point nearest the eye, would not refine (its children would project below
+//! the target, ADR 0054).
 
 use std::{
     collections::{HashMap, HashSet},
@@ -216,9 +217,9 @@ fn octant_box(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
 }
 
 /// The coarsest buildable depth (`buildable` is inclusive) for which a cell of that depth, placed
-/// at the point of `octant` nearest the eye and shifted to stay inside it, projects to at most
-/// `target_px`; else the finest (source density, RQ-09/R3-Q9). An infinite or NaN edge never meets
-/// the target.
+/// at the point of `octant` nearest the eye and shifted to stay inside it, would not refine: its
+/// children would project below `target_px` (ADR 0054, the target is a minimum size); else the
+/// finest (source density, RQ-09/R3-Q9). An infinite or NaN edge never stops the refinement.
 ///
 /// The test runs relative to `coordinate_origin` (bounds minus origin, eye `position / scale`,
 /// origin `[0; 3]` for the view), the frame the view itself uses, so large origins lose no
@@ -243,8 +244,8 @@ pub fn octant_wanted_depth(
 }
 
 /// `octant_wanted_depth` searched outward from `hint` (the answer of a nearby view), assuming that
-/// once a depth meets the target every finer one does too (a finer cell sits inside the coarser
-/// one at the same nearest point, so its edges project shorter). It then costs 2 projections when
+/// once a depth stops refining every finer one does too (its children are half as large at about
+/// the same distance; `the_hinted_search_equals_the_full_search` checks it on random poses). It then costs 2 projections when
 /// the answer has not moved, instead of one per coarser depth, and returns the same depth
 /// whenever that holds. A `hint` outside the range falls back to the full search.
 #[allow(clippy::too_many_arguments)]
@@ -304,7 +305,7 @@ pub(crate) fn served_depth(stored: &[u8], depth: u8) -> u8 {
 
 /// The test of `octant_wanted_depth` for one octant: does a cell of a given depth, placed at the
 /// point of the octant nearest the eye and shifted to stay inside it, project to at most the
-/// target?
+/// target (see `at`)?
 struct OctantProbe<'a> {
     view: &'a ViewProjection,
     grid: &'a CellGrid,
@@ -342,6 +343,10 @@ impl<'a> OctantProbe<'a> {
         })
     }
 
+    /// Would a cell of `depth` at the probe point stop here (ADR 0054)? Its children would project
+    /// below the target: the child at the corner farthest along the view direction, the smallest
+    /// on screen, is measured. A child with a corner at or behind the eye measures `+inf`, so it
+    /// never stops the refinement. The length minimum is applied by the pool (`continuity_depth`).
     fn at(&self, depth: u8) -> bool {
         let side = self.grid.root_side / 2.0_f64.powi(i32::from(depth));
         let min: [f64; 3] = std::array::from_fn(|a| {
@@ -351,8 +356,17 @@ impl<'a> OctantProbe<'a> {
                 .clamp(self.octant_box.min()[a], self.octant_box.max()[a])
                 .clamp(low, high)
         });
-        SpatialBounds::new(min, min.map(|value| value + side)).is_ok_and(|cube| {
-            self.view.projected_voxel_edge_pixels(cube, [0.0; 3]) <= self.target_px
+        let half = side / 2.0;
+        let forward = self.view.camera().forward();
+        let far: [f64; 3] = std::array::from_fn(|a| {
+            if forward[a] > 0.0 {
+                min[a] + half
+            } else {
+                min[a]
+            }
+        });
+        SpatialBounds::new(far, far.map(|value| value + half)).is_ok_and(|child| {
+            self.view.projected_voxel_edge_pixels(child, [0.0; 3]) < self.target_px
         })
     }
 }

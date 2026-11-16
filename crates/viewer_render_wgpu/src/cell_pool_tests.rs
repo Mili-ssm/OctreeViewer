@@ -90,7 +90,10 @@ impl Rig {
                 view,
                 &grid(),
                 ORIGIN,
-                target,
+                // These scenarios were calibrated when the target was a maximum edge; under
+                // ADR 0054 (a minimum, cubes between N and 2N px) half the target selects the
+                // same depths, so the literals below keep their meaning.
+                target / 2.0,
             )
             .expect("frame");
         self.gpu.apply(&plan, &self.pool);
@@ -987,7 +990,8 @@ fn caps_lift_when_the_capped_levels_are_bigger_than_the_uncapped_ones() {
             &view(&cam),
             &grid(),
             ORIGIN,
-            4.0,
+            // Calibrated for the old maximum target; 2 px under ADR 0054 selects the same depths.
+            2.0,
         )
         .expect("frame")
     };
@@ -3601,4 +3605,35 @@ fn a_retained_frame_keeps_the_d5_depth_its_record_was_written_with() {
     );
     assert!(plan.mask_updates.is_empty());
     assert_eq!(active_depths(&plan, &rig, 1), applied);
+}
+
+/// ADR 0054: the length minimum bounds the wanted depth, even for a leaf the eye is next to and
+/// whose source density is far finer.
+#[test]
+fn min_side_bounds_the_wanted_depth() {
+    let min_side = 1e-4;
+    // SIDE / 2^19 is the finest side that is not below the minimum.
+    let finest_allowed = 19;
+    assert!(SIDE / f64::from(1_u32 << finest_allowed) >= min_side);
+    assert!(SIDE / f64::from(1_u32 << (finest_allowed + 1)) < min_side);
+    let mut nodes = root_node();
+    nodes.get_mut(&NodeId::new(1)).unwrap().buildable = (3, 25);
+    for cap in [None, Some(min_side)] {
+        let mut rig = Rig::new(nodes.clone(), 64, 16, 1);
+        rig.pool.set_min_side(cap);
+        for eye in [
+            [ORIGIN[0] + 20.0, ORIGIN[1] + 30.0, ORIGIN[2] + 10.0],
+            [ORIGIN[0] - 0.01, ORIGIN[1] + 30.0, ORIGIN[2] + 10.0],
+        ] {
+            let mut cam = camera("fit");
+            assert!(cam.set_pose(eye, [ORIGIN[0] + 32.0, ORIGIN[1] + 32.0, ORIGIN[2] + 32.0]));
+            let plan = rig.run(12, &ids(&[1]), &cam, 4.0);
+            for wanted in plan.entries[0].wanted.iter().flatten() {
+                match cap {
+                    Some(_) => assert!(*wanted <= finest_allowed, "wanted {wanted}"),
+                    None => assert!(*wanted > finest_allowed, "setup: uncapped wanted {wanted}"),
+                }
+            }
+        }
+    }
 }

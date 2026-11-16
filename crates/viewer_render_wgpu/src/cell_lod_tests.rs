@@ -186,7 +186,8 @@ fn chain_cell(node: &NodeLod, rel: [u32; 3], level: u32, side0: f32) -> ([f32; 3
     (cell_lo(node, rel, side), side)
 }
 
-/// Measurement: counts child/parent pairs where the child refines and the parent does not. The
+/// Measurement (bounded, no longer exact since ADR 0054): counts child/parent pairs where the
+/// child refines and the parent does not. The
 /// actual projected edge is not monotone for chains crossing the eye plane, so only chains whose
 /// root cell is fully in front of the eye and whose cells f32 resolves are counted; the draw rule does not rely on this.
 #[test]
@@ -242,9 +243,11 @@ fn refines_is_monotone_from_child_to_parent() {
             }
         }
     }
-    assert_eq!(
-        violations,
-        0,
+    // ADR 0054: the test child is the smallest of the four-corner choice, so a child can refine
+    // while its parent (whose far child is smaller than the child's) does not. Rare, and harmless:
+    // the all-ancestors draw rule does not rely on monotonicity.
+    assert!(
+        violations * 200 <= pairs,
         "{violations} of {pairs} pairs are not monotone; first: {}",
         first.unwrap_or_default()
     );
@@ -545,4 +548,62 @@ fn node_record_round_trips() {
         assert_eq!(record[24] >> 8, u32::from(m1));
         assert!(record[25..].iter().all(|&word| word == 0));
     }
+}
+
+/// ADR 0054: the target is a minimum. On a contiguous chain of active depths, a drawn cell below
+/// the coarsest one has a parent that refined, so its far child, the smallest on screen, measures
+/// at least the target and at least `min_side` in length.
+#[test]
+fn drawn_cells_never_project_below_the_target() {
+    let mut rng = Rng(11);
+    let mut checked = 0;
+    let mut deeper = 0;
+    for pose in 0..1500 {
+        let side0 = rng.log_range(1.0, 1e3);
+        let top = 2 + rng.below(6) as u32;
+        let node = NodeLod {
+            anchor: [0; 3].map(|_| (rng.range(-3.0, 3.0) * side0) as f32),
+            node_depth: rng.below(8) as u8,
+            active: active_bits(&(0..=top).collect::<Vec<_>>()),
+            mask: [0; 8],
+        };
+        let mut view = random_view(&mut rng);
+        if pose % 3 == 0 {
+            view.min_side = (side0 / f64::from(pow2(rng.below(u64::from(top) + 1) as u32))) as f32;
+        }
+        let node_lo = node.anchor.map(f64::from);
+        for _ in 0..64 {
+            let point: [f64; 3] = std::array::from_fn(|axis| node_lo[axis] + rng.unit() * side0);
+            let depth = drawn_depth_at(&view, &node, point, node_lo, side0)
+                .expect("an unmasked point is drawn");
+            let level = u32::from(depth - node.node_depth);
+            checked += 1;
+            if level == 0 {
+                continue;
+            }
+            deeper += 1;
+            let side = (side0 / f64::from(pow2(level))) as f32;
+            let cells = (1u64 << level) as f64;
+            let rel: [u32; 3] = std::array::from_fn(|axis| {
+                ((point[axis] - node_lo[axis]) / f64::from(side))
+                    .floor()
+                    .clamp(0.0, cells - 1.0) as u32
+            });
+            let lo = cell_lo(&node, rel, side);
+            let edge = edge_px(&view, lo, side);
+            assert!(
+                side >= view.min_side && edge >= view.target_px,
+                "level {level}: side {side} edge {edge} below min_side {} / target {}",
+                view.min_side,
+                view.target_px
+            );
+            let parent_side = side * 2.0;
+            let parent_lo = cell_lo(&node, rel.map(|r| r >> 1), parent_side);
+            assert!(refines(&view, parent_lo, parent_side), "the parent refined");
+        }
+    }
+    assert!(
+        checked >= 1500 * 64 && deeper > 5000,
+        "{deeper} deeper draws"
+    );
 }

@@ -697,7 +697,7 @@ fn in_process_drawn_depths(max_level_builds: usize) -> (u8, usize, u64) {
             target.eye = view.camera().position();
             let step = CellStep {
                 view,
-                target_pixels: 2.0,
+                target_pixels: 1.0,
                 config,
                 can_load_blocks: true,
             };
@@ -1142,7 +1142,7 @@ fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
 #[test]
 fn a_refused_depth_stops_being_wanted_and_the_view_settles() {
     let mut pair = Pair::with_harness(close_pair_leaf());
-    pair.target_px = 4.0;
+    pair.target_px = 2.0;
     let c = SIDE / 2.0;
     pair.view = synth_view([c + 4.0 * SIDE, c + 0.5 * SIDE, c + 1.0 * SIDE], [c; 3]);
     pair.target.eye = pair.view.camera().position();

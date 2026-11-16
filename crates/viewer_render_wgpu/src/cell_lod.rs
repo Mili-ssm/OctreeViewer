@@ -26,7 +26,7 @@ pub struct LodView {
     pub up: [f32; 3],
     pub focal: f32,
     pub target_px: f32,
-    /// A cell with `side <= min_side` never refines.
+    /// A cell refines only if its children are at least this long (`side / 2 >= min_side`).
     pub min_side: f32,
 }
 
@@ -158,9 +158,28 @@ pub fn edge_px(view: &LodView, lo: [f32; 3], side: f32) -> f32 {
     maximum
 }
 
-/// E1: the cell is worth replacing by finer ones.
+/// E1 (ADR 0054): the cell is replaced by finer ones iff its children would still be at least
+/// `min_side` long and at least `target_px` on screen. The test child is the one at the corner
+/// farthest along `forward` (bit `a` of the child index is set when `forward[a] > 0`), the
+/// smallest on screen. A child with a corner at or behind the eye plane measures `+inf` and so
+/// does not block refinement: it is never the limiting size, and a cell around the eye always
+/// refines. The far child is the child least likely to be behind the eye, so when it is, every
+/// other child is too.
+///
+/// WGSL port: `half = side * 0.5`, child corner `lo[a] + half` on the far axes, `lo[a]` otherwise.
 pub fn refines(view: &LodView, lo: [f32; 3], side: f32) -> bool {
-    side > view.min_side && edge_px(view, lo, side) > view.target_px
+    let half = side * 0.5;
+    if half < view.min_side {
+        return false;
+    }
+    let far_lo: [f32; 3] = std::array::from_fn(|a| {
+        if view.forward[a] > 0.0 {
+            lo[a] + half
+        } else {
+            lo[a]
+        }
+    });
+    edge_px(view, far_lo, half) >= view.target_px
 }
 
 /// `2^exponent` as an `f32`, exact for `0 <= exponent <= MAX_NODE_SPAN`.

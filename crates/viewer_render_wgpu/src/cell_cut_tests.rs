@@ -114,8 +114,8 @@ fn fixture_cuts() -> Vec<(&'static str, Vec<NodeId>)> {
 }
 
 /// Brute-force oracle with its own cube placement, in the dataset frame: the first stored depth
-/// whose cube, at the octant point nearest the eye, meets `target`, else the finest (every
-/// coarser stored depth fails by construction).
+/// whose cube, at the octant point nearest the eye, would not refine (ADR 0054: its child at the
+/// corner farthest along the view direction projects below `target`), else the finest.
 fn oracle_octant(
     view: &ViewProjection,
     origin: [f64; 3],
@@ -158,14 +158,22 @@ fn oracle_octant(
             }
             cube_min[a] = v;
         }
-        let cube = SpatialBounds::new(cube_min, cube_min.map(|v| v + side)).unwrap();
-        view.projected_voxel_edge_pixels(cube, origin)
+        let forward = view.camera().forward();
+        let half = side / 2.0;
+        let mut child_min = cube_min;
+        for a in 0..3 {
+            if forward[a] > 0.0 {
+                child_min[a] += half;
+            }
+        }
+        let child = SpatialBounds::new(child_min, child_min.map(|v| v + half)).unwrap();
+        view.projected_voxel_edge_pixels(child, origin)
     };
     // Brute force: test every stored depth; the choice is the coarsest passing one.
     let passing: Vec<u8> = stored
         .iter()
         .copied()
-        .filter(|d| edge(*d) <= target)
+        .filter(|d| edge(*d) < target)
         .collect();
     passing.first().copied().unwrap_or(*stored.last().unwrap())
 }
@@ -1111,18 +1119,18 @@ fn visible_volume_equals_covered_volume() {
 }
 
 const GOLDEN: &[(&str, u64)] = &[
-    ("root/fit/2px", 0x874f97c38baa823a),
-    ("root/fit/4px", 0x7d1169d9327e7815),
-    ("root/fit/8px", 0x42f9363f7b47c3c8),
-    ("root/orbit/2px", 0x874f97c38baa823a),
-    ("root/orbit/4px", 0x2fa845aa5f346e25),
-    ("root/orbit/8px", 0xc94fe0686b55ff68),
+    ("root/fit/2px", 0x7d1169d9327e7815),
+    ("root/fit/4px", 0x42f9363f7b47c3c8),
+    ("root/fit/8px", 0x5153783bc29513cb),
+    ("root/orbit/2px", 0x2fa845aa5f346e25),
+    ("root/orbit/4px", 0xc94fe0686b55ff68),
+    ("root/orbit/8px", 0xa8e7a617daf0527b),
     ("root/zoom/2px", 0x874f97c38baa823a),
-    ("root/zoom/4px", 0x874f97c38baa823a),
-    ("root/zoom/8px", 0xf0c6b585db2b31a5),
-    ("root/pan/2px", 0x874f97c38baa823a),
-    ("root/pan/4px", 0x68ec0d2c4b5afa9f),
-    ("root/pan/8px", 0x8f0c75bc680f980a),
+    ("root/zoom/4px", 0xf0c6b585db2b31a5),
+    ("root/zoom/8px", 0x19329f184c5ad560),
+    ("root/pan/2px", 0x68ec0d2c4b5afa9f),
+    ("root/pan/4px", 0x8f0c75bc680f980a),
+    ("root/pan/8px", 0x7bbd7c33444d8725),
     ("children/fit/2px", 0xa51da02388ee6c85),
     ("children/fit/4px", 0xa51da02388ee6c85),
     ("children/fit/8px", 0xa51da02388ee6c85),
@@ -1135,30 +1143,30 @@ const GOLDEN: &[(&str, u64)] = &[
     ("children/pan/2px", 0xa51da02388ee6c85),
     ("children/pan/4px", 0xa51da02388ee6c85),
     ("children/pan/8px", 0xa51da02388ee6c85),
-    ("mixed/fit/2px", 0xcfb3dd69675f533e),
-    ("mixed/fit/4px", 0x3d645e2f3ea980ba),
-    ("mixed/fit/8px", 0xde418b595f37d282),
-    ("mixed/orbit/2px", 0xcfb3dd69675f533e),
-    ("mixed/orbit/4px", 0xa23a9cfb8cb4df9e),
-    ("mixed/orbit/8px", 0x5301c3f944a73fce),
+    ("mixed/fit/2px", 0x3d645e2f3ea980ba),
+    ("mixed/fit/4px", 0xde418b595f37d282),
+    ("mixed/fit/8px", 0xdb555f7c706e7e1e),
+    ("mixed/orbit/2px", 0xa23a9cfb8cb4df9e),
+    ("mixed/orbit/4px", 0x5301c3f944a73fce),
+    ("mixed/orbit/8px", 0xb8531a79d519f47e),
     ("mixed/zoom/2px", 0xcfb3dd69675f533e),
     ("mixed/zoom/4px", 0xcfb3dd69675f533e),
-    ("mixed/zoom/8px", 0xcfb3dd69675f533e),
-    ("mixed/pan/2px", 0xcfb3dd69675f533e),
-    ("mixed/pan/4px", 0x5ee017fede23060c),
-    ("mixed/pan/8px", 0xcda82b8f251e4148),
-    ("wide_chain/fit/2px", 0x5782cd16bba4da29),
-    ("wide_chain/fit/4px", 0x6ddc9d7207e4afc9),
-    ("wide_chain/fit/8px", 0xb47d3a451a1e318d),
-    ("wide_chain/orbit/2px", 0x1b83ad1575279081),
-    ("wide_chain/orbit/4px", 0x403a506cb10ea159),
-    ("wide_chain/orbit/8px", 0xe894eeff470f1055),
-    ("wide_chain/zoom/2px", 0x8b1110b3ed120ded),
-    ("wide_chain/zoom/4px", 0x63d9c91115e43e69),
-    ("wide_chain/zoom/8px", 0x3e44e15bac392dc1),
-    ("wide_chain/pan/2px", 0x6047938e45ba3559),
-    ("wide_chain/pan/4px", 0x016225300c8668c9),
-    ("wide_chain/pan/8px", 0xae20372b87dfb69d),
+    ("mixed/zoom/8px", 0x3d645e2f3ea980ba),
+    ("mixed/pan/2px", 0x5ee017fede23060c),
+    ("mixed/pan/4px", 0xcda82b8f251e4148),
+    ("mixed/pan/8px", 0x9d1b8179261646b0),
+    ("wide_chain/fit/2px", 0x6ddc9d7207e4afc9),
+    ("wide_chain/fit/4px", 0xb47d3a451a1e318d),
+    ("wide_chain/fit/8px", 0x53542e0c8f481245),
+    ("wide_chain/orbit/2px", 0x403a506cb10ea159),
+    ("wide_chain/orbit/4px", 0xe894eeff470f1055),
+    ("wide_chain/orbit/8px", 0x89c1f98705838a65),
+    ("wide_chain/zoom/2px", 0x666bc1dea4c36f31),
+    ("wide_chain/zoom/4px", 0xd5ddb3e23053144d),
+    ("wide_chain/zoom/8px", 0xf779a7f9f1450615),
+    ("wide_chain/pan/2px", 0x016225300c8668c9),
+    ("wide_chain/pan/4px", 0xae20372b87dfb69d),
+    ("wide_chain/pan/8px", 0x932b0084c615954d),
 ];
 
 #[test]
@@ -1405,4 +1413,58 @@ fn cell_mode_ignores_children_resident_only_outside_their_span() {
 
 fn root_bounds() -> SpatialBounds {
     SpatialBounds::new(ORIGIN, ORIGIN.map(|v| v + SIDE)).unwrap()
+}
+
+/// ADR 0054: the target is a minimum. A wanted depth finer than the coarsest buildable one means
+/// the next coarser cell refined, so the wanted cell, placed at the octant point nearest the eye,
+/// measures at least the target (the eye behind the cell's plane counts as `+inf`).
+#[test]
+fn the_octant_wanted_depth_keeps_cells_at_least_the_target() {
+    let huge = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    let grid = CellGrid {
+        root_min: [-1000.0; 3],
+        root_side: 2000.0,
+    };
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1_u64 << 53) as f64
+    };
+    let mut finer = 0;
+    for _ in 0..600 {
+        let mut camera = cameras().remove(0).1;
+        let eye: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1600.0);
+        let at: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1000.0);
+        if !camera.set_pose(eye, at) {
+            continue;
+        }
+        let view = view(&camera);
+        let target = [1.0, 4.0, 16.0][(next() * 3.0) as usize % 3];
+        for octant in 0..8 {
+            let wanted = octant_wanted_depth(&view, &grid, [0.0; 3], huge, octant, (3, 12), target);
+            if wanted == 3 {
+                continue;
+            }
+            finer += 1;
+            let mid = [0.0; 3];
+            let side = 2000.0 / f64::from(1_u32 << wanted);
+            let cube_min: [f64; 3] = std::array::from_fn(|a| {
+                let (lo, hi) = if octant >> (2 - a) & 1 == 1 {
+                    (mid[a], 1000.0)
+                } else {
+                    (-1000.0, mid[a])
+                };
+                eye[a].clamp(lo, hi).min(hi - side).max(lo)
+            });
+            let cube = SpatialBounds::new(cube_min, cube_min.map(|v| v + side)).unwrap();
+            let edge = view.projected_voxel_edge_pixels(cube, [0.0; 3]);
+            assert!(
+                edge >= target,
+                "octant {octant} depth {wanted}: {edge} px below {target} (eye {eye:?})"
+            );
+        }
+    }
+    assert!(finer > 500, "{finer} finer octants");
 }

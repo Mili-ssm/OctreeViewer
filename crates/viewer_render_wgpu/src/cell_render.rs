@@ -552,7 +552,13 @@ fn cell_edge_px(lo: vec3<f32>, side: f32) -> f32 {
 }
 
 fn cell_refines(lo: vec3<f32>, side: f32) -> bool {
-    return side > frame.min_side && cell_edge_px(lo, side) > frame.target_px;
+    let half = side * 0.5;
+    if half < frame.min_side { return false; }
+    let far_lo = vec3<f32>(
+        select(lo.x, lo.x + half, frame.forward.x > 0.0),
+        select(lo.y, lo.y + half, frame.forward.y > 0.0),
+        select(lo.z, lo.z + half, frame.forward.z > 0.0));
+    return cell_edge_px(far_lo, half) >= frame.target_px;
 }
 
 // Is any set mask bit inside the cell `rel` of the node record at word `record`, `level` below the
