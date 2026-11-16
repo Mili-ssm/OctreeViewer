@@ -1618,7 +1618,7 @@ fn a_held_non_cut_request_does_not_keep_the_worker_dirty() {
         cpu_budget_bytes: Some(1),
         ..CellUpdateConfig::default()
     };
-    let update = plan_levels(&mut dataset, &view, tight);
+    plan_levels(&mut dataset, &view, tight);
     // A built node outside the cut: the root, which the cut's nodes replace (if it were in the
     // cut it would be built below and the test would fail).
     let outside = NodeId::new(1);
