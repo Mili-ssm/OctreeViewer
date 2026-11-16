@@ -9,6 +9,7 @@ use std::{collections::HashSet, fmt, ops::Range};
 use viewer_core::{NodeId, PointBlock, SpatialBounds};
 
 use crate::attributes::ScalarAttribute;
+use crate::cell_pages::packs_efficiently;
 
 /// Deepest absolute dyadic level representable by the grid coordinate type.
 pub const MAX_CELL_DEPTH: u8 = 63;
@@ -122,6 +123,10 @@ pub enum NodeCellError {
     /// A leaf still has distinct finite positions sharing a cell at depth 63, or a requested
     /// depth exceeds it (ADR 0032: an error, never a silent merge).
     AbsoluteDepthExceeded,
+    /// A requested level that needs far more pages than its cells would fill packed tight (see
+    /// `cell_pages::packs_efficiently`): packing it would allocate a page per cell. Like
+    /// `AbsoluteDepthExceeded`, it makes the depth unservable.
+    TooSparseToPage,
 }
 
 impl fmt::Display for NodeCellError {
@@ -130,6 +135,7 @@ impl fmt::Display for NodeCellError {
             Self::InvalidGrid => f.write_str("cell grid anchor or side is not finite and positive"),
             Self::DegenerateBounds => f.write_str("node bounds have no extent"),
             Self::AbsoluteDepthExceeded => f.write_str("absolute cell depth exceeds 63"),
+            Self::TooSparseToPage => f.write_str("level cells are too sparse to page"),
         }
     }
 }
@@ -179,9 +185,17 @@ impl NodeCellSource for PointNodeCellSource {
         let points: Vec<_> = blocks.iter().map(Points::new).collect();
         let distinct = distinct_position_count(blocks, is_leaf);
         let mut levels = Vec::new();
+        let mut buildable = setup.buildable;
         for depth in first..=last {
             let (level, fully_separated) =
                 build_checked_level(grid, bounds, &points, node_depth, depth, is_leaf, distinct)?;
+            // Sparser with depth: the first level too sparse to page ends the chain (the
+            // coarsest level is dense, so the chain keeps at least one level).
+            if !levels.is_empty() && !packs_efficiently(&level.cells) {
+                // Nothing deeper can be built either (it would be too sparse).
+                buildable.1 = depth - 1;
+                break;
+            }
             levels.push(level);
             if fully_separated {
                 break;
@@ -193,7 +207,7 @@ impl NodeCellSource for PointNodeCellSource {
         Ok(NodeCells {
             node,
             levels,
-            buildable: setup.buildable,
+            buildable,
         })
     }
 }
@@ -202,7 +216,8 @@ impl NodeCellSource for PointNodeCellSource {
 /// [`PointNodeCellSource::node_cells`] holds at that depth. Depths outside `NodeCells::buildable`
 /// fail with `AbsoluteDepthExceeded`, and so does a leaf at `MAX_CELL_DEPTH` whose positions are
 /// still merged: for a requested depth that error means the depth is unservable, and the caller
-/// drops the request and remembers it instead of retrying.
+/// drops the request and remembers it instead of retrying. A level too sparse to page
+/// (`TooSparseToPage`) is unservable the same way, and is refused before it is packed.
 pub fn node_cell_level(
     grid: &CellGrid,
     bounds: SpatialBounds,
@@ -226,7 +241,13 @@ pub fn node_cell_level(
         is_leaf,
         distinct,
     )
-    .map(|(level, _)| level)
+    .and_then(|(level, _)| {
+        if packs_efficiently(&level.cells) {
+            Ok(level)
+        } else {
+            Err(NodeCellError::TooSparseToPage)
+        }
+    })
 }
 
 /// Distinct finite positions of a leaf (0 for an internal node, which never separates fully).
