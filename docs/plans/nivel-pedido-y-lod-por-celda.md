@@ -4,7 +4,7 @@ Estado: en curso · 15-11-2026 · aprobado por el propietario (pre-mortem aplica
 
 **Objetivo:** que el render dibuje en cada celda el nivel que pide su distancia, construyendo a demanda los niveles
 que la cadena podada no guarda, con transiciones graduales en bandas alrededor del ojo, y que el usuario elija el
-tamaño mínimo del cubo en px, en longitud o por el espaciado de la nube.
+tamaño mínimo del cubo en px y en longitud (m/cm/mm o el espaciado de la nube) a la vez, ganando el mayor en cada celda.
 
 **Decisiones de partida:** [ADR 0048](../adr/0048-el-render-dibuja-el-nivel-pedido.md) (#35),
 [ADR 0050](../adr/0050-nivel-por-celda-segun-distancia.md) (#44) y [ADR 0049](../adr/0049-tamano-minimo-del-voxel.md).
@@ -28,7 +28,7 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
 | D8 | Opcional (ADR 0052, revisión): si la población de los hijos ya está disponible sin coste (nivel hijo construido pero aún no en GPU), la celda que debe refinar puede dibujarse como sus hijos poblados con el color del padre; si no, se mantiene hasta que cargan. No se añade nada a la instancia solo para esto | Idea oportunista del propietario, no requisito |
 | D5 | Celdas que abarcan octantes: cuentan como «refina» si la máscara del nodo no está vacía; una celda más gruesa que la rejilla 8³ prueba todos los bits de máscara que cubre | Hoy se saltan octante y máscara y pintarían encima de hijos residentes |
 | D6 | Unidad del CRS: `viewer_format` lee solo la `UNIT` de primer nivel del PROJCS o sistema de coordenadas (WKT1, WKT2, compuesto) y la clave GeoTIFF 3076; un CRS geográfico desactiva el modo longitud; sin unidad, metros | ADR 0049; un `UNIT["degree"]` anidado no debe desactivar una nube proyectada |
-| D7 | La UI sustituye la casilla de continuidad por el selector de tres modos; `setContinuity` queda para el modo «espaciado» | ADR 0049 |
+| D7 | La UI sustituye la casilla de continuidad por dos filtros que actúan a la vez: el mínimo en px (el objetivo de siempre) y el mínimo en longitud (desactivado, m/cm/mm o espaciado de la nube); en cada celda gana el mayor (propietario, 16-11-2026). `setContinuity` queda para el espaciado | ADR 0049, revisión del 16-11-2026 |
 
 ## Fases
 
@@ -54,7 +54,7 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   muestra (bandas), y ningún octante **ni nodo** cambia entero en un frame, medido con una diferencia de frames
   cuando entra un nodo hijo; si la máscara por nodo no lo permite, abrir una pregunta antes de seguir.
 - [ ] **3. Selector de tamaño mínimo (ADR 0049).** D6 y D7. Comprobación: tests de la unidad del CRS (metro, pie,
-  grados, compuesto pie/metro, sin unidad); Playwright de los tres modos en escritorio y móvil, con teclado; sonda de
+  grados, compuesto pie/metro, sin unidad); Playwright de los dos filtros combinados (longitud desactivada, en m/cm/mm y por espaciado) en escritorio y móvil, con teclado; sonda de
   continuidad actualizada.
 - [ ] **4. Cierre.** Quitar la opción `cellLod`, `docs/estado.md`, ADR 0031/0034 si cambian cifras, demo republicada,
   #35 y #44 cerradas. Comprobación: la demo pública abre la muestra y una nube convertida pequeña con bandas y sin
