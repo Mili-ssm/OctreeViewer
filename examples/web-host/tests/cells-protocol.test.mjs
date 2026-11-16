@@ -48,7 +48,7 @@ const NOT_ENABLED = "the cells path is not enabled";
 // ---- Build worker --------------------------------------------------------------------------
 
 async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuffer(4), new ArrayBuffer(6)],
-    levelBuffers = () => [], refine = 0, cellPoolPages = 0, beforeOpened = null } = {}) {
+    levelBuffers = () => [], levelsRefused = null, refine = 0, cellPoolPages = 0, beforeOpened = null } = {}) {
     const posted = [];
     const transfers = new Map();
     const calls = [];
@@ -95,7 +95,7 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
                 return {
                     epoch: n, generation: 3, cutEpoch: n, viewEpoch: this.viewEpoch, cut: new BigUint64Array([5n]),
                     support: new BigUint64Array(0), idle: false, stagePixels: 8, targetPixels: 4,
-                    nodeCells: rebuilt ? nodeBuffers(n) : [], nodeLevels: levelBuffers(n), needsRefinement: n <= refine, sceneBuffer: null, instanceCount: 0,
+                    nodeCells: rebuilt ? nodeBuffers(n) : [], nodeLevels: levelBuffers(n), levelsRefused, needsRefinement: n <= refine, sceneBuffer: null, instanceCount: 0,
                     blockIds: [], digest: null, lod: lod({ cellsBusy: true }),
                 };
             }
@@ -343,6 +343,10 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
                 throw new Error("targetPixels must be finite and between 0.5 and 16");
             }
             log.push(["setCellCut", message.cutEpoch, message.viewEpoch]);
+        },
+        refuseCellLevels(nodes, depths) {
+            if (!cellsOn) throw new Error(NOT_ENABLED);
+            log.push(["refuseCellLevels", [...nodes], [...depths]]);
         },
         addCellLevels(generation, bytes) {
             if (!cellsOn) throw new Error(NOT_ENABLED);
@@ -1209,6 +1213,31 @@ test("a level request set that arrives before the builder is ready is applied on
     await worker.sync();
     assert.deepEqual(worker.calls.filter(call => call[0] === "applyLevelRequests"), [["applyLevelRequests", [7n], [5]]],
         "the latest set of this gen, once");
+});
+
+test("levelsRefused goes out after the nodeLevels and before the cellCut, with its buffers transferred", async () => {
+    const refused = { nodes: new BigUint64Array([5n]), depths: new Uint8Array([63]) };
+    const worker = await runBuildWorker({ levelsRefused: refused, levelBuffers: () => [new ArrayBuffer(3)] });
+    worker.view();
+    await worker.sync();
+    const types = worker.posted.map(item => item.type).filter(type => type !== "opened");
+    assert.deepEqual(types.slice(0, 4), ["nodeCells", "nodeLevels", "levelsRefused", "cellCut"]);
+    const message = worker.posted.find(item => item.type === "levelsRefused");
+    assert.deepEqual([message.gen, [...message.nodes], [...message.depths]], [1, [5n], [63]]);
+    const transferred = worker.transfers.get(message);
+    assert.equal(transferred[0], refused.nodes.buffer, "transferred, not copied");
+    assert.equal(transferred[1], refused.depths.buffer, "transferred, not copied");
+});
+
+test("levelsRefused reaches the driver at once, and one of another gen is ignored", async () => {
+    const render = await runRenderWorker();
+    const worker = await render.openCells();
+    worker.emit({ type: "levelsRefused", gen: 9, nodes: new BigUint64Array([5n]), depths: new Uint8Array([63]) });
+    await settle();
+    assert.equal(render.calls("refuseCellLevels").length, 0);
+    worker.emit({ type: "levelsRefused", gen: 1, nodes: new BigUint64Array([5n]), depths: new Uint8Array([63]) });
+    await settle();
+    assert.deepEqual(render.calls("refuseCellLevels"), [["refuseCellLevels", [5n], [63]]]);
 });
 
 test("a refused nodeLevels entry does not stop the rest of the message", async () => {

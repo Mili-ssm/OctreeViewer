@@ -1399,6 +1399,35 @@ fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours
 }
 
 #[test]
+fn a_refused_depth_lowers_what_the_node_can_want_and_the_view_settles() {
+    let mut fx = on_demand_fixture(cell_generation(5, 0));
+    let cam = camera("zoom");
+    let cut = ids(&[2]);
+    let id = NodeId::new(2);
+    let first = fx.run(4, &cut, &cam, 1.0);
+    let wanted = first.plan.entries[0].wanted[0].expect("wanted");
+    assert!(wanted > 4, "setup: the view wants a buildable level");
+    // The build side refuses every depth it is asked for, as for a leaf merged at the deepest
+    // cell depth: each refusal lowers what the node can want.
+    for _ in 0..4 {
+        if let Some(requests) = fx.driver.take_level_requests() {
+            fx.driver.refuse_levels(&requests);
+        }
+        fx.run(2, &cut, &cam, 1.0);
+    }
+    assert_eq!(fx.driver.nodes[&id].pool.buildable.1, 4);
+    let last = fx.run(4, &cut, &cam, 1.0);
+    assert_eq!(fx.driver.take_level_requests().unwrap_or_default(), vec![]);
+    assert_eq!(last.plan.entries[0].drawn[0], Some(4));
+    assert!(
+        !last.plan.entries[0].stage[0],
+        "the node draws what it wants"
+    );
+    assert!(last.plan.entries.iter().all(|entry| entry.node == id));
+    assert!(!fx.driver.needs_frame(), "nothing is held or pending");
+}
+
+#[test]
 fn reordered_level_requests_are_not_a_change() {
     let mut fx = on_demand_fixture(cell_generation(5, 0));
     let id = NodeId::new(2);

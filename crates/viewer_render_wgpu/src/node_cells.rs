@@ -205,7 +205,6 @@ impl NodeCellSource for PointNodeCellSource {
 /// drops the request and remembers it instead of retrying.
 pub fn node_cell_level(
     grid: &CellGrid,
-    _node: NodeId,
     bounds: SpatialBounds,
     spacing: Option<f64>,
     is_leaf: bool,

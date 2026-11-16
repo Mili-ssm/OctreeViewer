@@ -9,6 +9,9 @@
 //!   needsRefinement, sceneBuffer: null, instanceCount: 0, blockIds: [], digest: null, lod }`.
 //!   `nodeCells` keeps build order (parents first) and its buffers are transferable;
 //!   `nodeLevels` (levels built on demand) go after them, in order, also transferable.
+//!   The result also has `levelsRefused`: `{ nodes, depths }` or null, the requested depths the
+//!   builder cannot serve; the viewer takes them with `refuseCellLevels(nodes, depths)` (at
+//!   once, not queued).
 //!   `viewEpoch` is the one the host gave the builder with the camera (`setViewEpoch`, before
 //!   `update`); the viewer's `viewEpoch()` is the epoch of its current `cameraTransport()`.
 //! * viewer `addCellNode(generation, bytes)` per entry of `nodeCells` (it throws on bytes that
@@ -308,6 +311,19 @@ pub(super) fn builder_output_to_js(
         .collect();
     set(&result, "nodeCells", &node_cells)?;
     set(&result, "nodeLevels", &node_levels)?;
+    set(
+        &result,
+        "levelsRefused",
+        &if output.refused.is_empty() {
+            JsValue::NULL
+        } else {
+            let (nodes, depths): (Vec<NodeId>, Vec<u8>) = output.refused.iter().copied().unzip();
+            let object = Object::new();
+            set(&object, "nodes", &ids_to_js(&nodes))?;
+            set(&object, "depths", &Uint8Array::from(depths.as_slice()))?;
+            object.into()
+        },
+    )?;
     set(
         &result,
         "needsRefinement",
@@ -746,6 +762,29 @@ impl WasmVoxelViewer {
         cells
             .push_levels(generation, bytes.to_vec())
             .map_err(|message| JsValue::from_str(&message))
+    }
+
+    /// One `levelsRefused` message: depths the build side cannot serve, as node ids with a
+    /// parallel array of depths. The driver stops wanting them.
+    #[wasm_bindgen(js_name = refuseCellLevels)]
+    pub fn refuse_cell_levels(
+        &mut self,
+        nodes: JsValue,
+        depths: Uint8Array,
+    ) -> Result<(), JsValue> {
+        let nodes = ids_from_js(&nodes, "levelsRefused nodes")?;
+        if nodes.len() != depths.length() as usize {
+            return Err(JsValue::from_str(
+                "levelsRefused nodes and depths must have the same length",
+            ));
+        }
+        let refused: Vec<(NodeId, u8)> = nodes.into_iter().zip(depths.to_vec()).collect();
+        let cells = self
+            .cells_remote
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("the cells path is not enabled"))?;
+        cells.refuse_levels(&refused);
+        Ok(())
     }
 
     /// One `cellCut` message: `{ cutEpoch, viewEpoch, cut, support, idle, targetPixels }`. The

@@ -19,7 +19,11 @@ import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./h
 // Cells path (R3, requested with `open.cells`, which the render worker sets by default; every colour mode, R3-Q32/Q33): the builder emits no `scene`.
 // build -> render: nodeCells{gen,generation,buffers} (one per node batch, transferred, in order, never
 //                  coalesced), nodeLevels{gen,generation,buffers} (levels built on demand; sent right after the
-//                  nodeCells of the same batch, transferred, in order, never coalesced), cellCut{gen,cutEpoch,viewEpoch,cut,support,idle,targetPixels} (latest wins),
+//                  nodeCells of the same batch, transferred, in order, never coalesced),
+//                  levelsRefused{gen,nodes,depths} (BigUint64Array ids and a parallel Uint8Array of depths the
+//                  builder cannot serve, e.g. a leaf already at the deepest cell depth; the driver stops wanting
+//                  them, so the view can settle; sent after nodeLevels, before cellCut, and not queued behind
+//                  the nodes), cellCut{gen,cutEpoch,viewEpoch,cut,support,idle,targetPixels} (latest wins),
 //                  cellLod{gen,cutEpoch,viewEpoch,lod} (stats for the LOD panel).
 // render -> build: poolAck{gen,cutEpoch,drawn,missing} (latest wins), evict{gen,nodes} (ordered, never
 //                  coalesced), poolReset{gen}, driverReplaced{gen},
@@ -163,6 +167,10 @@ function postCellUpdate(result, view, buildMs) {
     const levels = result.nodeLevels ?? [];
     if (levels.length > 0) {
         self.postMessage({ type: "nodeLevels", gen: generation, generation: result.generation, buffers: levels }, levels);
+    }
+    if (result.levelsRefused) {
+        const { nodes, depths } = result.levelsRefused;
+        self.postMessage({ type: "levelsRefused", gen: generation, nodes, depths }, [nodes.buffer, depths.buffer]);
     }
     self.postMessage({
         type: "cellCut",

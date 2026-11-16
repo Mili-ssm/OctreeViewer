@@ -203,6 +203,10 @@ pub struct CellUpdate {
     /// Levels built on demand for nodes the driver has, one packed node per node holding only the
     /// new depths (`CellDriver::add_packed_levels`), sent after `new_nodes`.
     pub new_levels: Vec<(u64, PackedNode)>,
+    /// `(node, depth)` requests the build side cannot serve (`unservable_levels`) that arrived
+    /// since the last update: the render side stops wanting them
+    /// (`CellDriver::refuse_levels`).
+    pub refused_levels: Vec<(NodeId, u8)>,
     pub stats: CellPlanStats,
 }
 
@@ -357,6 +361,8 @@ pub(super) struct CellState {
     /// Requested depths `node_cell_level` cannot build (a leaf at the deepest cell depth whose
     /// positions are still merged): dropped, and not tried again.
     unservable_levels: HashSet<(NodeId, u8)>,
+    /// Unservable requests not yet reported in a `CellUpdate`, without repeats.
+    refused_levels: Vec<(NodeId, u8)>,
     /// Depths shipped on demand per built node. A node built again (new colour generation) is
     /// swapped whole by the driver, so these are built with it: the node never gets coarser than
     /// it was drawn.
@@ -407,6 +413,7 @@ impl Default for CellState {
             level_cut: HashSet::new(),
             level_outside_open: true,
             unservable_levels: HashSet::new(),
+            refused_levels: Vec::new(),
             level_depths: HashMap::new(),
         }
     }
@@ -714,6 +721,7 @@ impl LodDataset {
         for request in requests {
             let (id, depth) = request;
             if self.cells.unservable_levels.contains(&request) {
+                self.report_refused(request);
                 continue;
             }
             match self.level_node_state(id) {
@@ -763,9 +771,10 @@ impl LodDataset {
                     break;
                 }
             };
-            self.cells
-                .unservable_levels
-                .extend(unservable.into_iter().map(|depth| (id, depth)));
+            for depth in unservable {
+                self.cells.unservable_levels.insert((id, depth));
+                self.report_refused((id, depth));
+            }
             if let Some(packed) = packed {
                 let shipped = self.cells.level_depths.entry(id).or_default();
                 shipped.extend(packed.levels.iter().map(|level| level.depth));
@@ -787,6 +796,12 @@ impl LodDataset {
         match failure {
             Some(error) if served.is_empty() => Err(error),
             _ => Ok((served, deferred)),
+        }
+    }
+
+    fn report_refused(&mut self, request: (NodeId, u8)) {
+        if !self.cells.refused_levels.contains(&request) {
+            self.cells.refused_levels.push(request);
         }
     }
 
@@ -948,6 +963,8 @@ impl LodDataset {
     pub fn driver_replaced(&mut self) {
         self.cells.built.clear();
         self.cells.pool_drawn.clear();
+        // The new driver asks for what it wants anew; a stale set would keep reading blocks.
+        self.cells.level_requests.clear();
     }
 
     /// Step 3, `poolAck`. The last one wins: an older epoch than the last ack is ignored.
@@ -1064,15 +1081,7 @@ impl LodDataset {
             if cells.levels.iter().any(|level| level.depth == depth) {
                 continue;
             }
-            match node_cell_level(
-                &local_grid,
-                id,
-                local,
-                node.spacing(),
-                is_leaf,
-                &blocks,
-                depth,
-            ) {
+            match node_cell_level(&local_grid, local, node.spacing(), is_leaf, &blocks, depth) {
                 Ok(level) => cells.levels.push(level),
                 Err(NodeCellError::AbsoluteDepthExceeded) => {}
                 Err(error) => return Err(LodDatasetError::CellDriver(error.to_string())),
@@ -1161,15 +1170,7 @@ impl LodDataset {
         depths.dedup();
         let (mut levels, mut unservable) = (Vec::new(), Vec::new());
         for depth in depths {
-            match node_cell_level(
-                &local_grid,
-                id,
-                local,
-                node.spacing(),
-                is_leaf,
-                &blocks,
-                depth,
-            ) {
+            match node_cell_level(&local_grid, local, node.spacing(), is_leaf, &blocks, depth) {
                 Ok(level) => levels.push(level),
                 Err(NodeCellError::AbsoluteDepthExceeded) => unservable.push(depth),
                 Err(error) => return Err(LodDatasetError::CellDriver(error.to_string())),
@@ -1743,6 +1744,7 @@ impl LodDataset {
             support,
             new_nodes,
             new_levels,
+            refused_levels: std::mem::take(&mut self.cells.refused_levels),
             stats,
         })
     }
@@ -1873,6 +1875,7 @@ impl LodDataset {
             support,
             new_nodes,
             new_levels,
+            refused_levels,
             stats,
         } = update;
         if let Err(error) =
@@ -1881,6 +1884,7 @@ impl LodDataset {
             self.cell_frame_failed(cut_epoch);
             return Err(error);
         }
+        driver.refuse_levels(&refused_levels);
         driver.cut_received();
         driver.set_support(&support);
         let draw = match draw_cell_cut(driver, target, cut_epoch, &cut, view, target_px) {

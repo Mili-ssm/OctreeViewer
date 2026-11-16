@@ -1358,6 +1358,26 @@ impl CellPool {
         lacks.then_some(old)
     }
 
+    /// The levels of a node were dropped (a recolour): a fit cap that points at a depth no longer
+    /// stored moves to the finest stored depth below it, or goes if there is none.
+    pub(crate) fn reconcile_cap(&mut self, id: NodeId, stored: &[u8]) {
+        let Some(cap) = self.caps.get(&id).copied() else {
+            return;
+        };
+        if stored.contains(&cap) {
+            return;
+        }
+        match stored.iter().copied().filter(|depth| *depth < cap).max() {
+            Some(depth) => {
+                self.caps.insert(id, depth);
+            }
+            None => {
+                self.caps.remove(&id);
+            }
+        }
+        self.size_epoch += 1;
+    }
+
     /// Does any stored level of the node, below its fit cap, have pages resident?
     fn has_resident_level(&self, id: NodeId, stored: &[u8]) -> bool {
         let cap = self.caps.get(&id);
@@ -2934,12 +2954,20 @@ fn capped_range(buildable: (u8, u8), cap: Option<&u8>) -> (u8, u8) {
 }
 
 /// `stored` truncated to depths at or below the cap.
+///
+/// Never empty while `stored` is not: a cap below every stored level (its depth was dropped by a
+/// recolour) leaves the coarsest one.
 fn capped(stored: &[u8], cap: Option<&u8>) -> Vec<u8> {
-    stored
+    let kept: Vec<u8> = stored
         .iter()
         .copied()
         .filter(|depth| cap.is_none_or(|cap| depth <= cap))
-        .collect()
+        .collect();
+    if kept.is_empty() {
+        stored.first().copied().into_iter().collect()
+    } else {
+        kept
+    }
 }
 
 #[cfg(test)]

@@ -797,11 +797,11 @@ fn root_with(stored: &[u8], resident: &[u8]) -> HashMap<NodeId, CellCutNode> {
 #[test]
 fn missing_level_draws_the_closest_resident_level() {
     assert_eq!(resident_depth(5, &[3, 5]), Some((5, false)));
-    // R3-Q21: the coarsest of the finer levels meets the target (not a stage) ...
-    assert_eq!(resident_depth(5, &[3, 7, 4]), Some((7, false)));
-    // ... else the finest of the coarser ones, as a stage.
+    // R3-Q21: the closest resident level, a stage when coarser than wanted ...
+    assert_eq!(resident_depth(5, &[3, 7, 4]), Some((4, true)));
     assert_eq!(resident_depth(5, &[4, 3]), Some((4, true)));
-    // ... but a resident finer level wins over a coarser stage: the image only refines.
+    // ... a tie goes to the finer one, which is no stage.
+    assert_eq!(resident_depth(5, &[4, 6]), Some((6, false)));
     assert_eq!(resident_depth(5, &[7]), Some((7, false)));
     assert_eq!(resident_depth(5, &[9, 7]), Some((7, false)));
     assert_eq!(resident_depth(5, &[]), None);
@@ -844,8 +844,8 @@ fn the_closest_level_avoids_coarsening_within_a_node() {
 #[test]
 fn a_spanning_level_wins_also_when_other_octants_have_finer_resident_levels() {
     // Octant 0 wants depth 1 (above the node's detail), the others depth 3. With 0 and 3
-    // resident, the closest level of octant 0 is the finer 3 (R3-Q21: the image only refines), so
-    // the node draws 3 whole and no octant is a stage.
+    // resident, the closest level of octant 0 is the coarser 0 (R3-Q21: the closest resident
+    // one), a spanning level, so the node draws 0 whole and every octant is a stage.
     let nodes = root_with(&[0, 1, 3], &[0, 3]);
     let entries = cell_cut_with(
         &ids(&[1]),
@@ -855,9 +855,9 @@ fn a_spanning_level_wins_also_when_other_octants_have_finer_resident_levels() {
     )
     .unwrap();
     assert_eq!(entries[0].wanted[0], Some(1));
-    assert_eq!(entries[0].drawn, [Some(3); 8]);
-    assert_eq!(entries[0].draws(), vec![(3, 0xff)]);
-    assert_eq!(entries[0].stage, [false; 8]);
+    assert_eq!(entries[0].drawn, [Some(0); 8]);
+    assert_eq!(entries[0].draws(), vec![(0, 0xff)]);
+    assert_eq!(entries[0].stage, [true; 8]);
 }
 
 #[test]

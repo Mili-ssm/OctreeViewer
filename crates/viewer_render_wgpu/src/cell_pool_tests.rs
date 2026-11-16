@@ -1307,6 +1307,38 @@ fn a_resident_level_beyond_the_fit_cap_is_not_a_fallback() {
 }
 
 #[test]
+fn a_cap_on_a_dropped_depth_does_not_panic_after_a_recolour() {
+    // A fit cap at depth 5 whose level a recolour dropped: the node now stores 6 and 7 only.
+    let mut nodes = octant_nodes();
+    let node = nodes.get_mut(&NodeId::new(2)).unwrap();
+    node.stored = vec![6, 7];
+    node.buildable = (6, 7);
+    let mut rig = Rig::new(nodes, 128, 8, 0);
+    let id = NodeId::new(2);
+    rig.pool.caps.insert(id, 5);
+    let cam = camera("zoom");
+    let plan = rig.run(6, &ids(&[2]), &cam, 1.0);
+    assert!(
+        plan.entries[0]
+            .drawn
+            .iter()
+            .flatten()
+            .all(|d| [6, 7].contains(d))
+    );
+    // The driver reconciles the cap with what is stored: below every level it goes.
+    rig.pool.reconcile_cap(id, &[6, 7]);
+    assert_eq!(rig.pool.caps.get(&id), None);
+    rig.pool.caps.insert(id, 7);
+    rig.pool.reconcile_cap(id, &[4, 6]);
+    assert_eq!(
+        rig.pool.caps.get(&id),
+        Some(&6),
+        "clamped to the finest stored below it"
+    );
+    assert_eq!(capped(&[6, 7], Some(&5)), vec![6], "never empty");
+}
+
+#[test]
 fn a_far_node_that_draws_nothing_is_not_starved_by_refinements_elsewhere() {
     // Node 8 draws its depth 4 and wants depth 5; node 2 (farther) draws nothing and stores
     // depth 6 and deeper. By absolute depth alone the refinement of node 8 would go first.

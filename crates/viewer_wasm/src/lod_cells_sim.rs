@@ -22,6 +22,8 @@ enum Msg {
     Node(u64, Box<PackedNode>),
     /// Levels built on demand for a node the driver holds (`nodeLevels`).
     Levels(u64, Box<PackedNode>),
+    /// Depths the build side refused (`levelsRefused`).
+    Refused(Vec<(NodeId, u8)>),
     /// Epoch, cut and support set of the `cellCut` message.
     Cut(u64, Vec<NodeId>, Vec<NodeId>),
 }
@@ -224,6 +226,10 @@ impl Sim {
             self.to_render
                 .push_back(Msg::Levels(generation, Box::new(node)));
         }
+        if !update.refused_levels.is_empty() {
+            self.to_render
+                .push_back(Msg::Refused(update.refused_levels));
+        }
         self.to_render
             .push_back(Msg::Cut(update.cut_epoch, update.cut, update.support));
         for anchor in update.stats.pending_page_anchors {
@@ -250,6 +256,10 @@ impl Sim {
                 Some(Msg::Levels(generation, node)) => {
                     add_cell_levels(&mut self.h.driver, [(generation, *node)])
                         .unwrap_or_else(|error| panic!("nodeLevels: {error}"));
+                    got = true;
+                }
+                Some(Msg::Refused(refused)) => {
+                    self.h.driver.refuse_levels(&refused);
                     got = true;
                 }
                 Some(Msg::Cut(epoch, cut, support)) => {

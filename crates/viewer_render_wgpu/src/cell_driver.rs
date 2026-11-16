@@ -801,6 +801,8 @@ impl CellDriver {
             });
             stored.bytes -= dropped;
             self.cpu_bytes -= dropped;
+            let remaining = stored.pool.stored.clone();
+            self.pool.reconcile_cap(id, &remaining);
             // A resident copy would keep the old colours under the same key. One the cut draws
             // or the pool pins stays (no coarsening while a level waits, R3-Q21): it is replaced
             // when the depth returns (`add_packed_levels`).
@@ -864,6 +866,21 @@ impl CellDriver {
         }
         self.level_requests_taken.clone_from(&self.level_requests);
         Some(self.level_requests.clone())
+    }
+
+    /// Depths the build side cannot build (`node_cell_level` refused them): the node's buildable
+    /// maximum drops below each, so the cut stops wanting it and no hold waits for it.
+    pub fn refuse_levels(&mut self, refused: &[(NodeId, u8)]) {
+        for (id, depth) in refused {
+            let Some(node) = self.nodes.get_mut(id) else {
+                continue;
+            };
+            let buildable = &mut node.pool.buildable;
+            if *depth > buildable.0 && *depth <= buildable.1 {
+                buildable.1 = *depth - 1;
+                self.dirty = true;
+            }
+        }
     }
 
     /// Whether another frame has something to do: new nodes, requests, uploads in flight, the

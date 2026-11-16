@@ -1224,16 +1224,7 @@ fn single_level_matches_the_unpruned_chain() {
         .unwrap();
     assert!(chain.levels.len() > 1);
     for level in &chain.levels {
-        let single = node_cell_level(
-            &grid(),
-            NodeId::new(7),
-            bounds,
-            None,
-            true,
-            blocks,
-            level.depth,
-        )
-        .unwrap();
+        let single = node_cell_level(&grid(), bounds, None, true, blocks, level.depth).unwrap();
         assert_eq!(&single, level, "depth {}", level.depth);
     }
     // Internal node: the octant split must match as well.
@@ -1245,16 +1236,7 @@ fn single_level_matches_the_unpruned_chain() {
         .node_cells(&grid(), NodeId::new(7), node, None, false, blocks)
         .unwrap();
     for level in &chain.levels {
-        let single = node_cell_level(
-            &grid(),
-            NodeId::new(7),
-            node,
-            None,
-            false,
-            blocks,
-            level.depth,
-        )
-        .unwrap();
+        let single = node_cell_level(&grid(), node, None, false, blocks, level.depth).unwrap();
         assert_eq!(&single, level, "internal depth {}", level.depth);
     }
 }
@@ -1267,16 +1249,7 @@ fn a_level_finer_than_separation_keeps_one_cell_per_position() {
         .node_cells(&grid(), NodeId::new(7), bounds, None, true, blocks)
         .unwrap();
     let deepest = chain.levels.last().unwrap().depth;
-    let level = node_cell_level(
-        &grid(),
-        NodeId::new(7),
-        bounds,
-        None,
-        true,
-        blocks,
-        deepest + 2,
-    )
-    .unwrap();
+    let level = node_cell_level(&grid(), bounds, None, true, blocks, deepest + 2).unwrap();
     assert_eq!(level.depth, deepest + 2);
     assert_eq!(level.cells.len(), block.points().points().len());
 }
@@ -1311,23 +1284,15 @@ fn buildable_range_matches_the_chain_bounds() {
     );
 
     assert_eq!(
-        node_cell_level(&grid(), node, bounds, None, false, blocks, first + 6),
+        node_cell_level(&grid(), bounds, None, false, blocks, first + 6),
         Err(NodeCellError::AbsoluteDepthExceeded)
     );
     assert_eq!(
-        node_cell_level(&grid(), node, bounds, None, true, blocks, first - 1),
+        node_cell_level(&grid(), bounds, None, true, blocks, first - 1),
         Err(NodeCellError::AbsoluteDepthExceeded)
     );
     assert_eq!(
-        node_cell_level(
-            &grid(),
-            node,
-            bounds,
-            None,
-            true,
-            blocks,
-            MAX_CELL_DEPTH + 1
-        ),
+        node_cell_level(&grid(), bounds, None, true, blocks, MAX_CELL_DEPTH + 1),
         Err(NodeCellError::AbsoluteDepthExceeded)
     );
 }
@@ -1341,7 +1306,6 @@ fn a_leaf_level_at_max_depth_with_merged_positions_is_an_error() {
     let block = plain_block(points);
     let result = node_cell_level(
         &grid(),
-        NodeId::new(1),
         cube([8.0; 3], 8.0),
         None,
         true,

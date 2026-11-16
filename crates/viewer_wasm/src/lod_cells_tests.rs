@@ -1505,6 +1505,28 @@ fn pending_requests_survive_a_colour_change() {
 }
 
 #[test]
+fn driver_replaced_clears_pending_level_requests() {
+    let leaf = NodeId::new(3);
+    let block = BlockId::new(103);
+    let pending_blocks = |request: bool| {
+        let (mut dataset, sent, view) = built_for_levels();
+        let depth = unsent_depths(&sent[&leaf], 1)[0];
+        dataset.cache.remove(block);
+        if request {
+            dataset.apply_level_requests(&[(leaf, depth)]);
+            assert!(dataset.has_pending_level_requests(true));
+        }
+        dataset.driver_replaced();
+        assert!(!dataset.has_pending_level_requests(true));
+        let update = plan_levels(&mut dataset, &view, CellUpdateConfig::default());
+        assert!(update.new_levels.is_empty());
+        update.stats.pending_block_ids
+    };
+    // The dropped requests read no blocks of their own: the same blocks as with no request.
+    assert_eq!(pending_blocks(true), pending_blocks(false));
+}
+
+#[test]
 fn a_rebuilt_node_keeps_its_on_demand_depths_with_the_new_colours() {
     let (mut dataset, sent, view) = built_for_levels();
     let leaf = NodeId::new(3);

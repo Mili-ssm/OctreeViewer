@@ -201,6 +201,9 @@ pub(crate) struct BuilderOutput {
     /// Levels built on demand (`encode_node_levels`: one node per entry holding only the new
     /// depths), after `nodes` and before the cut.
     pub levels: Vec<EncodedNode>,
+    /// Requested depths the build side cannot serve (`CellUpdate::refused_levels`): the render
+    /// side stops wanting them (`levelsRefused`).
+    pub refused: Vec<(NodeId, u8)>,
     /// The build side has nothing more to do for this view: with the render side having applied
     /// this epoch, the cut is at rest.
     pub idle: bool,
@@ -332,6 +335,7 @@ impl BuilderCells {
         let generation = dataset.cell_generation();
         let mut nodes = Vec::new();
         let mut levels = Vec::new();
+        let mut refused = Vec::new();
         let mut rounds = 0;
         loop {
             let mut order = Vec::new();
@@ -366,6 +370,7 @@ impl BuilderCells {
                 let bytes = encode_node_levels(node).map_err(|error| error.to_string())?;
                 levels.push(EncodedNode { bytes });
             }
+            refused.extend(update.refused_levels.iter().copied());
             let pending = update.stats.pending_page_anchors.clone();
             let done = pending.is_empty() || rounds == MAX_PAGE_ROUNDS;
             let Some(reader) = reader.as_deref_mut().filter(|_| !done) else {
@@ -377,6 +382,7 @@ impl BuilderCells {
                     support: update.support,
                     nodes,
                     levels,
+                    refused,
                     idle: !self.dirty,
                     target_pixels,
                     stage_pixels: planned.stage_pixels,
@@ -720,6 +726,13 @@ impl ViewerCells {
             self.level_requests = Some(requests);
         }
         Ok(Some(draw.report))
+    }
+
+    /// A `levelsRefused` message: the driver stops wanting these depths. Applied at once (it
+    /// depends on no queued node) and drawn on the next frame.
+    pub(crate) fn refuse_levels(&mut self, refused: &[(NodeId, u8)]) {
+        self.driver.refuse_levels(refused);
+        self.view_dirty = true;
     }
 
     /// The levels the driver wants built on demand, when the set changed since the last call: the

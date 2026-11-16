@@ -1059,6 +1059,9 @@ function handleBuildMessage(data) {
                 }
             }
             if (failure) throw failure;
+        } else if (data.type === "levelsRefused") {
+            // Not queued: it depends on no node, and the driver redraws once it stops wanting them.
+            viewer.refuseCellLevels(data.nodes, data.depths);
         } else if (data.type === "cellCut") {
             pendingCellCut = null;
             cellCounters.cellCuts += 1;

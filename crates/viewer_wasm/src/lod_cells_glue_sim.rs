@@ -14,6 +14,8 @@ use viewer_render_wgpu::decode_node_levels;
 enum Wire {
     Node(u64, Vec<u8>),
     Levels(u64, Vec<u8>),
+    /// `levelsRefused`.
+    Refused(Vec<(NodeId, u8)>),
     Cut {
         epoch: u64,
         view_epoch: u64,
@@ -149,6 +151,9 @@ impl GlueSim {
             self.to_render
                 .push_back(Wire::Levels(out.generation, node.bytes));
         }
+        if !out.refused.is_empty() {
+            self.to_render.push_back(Wire::Refused(out.refused));
+        }
         self.to_render.push_back(Wire::Cut {
             epoch: out.cut_epoch,
             view_epoch: out.view_epoch,
@@ -170,6 +175,7 @@ impl GlueSim {
                     .viewer
                     .push_levels(generation, bytes)
                     .unwrap_or_else(|error| panic!("push_levels: {error}")),
+                Some(Wire::Refused(refused)) => self.viewer.refuse_levels(&refused),
                 Some(Wire::Cut {
                     epoch,
                     view_epoch,
@@ -716,6 +722,7 @@ impl Pair {
                         .push_levels(out.generation, node.bytes.clone())
                         .unwrap();
                 }
+                self.viewer.refuse_levels(&out.refused);
             }
             if out.idle || always_cut {
                 assert!(out.view_epoch == view_epoch, "the plan lost the view epoch");
@@ -756,6 +763,7 @@ impl Pair {
                     .push_levels(out.generation, node.bytes.clone())
                     .unwrap();
             }
+            self.viewer.refuse_levels(&out.refused);
             let idle = out.idle;
             self.viewer.push_cut(
                 out.cut_epoch,
@@ -980,6 +988,67 @@ fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
         );
     }
     assert!(run.idle, "the builder settled");
+}
+
+/// A depth the build side refuses (a leaf merged at the deepest cell depth) must stop being
+/// wanted across the worker split. No real view wants depth 63, so the refusal is injected on
+/// the path the build worker uses (`levelsRefused`) for the deeper depths the viewer asks for;
+/// the coarsest buildable depth is real and the builder serves it.
+#[test]
+fn a_refused_depth_stops_being_wanted_and_the_view_settles() {
+    let mut pair = Pair::with_harness(close_pair_leaf());
+    pair.target_px = 4.0;
+    let c = SIDE / 2.0;
+    pair.view = synth_view([c + 4.0 * SIDE, c + 0.5 * SIDE, c + 1.0 * SIDE], [c; 3]);
+    pair.target.eye = pair.view.camera().position();
+    pair.send_round(0, true);
+    pair.pump();
+    let first = pair
+        .viewer
+        .take_level_requests()
+        .expect("the view wants a depth the chain does not hold");
+    assert!(!first.is_empty());
+    assert!(
+        pair.rest().is_none(),
+        "the wanted levels keep the view open"
+    );
+    // The builder is never told of these requests: the viewer hears only the refusals, each of
+    // which lowers what the node can want (the first set is the finest wanted depth).
+    let mut refused = first.clone();
+    let mut rounds = 0;
+    let served = loop {
+        pair.viewer.refuse_levels(&refused);
+        pair.pump();
+        let Some(next) = pair.viewer.take_level_requests() else {
+            break None;
+        };
+        rounds += 1;
+        // Stop injecting at the first depth the lowering did not remove: it is buildable.
+        if next.is_empty() || rounds == 3 {
+            break Some(next);
+        }
+        refused = next;
+    };
+    let served = served.expect("the wanted set changed with every refusal");
+    assert!(
+        served.iter().all(|request| !first.contains(request)),
+        "a refused depth is still listed: {served:?}"
+    );
+    // What is still wanted is buildable: the builder serves it and the view settles.
+    pair.builder.level_requests(&mut pair.h.dataset, &served);
+    pair.send(0, true);
+    pair.pump();
+    let listed = pair.viewer.take_level_requests().unwrap_or_default();
+    assert!(
+        listed.iter().all(|request| !first.contains(request)),
+        "a refused depth is listed again: {listed:?}"
+    );
+    assert!(listed.is_empty(), "still wanted: {listed:?}");
+    assert!(
+        pair.rest().is_some(),
+        "the view never settled (levels still wanted or work held)"
+    );
+    assert!(!pair.viewer.cells_busy(&pair.target), "a node stays held");
 }
 
 /// Negative control: this is the #35 bug, a leaf drawing its fine levels from far.
