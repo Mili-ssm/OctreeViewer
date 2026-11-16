@@ -29,6 +29,10 @@ const HEIGHT: u32 = 192;
 const POOL_PAGES_FOR_TESTS: u32 = 64;
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
+/// Task 7a: the per-cell decision of the slot pass against its Rust twin.
+#[path = "cell_lod_gpu_tests.rs"]
+mod lod;
+
 /// Task 7b2: two-phase occlusion against the compaction-only path.
 #[path = "cell_cull_tests.rs"]
 mod cull;
