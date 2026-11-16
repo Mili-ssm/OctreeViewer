@@ -678,6 +678,19 @@ impl Pair {
     }
 
     fn send_round(&mut self, view_epoch: u64, deliver: bool) -> Vec<(u64, Vec<u8>)> {
+        let (nodes, idle) = self.send_round_bounded(view_epoch, deliver, false);
+        assert!(idle, "the builder never went idle");
+        nodes
+    }
+
+    /// One round of at most 500 plans. Whether the builder went idle; when `always_cut`, every
+    /// plan's cut is delivered (idle or not) so a builder that never settles still draws.
+    fn send_round_bounded(
+        &mut self,
+        view_epoch: u64,
+        deliver: bool,
+        always_cut: bool,
+    ) -> (Vec<(u64, Vec<u8>)>, bool) {
         self.builder.set_view_epoch(view_epoch);
         self.builder.mark_dirty();
         let mut nodes = Vec::new();
@@ -704,7 +717,7 @@ impl Pair {
                         .unwrap();
                 }
             }
-            if out.idle {
+            if out.idle || always_cut {
                 assert!(out.view_epoch == view_epoch, "the plan lost the view epoch");
                 if deliver {
                     self.viewer.push_cut(
@@ -712,14 +725,16 @@ impl Pair {
                         out.view_epoch,
                         out.cut,
                         out.support,
-                        true,
+                        out.idle,
                         self.target_px,
                     );
                 }
-                return nodes;
+            }
+            if out.idle {
+                return (nodes, true);
             }
         }
-        panic!("the builder never went idle");
+        (nodes, false)
     }
 
     /// [`Pair::send`] with a viewer frame after every plan round and the strict target's and
@@ -849,18 +864,36 @@ fn close_pair_leaf() -> Harness {
     )
 }
 
-#[test]
-fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
+/// What a bounded run of the close-pair leaf drew and shipped.
+struct CloseRun {
+    /// Depth the full, unpruned chain draws, per octant.
+    expected: Vec<u8>,
+    full_depths: Vec<u8>,
+    /// Depths of the chain the node shipped (pruned).
+    pruned: Vec<u8>,
+    drawn: [Option<u8>; 8],
+    /// Depths shipped through the level path.
+    shipped_levels: Vec<u8>,
+    idle: bool,
+}
+
+/// The #35 scenario: the close-pair leaf viewed from far at 4 px, a few request round-trips, with
+/// `max_level_builds` on-demand builds per update. A builder that never settles (no builds) is
+/// bounded and still reports what the viewer drew.
+fn close_pair_run(max_level_builds: usize) -> CloseRun {
     use viewer_render_wgpu::{NodeCellSource, PointNodeCellSource, octant_wanted_depth};
     let id = NodeId::new(1);
     let target_px = 4.0;
     let mut pair = Pair::with_harness(close_pair_leaf());
     pair.target_px = target_px;
+    pair.builder = BuilderCells::new(CellUpdateConfig {
+        max_level_builds,
+        ..pair.h.config
+    });
     let c = SIDE / 2.0;
     pair.view = synth_view([c + 4.0 * SIDE, c + 0.5 * SIDE, c + 1.0 * SIDE], [c; 3]);
     pair.target.eye = pair.view.camera().position();
 
-    // The oracle: the depth the full, unpruned chain draws, per octant.
     let grid = pair.h.dataset.cell_grid();
     let origin = pair.h.dataset.coordinate_origin();
     let bounds = pair
@@ -875,8 +908,8 @@ fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
     let full = PointNodeCellSource { min_growth: 1.0 }
         .node_cells(&grid, id, bounds, None, true, &[block])
         .unwrap();
-    let full_depths: Vec<u8> = full.levels.iter().map(|level| level.depth).collect();
-    let expected: Vec<u8> = (0..8)
+    let full_depths = full.levels.iter().map(|level| level.depth).collect();
+    let expected = (0..8)
         .map(|octant| {
             octant_wanted_depth(
                 &pair.view,
@@ -890,33 +923,79 @@ fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
         })
         .collect();
 
-    pair.send(0, true);
-    pair.pump();
+    let mut idle = false;
+    for _ in 0..4 {
+        idle = pair.send_round_bounded(0, true, true).1;
+        pair.pump();
+        if !pair.relay_level_requests() {
+            break;
+        }
+    }
     let report = pair.last_report.take().expect("a frame drew");
     let entry = report.plan.entries.iter().find(|e| e.node == id).unwrap();
-    let drawn: Vec<u8> = entry.drawn.iter().flatten().copied().collect();
-    assert!(!drawn.is_empty(), "the leaf is drawn");
+    let chain = |from: &[(NodeId, u8)]| {
+        from.iter()
+            .filter(|(node, _)| *node == id)
+            .map(|(_, depth)| *depth)
+            .collect::<Vec<u8>>()
+    };
+    CloseRun {
+        expected,
+        full_depths,
+        pruned: chain(&pair.shipped_chains),
+        drawn: entry.drawn,
+        shipped_levels: chain(&pair.shipped_levels),
+        idle,
+    }
+}
 
-    // The pruned chain the node shipped, and the levels shipped on demand.
-    let pruned: Vec<u8> = pair
-        .shipped_chains
-        .iter()
-        .filter(|(node, _)| *node == id)
-        .map(|(_, depth)| *depth)
-        .collect();
-    assert!(!pruned.is_empty(), "the node was shipped");
-    for (octant, depth) in entry.drawn.iter().enumerate() {
-        let Some(depth) = depth else { continue };
-        assert_eq!(*depth, expected[octant], "octant {octant}: drawn {drawn:?}");
-        assert!(full_depths.contains(depth), "full chain {full_depths:?}");
+#[test]
+fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
+    let run = close_pair_run(CellUpdateConfig::default().max_level_builds);
+    assert!(!run.pruned.is_empty(), "the node was shipped");
+    // The value first: every octant draws the depth the full chain would draw.
+    for (octant, depth) in run.drawn.iter().enumerate() {
+        assert_eq!(
+            *depth,
+            Some(run.expected[octant]),
+            "octant {octant}: {:?}",
+            run.drawn
+        );
+    }
+    for depth in &run.expected {
         assert!(
-            !pruned.contains(depth),
-            "depth {depth} is absent from the pruned chain {pruned:?}"
+            run.full_depths.contains(depth),
+            "full chain {:?}",
+            run.full_depths
         );
         assert!(
-            pair.shipped_levels.contains(&(id, *depth)),
+            !run.pruned.contains(depth),
+            "depth {depth} is absent from the pruned chain {:?}",
+            run.pruned
+        );
+        assert!(
+            run.shipped_levels.contains(depth),
             "depth {depth} shipped on demand: {:?}",
-            pair.shipped_levels
+            run.shipped_levels
+        );
+    }
+    assert!(run.idle, "the builder settled");
+}
+
+/// Negative control: this is the #35 bug, a leaf drawing its fine levels from far.
+#[test]
+fn without_on_demand_builds_a_close_pair_leaf_draws_too_fine() {
+    let run = close_pair_run(0);
+    assert!(
+        run.shipped_levels.is_empty(),
+        "no on-demand level was built"
+    );
+    for (octant, depth) in run.drawn.iter().enumerate() {
+        let depth = depth.expect("the pruned chain still draws");
+        assert!(
+            depth > run.expected[octant],
+            "octant {octant}: drawn {depth} is finer than {}",
+            run.expected[octant]
         );
     }
 }

@@ -159,7 +159,7 @@ in-process path wires the same calls without workers. Per-octant selection (ADR 
   - `levelRequests are forwarded after evict and ack, latest set wins when coalesced`.
   - `nodeLevels are applied in order after nodeCells of the same batch, with their buffers transferred`.
   - `levelRequests and nodeLevels for another gen are ignored`.
-  - Rust sim: `in_process_cells_serve_a_level_request` (an in-process update requests and then draws a pruned depth).
+  - Rust sim: `update_cells_staged_serves_a_level_request` (an in-process update requests and then draws a pruned depth).
 - [ ] **Step 2:** `node --test examples/web-host/tests/cells-protocol.test.mjs` and `cargo test -p viewer_wasm --profile fast --offline --lib lod_cells_glue_sim` → FAIL.
 - [ ] **Step 3:** implement; keep `nodeLevels` outside the epoch filter like `nodeCells`.
 - [ ] **Step 4:** both commands → PASS; `node --test examples/web-host/tests/*.test.mjs` all pass.
