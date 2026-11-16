@@ -71,14 +71,16 @@ use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc, sync::Arc};
 
 use viewer_core::{NodeId, SpatialBounds};
 
+pub use crate::cell_cut::LodMode;
+
 use crate::camera::VERTICAL_FOV;
 use crate::node_cells::{node_range, representative_depth_for_spacing};
 
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
     cell_cut::{
-        FastMap, FastSet, MAX_MASK_LEVELS, cell_cut_with, drawn_levels, octant_wanted_depth,
-        octant_wanted_depth_near, served_depth,
+        FastMap, FastSet, MAX_MASK_LEVELS, cell_cut_with, cell_depth_range, drawn_levels,
+        in_cell_range, octant_wanted_depth, octant_wanted_depth_near, served_depth,
     },
     representative_depth,
 };
@@ -177,12 +179,17 @@ pub struct PageUpload {
 pub struct MaskUpdate {
     pub slot: u32,
     pub mask: [u64; 8],
+    /// Bit `d - node_depth`: depth `d` is active in the node (cell mode; octant mode fills the
+    /// depths it draws that lie in the node's span).
+    pub active: u64,
+    /// Depth whose levels span the octants of the node.
+    pub node_depth: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveLevel {
     pub key: LevelKey,
-    /// Bit `o` = octant `o` draws this level.
+    /// Bit `o` = octant `o` draws this level (`0xff` in cell mode: the GPU chooses per cell).
     pub octant_bits: u8,
     pub mask_slot: u32,
 }
@@ -475,7 +482,9 @@ impl CoverRule {
                 && let Some(&ancestor) = pool.applied_index.cells.get(&cell)
                 && !self.in_cut.contains(&ancestor)
                 && !self.too_deep.contains(&cell)
-                && pool.has_resident_level(ancestor, &pool.applied_index.nodes[&ancestor].stored)
+                && pool.applied_index.grid.as_ref().is_some_and(|grid| {
+                    pool.has_resident_level(ancestor, &pool.applied_index.nodes[&ancestor], grid)
+                })
             {
                 nearest = Some(Cover::Fallback { ancestor, gap });
             }
@@ -710,10 +719,21 @@ pub struct CellPool {
     applied_levels: FastSet<LevelKey>,
     applied_pins: FastSet<LevelKey>,
     pinned: FastSet<LevelKey>,
-    mask_slots: FastMap<NodeId, (u32, [u64; 8])>,
+    mask_slots: FastMap<NodeId, MaskSlot>,
+    lod_mode: LodMode,
     free_masks: BTreeSet<u32>,
     next_mask: u32,
     events: Vec<CellPoolEvent>,
+}
+
+/// What a node's mask slot last sent to the GPU.
+struct MaskSlot {
+    slot: u32,
+    mask: [u64; 8],
+    active: u64,
+    node_depth: u8,
+    /// A mode change: send the record again whatever it holds.
+    stale: bool,
 }
 
 /// `ceil(min(points, 8^(depth - node_depth)) / 512)` pages, at least one.
@@ -815,6 +835,7 @@ impl CellPool {
             applied_pins: FastSet::default(),
             pinned: FastSet::default(),
             mask_slots: FastMap::default(),
+            lod_mode: LodMode::Octant,
             free_masks: BTreeSet::new(),
             next_mask: 0,
             events: Vec::new(),
@@ -829,6 +850,52 @@ impl CellPool {
     /// non-finite side restores the literal mode.
     pub fn set_min_side(&mut self, min_side: Option<f64>) {
         self.min_side = min_side.filter(|side| side.is_finite() && *side > 0.0);
+    }
+
+    /// Chooses how nodes draw their levels (`LodMode`). A change drops the memos of the cuts
+    /// planned under the old mode and marks every mask slot stale, so the next plan sends a
+    /// fresh `MaskUpdate` for each node; no level is rebuilt or re-uploaded.
+    pub fn set_lod_mode(&mut self, mode: LodMode) {
+        if self.lod_mode == mode {
+            return;
+        }
+        self.lod_mode = mode;
+        self.wanted_memo = None;
+        self.real_memo = None;
+        for slot in self.mask_slots.values_mut() {
+            slot.stale = true;
+        }
+    }
+
+    pub fn lod_mode(&self) -> LodMode {
+        self.lod_mode
+    }
+
+    /// Node depth of `bounds`: the depth whose levels span its octants.
+    fn node_depth(grid: &CellGrid, bounds: SpatialBounds) -> u8 {
+        representative_depth(grid, bounds).saturating_sub(3)
+    }
+
+    /// The stored depths of a node that can draw: all of them in octant mode, those inside the
+    /// node's span in cell mode (E2).
+    fn drawable_stored(&self, stored: &[u8], grid: &CellGrid, bounds: SpatialBounds) -> Vec<u8> {
+        match self.lod_mode {
+            LodMode::Octant => stored.to_vec(),
+            LodMode::Cell => in_cell_range(stored, Self::node_depth(grid, bounds)),
+        }
+    }
+
+    /// The coarsest buildable depth inside the node's span, which cell mode requests (and pins)
+    /// when no stored level of the node can draw.
+    fn coarsest_in_span(
+        &self,
+        buildable: (u8, u8),
+        grid: &CellGrid,
+        bounds: SpatialBounds,
+    ) -> Option<u8> {
+        let (lo, hi) = cell_depth_range(Self::node_depth(grid, bounds));
+        let lo = lo.max(buildable.0);
+        (lo <= hi.min(buildable.1)).then_some(lo)
     }
 
     pub fn min_side(&self) -> Option<f64> {
@@ -1152,7 +1219,7 @@ impl CellPool {
                 })
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
-            match cell_cut_with(cut, &lookup, ctx.grid, &|id, o, data| {
+            match cell_cut_with(cut, &lookup, ctx.grid, self.lod_mode, &|id, o, data| {
                 ctx.depth(id, o, data)
             }) {
                 Err(CellCutError::DescendantTooFine { descendant, .. })
@@ -1171,18 +1238,23 @@ impl CellPool {
         entries: &[CellCutEntry],
         nodes: &FastMap<NodeId, PoolNode>,
         caps: &FastMap<NodeId, u8>,
+        grid: &CellGrid,
     ) -> FastSet<LevelKey> {
         let mut set = FastSet::default();
         for entry in entries {
             let node = &nodes[&entry.node];
-            if let Some(coarsest) = coarsest(&node.stored, caps.get(&entry.node)) {
-                set.insert(self.key(entry.node, coarsest));
+            // Cell mode only sees the stored levels inside the node's span.
+            let stored = capped(&node.stored, caps.get(&entry.node));
+            let stored = self.drawable_stored(&stored, grid, node.bounds);
+            if let Some(coarsest) = stored.first() {
+                set.insert(self.key(entry.node, *coarsest));
             }
             // A wanted depth is fetched as the stored one that serves it; when it is not stored
             // itself it is also requested on demand (`requested_levels`).
-            let stored = capped(&node.stored, caps.get(&entry.node));
-            for depth in entry.wanted.iter().flatten() {
-                set.insert(self.key(entry.node, served_depth(&stored, *depth)));
+            if !stored.is_empty() {
+                for depth in entry.wanted.iter().flatten() {
+                    set.insert(self.key(entry.node, served_depth(&stored, *depth)));
+                }
             }
         }
         set
@@ -1194,12 +1266,22 @@ impl CellPool {
         entries: &[CellCutEntry],
         nodes: &FastMap<NodeId, PoolNode>,
         caps: &FastMap<NodeId, u8>,
+        grid: &CellGrid,
     ) -> FastSet<LevelKey> {
         let mut set = FastSet::default();
         for entry in entries {
             let node = &nodes[&entry.node];
             let stored = capped(&node.stored, caps.get(&entry.node));
+            let stored = self.drawable_stored(&stored, grid, node.bounds);
             let buildable = capped_range(node.buildable, caps.get(&entry.node));
+            // Cell mode: no stored level can draw, so the coarsest buildable one inside the
+            // span is requested first (it is also what the node pins).
+            if self.lod_mode == LodMode::Cell
+                && stored.is_empty()
+                && let Some(depth) = self.coarsest_in_span(buildable, grid, node.bounds)
+            {
+                set.insert(self.key(entry.node, depth));
+            }
             for depth in entry.wanted.iter().flatten() {
                 if !stored.contains(depth) {
                     debug_assert!(
@@ -1221,7 +1303,7 @@ impl CellPool {
         caps: &FastMap<NodeId, u8>,
         grid: &CellGrid,
     ) -> (FastSet<LevelKey>, u64) {
-        let needed = self.needed_levels(entries, nodes, caps);
+        let needed = self.needed_levels(entries, nodes, caps, grid);
         let total = needed
             .iter()
             .map(|key| self.pages_of(*key, &nodes[&key.node], grid) as u64)
@@ -1287,6 +1369,10 @@ impl CellPool {
                         continue;
                     };
                     let stored = capped(&nodes[&id].stored, caps.get(&id));
+                    let stored = self.drawable_stored(&stored, ctx.grid, nodes[&id].bounds);
+                    if stored.is_empty() {
+                        continue;
+                    }
                     let top = served_depth(&stored, top);
                     // The finest level below `top` that saves pages: smaller, or already needed
                     // (dropping `top` then frees it outright). Estimates can tie, and a tie must
@@ -1314,7 +1400,7 @@ impl CellPool {
         }
         self.old_released
             .retain(|id, cap| caps.get(id) == Some(cap));
-        let requests = self.requested_levels(&entries, nodes, &caps);
+        let requests = self.requested_levels(&entries, nodes, &caps, ctx.grid);
         self.caps = caps;
         Ok((needed, requests, total > usable))
     }
@@ -1377,9 +1463,9 @@ impl CellPool {
     }
 
     /// Does any stored level of the node, below its fit cap, have pages resident?
-    fn has_resident_level(&self, id: NodeId, stored: &[u8]) -> bool {
+    fn has_resident_level(&self, id: NodeId, node: &PoolNode, grid: &CellGrid) -> bool {
         let cap = self.caps.get(&id);
-        stored
+        self.drawable_stored(&node.stored, grid, node.bounds)
             .iter()
             .filter(|depth| cap.is_none_or(|cap| *depth <= cap))
             .any(|depth| self.is_resident(self.key(id, *depth)))
@@ -1433,7 +1519,7 @@ impl CellPool {
         hold: &FastSet<NodeId>,
     ) -> Fallbacks {
         let (with_level, missing): (Vec<NodeId>, Vec<NodeId>) = cut.iter().partition(|id| {
-            !hold.contains(*id) && self.has_resident_level(**id, &nodes[*id].stored)
+            !hold.contains(*id) && self.has_resident_level(**id, &nodes[*id], grid)
         });
         let mut out = Fallbacks::default();
         if missing.is_empty() {
@@ -1490,7 +1576,7 @@ impl CellPool {
                     !rule.in_cut.contains(&id)
                         && !seen.contains(&id)
                         && entry.drawn.iter().any(Option::is_some)
-                        && self.has_resident_level(id, &self.applied_index.nodes[&id].stored)
+                        && self.has_resident_level(id, &self.applied_index.nodes[&id], grid)
                         && {
                             let f = Footprint::new(grid, self.applied_index.nodes[&id].bounds);
                             f.gaps().any(|k| cells.contains(&f.ancestor(k)))
@@ -1582,9 +1668,9 @@ impl CellPool {
             let id = entry.node;
             let data = &nodes[&id];
             let stored = capped(&data.stored, self.caps.get(&id));
-            let resident: Vec<u8> = stored
-                .iter()
-                .copied()
+            let resident: Vec<u8> = self
+                .drawable_stored(&stored, grid, data.bounds)
+                .into_iter()
                 .filter(|depth| self.is_resident(self.key(id, *depth)))
                 .collect();
             if resident.is_empty() {
@@ -1621,7 +1707,7 @@ impl CellPool {
                         .iter()
                         .copied()
                         .filter(|id| {
-                            !hold.contains(id) && self.has_resident_level(*id, &nodes[id].stored)
+                            !hold.contains(id) && self.has_resident_level(*id, &nodes[id], grid)
                         })
                         .collect();
                     CoverRule::new(self, cut, &with_level, nodes, grid)
@@ -1700,6 +1786,7 @@ impl CellPool {
                         })
                     },
                     grid,
+                    self.lod_mode,
                     wanted_depth,
                 );
                 solo.ok()
@@ -1711,6 +1798,7 @@ impl CellPool {
                 &stored,
                 &resident,
                 f.rep.saturating_sub(MAX_MASK_LEVELS),
+                self.lod_mode,
             );
             let short = (0..8).any(|o| {
                 // The raw wanted depth, not the stored one (R3-Q21): a child storing only a
@@ -2239,13 +2327,14 @@ impl CellPool {
                 Some(node)
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
-            let entries = match cell_cut_with(real_cut, &lookup, grid, &|id, o, data| {
-                ctx.depth(id, o, data)
-            }) {
-                Ok(entries) => Some(entries),
-                Err(CellCutError::DescendantTooFine { .. }) => None,
-                Err(other) => return Err(other),
-            };
+            let entries =
+                match cell_cut_with(real_cut, &lookup, grid, self.lod_mode, &|id, o, data| {
+                    ctx.depth(id, o, data)
+                }) {
+                    Ok(entries) => Some(entries),
+                    Err(CellCutError::DescendantTooFine { .. }) => None,
+                    Err(other) => return Err(other),
+                };
             let planned_missing = entries.as_deref().map_or(cut.len() as u32, |entries| {
                 missing_levels(entries) + found.excluded.len() as u32
             });
@@ -2385,7 +2474,22 @@ impl CellPool {
             }
         }
         for id in cut.iter().chain(&found.ancestors) {
-            if let Some(depth) = coarsest(&nodes[id].stored, caps.get(id)) {
+            let depth = match self.lod_mode {
+                LodMode::Octant => coarsest(&nodes[id].stored, caps.get(id)),
+                // The coarsest level that can draw in the node's span, stored or not yet.
+                LodMode::Cell => {
+                    let node = &nodes[id];
+                    let stored = capped(&node.stored, caps.get(id));
+                    self.drawable_stored(&stored, grid, node.bounds)
+                        .first()
+                        .copied()
+                        .or_else(|| {
+                            let buildable = capped_range(node.buildable, caps.get(id));
+                            self.coarsest_in_span(buildable, grid, node.bounds)
+                        })
+                }
+            };
+            if let Some(depth) = depth {
                 pinned.insert(self.key(*id, depth));
             }
         }
@@ -2444,6 +2548,14 @@ impl CellPool {
             })
             .map(|(k, _)| *k)
         {
+            // Cell mode: a level outside the node's span never draws.
+            if self.lod_mode == LodMode::Cell
+                && !nodes.get(&key.node).is_some_and(|node| {
+                    in_cell_range(&[key.depth], Self::node_depth(grid, node.bounds)).len() == 1
+                })
+            {
+                continue;
+            }
             drawable.insert(key.node);
         }
         let mut wanted_keys: Vec<LevelKey> = want.iter().copied().collect();
@@ -2461,8 +2573,18 @@ impl CellPool {
                 fetch_requests.push(key);
             }
             if !self.levels[&key].is_resident() {
-                let first = !drawable.contains(&key.node)
-                    && coarsest(&data.stored, caps.get(&key.node)) == Some(key.depth);
+                let coarsest_drawable = match self.lod_mode {
+                    LodMode::Octant => coarsest(&data.stored, caps.get(&key.node)),
+                    LodMode::Cell => self
+                        .drawable_stored(
+                            &capped(&data.stored, caps.get(&key.node)),
+                            grid,
+                            data.bounds,
+                        )
+                        .first()
+                        .copied(),
+                };
+                let first = !drawable.contains(&key.node) && coarsest_drawable == Some(key.depth);
                 order.push((
                     key,
                     Need {
@@ -2614,30 +2736,59 @@ impl CellPool {
                 .copied()
                 .collect();
             for id in gone {
-                if let Some((slot, _)) = self.mask_slots.remove(&id) {
-                    self.free_masks.insert(slot);
+                if let Some(old) = self.mask_slots.remove(&id) {
+                    self.free_masks.insert(old.slot);
                 }
             }
             for index in 0..self.applied.len() {
                 let (id, mask) = (self.applied[index].node, self.applied[index].mask);
+                let bounds = nodes
+                    .get(&id)
+                    .or_else(|| self.applied_index.nodes.get(&id))
+                    .map(|node| node.bounds);
+                let node_depth = bounds.map_or(0, |bounds| Self::node_depth(grid, bounds));
+                let active_bits = self.applied[index]
+                    .required_levels()
+                    .into_iter()
+                    .filter(|depth| (node_depth..=node_depth.saturating_add(63)).contains(depth))
+                    .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth));
+                let next = |slot: u32| MaskSlot {
+                    slot,
+                    mask,
+                    active: active_bits,
+                    node_depth,
+                    stale: false,
+                };
+                let update = |slot: u32| MaskUpdate {
+                    slot,
+                    mask,
+                    active: active_bits,
+                    node_depth,
+                };
                 match self.mask_slots.get(&id) {
-                    Some((_, old)) if *old == mask => {}
-                    Some((slot, _)) => {
-                        let slot = *slot;
-                        self.mask_slots.insert(id, (slot, mask));
-                        mask_updates.push(MaskUpdate { slot, mask });
+                    // Octant mode sends a node only when its mask changes; cell mode also when
+                    // its active depths or node depth do.
+                    Some(old)
+                        if !old.stale
+                            && old.mask == mask
+                            && (self.lod_mode == LodMode::Octant
+                                || (old.active, old.node_depth) == (active_bits, node_depth)) => {}
+                    Some(old) => {
+                        let slot = old.slot;
+                        self.mask_slots.insert(id, next(slot));
+                        mask_updates.push(update(slot));
                     }
                     None => {
                         let slot = self.alloc_mask();
-                        self.mask_slots.insert(id, (slot, mask));
-                        mask_updates.push(MaskUpdate { slot, mask });
+                        self.mask_slots.insert(id, next(slot));
+                        mask_updates.push(update(slot));
                     }
                 }
             }
         }
         let mut applied_levels = FastSet::default();
         for entry in &self.applied {
-            let Some((slot, _)) = self.mask_slots.get(&entry.node) else {
+            let Some(MaskSlot { slot, .. }) = self.mask_slots.get(&entry.node) else {
                 continue;
             };
             for (depth, bits) in entry.draws() {
@@ -2648,7 +2799,12 @@ impl CellPool {
                 applied_levels.insert(key);
                 active.push(ActiveLevel {
                     key,
-                    octant_bits: bits,
+                    // The GPU decides per cell which of the node's active levels draws.
+                    octant_bits: if self.lod_mode == LodMode::Cell {
+                        0xff
+                    } else {
+                        bits
+                    },
                     mask_slot: *slot,
                 });
             }

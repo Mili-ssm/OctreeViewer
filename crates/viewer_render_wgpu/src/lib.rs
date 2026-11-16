@@ -60,8 +60,8 @@ pub use cell_pages::{
 };
 pub use cell_pool::{
     ActiveLevel, CellPool, CellPoolEvent, CutApply, DEFAULT_POOL_PAGES,
-    DEFAULT_UPLOAD_BUDGET_BYTES, FramePlan, HIGH_PERCENT, LOW_PERCENT, LevelKey, MaskUpdate,
-    POOL_PAGE_BYTES, PageUpload, PoolConfig, PoolCounters, PoolNode, usable_pages,
+    DEFAULT_UPLOAD_BUDGET_BYTES, FramePlan, HIGH_PERCENT, LOW_PERCENT, LevelKey, LodMode,
+    MaskUpdate, POOL_PAGE_BYTES, PageUpload, PoolConfig, PoolCounters, PoolNode, usable_pages,
 };
 pub use cell_render::{CellLimitMode, CellPoolError, MASK_WORDS};
 pub use frame_timer::GpuFrameStats;

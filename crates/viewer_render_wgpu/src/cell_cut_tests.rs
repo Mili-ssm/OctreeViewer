@@ -830,6 +830,7 @@ fn the_closest_level_avoids_coarsening_within_a_node() {
         &ids(&[1]),
         &|id| nodes.get(&id).cloned(),
         &dataset_grid(ORIGIN),
+        LodMode::Octant,
         &|_, octant, _| if octant < 4 { 4 } else { 6 },
     )
     .unwrap();
@@ -851,6 +852,7 @@ fn a_spanning_level_wins_also_when_other_octants_have_finer_resident_levels() {
         &ids(&[1]),
         &|id| nodes.get(&id).cloned(),
         &dataset_grid(ORIGIN),
+        LodMode::Octant,
         &|_, octant, _| if octant == 0 { 1 } else { 3 },
     )
     .unwrap();
@@ -1284,4 +1286,93 @@ fn draws_and_required_levels_on_uniform_entries() {
     .unwrap();
     assert!(entries[0].required_levels().is_empty());
     assert!(entries[0].draws().is_empty());
+}
+
+/// `cell_cut_with` in cell mode over `nodes`, every octant `o` wanting `wanted[o]`.
+fn cell_mode_cut(nodes: &HashMap<NodeId, CellCutNode>, wanted: [u8; 8]) -> CellCutEntry {
+    cell_cut_with(
+        &ids(&[1]),
+        &|id| nodes.get(&id).cloned(),
+        &dataset_grid(ORIGIN),
+        LodMode::Cell,
+        &|_, octant, _| wanted[octant],
+    )
+    .unwrap()
+    .remove(0)
+}
+
+#[test]
+fn cell_mode_activates_the_closest_resident_of_each_wanted_depth() {
+    // The root's node depth is 0: octants want 1, 2, 6 and 7; the resident levels are 1, 3, 6, 7.
+    // Depth 2 has a coarser (1) and a finer (3) resident level at the same distance: the finer.
+    let nodes = root_with(&[0, 1, 2, 3, 6, 7], &[1, 3, 6, 7]);
+    let entry = cell_mode_cut(&nodes, [1, 2, 6, 7, 7, 7, 7, 7]);
+    assert_eq!(
+        entry.drawn,
+        [1, 3, 6, 7, 7, 7, 7, 7].map(Some),
+        "closest resident, finer on a tie"
+    );
+    assert_eq!(entry.required_levels(), vec![1, 3, 6, 7]);
+    assert_eq!(entry.wanted, [1, 2, 6, 7, 7, 7, 7, 7].map(Some));
+}
+
+#[test]
+fn cell_mode_never_forces_one_depth_for_a_spanning_level() {
+    // Same scene as `a_spanning_level_wins_...`: in cell mode octant 0 draws the spanning
+    // level 0 and the others keep their own finer level.
+    let nodes = root_with(&[0, 1, 3], &[0, 3]);
+    let entry = cell_mode_cut(&nodes, [1, 3, 3, 3, 3, 3, 3, 3]);
+    assert_eq!(entry.drawn, [0, 3, 3, 3, 3, 3, 3, 3].map(Some));
+    assert_eq!(entry.draws(), vec![(0, 0x01), (3, 0xfe)]);
+    assert_eq!(
+        entry.stage,
+        [true, false, false, false, false, false, false, false]
+    );
+}
+
+#[test]
+fn cell_mode_clamps_active_depths_to_the_node_span() {
+    let node_depth = representative_depth(&dataset_grid(ORIGIN), root_bounds()).saturating_sub(3);
+    // A leaf wanting node_depth + 40 gets the top of the range; the deeper level never draws.
+    let top = node_depth + 31;
+    let nodes = root_with(
+        &[node_depth, top, node_depth + 45],
+        &[node_depth, top, node_depth + 45],
+    );
+    let entry = cell_mode_cut(&nodes, [node_depth + 40; 8]);
+    assert_eq!(entry.wanted, [Some(top); 8]);
+    assert_eq!(entry.drawn, [Some(top); 8]);
+    assert_eq!(entry.required_levels(), vec![top]);
+    // A level below the node never draws: with only that one resident nothing is drawn, and
+    // the wanted depth stays in range.
+    let small = SpatialBounds::new(ORIGIN, ORIGIN.map(|v| v + SIDE / 4.0)).unwrap();
+    let small_depth = representative_depth(&dataset_grid(ORIGIN), small).saturating_sub(3);
+    assert!(small_depth >= 2, "{small_depth}");
+    let below = small_depth - 1;
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        CellCutNode {
+            bounds: small,
+            buildable: (below, small_depth + 5),
+            stored: vec![below, small_depth + 2],
+            resident: vec![below],
+        },
+    )]);
+    let entry = cell_mode_cut(&nodes, [small_depth; 8]);
+    assert_eq!(entry.wanted, [Some(small_depth); 8]);
+    assert_eq!(entry.drawn, [None; 8]);
+    // Octant mode would draw it.
+    let octant = cell_cut_with(
+        &ids(&[1]),
+        &|id| nodes.get(&id).cloned(),
+        &dataset_grid(ORIGIN),
+        LodMode::Octant,
+        &|_, _, _| small_depth + 2,
+    )
+    .unwrap();
+    assert_eq!(octant[0].drawn, [Some(below); 8]);
+}
+
+fn root_bounds() -> SpatialBounds {
+    SpatialBounds::new(ORIGIN, ORIGIN.map(|v| v + SIDE)).unwrap()
 }
