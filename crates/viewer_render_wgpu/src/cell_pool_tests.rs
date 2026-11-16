@@ -3573,3 +3573,32 @@ fn the_d5_gate_settles_within_hold_passes() {
     assert_eq!(plan.counters.hold_unsettled, 0);
     assert_ne!(mask_of(&plan, 2), [0; 8]);
 }
+
+#[test]
+fn a_retained_frame_keeps_the_d5_depth_its_record_was_written_with() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21]);
+    let mut rig = d5_pair();
+    seed_more(&mut rig, 1, &[4]);
+    let plan = d5_step_at(&mut rig, &cut, &cam, 1.0e6);
+    assert_eq!(plan.apply, CutApply::Applied);
+    assert_ne!(mask_of(&plan, 1), [0; 8]);
+    let applied = active_depths(&plan, &rig, 1);
+    assert!(applied.contains(&4), "{applied:?}");
+    // The sizes grow past the pool: the fit caps node 1 below the D5 depth and the frame
+    // overflows, so it retains the previous cut (masks are not rewritten).
+    rig.pool
+        .set_level_sizes(NodeId::new(1), &[(2, 300), (4, 600), (5, 600)]);
+    rig.pool
+        .set_level_sizes(NodeId::new(21), &[(6, 300), (7, 600)]);
+    let plan = d5_step_at(&mut rig, &cut, &cam, 64.0);
+    assert_eq!(
+        plan.apply,
+        CutApply::RetainedPrevious,
+        "setup {:?} {:?}",
+        plan.counters,
+        plan.entries
+    );
+    assert!(plan.mask_updates.is_empty());
+    assert_eq!(active_depths(&plan, &rig, 1), applied);
+}

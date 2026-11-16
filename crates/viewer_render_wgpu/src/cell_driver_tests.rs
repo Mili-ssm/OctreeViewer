@@ -1447,6 +1447,7 @@ fn reordered_level_requests_are_not_a_change() {
 #[test]
 fn anchors_follow_the_eye() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    fx.driver.set_lod_mode(crate::LodMode::Cell);
     let cam = camera("zoom");
     let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
     let slots: HashMap<u32, NodeId> = report
@@ -1522,8 +1523,30 @@ fn assert_anchors(fx: &Fixture, report: &FrameReport, origin: [f64; 3], eye: [f6
 }
 
 #[test]
+fn octant_mode_writes_no_record_when_only_the_eye_moves() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    let cam = camera("zoom");
+    let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
+    assert!(!report.plan.active.is_empty());
+    fx.gpu.record_writes.clear();
+    fx.gpu.eye = std::array::from_fn(|axis| cam.position()[axis] + [0.5, -0.25, 0.125][axis]);
+    let view = fx.view(&cam);
+    let report = fx
+        .driver
+        .frame(&mut fx.gpu, &ids(&CHILDREN), &view, 4.0)
+        .expect("frame");
+    assert!(report.plan.mask_updates.is_empty());
+    assert!(
+        fx.gpu.record_writes.is_empty(),
+        "{:?}",
+        fx.gpu.record_writes
+    );
+}
+
+#[test]
 fn anchors_follow_the_origin_and_the_scale() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    fx.driver.set_lod_mode(crate::LodMode::Cell);
     let cam = camera("zoom");
     let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
     assert!(!report.plan.active.is_empty());
@@ -1618,6 +1641,7 @@ fn records_are_rewritten_after_a_reset() {
 #[test]
 fn a_reused_mask_slot_gets_the_full_record_of_its_new_node() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    fx.driver.set_lod_mode(crate::LodMode::Cell);
     let cam = camera("zoom");
     let first = fx.run(40, &ids(&[2, 3]), &cam, 4.0);
     let first_slots: HashSet<u32> = first.plan.active.iter().map(|a| a.mask_slot).collect();

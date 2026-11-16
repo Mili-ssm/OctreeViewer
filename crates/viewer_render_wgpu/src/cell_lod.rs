@@ -8,9 +8,6 @@
 //! Integer cell coordinates are relative to the node corner: at depth `d` a cell's `rel` ranges
 //! over `[0, 2^(d - node_depth))`, and bit `i` of [`NodeLod::active`] is depth `node_depth + i`.
 
-// Nothing outside the tests calls it yet: the cut, picking and the GPU port arrive in later tasks.
-#![allow(dead_code)]
-
 use crate::OrbitCamera;
 use crate::camera::VERTICAL_FOV;
 use crate::cell_render::NODE_WORDS;

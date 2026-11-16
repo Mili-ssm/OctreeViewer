@@ -467,9 +467,9 @@ fn slot_word_index(half: u32, page: u32, word: u32) -> u32 {
     return 2u * frame.capacity + half * frame.capacity * 16u + page * 16u + word;
 }
 
-// Phase 2 writes its draw arguments after those of phase 1.
 const COUNTER_BASE: u32 = 10u;
 
+// Phase 2 writes its draw arguments after those of phase 1.
 fn args_base() -> u32 {
     return select(0u, 5u, PHASE == 2u);
 }
@@ -1211,8 +1211,8 @@ impl CellRenderer {
     }
 
     /// `Some` switches the slot pass to the per-cell decision of [`crate::cell_lod`] (`lod_mode`
-    /// 1); `None` keeps the octant-bit and mask test. Production callers keep `None` until the
-    /// cut is wired.
+    /// 1); `None` keeps the octant-bit and mask test. The driver passes `Some` in cell mode and
+    /// `None` in octant mode.
     pub(crate) fn set_lod_view(&mut self, view: Option<LodView>) {
         self.lod_view = view;
     }

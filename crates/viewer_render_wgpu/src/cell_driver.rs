@@ -1142,9 +1142,6 @@ impl CellDriver {
             frame.coordinate_origin,
             frame.visual_scale,
         );
-        // The anchors of the live slots follow the frame like the page origins do: a changed eye,
-        // origin or scale rewrites them below, after the records of this plan.
-        let anchors_stale = self.anchor_frame != Some(stamp);
         // A mode switch rewrites every record: a retained frame sends no `MaskUpdate`, and the
         // records of the other mode hold other active bits.
         let mode = self.pool.lod_mode();
@@ -1152,6 +1149,10 @@ impl CellDriver {
         // In cell mode the shader's active bits are the depths this frame emits for the node
         // (R3-Q21: a retained frame rebuilds the active list without a `MaskUpdate`).
         let cell_mode = mode == crate::LodMode::Cell;
+        // The anchors of the live slots follow the frame like the page origins do: a changed eye,
+        // origin or scale rewrites them below, after the records of this plan. Only cell mode
+        // reads them (a switch to it is covered by `mode_changed`).
+        let anchors_stale = cell_mode && self.anchor_frame != Some(stamp);
         let mut emitted: HashMap<u32, Vec<u8>> = HashMap::new();
         if cell_mode {
             for active in &plan.active {
