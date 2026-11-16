@@ -82,6 +82,10 @@ impl PayloadReadRange {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Conservative logical buffers for one selected read, not an RSS or allocator estimate.
+#[expect(
+    clippy::struct_field_names,
+    reason = "the `_bytes` suffix carries the unit"
+)]
 pub struct ReadMemoryEstimate {
     /// Total stored payload bytes read across the selection.
     stored_bytes: u64,

@@ -31,6 +31,11 @@ pub(crate) fn header_for_role(
     FormatIdentity { version, role }.to_header_bytes()
 }
 
+// `allow`, not `expect`: the lint fires only on 64-bit targets (wasm32 pointers are 4 bytes).
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "the layout hands out the magic as a shared `&'static` constant"
+)]
 pub(crate) fn footer_bytes(
     magic: &'static [u8; 8],
     index_offset: u64,
@@ -302,7 +307,7 @@ pub(crate) fn encode_index_values<W: Write>(
     match values {
         AttributeValues::U8(values) => index.write(values)?,
         AttributeValues::I8(values) => {
-            index.write(&values.iter().map(|v| *v as u8).collect::<Vec<_>>())?
+            index.write(&values.iter().map(|v| *v as u8).collect::<Vec<_>>())?;
         }
         AttributeValues::U16(values) => {
             for value in values {
@@ -363,6 +368,11 @@ pub(crate) fn attribute_type_tag(data_type: AttributeDataType) -> u8 {
     }
 }
 
+// `allow`, not `expect`: the lint fires only on 64-bit targets (wasm32 pointers are 4 bytes).
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "the layout hands out the magic as a shared reference"
+)]
 pub(crate) fn parse_split_footer(
     footer: &[u8; FOOTER_SIZE as usize],
     magic: &[u8; 8],
@@ -548,14 +558,14 @@ pub(crate) fn validate_column_codec(
         column.codec,
         BlockCodec::Constant | BlockCodec::Dictionary | BlockCodec::BytePlanes
     ) {
-        let width = if payload_index == 1 {
-            3
-        } else if payload_index > 1 {
-            let descriptor = &schema[payload_index - 2];
-            crate::layout::primitive_width(descriptor.data_type())
-                * u64::from(descriptor.component_count())
-        } else {
-            0
+        let width = match payload_index {
+            0 => 0,
+            1 => 3,
+            _ => {
+                let descriptor = &schema[payload_index - 2];
+                crate::layout::primitive_width(descriptor.data_type())
+                    * u64::from(descriptor.component_count())
+            }
         };
         if !layout.supports_dictionary()
             || payload_index == 0
@@ -662,7 +672,7 @@ pub(crate) fn parse_index(
         let spacing = if global { cursor.f64()? } else { 0.0 };
         let block_count = cursor.u32()?;
         let block_count_usize = block_count as usize;
-        if block_count as u64 > limits.max_blocks {
+        if u64::from(block_count) > limits.max_blocks {
             return Err(FormatError::CountLimit {
                 kind: "node block references",
                 requested: u64::from(block_count),
@@ -794,10 +804,10 @@ pub(crate) fn parse_index(
         let offset = cursor.u64()?;
         let payload_length = cursor.u64()?;
         let point_count = cursor.u64()?;
-        let geometry_encoding = if layout != StorageLayout::V5 {
-            GeometryEncoding::try_from(cursor.u8()?)?
-        } else {
+        let geometry_encoding = if layout == StorageLayout::V5 {
             GeometryEncoding::RawU32
+        } else {
+            GeometryEncoding::try_from(cursor.u8()?)?
         };
         if geometry_encoding == GeometryEncoding::Occupied && !layout.supports_occupancy() {
             return Err(FormatError::MalformedIndex(

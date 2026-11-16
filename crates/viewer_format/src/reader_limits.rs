@@ -21,6 +21,10 @@ const MAX_ATTRIBUTE_RANGES_DEFAULT: u64 = 1 << 23;
 /// The limit only matters for files from elsewhere or older writers with wider schemas;
 /// callers opening those must pass suitable limits to `FormatReader::with_limits`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "the `max_` prefix names each limit; renaming would change the public API"
+)]
 pub struct FormatReaderLimits {
     pub(crate) max_index_bytes: u64,
     pub(crate) max_block_bytes: u64,

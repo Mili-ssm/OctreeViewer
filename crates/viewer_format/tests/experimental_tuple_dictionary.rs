@@ -42,8 +42,8 @@ fn exact_columns_segments_and_bit_boundaries_roundtrip() {
         }
     }
     let bits = [
-        0x7ff8000000000001_u64,
-        0x7ff8000000000002,
+        0x7ff8_0000_0000_0001_u64,
+        0x7ff8_0000_0000_0002,
         0,
         1 << 63,
         u64::MAX,

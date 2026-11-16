@@ -151,7 +151,7 @@ fn external_payload_buffers_materialize_selected_results_and_reject_bad_inputs()
                 sync.read_geometry(BlockId::new(42)).unwrap().points()
             ),
             (ReadSelection::DisplayColors, SelectedRead::DisplayColors(colors)) => {
-                assert_eq!(colors, sync.read_display_colors(BlockId::new(42)).unwrap())
+                assert_eq!(colors, sync.read_display_colors(BlockId::new(42)).unwrap());
             }
             (ReadSelection::Attribute { schema_index }, SelectedRead::Attribute(column)) => {
                 assert_eq!(
@@ -159,7 +159,7 @@ fn external_payload_buffers_materialize_selected_results_and_reject_bad_inputs()
                     sync.read_attribute(BlockId::new(42), schema_index)
                         .unwrap()
                         .values()
-                )
+                );
             }
             _ => panic!("materialized variant does not match selection"),
         }
@@ -1423,7 +1423,7 @@ fn split_geometry_is_gray_and_selective_reads_do_not_touch_other_file() {
     let id = BlockId::new(42);
     assert!(!reader.has_attributes());
     let gray = reader.read_block(id).unwrap();
-    assert!(gray.attributes().is_empty());
+    assert_eq!(gray.attributes(), []);
     assert!(
         gray.points()
             .points()

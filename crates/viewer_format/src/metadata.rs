@@ -58,6 +58,7 @@ impl FormatMetadata {
 
     /// Attaches the LAS Extra Bytes descriptors (`v7.5-pre` only; other versions do not store
     /// them). The last `descriptors.len()` schema columns are their columns, in order.
+    #[must_use]
     pub fn with_las_extra_bytes(mut self, descriptors: Vec<LasExtraByte>) -> Self {
         self.las_extra_bytes = descriptors;
         self
@@ -245,6 +246,7 @@ impl SourcePointBlock {
         self.id
     }
 
+    #[must_use]
     pub fn with_id(mut self, id: viewer_core::BlockId) -> Self {
         self.id = id;
         self

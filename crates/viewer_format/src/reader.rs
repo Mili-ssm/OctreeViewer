@@ -678,11 +678,16 @@ impl<R: Read + Seek> IndexedReader<R> {
     }
 
     /// Materializes a plan from externally fetched stored payload buffers. No file I/O occurs.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "consuming the plan and buffers keeps a plan from being materialized twice"
+    )]
     pub fn materialize_selected_from_buffers(
         &self,
         plan: crate::ReadPlan,
         buffers: Vec<Vec<u8>>,
     ) -> Result<crate::SelectedRead, FormatError> {
+        use crate::{ReadSelection as S, SelectedRead as O};
         if !Arc::ptr_eq(&plan.owner, &self.plan_owner) {
             return Err(FormatError::PlanReaderMismatch);
         }
@@ -728,7 +733,6 @@ impl<R: Read + Seek> IndexedReader<R> {
         }
         let count =
             usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
-        use crate::{ReadSelection as S, SelectedRead as O};
         Ok(match selection {
             S::Positions => {
                 let mut c = SliceCursor::new(&decoded[0]);
@@ -853,6 +857,10 @@ impl<R: Read + Seek> IndexedReader<R> {
         self.complete_reserved_read(plan, reservation)
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "consuming the plan and reservation keeps both single-use"
+    )]
     fn complete_reserved_read(
         &mut self,
         plan: crate::ReadPlan,
@@ -981,7 +989,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             .map_err(|_| FormatError::AllocationFailed(count))?;
         let mut cursor = SliceCursor::new(&raw);
         self.decode_global_geometry(&mut cursor, &entry, cell, count, |exact, _| {
-            quanta.push(exact)
+            quanta.push(exact);
         })?;
         Ok(quanta)
     }
@@ -1000,7 +1008,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                 .try_reserve_exact(point_count)
                 .map_err(|_| FormatError::AllocationFailed(point_bytes))?;
             self.decode_global_geometry(cursor, entry, cell, point_count, |_, local| {
-                points.push(Point::new(local, ColorRgb::new(160, 160, 160)))
+                points.push(Point::new(local, ColorRgb::new(160, 160, 160)));
             })?;
             return Ok(PointBatch::new(points));
         }
@@ -1117,7 +1125,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         Ok(AttributeColumn::new(descriptor, values, count)?)
     }
 
-    /// Resolves (block_id, row_id) to the requested attribute components.
+    /// Resolves (`block_id`, `row_id`) to the requested attribute components.
     /// Compression granularity is one column per block, so this decodes that whole column.
     pub fn read_attribute_row(
         &mut self,

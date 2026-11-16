@@ -109,7 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut state = 123_u32;
             let raw: Vec<_> = (0..rows * width)
                 .map(|_| {
-                    state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
                     (state >> 24) as u8
                 })
                 .collect();

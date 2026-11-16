@@ -1,5 +1,5 @@
 //! Compare selective-read checksums with 1/2/4 readers. Timings are observations, not speedup
-//! claims; request/catalog vectors are outside ReadBudget, as are runtime metadata and RSS.
+//! claims; request/catalog vectors are outside `ReadBudget`, as are runtime metadata and RSS.
 
 use std::{
     fs::File,

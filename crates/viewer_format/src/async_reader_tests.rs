@@ -200,12 +200,16 @@ fn reads_monolithic_and_split_match_synchronous_values() {
                     .read(ID, selection)
                     .await
                     .unwrap_or_else(|error| panic!("split={split} {selection:?}: {error}"));
+                #[expect(
+                    clippy::match_same_arms,
+                    reason = "each arm binds a different payload type"
+                )]
                 match (selection, result.selected()) {
                     (ReadSelection::Positions, SelectedRead::Positions(points)) => {
-                        assert_eq!(points.len(), 3)
+                        assert_eq!(points.len(), 3);
                     }
                     (ReadSelection::Geometry, SelectedRead::Geometry(points)) => {
-                        assert_eq!(points.len(), 3)
+                        assert_eq!(points.len(), 3);
                     }
                     (ReadSelection::DisplayColors, SelectedRead::DisplayColors(colors)) => {
                         assert_eq!(
@@ -215,7 +219,7 @@ fn reads_monolithic_and_split_match_synchronous_values() {
                                 ColorRgb::new(40, 50, 60),
                                 ColorRgb::new(250, 251, 252)
                             ]
-                        )
+                        );
                     }
                     (ReadSelection::Attribute { .. }, SelectedRead::Attribute(column)) => {
                         match column.values() {

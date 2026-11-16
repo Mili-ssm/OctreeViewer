@@ -38,22 +38,26 @@ fn grow(size: usize) {
 unsafe impl GlobalAlloc for PeakAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         grow(layout.size());
+        // SAFETY: the caller upholds the `GlobalAlloc` contract for `layout`, and the call is forwarded unchanged to `System`.
         unsafe { System.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+        // SAFETY: `ptr` was allocated by this allocator, i.e. by `System` with the same `layout`, and the caller upholds the rest of the `GlobalAlloc` contract.
         unsafe { System.dealloc(ptr, layout) }
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         grow(layout.size());
+        // SAFETY: the caller upholds the `GlobalAlloc` contract for `layout`, and the call is forwarded unchanged to `System`.
         unsafe { System.alloc_zeroed(layout) }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
         grow(new_size);
+        // SAFETY: `ptr` was allocated by this allocator, i.e. by `System` with the same `layout`, and the caller upholds the rest of the `GlobalAlloc` contract.
         unsafe { System.realloc(ptr, layout, new_size) }
     }
 }
@@ -135,7 +139,9 @@ fn index_len(file: &[u8]) -> usize {
 #[test]
 #[ignore = "slow: ~70 s; run to reproduce the amplification table"]
 fn worst_case_index_parse_amplification() {
-    let _measure = MEASURE.lock().unwrap_or_else(|e| e.into_inner());
+    let _measure = MEASURE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     for target_mib in [4_usize, 32, 128] {
         // About 1.6 KiB of index per node at 256 attributes.
         let nodes = (target_mib * 1024 * 1024 / 1_630) as u64;
@@ -173,7 +179,9 @@ fn peak_of_open(file: &[u8], limits: FormatReaderLimits) -> (usize, Result<(), F
 
 #[test]
 fn range_bound_rejects_before_allocating_ranges() {
-    let _measure = MEASURE.lock().unwrap_or_else(|e| e.into_inner());
+    let _measure = MEASURE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let file = small_worst_case();
     let index = index_len(&file);
 

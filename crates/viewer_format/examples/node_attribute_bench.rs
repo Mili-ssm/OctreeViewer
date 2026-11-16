@@ -396,7 +396,7 @@ fn main() -> Result<()> {
     if max_blocks == 0 || repetitions == 0 {
         return Err("positive limits required".into());
     }
-    let mut rules = rule_specs(args.get(4).map(String::as_str).unwrap_or(""))?;
+    let mut rules = rule_specs(args.get(4).map_or("", String::as_str))?;
     fs::create_dir(&output)?;
     let mut totals: [[Totals; 2]; 2] =
         std::array::from_fn(|_| std::array::from_fn(|_| Totals::default()));

@@ -560,12 +560,6 @@ fn open_costs_one_tail_read_and_no_header_read() {
 /// page is read; nodes are compared by (level, prefix), not by `NodeId`.
 #[test]
 fn all_pages_read_equals_v7_4_by_level_and_prefix() {
-    let tree = random_tree(77, 8, 14);
-    let (old, old_attributes) = write_pair(V74, &tree, None);
-    let (new, new_attributes) = write_pair(V75, &tree, Some(4_000));
-    let mut old_reader = open_pair(old.clone(), old_attributes);
-    let mut new_reader = open_pair(new.clone(), new_attributes);
-
     type Summary = (
         u64,
         u64,
@@ -574,6 +568,13 @@ fn all_pages_read_equals_v7_4_by_level_and_prefix() {
         f64,
         Vec<viewer_format::NodeAttributeRange>,
     );
+
+    let tree = random_tree(77, 8, 14);
+    let (old, old_attributes) = write_pair(V74, &tree, None);
+    let (new, new_attributes) = write_pair(V75, &tree, Some(4_000));
+    let mut old_reader = open_pair(old.clone(), old_attributes);
+    let mut new_reader = open_pair(new.clone(), new_attributes);
+
     let summarize = |reader: &FormatReader<Cursor<Vec<u8>>>| {
         let metadata = reader.format_metadata();
         let frame = metadata.global_frame().unwrap();
@@ -674,9 +675,11 @@ fn paged_index_is_at_least_30_percent_smaller_than_v7_4() {
         all_pages(&mut r)
             .iter()
             .flat_map(|(p, _)| {
-                p.nodes()
-                    .iter()
-                    .flat_map(|n| n.blocks().iter().map(|b| b.payload_length()))
+                p.nodes().iter().flat_map(|n| {
+                    n.blocks()
+                        .iter()
+                        .map(viewer_format::PageBlock::payload_length)
+                })
             })
             .sum()
     };
@@ -1055,7 +1058,7 @@ fn lazy_reader_grows_to_the_eager_hierarchy_and_serves_resident_blocks() {
                 .unwrap()
                 .bounds(),
         )
-        .map(|n| n.id())
+        .map(viewer_core::SpatialNode::id)
         .collect::<Vec<_>>()
     {
         let (a, b) = (
@@ -1098,7 +1101,7 @@ fn lazy_attribute_range_covers_pages_that_are_not_loaded() {
     let eager = open_pair(primary.clone(), attributes);
     let lazy =
         FormatReader::open_lazy(Cursor::new(primary), FormatReaderLimits::default()).unwrap();
-    assert!(!lazy.page_source().unwrap().root_unloaded().is_empty());
+    assert_ne!(lazy.page_source().unwrap().root_unloaded(), []);
     let expected = eager.attribute_range(0, 0).unwrap();
     assert!(expected.is_some());
     assert_eq!(lazy.attribute_range(0, 0).unwrap(), expected);
@@ -1147,7 +1150,7 @@ fn reference_spacing_is_stored_and_stable_while_pages_are_grafted() {
     let source = std::sync::Arc::clone(lazy.page_source().unwrap());
     assert_eq!(source.reference_spacing(), expected);
     let mut pending: Vec<NodeId> = source.root_unloaded().to_vec();
-    assert!(!pending.is_empty());
+    assert_ne!(pending, [] as [viewer_core::NodeId; 0]);
     while let Some(anchor) = pending.pop() {
         pending.extend(lazy.read_page(anchor).unwrap().unloaded);
         assert_eq!(source.reference_spacing(), expected);

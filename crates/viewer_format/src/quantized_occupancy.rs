@@ -16,7 +16,7 @@ pub enum QuantizedOccupancyError {
 
 /// Splits the original quantized u32 values into occupied cells and packed low bits.
 ///
-/// Cells use the biased code space `i32::MIN + (q >> residual_bits)`, rooted at i32::MIN
+/// Cells use the biased code space `i32::MIN + (q >> residual_bits)`, rooted at `i32::MIN`
 /// with depth `32 - residual_bits`. This is not a physical cube, CRS or common dataset grid:
 /// the original per-axis affine scales may differ or be zero. Input row identity is retained.
 /// The original coordinate vector and attributes are not retained. At 32 residual bits,
@@ -246,7 +246,7 @@ mod tests {
             let empty = quantize_local_positions(&[], 0.0).unwrap();
             let candidate = QuantizedOccupancy::new(&empty, bits).unwrap();
             assert_eq!(candidate.index().leaf_count(), 0);
-            assert!(candidate.residual_bytes().is_empty());
+            assert_eq!(candidate.residual_bytes(), []);
             assert_eq!(candidate.reconstruct(), empty);
             let identical = fixture(vec![[u32::MAX; 3]; 5]);
             let candidate = QuantizedOccupancy::new(&identical, bits).unwrap();

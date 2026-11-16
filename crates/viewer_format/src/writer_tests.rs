@@ -371,7 +371,7 @@ fn writer_contract_supports_dyn_ingestion_pair_finalization_and_reader_roundtrip
             .node(NodeId::new(0))
             .is_some()
     );
-    assert!(!direct_primary.is_empty());
+    assert_ne!(direct_primary, [] as [u8; 0]);
 }
 
 #[test]
@@ -422,7 +422,7 @@ fn prepared_block_from_another_version_is_rejected_without_poisoning_writer() {
     ));
     assert_eq!(writer.format_version(), FormatVersion::V6_PRE1);
     writer.write_block(sample_block()).unwrap();
-    assert!(!writer.finish().unwrap().into_inner().is_empty());
+    assert_ne!(writer.finish().unwrap().into_inner(), [] as [u8; 0]);
 }
 
 #[test]

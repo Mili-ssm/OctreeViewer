@@ -354,6 +354,10 @@ impl Seek for GatedReader {
     }
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "callers hand over the bytes; the helper clones them per reader"
+)]
 fn parallel_readers(bytes: Vec<u8>, count: usize) -> Vec<FormatReader<Cursor<Vec<u8>>>> {
     let base = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
     let mut readers = Vec::with_capacity(count);
@@ -543,13 +547,13 @@ fn parallel_reads_deliver_in_order_with_one_or_two_readers() {
             delivered.push(index);
             match (index, result) {
                 (0, SelectedRead::DisplayColors(colors)) => {
-                    assert_eq!(colors.as_slice(), COLORS.as_slice())
+                    assert_eq!(colors.as_slice(), COLORS.as_slice());
                 }
                 (1, SelectedRead::Positions(points)) => {
-                    assert_eq!(points.len(), POINTS.len())
+                    assert_eq!(points.len(), POINTS.len());
                 }
                 (2, SelectedRead::Attribute(column)) => {
-                    assert_values_bits_eq(column.values(), fixture_attributes()[6].values())
+                    assert_values_bits_eq(column.values(), fixture_attributes()[6].values());
                 }
                 (3, SelectedRead::Geometry(points)) => {
                     assert_eq!(points.len(), POINTS.len());
@@ -960,7 +964,7 @@ fn read_plans_are_selective_io_free_and_match_selected_payload_ranges() {
                         ReadSource::Primary
                     };
                     let preceding_bytes = if split {
-                        let start = if payload_index == 0 { 0 } else { 1 };
+                        let start = usize::from(payload_index != 0);
                         payload_stats[start..payload_index]
                             .iter()
                             .map(|payload| payload.stored_bytes)
@@ -1645,10 +1649,10 @@ fn pre2_physically_selects_occupied_arrays_and_preserves_every_payload_row() {
         };
         assert_eq!(
             reader.block_storage_stats().unwrap()[0].geometry_encoding,
-            if version != FormatVersion::V6_PRE2 {
-                GeometryEncoding::CompactOccupied
-            } else {
+            if version == FormatVersion::V6_PRE2 {
                 GeometryEncoding::Occupied
+            } else {
+                GeometryEncoding::CompactOccupied
             }
         );
         let geometry_plan = reader
@@ -1763,7 +1767,7 @@ fn pre2_sidecars_prepared_blocks_and_forks_keep_exact_revision_identity() {
 
 fn pre3_fixture() -> (SourcePointBlock, FormatMetadata) {
     let rows = 4096;
-    let mut state = 0x91ab032f_u32;
+    let mut state = 0x91ab_032f_u32;
     let indices: Vec<usize> = (0..rows)
         .map(|_| {
             state ^= state << 13;
@@ -1788,7 +1792,7 @@ fn pre3_fixture() -> (SourcePointBlock, FormatMetadata) {
             AttributeDescriptor::new("constant_nan_vector", AttributeDataType::F64, 2).unwrap(),
             AttributeValues::F64(
                 (0..rows)
-                    .flat_map(|_| [f64::from_bits(0x7ff8000000000042), -0.0])
+                    .flat_map(|_| [f64::from_bits(0x7ff8_0000_0000_0042), -0.0])
                     .collect(),
             ),
             rows,
@@ -1966,8 +1970,8 @@ fn pre4_byte_planes_are_selective_exact_and_rejected_by_older_revisions() {
         let values = AttributeValues::F64(
             (0..rows)
                 .map(|_| {
-                    state = state.wrapping_mul(1664525).wrapping_add(1013904223);
-                    f64::from_bits(0x7ff8000000000000 | u64::from(state))
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    f64::from_bits(0x7ff8_0000_0000_0000 | u64::from(state))
                 })
                 .collect(),
         );

@@ -28,8 +28,5 @@ required-features = ["experimental"]
 name = "node_attribute_bench"
 required-features = ["experimental"]
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
-
-[lints.clippy]
-disallowed_methods = "deny"
+[lints]
+workspace = true
