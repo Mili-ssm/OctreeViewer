@@ -501,6 +501,7 @@ struct FrameInfo {
     uploaded_pages: usize,
     built: usize,
     deferred: usize,
+    nodes_deferred: usize,
     max_gap: u32,
     dtf: bool,
     digest: u64,
@@ -1258,6 +1259,7 @@ impl Harness {
             uploaded_pages: out.update.report.uploaded_pages,
             built: stats.built_nodes.len(),
             deferred: stats.build_deferred,
+            nodes_deferred: stats.nodes_deferred,
             max_gap: stats.max_gap,
             dtf: stats.descendant_too_fine,
             digest,
@@ -1607,7 +1609,8 @@ fn synthetic_build_cap_defers_without_waiting_for_the_camera_in(mode: LodMode) {
             break;
         }
         let info = capped.frame(&view);
-        deferred_frames += usize::from(info.deferred > 0);
+        // `deferred` also counts the level backlog; only node deferral is compared with builds.
+        deferred_frames += usize::from(info.nodes_deferred > 0);
         builds += info.built;
     }
     capped.report("synthetic capped builds");

@@ -991,6 +991,7 @@ impl InProcessCells {
             let plan_stats = CellPlanStats {
                 built_nodes: stats.built_nodes,
                 build_deferred: stats.build_deferred,
+                nodes_deferred: stats.nodes_deferred,
                 build_capped: stats.build_capped,
                 build_ms: stats.build_ms,
                 cut_nodes: stats.cut_nodes,
