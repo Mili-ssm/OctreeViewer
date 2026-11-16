@@ -193,9 +193,9 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 **Interfaces:**
 - Produces: `LodCounters { per_depth: [u32; 64] }` (drawn cells by absolute depth), filled only when `FrameUniform.counters != 0`; `CellRenderer::read_lod_counters(&self, device, queue) -> LodCounters`.
 
-- [ ] **Step 1:** test `lod_counters_count_drawn_cells_per_depth` (equals the twin tally) → FAIL.
-- [ ] **Step 2:** implement → PASS; counters off costs no atomics (branch on the uniform).
-- [ ] **Step 3:** commit `feat(render): count drawn cells per depth on the GPU`.
+- [x] **Step 1:** test `lod_counters_count_drawn_cells_per_depth` (equals the twin tally) → FAIL.
+- [x] **Step 2:** implement → PASS; counters off costs no atomics (branch on the uniform).
+- [x] **Step 3:** commit `feat(render): count drawn cells per depth on the GPU`.
 
 ### Task 9: Driver and picking in cell mode
 
