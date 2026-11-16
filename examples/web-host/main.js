@@ -656,6 +656,8 @@ function handleWorkerMessage(event) {
             ? `GPU device recovered (attempt ${data.attempt})`
             : `GPU device lost: recovering (attempt ${data.attempt})…`;
         if (data.state === "recovered") wakeRendering();
+    } else if (data.type === "warning") {
+        console.warn(`${data.operation}: ${data.message}`);
     } else if (data.type === "error") {
         loadingFile = false;
         observedRefinementId = requestedRefinementId;

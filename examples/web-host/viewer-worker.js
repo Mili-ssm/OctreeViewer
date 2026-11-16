@@ -1542,7 +1542,12 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 advanceSceneGeneration();
                 break;
             case "setCellLod":
-                applyCellLod(data.mode);
+                // A rejected mode is a warning, not an error: the host keeps rendering in the old one.
+                try {
+                    applyCellLod(data.mode);
+                } catch (error) {
+                    self.postMessage({ type: "warning", operation: "setCellLod", message: String(error) });
+                }
                 break;
             case "metrics":
                 if (data.reset) resetWorkerMetrics();

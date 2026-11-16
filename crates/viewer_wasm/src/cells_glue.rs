@@ -892,6 +892,7 @@ impl InProcessCells {
     pub(crate) fn set_lod_mode(&mut self, mode: LodMode) {
         self.lod_mode = mode;
         self.dirty = true;
+        *self.probe.get_mut() = CutRestProbe::default();
     }
 
     pub(crate) fn pending_pages(&self) -> &[NodeId] {

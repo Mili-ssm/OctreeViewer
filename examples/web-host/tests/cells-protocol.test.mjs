@@ -506,7 +506,9 @@ test("the setCellLod command reaches the viewer, an unknown mode is rejected and
     await render.send("setCellLod", { mode: "cell" });
     const errorsBefore = render.messages.filter(m => m.type === "error").length;
     await render.send("setCellLod", { mode: "bogus" });
-    const rejected = render.messages.filter(m => m.type === "error").slice(errorsBefore);
+    // Top-level path: a warning, so the page keeps rendering; no error message.
+    assert.equal(render.messages.filter(m => m.type === "error").length, errorsBefore);
+    const rejected = render.messages.filter(m => m.type === "warning");
     assert.equal(rejected.length, 1);
     assert.equal(rejected[0].operation, "setCellLod");
     const callsBeforeLoss = render.calls("setCellLod").length;

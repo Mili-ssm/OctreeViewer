@@ -1680,7 +1680,6 @@ fn cell_mode_bands_follow_the_distance() {
         let nearest = nearest_node.expect("the view axis crosses the cut");
         let depths = &per_node[&nearest];
         let distinct: HashSet<u8> = depths.iter().copied().collect();
-        println!("distance {distance}: nearest node {nearest:?} draws {distinct:?}");
         // Far away a node is one band; at the closest distance the first node entered is a
         // single deep band (observed: 33); in between it must show at least two depths.
         assert!(
@@ -1697,8 +1696,6 @@ fn cell_mode_bands_follow_the_distance() {
             banded_nodes += usize::from(distinct.len() > 1);
         }
     }
-    println!("cell-mode bands: {banded_nodes} node views with more than one drawn depth");
-    println!("cell-mode counters: {:?}", h.cell_counters);
     assert!(banded_nodes > 0, "the zoom never produced a band");
 }
 

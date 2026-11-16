@@ -324,7 +324,6 @@ fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject, m
         let mut sim =
             GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, *seed, cap).in_mode(mode);
         let digest = sim.run(&views, inject, 200_000);
-        println!("glue {name} seed {seed} {mode:?}: {:?}", sim.stats);
         assert_eq!(digest, expected, "{name} seed {seed} {mode:?}");
         assert!(sim.stats.node_messages > 0);
         reports += sim.stats.missing_reports;
@@ -576,8 +575,8 @@ fn in_process_updates(
     target: &mut StrictTarget,
     view: &ViewProjection,
     max: usize,
-) {
-    for _ in 0..max {
+) -> usize {
+    for round in 1..=max {
         target.eye = view.camera().position();
         let (blocks, pages) = (&mut h.blocks, &mut h.pages);
         cells
@@ -594,9 +593,10 @@ fn in_process_updates(
             )
             .unwrap();
         if cells.stats(&h.dataset, target).cut_digest_at_rest.is_some() {
-            return;
+            return round;
         }
     }
+    max
 }
 
 #[test]
@@ -614,7 +614,10 @@ fn switching_mode_rewrites_the_page_table() {
         let (records, tables) = (target.records_written, target.tables_written);
         cells.set_lod_mode(mode);
         assert!(cells.is_dirty(), "{mode:?}: the switch asks for a frame");
-        in_process_updates(&mut h, &mut cells, &mut target, view, 20_000);
+        let rounds = in_process_updates(&mut h, &mut cells, &mut target, view, 20_000);
+        // The rest probe was reset by the switch: a digest needs two equal reads of post-switch
+        // frames, so a stale one from before the switch cannot be published at once.
+        assert!(rounds >= 2, "{mode:?}: digest at rest after {rounds} round");
         assert!(
             target.tables_written > tables,
             "{mode:?}: no new page table"
@@ -1377,10 +1380,6 @@ fn glue_real_case(
     for seed in seeds {
         let mut sim = GlueSim::new(open().unwrap(), budget, *seed, 4 << 20).in_mode(mode);
         let digest = sim.run(&views, inject, 400_000);
-        println!(
-            "belvedere glue {name} seed {seed} {mode:?}: {digest} in-process {expected} {:?}",
-            sim.stats
-        );
         assert_eq!(
             digest, expected,
             "belvedere glue {name} seed {seed} {mode:?}"

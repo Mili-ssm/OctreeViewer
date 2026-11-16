@@ -85,13 +85,15 @@ report. Run both modes on the same file, serving the repository root on a free p
 ```bash
 PORT=8791 scripts/serve-demo.sh --no-build &
 for mode in octant cell; do
-  node examples/web-host/probe-cells-parity.mjs data/samples/fs_e430_n4008_18.oct target/cells-parity-$mode.json \
+  node examples/web-host/probe-cells-parity.mjs target/render-data/belvedere-v7.oct target/cells-parity-$mode.json \
     --url=http://127.0.0.1:8791/examples/web-host/index.html --cell-lod=$mode --rest-timeout-s=120
 done
 ```
 
-The input must be a current-format V7 file, or the dataset fails to open. The probe takes a file, not the
-built-in demo sample. Kill the server and browsers when done.
+The probe needs a V7 file (the Belvedere one above): a V5 file such as `data/samples/fs_e430_n4008_18.oct`
+(header `OCTVFRM1 0500`) does not reach the cells path, so `--cell-lod=cell` would change nothing. The probe
+takes a file, not the built-in demo sample. Its final `gate`/`parity` summary is written to the report
+(a lookup bug, `arm.name` instead of `arm.arm`, kept it out before). Kill the server and browsers when done.
 
 ### Progress statistics regression
 
