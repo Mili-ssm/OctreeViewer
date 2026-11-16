@@ -580,7 +580,7 @@ fn in_process_drawn_depths(max_level_builds: usize) -> (u8, usize, u64) {
 }
 
 #[test]
-fn in_process_cells_serve_a_level_request() {
+fn update_cells_staged_serves_a_level_request() {
     // Without level builds a requested depth the nodes did not ship is never available: the cut
     // draws only what the chains hold.
     let (deepest_without, _, bytes_without) = in_process_drawn_depths(0);
@@ -605,6 +605,13 @@ struct Pair {
     viewer: ViewerCells,
     target: StrictTarget,
     view: ViewProjection,
+    target_px: f64,
+    /// Every (node, depth) the builder shipped through the level path, in order.
+    shipped_levels: Vec<(NodeId, u8)>,
+    /// Every (node, depth) of the chains the builder shipped as nodes.
+    shipped_chains: Vec<(NodeId, u8)>,
+    /// The last frame report of `pump` that drew.
+    last_report: Option<viewer_render_wgpu::FrameReport>,
 }
 
 impl Pair {
@@ -629,6 +636,10 @@ impl Pair {
             h,
             target,
             view,
+            target_px: 2.0,
+            shipped_levels: Vec::new(),
+            shipped_chains: Vec::new(),
+            last_report: None,
         }
     }
 
@@ -638,7 +649,7 @@ impl Pair {
             .plan(
                 &mut self.h.dataset,
                 &self.view,
-                2.0,
+                self.target_px,
                 true,
                 false,
                 Some(&mut ()),
@@ -674,6 +685,9 @@ impl Pair {
             let out = self.plan();
             for node in &out.nodes {
                 nodes.push((out.generation, node.bytes.clone()));
+                let chain = decode_node_levels(&node.bytes).unwrap();
+                self.shipped_chains
+                    .extend(chain.levels.iter().map(|level| (chain.id, level.depth)));
                 if deliver {
                     self.viewer
                         .push_node(out.generation, node.bytes.clone())
@@ -682,6 +696,9 @@ impl Pair {
             }
             if deliver {
                 for node in &out.levels {
+                    let levels = decode_node_levels(&node.bytes).unwrap();
+                    self.shipped_levels
+                        .extend(levels.levels.iter().map(|level| (levels.id, level.depth)));
                     self.viewer
                         .push_levels(out.generation, node.bytes.clone())
                         .unwrap();
@@ -696,7 +713,7 @@ impl Pair {
                         out.cut,
                         out.support,
                         true,
-                        2.0,
+                        self.target_px,
                     );
                 }
                 return nodes;
@@ -777,7 +794,9 @@ impl Pair {
 
     fn pump(&mut self) {
         for frame in 0..500 {
-            self.viewer.frame(&mut self.target, &self.view).unwrap();
+            if let Some(report) = self.viewer.frame(&mut self.target, &self.view).unwrap() {
+                self.last_report = Some(report);
+            }
             if !self.viewer.cells_busy(&self.target) {
                 return;
             }
@@ -789,6 +808,116 @@ impl Pair {
     fn rest(&self) -> Option<u64> {
         let _ = self.viewer.cut_digest_at_rest(&self.target);
         self.viewer.cut_digest_at_rest(&self.target)
+    }
+}
+
+/// A leaf of 100 close pairs on a coarse lattice: the cell count stays at 100 from the lattice
+/// spacing down to the pair gap, so `chain_keep_mask` drops every coarse level (#35).
+fn close_pair_leaf() -> Harness {
+    let bounds = SpatialBounds::new([0.0; 3], [SIDE; 3]).unwrap();
+    let node = SpatialNode::new(
+        NodeId::new(1),
+        None,
+        0,
+        bounds,
+        200,
+        0.0,
+        vec![BlockId::new(101)],
+    )
+    .unwrap();
+    let dataset = octree_dataset(vec![node], HierarchySemantics::Replacement, true);
+    let mut points = Vec::new();
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..4 {
+                let at = [x, y, z].map(|i| 6.0 + 12.0 * f64::from(i));
+                for gap in [0.0, 0.01] {
+                    points.push(Point::new(
+                        [(at[0] + gap) as f32, at[1] as f32, at[2] as f32],
+                        ColorRgb::new(10, 120, 200),
+                    ));
+                }
+            }
+        }
+    }
+    let block = PointBlock::new(BlockId::new(101), PointBatch::new(points), Vec::new());
+    Harness::new(
+        dataset,
+        4.0,
+        Box::new(move |_| Ok(Some(block.clone()))),
+        Box::new(|_| Err("no pages".into())),
+    )
+}
+
+#[test]
+fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
+    use viewer_render_wgpu::{NodeCellSource, PointNodeCellSource, octant_wanted_depth};
+    let id = NodeId::new(1);
+    let target_px = 4.0;
+    let mut pair = Pair::with_harness(close_pair_leaf());
+    pair.target_px = target_px;
+    let c = SIDE / 2.0;
+    pair.view = synth_view([c + 4.0 * SIDE, c + 0.5 * SIDE, c + 1.0 * SIDE], [c; 3]);
+    pair.target.eye = pair.view.camera().position();
+
+    // The oracle: the depth the full, unpruned chain draws, per octant.
+    let grid = pair.h.dataset.cell_grid();
+    let origin = pair.h.dataset.coordinate_origin();
+    let bounds = pair
+        .h
+        .dataset
+        .metadata
+        .hierarchy()
+        .node(id)
+        .unwrap()
+        .bounds();
+    let block = (pair.h.blocks)(BlockId::new(101)).unwrap().unwrap();
+    let full = PointNodeCellSource { min_growth: 1.0 }
+        .node_cells(&grid, id, bounds, None, true, &[block])
+        .unwrap();
+    let full_depths: Vec<u8> = full.levels.iter().map(|level| level.depth).collect();
+    let expected: Vec<u8> = (0..8)
+        .map(|octant| {
+            octant_wanted_depth(
+                &pair.view,
+                &grid,
+                origin,
+                bounds,
+                octant,
+                full.buildable,
+                target_px,
+            )
+        })
+        .collect();
+
+    pair.send(0, true);
+    pair.pump();
+    let report = pair.last_report.take().expect("a frame drew");
+    let entry = report.plan.entries.iter().find(|e| e.node == id).unwrap();
+    let drawn: Vec<u8> = entry.drawn.iter().flatten().copied().collect();
+    assert!(!drawn.is_empty(), "the leaf is drawn");
+
+    // The pruned chain the node shipped, and the levels shipped on demand.
+    let pruned: Vec<u8> = pair
+        .shipped_chains
+        .iter()
+        .filter(|(node, _)| *node == id)
+        .map(|(_, depth)| *depth)
+        .collect();
+    assert!(!pruned.is_empty(), "the node was shipped");
+    for (octant, depth) in entry.drawn.iter().enumerate() {
+        let Some(depth) = depth else { continue };
+        assert_eq!(*depth, expected[octant], "octant {octant}: drawn {drawn:?}");
+        assert!(full_depths.contains(depth), "full chain {full_depths:?}");
+        assert!(
+            !pruned.contains(depth),
+            "depth {depth} is absent from the pruned chain {pruned:?}"
+        );
+        assert!(
+            pair.shipped_levels.contains(&(id, *depth)),
+            "depth {depth} shipped on demand: {:?}",
+            pair.shipped_levels
+        );
     }
 }
 

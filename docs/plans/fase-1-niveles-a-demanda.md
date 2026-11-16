@@ -153,7 +153,7 @@ in-process path wires the same calls without workers. Per-octant selection (ADR 
 
 **Interfaces:**
 - Consumes: Tasks 4–5.
-- Produces: render → build `levelRequests{gen, cutEpoch, requests: Uint32Array}` (pairs node-id low/high + depth, or the encoding the existing `evict` message uses for node ids); build → render `nodeLevels{gen, generation, buffers}` (transfer list = buffers).
+- Produces: render → build `levelRequests{gen, nodes: BigUint64Array, depths: Uint8Array}` (parallel arrays, one entry per requested (node, depth); there is no `cutEpoch`); build → render `nodeLevels{gen, generation, buffers}` (transfer list = buffers).
 
 - [ ] **Step 1: Write the failing tests** in `cells-protocol.test.mjs`:
   - `levelRequests are forwarded after evict and ack, latest set wins when coalesced`.
