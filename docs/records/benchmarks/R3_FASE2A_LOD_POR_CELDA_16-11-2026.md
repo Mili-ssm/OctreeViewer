@@ -1,12 +1,12 @@
 # R3 fase 2a: selección por celda en la GPU — 16-11-2026
 
-**Estado: borrador del implementador; la sección «Navegador» la rellena el controlador.** La puerta de partición de la GPU pasa (0 huecos y 0 dobles en dos adaptadores), los tests de extremo a extremo con el controlador llegan a D5 sin errores y el modo `cell` dibuja igual o menos instancias que `octant` en los casos nativos medidos (hasta −39 % en la órbita a 1 px de Belvedere). El probe de navegador da el mismo resumen del corte en ambos modos en Belvedere; no compara píxeles.
+**Estado: cerrado (16-11-2026).** La puerta de partición de la GPU pasa (0 huecos y 0 dobles en dos adaptadores), los tests de extremo a extremo con el controlador llegan a D5 sin errores y el modo `cell` dibuja igual o menos instancias que `octant` en los casos nativos medidos (hasta −39 % en la órbita a 1 px de Belvedere). El probe de navegador da el mismo resumen del corte en ambos modos en Belvedere; no compara píxeles.
 
 Plan: [fase 2a](../../plans/fase-2a-lod-por-celda-en-gpu.md). Métrica: [R3_FASE2A_METRICA_16-11-2026.md](R3_FASE2A_METRICA_16-11-2026.md). Regla y opción: [REGIONAL_VOXEL_LOD](../../explanation/REGIONAL_VOXEL_LOD.md#selección-por-celda-en-la-gpu-fase-2a-16-11-2026).
 
 ## Identidad
 
-- Rama `feat/cell-lod`, partiendo del commit `2f9852d`; las medidas nativas y del probe incluyen el cambio sin confirmar de esta tarea (bench y probe).
+- Rama `feat/cell-lod`: medidas nativas y del probe con los commits `a2cef22` (bench) y `fbf671d` (probe); navegador sobre `fbf671d` (pkg compilado en release) y `main` = `5e669ce` para la comparación del estado.
 - Perfil `perf` para el bench nativo; navegador Chrome 157.0.8103.78 headless, WebGPU sobre Vulkan.
 - Adaptadores: AMD Radeon 880M (RADV STRIX1, `rdna-3`) en bench y navegador; la puerta de partición (tarea 7b) corrió además en llvmpipe.
 - Datos: `belvedere-v7.oct` (3.941 nodos, 530.962.031 B) y `majadas-v7.oct`; casos exportados por `coverage_spike --export-pool` el 06-11-2026. Salidas en [`data/r3-fase2a-16-11-2026/`](data/r3-fase2a-16-11-2026/).
@@ -89,7 +89,25 @@ Los recuentos por profundidad (`counter_per_depth`) están en `cell-pool-counter
 
 ## Navegador
 
-*Pendiente: el controlador rellena esta sección con los resultados del verificador de navegador (capturas en el mismo punto de zoom en `octant` y `cell`, nodos con ≥ 2 profundidades dibujadas, tiempo del pase de slots con consultas de marca de tiempo, Chrome WebGPU).*
+Chrome headless con WebGPU sobre la Radeon 880M (Vulkan, `rdna-3`, no SwiftShader), demo local de esta rama, muestra integrada, 1280×800.
+
+| Comprobación | Resultado |
+| --- | --- |
+| Misma pose oblicua y cercana en `octant` y `cell` (rueda 5×−300 y arrastre de 120 px; [`qa.mjs`](#reproducir)) | Difieren en 14.248 de 1.024.000 píxeles, todos en la franja cercana. `octant`: región de puntos diminutos separada del resto por un borde nítido ([recorte](data/r3-fase2a-16-11-2026/navegador-crop-octant-bottom.png)). `cell`: cubos de tamaño continuo, sin borde ni huecos ([recorte](data/r3-fase2a-16-11-2026/navegador-crop-cell-bottom.png)). Sin dobles ni cubos superpuestos visibles |
+| Parpadeo mientras refina (`cell`, 3 capturas a ~300 ms) | Idénticas píxel a píxel |
+| `?cellLod=bogus` | Un aviso en consola (`ignoring ?cellLod=bogus`), la demo sigue y llega al objetivo |
+| Móvil 390×844 táctil, `cell` | Llega al objetivo en 165 ms, consola limpia ([captura](data/r3-fase2a-16-11-2026/navegador-cell-mobile.png)); el gesto de pellizco no está implementado en la demo |
+| Teclado, `cell` | Orden de tabulación completo, foco visible en todos los controles |
+| Fichero local `fs_e430_n4008_18.oct` (V5), `cell` | Abre por la ruta CPU y llega al objetivo; no ejercita el modo celda |
+| Consola | Sin errores ni avisos salvo el de `?cellLod=bogus` |
+
+**El estado no vuelve a «target reached» tras un zoom fuerte** (5 pasos de rueda y arrastre): se queda en «coarse frame pending · target refining» más de 180 s, con nada pendiente. Ocurre igual en `main` (`5e669ce`) que en esta rama, en los dos modos; con un paso de rueda o una órbita pequeña llega en ~2 s en ambas. *Inferido:* es el fallo de estado de la ruta de celdas de [#42](https://github.com/Mili-ssm/OctreeViewer/issues/42), no una regresión.
+
+No medido: tiempo del pase de slots con consultas de marca de tiempo, número de nodos con ≥ 2 profundidades dibujadas en el navegador (los contadores por profundidad están en el bench nativo).
+
+### Reproducir
+
+Scripts de Playwright del verificador (fuera del repositorio): cargar la página, «Open built-in sample», esperar «target reached», ratón al centro del lienzo, 5× rueda `deltaY=-300` cada 150 ms, botón derecho pulsado y arrastre de 120 px hacia arriba en 10 pasos, soltar, esperar 300 ms.
 
 ## Límites
 
