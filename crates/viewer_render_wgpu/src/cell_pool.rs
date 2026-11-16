@@ -1360,9 +1360,15 @@ impl CellPool {
                 })
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
-            match cell_cut_with(cut, &lookup, ctx.grid, self.lod_mode, &|id, o, data| {
-                ctx.depth(id, o, data)
-            }) {
+            // Cell mode: the entries carry each node's depth range (`range_depths`).
+            match cell_cut_ranged(
+                cut,
+                &lookup,
+                ctx.grid,
+                self.lod_mode,
+                &|id, o, data| ctx.depth(id, o, data),
+                Some(&|id, data| ctx.far(id, data)),
+            ) {
                 Err(CellCutError::DescendantTooFine { descendant, .. })
                     if !offenders.contains(&descendant) =>
                 {
@@ -1371,6 +1377,45 @@ impl CellPool {
                 other => return other,
             }
         }
+    }
+
+    /// Cell mode: the depths of `node`'s range (`entry.range`) that the pool wants besides the
+    /// octant ones: `(stored, missing)`. `stored` are the stored depths inside the range (fetched
+    /// and protected); `missing` are the buildable depths not stored, requested on demand but
+    /// never deeper than the spacing depth, so the single-point tail is not built for the range.
+    /// The spacing depth is the finest stored depth of the node (the chain of the node ends at
+    /// the first fully separated level, or where it is too sparse to page), or its
+    /// representative depth when nothing is stored. Octant mode has no range: both are empty.
+    fn range_depths(
+        &self,
+        entry: &CellCutEntry,
+        node: &PoolNode,
+        caps: &FastMap<NodeId, u8>,
+        grid: &CellGrid,
+    ) -> (Vec<u8>, Vec<u8>) {
+        let Some((lo, hi)) = entry.range else {
+            return (Vec::new(), Vec::new());
+        };
+        let cap = caps.get(&entry.node);
+        let stored = self.drawable_stored(&capped(&node.stored, cap), grid, node.bounds);
+        let spacing = stored
+            .last()
+            .copied()
+            .unwrap_or_else(|| representative_depth(grid, node.bounds));
+        let buildable = capped_range(node.buildable, cap);
+        let in_range: Vec<u8> = stored
+            .iter()
+            .copied()
+            .filter(|depth| (lo..=hi).contains(depth))
+            .collect();
+        let missing = in_cell_range(
+            &(lo.max(buildable.0)..=hi.min(buildable.1).min(spacing)).collect::<Vec<u8>>(),
+            Self::node_depth(grid, node.bounds),
+        )
+        .into_iter()
+        .filter(|depth| !stored.contains(depth))
+        .collect();
+        (in_range, missing)
     }
 
     /// Distinct levels the entries need: the wanted ones plus the pinned coarsest of every node.
@@ -1400,6 +1445,9 @@ impl CellPool {
                 for depth in entry.wanted.iter().flatten() {
                     set.insert(self.key(entry.node, served_depth(&stored, *depth)));
                 }
+            }
+            for depth in self.range_depths(entry, node, caps, grid).0 {
+                set.insert(self.key(entry.node, depth));
             }
         }
         set

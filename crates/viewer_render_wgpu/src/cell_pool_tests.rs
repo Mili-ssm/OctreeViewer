@@ -3671,3 +3671,30 @@ fn cell_mode_activates_resident_depths_across_the_range() {
         .collect();
     assert_eq!(active_depths(&plan, &rig, 1), expected);
 }
+
+#[test]
+fn cell_mode_fetches_stored_depths_across_the_range() {
+    // Only the coarsest depth is resident: every other stored depth inside the node's range is
+    // fetched, not only the octants' wanted ones.
+    let cam = camera("zoom");
+    let stored = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    let nodes = HashMap::from([(NodeId::new(1), d5_node(SIDE, &stored))]);
+    let mut rig = Rig::new(nodes, 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2]);
+    rig.pool.residency_epoch += 1;
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
+    let (lo, hi) = plan.entries[0].range.expect("a cell-mode node has a range");
+    assert!(lo < hi, "{lo}..{hi}");
+    let wanted = plan.entries[0].required_levels();
+    let fetched: Vec<u8> = plan.fetch_requests.iter().map(|key| key.depth).collect();
+    for depth in (lo..=hi).filter(|d| *d != 2) {
+        assert!(fetched.contains(&depth), "depth {depth} of {lo}..{hi}: {fetched:?}");
+    }
+    assert!(
+        (lo..=hi).any(|d| !wanted.contains(&d)),
+        "the range reaches depths no octant wants: {lo}..{hi} vs {wanted:?}"
+    );
+    // Coarse to fine.
+    assert!(fetched.windows(2).all(|pair| pair[0] <= pair[1]), "{fetched:?}");
+}
