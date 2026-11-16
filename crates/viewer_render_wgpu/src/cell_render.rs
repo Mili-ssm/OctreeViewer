@@ -46,6 +46,7 @@ pub(crate) const fn pool_resource_bytes(pages: u32) -> u64 {
         + pages * PAGE_SLOTS as u64 * 4 // visible indices
         + bits_bytes(pages) // visibility bits
         + 2 * DRAW_ARGS_BYTES // draw arguments, one set per phase
+        + COUNTER_BYTES // per-depth counters
         + 12 // dispatch arguments
         + 72 // cube indices
 }
@@ -74,6 +75,19 @@ pub const NODE_WORDS: usize = 32;
 
 /// Bytes of the draw arguments of one phase; phase 2 follows phase 1 in the buffer.
 const DRAW_ARGS_BYTES: u64 = 20;
+/// Depths the per-cell counters tell apart.
+pub const COUNTER_DEPTHS: usize = 64;
+/// Bytes of the per-depth counters, appended to the `draw_args` buffer after both phases' arguments.
+const COUNTER_BYTES: u64 = COUNTER_DEPTHS as u64 * 4;
+/// Word of `draw_args` where the counters start.
+const COUNTER_OFFSET: u64 = 2 * DRAW_ARGS_BYTES;
+
+/// Cells drawn by absolute depth (`page.depth`) in the last frame rendered with counters on,
+/// summed over the phases of the frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LodCounters {
+    pub per_depth: [u32; COUNTER_DEPTHS],
+}
 const PAGE_PASS_GROUP: u32 = 64;
 const SLOT_PASS_GROUP: u32 = 256;
 
@@ -454,6 +468,8 @@ fn slot_word_index(half: u32, page: u32, word: u32) -> u32 {
 }
 
 // Phase 2 writes its draw arguments after those of phase 1.
+const COUNTER_BASE: u32 = 10u;
+
 fn args_base() -> u32 {
     return select(0u, 5u, PHASE == 2u);
 }
@@ -646,6 +662,11 @@ fn slot_main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_in
         workgroupBarrier();
     }
     let total = scan[255];
+    if frame.counters != 0u {
+        let counter = COUNTER_BASE + min(page.depth, 63u);
+        if c0 == 1u { atomicAdd(&draw_args[counter], 1u); }
+        if c1 == 1u { atomicAdd(&draw_args[counter], 1u); }
+    }
     let exclusive = scan[lid] - (c0 + c1);
     if lid == 0u && total > 0u { wg_base = atomicAdd(&draw_args[args_base() + 1u], total); }
     workgroupBarrier();
@@ -784,6 +805,10 @@ pub(crate) struct CellRenderer {
     hiz: HiZ,
     /// Two-phase occlusion (`kpc`) when true, plain compaction (`k`) when false.
     occlusion: bool,
+    /// Per-depth counters on (`set_counters`).
+    counters: bool,
+    /// Counters were turned off after counting: the next frame zeroes them once.
+    counters_stale: bool,
     /// Half of `bits` that phase 1 and 2 read this frame; phase 2 writes the other.
     prev_half: u32,
     /// The bits describe the last frame drawn with occlusion; false forces a full clear.
@@ -870,7 +895,11 @@ impl CellRenderer {
             bits_bytes(pages),
             U::STORAGE | U::COPY_DST,
         );
-        let draw_args = buffer("cell-draw-args", 40, U::STORAGE | U::INDIRECT | U::COPY_SRC);
+        let draw_args = buffer(
+            "cell-draw-args",
+            2 * DRAW_ARGS_BYTES + COUNTER_BYTES,
+            U::STORAGE | U::INDIRECT | U::COPY_SRC | U::COPY_DST,
+        );
         let dispatch_args = buffer("cell-dispatch-args", 12, U::STORAGE | U::INDIRECT);
         let cube_indices = buffer("cell-cube-indices", 72, U::INDEX | U::COPY_DST);
         queue.write_buffer(&srgb, 0, bytemuck::bytes_of(&srgb_to_linear_table()));
@@ -1115,6 +1144,8 @@ impl CellRenderer {
             hiz_builder,
             hiz,
             occlusion: true,
+            counters: false,
+            counters_stale: false,
             prev_half: 0,
             bits_valid: false,
             resource_bytes,
@@ -1142,6 +1173,55 @@ impl CellRenderer {
     /// it on again starts from empty visibility bits.
     pub fn set_occlusion(&mut self, enabled: bool) {
         self.occlusion = enabled;
+    }
+
+    /// Counts the cells drawn per depth on the GPU in the frames that follow (default off). Off
+    /// costs the slot pass one branch on the frame uniform; the first frame after turning
+    /// them off zeroes them.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "read by the tests, benches and perf runs of a later task"
+        )
+    )]
+    pub fn set_counters(&mut self, enabled: bool) {
+        self.counters_stale |= self.counters && !enabled;
+        self.counters = enabled;
+    }
+
+    /// The counters of the last frame rendered with [`Self::set_counters`] on. Blocks until the
+    /// copy is mapped: for tests, benches and measurements, not for the frame path.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "read by the tests, benches and perf runs of a later task"
+        )
+    )]
+    pub fn read_lod_counters(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> LodCounters {
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cell-counters-staging"),
+            size: COUNTER_BYTES,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        encoder.copy_buffer_to_buffer(&self.draw_args, COUNTER_OFFSET, &staging, 0, COUNTER_BYTES);
+        queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        staging.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            let _ = sender.send(r);
+        });
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("poll");
+        receiver.recv().unwrap().expect("map");
+        let view = staging.slice(..).get_mapped_range().expect("mapped range");
+        let words: Vec<u32> = bytemuck::pod_collect_to_vec(&view);
+        let mut per_depth = [0; COUNTER_DEPTHS];
+        per_depth.copy_from_slice(&words);
+        LodCounters { per_depth }
     }
 
     /// `Some` switches the slot pass to the per-cell decision of [`crate::cell_lod`] (`lod_mode`
@@ -1449,6 +1529,11 @@ impl CellRenderer {
         depth_view: &wgpu::TextureView,
         frame: &CellFrame,
     ) {
+        if self.counters || self.counters_stale {
+            self.counters_stale = false;
+            // Before every compute pass of the frame: the clear is ordered ahead of phase 1.
+            encoder.clear_buffer(&self.draw_args, COUNTER_OFFSET, Some(COUNTER_BYTES));
+        }
         if self.occlusion {
             if self.hiz.size() != frame.viewport.map(|v| v.max(1)) {
                 self.hiz = HiZ::new(&self.device, &self.hiz_builder, frame.viewport);
@@ -1489,7 +1574,7 @@ impl CellRenderer {
                 height_offset: self.color.height_offset,
                 height_span: self.color.height_span,
                 lod_mode: u32::from(self.lod_view.is_some()),
-                counters: 0,
+                counters: u32::from(self.counters),
                 target_px: lod.target_px,
                 forward: lod.forward,
                 focal: lod.focal,

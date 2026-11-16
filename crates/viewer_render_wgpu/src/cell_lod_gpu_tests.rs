@@ -1048,3 +1048,92 @@ fn cell_mode_draws_one_cell_per_point_on_every_adapter() {
         true
     });
 }
+
+/// Drawn slots tallied by absolute depth.
+fn tally_depths(
+    nodes: &[LodNodeScene],
+    pool: &LodPool,
+    lists: &[Vec<u32>],
+) -> [u32; crate::cell_render::COUNTER_DEPTHS] {
+    let mut tally = [0; crate::cell_render::COUNTER_DEPTHS];
+    for slot in lists.iter().flatten() {
+        let page_slot = slot / PAGE_SLOTS as u32;
+        let placed = pool
+            .placed
+            .iter()
+            .find(|p| p.slots.contains(&page_slot))
+            .expect("drawn slot of a placed page");
+        let node = &nodes[placed.node];
+        tally[usize::from(node.node_depth + node.offsets[placed.level])] += 1;
+    }
+    tally
+}
+
+#[test]
+fn lod_counters_count_drawn_cells_per_depth() {
+    for_each_adapter(CellLimitMode::Auto, |h| {
+        if !h.runs_test_pool {
+            return false;
+        }
+        let mut drawn_total = 0;
+        for (scene_index, nodes) in lod_scenes(11).iter().enumerate() {
+            let mut pool = new_pool(h);
+            let placed = place_lod(&mut pool, nodes);
+            let mut rng = Rng(300 + scene_index as u64);
+            let mut poses = 0;
+            while poses < 4 {
+                let Some((camera, view)) = random_pose(&mut rng, ([0.0; 3], [1.0; 3]), (1.0, 30.0))
+                else {
+                    continue;
+                };
+                poses += 1;
+                set_pose(&mut pool, nodes, &placed, &camera, view);
+
+                // Counters off: nothing is counted.
+                pool.set_occlusion(false);
+                pool.set_counters(false);
+                render_cells(h, &mut pool, &camera, false);
+                let zero = pool.read_lod_counters(&h.device, &h.queue);
+                assert_eq!(zero.per_depth, [0; 64], "{}: counters off", h.label);
+
+                // Plain phase.
+                pool.set_counters(true);
+                render_cells(h, &mut pool, &camera, false);
+                let counters = pool.read_lod_counters(&h.device, &h.queue);
+                let slots = read_drawn_slots(h, &pool, 1);
+                assert_eq!(
+                    counters.per_depth,
+                    tally_depths(nodes, &placed, std::slice::from_ref(&slots)),
+                    "{}: plain frame",
+                    h.label
+                );
+                drawn_total += slots.len();
+
+                // Both occlusion phases: phase 2 is read straight after the frame, then phase 1 is
+                // recomputed (the counters are read between them, before the recompute adds to
+                // them).
+                pool.set_occlusion(true);
+                pool.reset_visibility();
+                for _ in 0..2 {
+                    let (_, counts) = render_cells_phases(h, &mut pool, &camera, false);
+                    let second = read_drawn_slots(h, &pool, 6);
+                    let counters = pool.read_lod_counters(&h.device, &h.queue);
+                    let mut encoder = h.device.create_command_encoder(&Default::default());
+                    pool.encode_compaction(&mut encoder, 1);
+                    h.queue.submit([encoder.finish()]);
+                    let first = read_drawn_slots(h, &pool, 1);
+                    assert_eq!([first.len() as u32, second.len() as u32], counts);
+                    assert_eq!(
+                        counters.per_depth,
+                        tally_depths(nodes, &placed, &[first, second]),
+                        "{}: occlusion frame",
+                        h.label
+                    );
+                }
+                pool.set_counters(false);
+            }
+        }
+        assert!(drawn_total > 0, "{}: nothing was drawn", h.label);
+        true
+    });
+}
