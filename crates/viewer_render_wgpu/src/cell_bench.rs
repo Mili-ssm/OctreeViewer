@@ -3,10 +3,11 @@
 //! behaviour; every method forwards. Not a stable API.
 
 use crate::cell_driver::CellTarget;
+use crate::cell_lod::LodView;
 use crate::cell_pages::{PackedLevel, PageEntry, PageFrame};
 use crate::cell_render::{
-    CellFrame, CellLimitMode, CellPoolError, CellRenderer, NODE_WORDS, cells_supported,
-    plan_device_limits,
+    CellFrame, CellLimitMode, CellPoolError, CellRenderer, LodCounters, NODE_WORDS,
+    cells_supported, plan_device_limits,
 };
 
 /// The device limits the production pool needs on `adapter` (what `SurfaceRenderer` requests).
@@ -108,6 +109,16 @@ impl BenchRenderer {
         );
     }
 
+    /// Per-depth drawn-cell counters of the slot pass (cell mode); off by default.
+    pub fn set_counters(&mut self, enabled: bool) {
+        self.renderer.set_counters(enabled);
+    }
+
+    /// The counters of the last frame drawn with `set_counters(true)`; blocks until mapped.
+    pub fn read_lod_counters(&self) -> LodCounters {
+        self.renderer.read_lod_counters(&self.device, &self.queue)
+    }
+
     /// Indirect draw arguments (20 bytes per phase); word 1 of phase 1 (or of the plain pass) and
     /// word 6 of phase 2 are the cells drawn.
     pub fn draw_args_buffer(&self) -> &wgpu::Buffer {
@@ -154,6 +165,10 @@ impl CellTarget for BenchRenderer {
         record: &[u32; NODE_WORDS],
     ) -> Result<(), CellPoolError> {
         self.renderer.set_node_record(slot, record)
+    }
+
+    fn set_lod_view(&mut self, view: Option<LodView>) {
+        self.renderer.set_lod_view(view);
     }
 
     fn set_active_pages(

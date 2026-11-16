@@ -1178,13 +1178,6 @@ impl CellRenderer {
     /// Counts the cells drawn per depth on the GPU in the frames that follow (default off). Off
     /// costs the slot pass one branch on the frame uniform; the first frame after turning
     /// them off zeroes them.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "read by the tests, benches and perf runs of a later task"
-        )
-    )]
     pub fn set_counters(&mut self, enabled: bool) {
         self.counters_stale |= self.counters && !enabled;
         self.counters = enabled;
@@ -1192,13 +1185,6 @@ impl CellRenderer {
 
     /// The counters of the last frame rendered with [`Self::set_counters`] on. Blocks until the
     /// copy is mapped: for tests, benches and measurements, not for the frame path.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "read by the tests, benches and perf runs of a later task"
-        )
-    )]
     pub fn read_lod_counters(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> LodCounters {
         let staging = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cell-counters-staging"),
