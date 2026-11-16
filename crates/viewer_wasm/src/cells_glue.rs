@@ -728,11 +728,6 @@ impl ViewerCells {
         self.level_requests.take()
     }
 
-    /// The epoch of the cut the driver last drew: the one its level requests come from.
-    pub(crate) fn applied_epoch(&self) -> u64 {
-        self.applied_epoch
-    }
-
     /// The messages for the build side, in the order it must apply them: `driverReplaced`, then
     /// `poolReset`, then `evict`, then `poolAck`.
     pub(crate) fn take_messages(&mut self) -> CellMessages {

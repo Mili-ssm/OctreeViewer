@@ -506,7 +506,7 @@ function forwardCellMessages() {
     const requests = messages.levelRequests;
     if (requests) {
         buildWorker.postMessage({
-            type: "levelRequests", gen, cutEpoch: requests.cutEpoch, nodes: requests.nodes, depths: requests.depths,
+            type: "levelRequests", gen, nodes: requests.nodes, depths: requests.depths,
         }, [requests.nodes.buffer, requests.depths.buffer]);
     }
     cellCounters.messagesSent += Number(Boolean(messages.driverReplaced)) + Number(Boolean(messages.poolReset))

@@ -15,7 +15,7 @@
 //!   do not decode), then `addCellLevels(generation, bytes)` per entry of `nodeLevels`, then
 //!   `setCellCut({ cutEpoch, viewEpoch, cut, support, idle, targetPixels })`.
 //! * viewer `takeCellMessages()` returns `{ poolAck: { cutEpoch, drawn, missing } | null, evict,
-//!   poolReset, driverReplaced, levelRequests: { cutEpoch, nodes, depths } | null }`; the build
+//!   poolReset, driverReplaced, levelRequests: { nodes, depths } | null }`; the build
 //!   worker applies them in this order: `driverReplaced`, `poolReset`, `applyEvict`,
 //!   `applyPoolAck`, `applyLevelRequests(nodes, depths)` (the first four are the order
 //!   `ViewerCells::take_messages` documents). `levelRequests` is the whole set of levels the
@@ -780,7 +780,6 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("the cells path is not enabled"))?;
         let messages = cells.take_messages();
         let level_requests = cells.take_level_requests();
-        let cut_epoch = cells.applied_epoch();
         let result = Object::new();
         set(
             &result,
@@ -808,7 +807,6 @@ impl WasmVoxelViewer {
                 Some(requests) => {
                     let (nodes, depths): (Vec<NodeId>, Vec<u8>) = requests.into_iter().unzip();
                     let object = Object::new();
-                    set(&object, "cutEpoch", &JsValue::from_f64(cut_epoch as f64))?;
                     set(&object, "nodes", &ids_to_js(&nodes))?;
                     set(&object, "depths", &Uint8Array::from(depths.as_slice()))?;
                     object.into()

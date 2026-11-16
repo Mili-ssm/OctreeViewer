@@ -23,9 +23,10 @@ import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./h
 //                  cellLod{gen,cutEpoch,viewEpoch,lod} (stats for the LOD panel).
 // render -> build: poolAck{gen,cutEpoch,drawn,missing} (latest wins), evict{gen,nodes} (ordered, never
 //                  coalesced), poolReset{gen}, driverReplaced{gen},
-//                  levelRequests{gen,cutEpoch,nodes,depths} (BigUint64Array ids and a parallel Uint8Array of
+//                  levelRequests{gen,nodes,depths} (BigUint64Array ids and a parallel Uint8Array of
 //                  depths: the whole set of levels the driver wants built; it replaces the previous set, so the
-//                  latest wins). They wait in `cellInbox` and are applied
+//                  latest wins; messages are handled in order, so one sent behind `open` finds the builder
+//                  ready). They wait in `cellInbox` and are applied
 //                  before the next update in the order the builder requires: driverReplaced, poolReset,
 //                  evict, poolAck, levelRequests: the order of `ViewerCells::take_messages` and of the in-process path. The
 //                  ack of a batch comes from the driver's last frame, after every eviction in the same

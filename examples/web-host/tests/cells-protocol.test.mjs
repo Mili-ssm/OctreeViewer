@@ -48,7 +48,7 @@ const NOT_ENABLED = "the cells path is not enabled";
 // ---- Build worker --------------------------------------------------------------------------
 
 async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuffer(4), new ArrayBuffer(6)],
-    levelBuffers = () => [], refine = 0, cellPoolPages = 0 } = {}) {
+    levelBuffers = () => [], refine = 0, cellPoolPages = 0, beforeOpened = null } = {}) {
     const posted = [];
     const transfers = new Map();
     const calls = [];
@@ -134,6 +134,7 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
     const send = (type, fields = {}) => receive({ data: { type, ...fields } });
     send("init", {});
     send("open", { gen: 1, file: {}, cacheBytes: 1024, limits: [100, 200], cells, cellPoolPages });
+    beforeOpened?.(send);
     await settle();
     const view = (fields = {}) => send("view", {
         gen: 1, epoch: 1, viewEpoch: 7, camera: [1], viewport: [64, 64], visualScale: 2, targetPx: 4, ...fields,
@@ -1085,8 +1086,8 @@ test("a failed recovery sends the error and no deviceRecovered frame", async () 
 
 // ---- On-demand levels (#35) ------------------------------------------------------------------
 
-const levelRequestsOf = (nodes, depths, cutEpoch = 4) => ({
-    cutEpoch, nodes: new BigUint64Array(nodes), depths: new Uint8Array(depths),
+const levelRequestsOf = (nodes, depths) => ({
+    nodes: new BigUint64Array(nodes), depths: new Uint8Array(depths),
 });
 const noMessages = { poolAck: null, evict: new BigUint64Array(0), poolReset: false, driverReplaced: false, levelRequests: null };
 
@@ -1102,7 +1103,7 @@ test("levelRequests are forwarded after evict and ack, with their buffers transf
     const reports = render.sent(worker, "driverReplaced", "poolReset", "evict", "poolAck", "levelRequests");
     assert.deepEqual(reports.map(item => item.type), ["evict", "poolAck", "levelRequests"]);
     const request = reports[2];
-    assert.deepEqual([request.gen, request.cutEpoch, [...request.nodes], [...request.depths]], [1, 4, [5n, 6n], [3, 4]]);
+    assert.deepEqual([request.gen, [...request.nodes], [...request.depths]], [1, [5n, 6n], [3, 4]]);
     const transfer = worker.transfers.get(request);
     assert.equal(transfer.length, 2);
     assert.equal(transfer[0], request.nodes.buffer);
@@ -1118,9 +1119,9 @@ test("levelRequests are forwarded after evict and ack, with their buffers transf
 
 test("build inbox: levelRequests are applied after the ack and the latest set wins when coalesced", async () => {
     const worker = await runBuildWorker();
-    worker.send("levelRequests", { gen: 1, cutEpoch: 1, nodes: new BigUint64Array([1n]), depths: new Uint8Array([2]) });
+    worker.send("levelRequests", { gen: 1, nodes: new BigUint64Array([1n]), depths: new Uint8Array([2]) });
     worker.send("poolAck", { gen: 1, cutEpoch: 2, drawn: new BigUint64Array(0), missing: new BigUint64Array(0) });
-    worker.send("levelRequests", { gen: 1, cutEpoch: 2, nodes: new BigUint64Array([7n, 8n]), depths: new Uint8Array([5, 6]) });
+    worker.send("levelRequests", { gen: 1, nodes: new BigUint64Array([7n, 8n]), depths: new Uint8Array([5, 6]) });
     worker.send("evict", { gen: 1, nodes: new BigUint64Array([3n]) });
     await worker.settle();
     assert.equal(names(worker.calls).includes("update"), false, "nothing builds without a view");
@@ -1141,7 +1142,7 @@ test("a levelRequests message wakes the build worker that has a view and replans
     worker.view();
     await worker.sync();
     const before = worker.calls.filter(call => call[0] === "update").length;
-    worker.send("levelRequests", { gen: 1, cutEpoch: 1, nodes: new BigUint64Array([1n]), depths: new Uint8Array([2]) });
+    worker.send("levelRequests", { gen: 1, nodes: new BigUint64Array([1n]), depths: new Uint8Array([2]) });
     await worker.sync();
     assert.deepEqual(worker.calls.filter(call => call[0] === "applyLevelRequests"), [["applyLevelRequests", [1n], [2]]]);
     assert.ok(worker.calls.filter(call => call[0] === "update").length > before, "the request built something");
@@ -1165,7 +1166,7 @@ test("nodeLevels follow the nodeCells of their batch, transferred and in order",
     });
 });
 
-test("nodeLevels are applied in order after the nodeCells of the same batch, outside the epoch filter", async () => {
+test("nodeLevels are applied in order after the nodeCells of the same batch, with no epoch of their own", async () => {
     const render = await runRenderWorker();
     const worker = await render.openCells();
     worker.emit(cellLodMessage(50));
@@ -1189,10 +1190,25 @@ test("levelRequests and nodeLevels of another gen are ignored", async () => {
     await settle();
     assert.equal(render.calls("addCellLevels").length, 1, "positive control: the current gen is applied");
     const build = await runBuildWorker();
-    build.send("levelRequests", { gen: 9, cutEpoch: 1, nodes: new BigUint64Array([1n]), depths: new Uint8Array([2]) });
+    build.send("levelRequests", { gen: 9, nodes: new BigUint64Array([1n]), depths: new Uint8Array([2]) });
     build.view();
     await build.sync();
     assert.equal(build.calls.some(call => call[0] === "applyLevelRequests"), false);
+});
+
+test("a level request set that arrives before the builder is ready is applied once it is", async () => {
+    const worker = await runBuildWorker({
+        beforeOpened: send => {
+            send("levelRequests", { gen: 1, nodes: new BigUint64Array([1n]), depths: new Uint8Array([2]) });
+            send("levelRequests", { gen: 1, nodes: new BigUint64Array([7n]), depths: new Uint8Array([5]) });
+            send("levelRequests", { gen: 9, nodes: new BigUint64Array([3n]), depths: new Uint8Array([1]) });
+        },
+    });
+    assert.equal(worker.calls.some(call => call[0] === "applyLevelRequests"), false, "nothing is applied without a view");
+    worker.view();
+    await worker.sync();
+    assert.deepEqual(worker.calls.filter(call => call[0] === "applyLevelRequests"), [["applyLevelRequests", [7n], [5]]],
+        "the latest set of this gen, once");
 });
 
 test("a refused nodeLevels entry does not stop the rest of the message", async () => {

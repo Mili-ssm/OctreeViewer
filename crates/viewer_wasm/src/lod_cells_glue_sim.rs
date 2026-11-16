@@ -518,49 +518,82 @@ fn the_in_process_glue_reaches_the_in_process_digest() {
     }
 }
 
-#[test]
-fn in_process_cells_serve_a_level_request() {
+/// The in-process path (`InProcessCells::update` is `update_cells_staged` plus page rounds, which
+/// the synthetic cloud does not need): the views of the orbit, then updates on the last one.
+/// Returns the deepest depth the last drawn cut draws, the octants it draws, and the bytes the
+/// driver holds; `max_level_builds` is how many on-demand level builds an update may do.
+fn in_process_drawn_depths(max_level_builds: usize) -> (u8, usize, u64) {
+    use crate::cells_glue::WASM_CPU_BUDGET_BYTES;
+    use crate::lod_driver::{CellStep, update_cells_staged};
+    use viewer_render_wgpu::CellDriver;
     let views = synth_orbit();
-    // The driver asks for levels the nodes did not carry; one thread serves them in the next
-    // update, so the requests are seen pending and are gone at rest.
-    let mut saw_pending = false;
     let mut h = synthetic_harness(1 << 20, 2.0);
-    let mut cells = InProcessCells::new(&h.dataset, h.config);
+    let config = CellUpdateConfig {
+        max_level_builds,
+        ..h.config
+    };
+    let mut driver = CellDriver::new(driver_config(
+        h.dataset.cell_grid(),
+        h.dataset.coordinate_origin(),
+        WASM_CPU_BUDGET_BYTES,
+    ));
     let mut target = StrictTarget::default();
+    let (mut stage_pixels, mut dirty) = (None, true);
+    let mut last = None;
     for (i, view) in views.iter().enumerate() {
-        cells.mark_dirty();
-        let last = i + 1 == views.len();
-        for _ in 0..(if last { 20_000 } else { 3 }) {
+        let rounds = if i + 1 == views.len() { 300 } else { 3 };
+        for _ in 0..rounds {
             target.eye = view.camera().position();
-            let (blocks, pages) = (&mut h.blocks, &mut h.pages);
-            cells
-                .update(
-                    &mut h.dataset,
-                    view,
-                    2.0,
-                    true,
-                    &mut target,
-                    Some(&mut ()),
-                    false,
-                    &mut |_: &mut (), id| blocks(id),
-                    &mut |_: &mut (), anchor| pages(anchor),
-                )
-                .unwrap();
-            saw_pending |= h.dataset.has_pending_level_requests(true);
-            if last
-                && cells
-                    .stats(&h.dataset, &target)
-                    .cut_digest_at_rest
-                    .is_some()
-            {
-                break;
-            }
+            let step = CellStep {
+                view,
+                target_pixels: 2.0,
+                config,
+                can_load_blocks: true,
+            };
+            let blocks = &mut h.blocks;
+            let done = update_cells_staged(
+                &mut h.dataset,
+                &step,
+                &mut stage_pixels,
+                &mut dirty,
+                &mut driver,
+                &mut target,
+                None,
+                blocks,
+            )
+            .unwrap();
+            last = Some(done.update.report);
         }
     }
-    let stats = cells.stats(&h.dataset, &target);
-    assert!(stats.cut_digest_at_rest.is_some(), "the view reaches rest");
-    assert!(!h.dataset.has_pending_level_requests(true));
-    assert!(saw_pending, "the driver requested levels");
+    let plan = last.unwrap().plan;
+    let depths: Vec<u8> = plan
+        .entries
+        .iter()
+        .flat_map(|entry| entry.drawn)
+        .flatten()
+        .collect();
+    (
+        depths.iter().copied().max().unwrap(),
+        depths.len(),
+        driver.cpu_bytes(),
+    )
+}
+
+#[test]
+fn in_process_cells_serve_a_level_request() {
+    // Without level builds a requested depth the nodes did not ship is never available: the cut
+    // draws only what the chains hold.
+    let (deepest_without, _, bytes_without) = in_process_drawn_depths(0);
+    // With them the pruned depths are built, shipped to the driver and drawn by the cut.
+    let (deepest, _, bytes) = in_process_drawn_depths(CellUpdateConfig::default().max_level_builds);
+    assert!(
+        bytes > bytes_without,
+        "the levels were shipped to the driver"
+    );
+    assert!(
+        deepest > deepest_without,
+        "a depth absent from the chains is drawn: {deepest} against {deepest_without}"
+    );
 }
 
 /// One builder and one viewer driven by hand (no simulated latency): `send` plans until the
