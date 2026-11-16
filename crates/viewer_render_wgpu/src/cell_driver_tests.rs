@@ -1819,3 +1819,98 @@ fn driver_in_cell_mode_writes_records_and_uniform() {
         emitted_bits(&report, victim, words[19] as u8)
     );
 }
+
+/// Every record a drawn page reads holds the depths emitted for its node and its current anchor.
+fn assert_cell_records(fx: &Fixture, report: &FrameReport, eye: [f64; 3]) {
+    assert_anchors(fx, report, ORIGIN, eye);
+    for (_, entry) in &fx.gpu.table {
+        let slot = entry.0[4];
+        let words = fx.gpu.mask_words.get(&slot).expect("a written record");
+        assert_eq!(
+            record_active(words),
+            emitted_bits(report, slot, words[19] as u8),
+            "slot {slot}"
+        );
+    }
+    for active in &report.plan.active {
+        let words = fx.gpu.mask_words[&active.mask_slot];
+        assert_ne!(record_active(&words), 0, "slot {}", active.mask_slot);
+    }
+}
+
+#[test]
+fn cell_mode_records_are_rewritten_with_active_bits_after_a_reset() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    let cam = camera("zoom");
+    let cut = ids(&CHILDREN);
+    fx.driver.set_lod_mode(crate::LodMode::Cell);
+    let report = fx.run(40, &cut, &cam, 4.0);
+    assert_cell_records(&fx, &report, cam.position());
+
+    // The driver is reset and the target lost its pool; the eye also moved.
+    assert!(!fx.driver.reset().is_empty());
+    fx.gpu.lose_pool();
+    let moved: [f64; 3] =
+        std::array::from_fn(|axis| cam.position()[axis] + [0.5, 0.25, -0.125][axis]);
+    let mut drawn = false;
+    for _ in 0..60 {
+        fx.gpu.eye = moved;
+        let view = fx.view(&cam);
+        let report = fx
+            .driver
+            .frame(&mut fx.gpu, &cut, &view, 4.0)
+            .expect("frame");
+        assert_cell_records(&fx, &report, moved);
+        drawn |= !report.plan.active.is_empty();
+    }
+    assert!(drawn);
+
+    // Only the target lost its pool: the driver resets itself and rewrites every record.
+    fx.gpu.lose_pool();
+    let mut last = None;
+    for _ in 0..60 {
+        fx.gpu.eye = cam.position();
+        let view = fx.view(&cam);
+        let report = fx
+            .driver
+            .frame(&mut fx.gpu, &cut, &view, 4.0)
+            .expect("frame");
+        assert_cell_records(&fx, &report, cam.position());
+        last = Some(report);
+    }
+    assert!(!last.unwrap().plan.active.is_empty());
+}
+
+#[test]
+fn a_reused_mask_slot_gets_the_active_bits_and_anchor_of_its_new_node_in_cell_mode() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    let cam = camera("zoom");
+    fx.driver.set_lod_mode(crate::LodMode::Cell);
+    let first = fx.run(40, &ids(&[2, 3]), &cam, 4.0);
+    let first_slots: HashSet<u32> = first.plan.active.iter().map(|a| a.mask_slot).collect();
+    assert!(!first_slots.is_empty());
+
+    let mut report = None;
+    for _ in 0..60 {
+        report = Some(fx.step(&ids(&[4]), &cam, 4.0));
+    }
+    let report = report.unwrap();
+    let slots: HashSet<u32> = report.plan.active.iter().map(|a| a.mask_slot).collect();
+    assert!(!slots.is_empty());
+    assert!(!slots.is_disjoint(&first_slots), "no slot was reused");
+    assert_cell_records(&fx, &report, cam.position());
+    for active in &report.plan.active {
+        let words = fx.gpu.mask_words[&active.mask_slot];
+        let anchor = expected_anchor(
+            &fx,
+            active.key.node,
+            words[19] as u8,
+            ORIGIN,
+            cam.position(),
+        );
+        assert_eq!(
+            anchor,
+            std::array::from_fn(|axis| f32::from_bits(words[16 + axis]))
+        );
+    }
+}

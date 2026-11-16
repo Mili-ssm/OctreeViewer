@@ -1195,7 +1195,7 @@ impl CellDriver {
             self.node_slots.insert(update.slot, slot);
             self.write_record(target, update.slot, &frame)?;
         }
-        {
+        if anchors_stale || mode_changed || cell_mode {
             let rewritten: HashSet<u32> = plan.mask_updates.iter().map(|u| u.slot).collect();
             let mut slots: Vec<u32> = self
                 .node_slots

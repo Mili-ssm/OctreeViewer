@@ -58,7 +58,7 @@ pub(crate) struct LodPick {
 }
 
 /// The node of a record in the layout of [`crate::cell_lod::node_record`].
-fn node_of_record(record: &[u32; NODE_WORDS]) -> NodeLod {
+pub(crate) fn node_of_record(record: &[u32; NODE_WORDS]) -> NodeLod {
     NodeLod {
         anchor: std::array::from_fn(|axis| f32::from_bits(record[16 + axis])),
         node_depth: record[19] as u8,
@@ -243,19 +243,14 @@ fn drawn_in_cell_mode(lod: &LodPick, copy: &PoolCopy, cell: &CellInstance) -> bo
         return false;
     };
     let depth = u8::try_from(depth).unwrap_or(u8::MAX);
-    if origin[0] == u32::MAX
+    if origin == [u32::MAX; 3]
         || depth < node.node_depth
         || depth - node.node_depth > crate::cell_lod::MAX_NODE_SPAN
     {
         return false;
     }
-    let span = 1u64 << (depth - node.node_depth);
-    let rel: [u64; 3] =
-        std::array::from_fn(|axis| u64::from(origin[axis]) + u64::from(cell.rel()[axis]));
-    if rel.iter().any(|&r| r >= span) {
-        return false;
-    }
-    let rel = rel.map(|r| r as u32);
+    let rel: [u32; 3] =
+        std::array::from_fn(|axis| origin[axis].wrapping_add(u32::from(cell.rel()[axis])));
     draws(&lod.view, node, depth, rel, copy.page.side())
 }
 
