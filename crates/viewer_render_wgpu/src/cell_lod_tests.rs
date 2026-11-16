@@ -1,4 +1,4 @@
-//! Task 1 of phase 2a: the per-cell decision partitions every point and bounds the projected edge.
+//! Phase 2a: the per-cell decision partitions every point and matches the projected edge.
 
 use viewer_core::SpatialBounds;
 
@@ -80,11 +80,34 @@ fn unit_forward(rng: &mut Rng) -> [f32; 3] {
     }
 }
 
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn normalized(v: [f64; 3]) -> [f64; 3] {
+    let norm = v.iter().map(|c| c * c).sum::<f64>().sqrt();
+    v.map(|c| c / norm)
+}
+
 fn random_view(rng: &mut Rng) -> LodView {
+    // A right-handed orthonormal basis, as the camera's.
+    let forward = unit_forward(rng).map(f64::from);
+    let right = loop {
+        let candidate = cross(forward, unit_forward(rng).map(f64::from));
+        if candidate.iter().map(|c| c * c).sum::<f64>() > 1e-3 {
+            break normalized(candidate);
+        }
+    };
+    let up = normalized(cross(forward, right));
     LodView {
-        forward: unit_forward(rng),
+        forward: forward.map(|c| c as f32),
+        right: right.map(|c| c as f32),
+        up: up.map(|c| c as f32),
         focal: rng.range(300.0, 3000.0) as f32,
-        near: rng.log_range(0.01, 20.0) as f32,
         target_px: rng.range(0.5, 12.0) as f32,
         min_side: if rng.below(3) == 0 {
             rng.log_range(1e-4, 1.0) as f32
@@ -95,17 +118,18 @@ fn random_view(rng: &mut Rng) -> LodView {
 }
 
 #[test]
-fn the_bound_covers_the_projected_edge() {
+fn edge_px_matches_the_camera() {
     let mut rng = Rng(1);
-    let mut checked = 0;
+    let mut in_front = 0;
+    let mut behind = 0;
+    let mut worst = 0.0f64;
     let mut attempts = 0;
-    while checked < 10_000 {
+    while in_front < 10_000 || behind < 100 {
         attempts += 1;
         assert!(attempts < 2_000_000, "too few cubes in front of the camera");
         let camera = random_camera(&mut rng);
         let position = camera.position();
         let forward = camera.forward();
-        let near = camera.lod_min_depth();
         let view = view_of(&camera, 1.0, 0.0);
         for _ in 0..4 {
             let spread = position.iter().map(|v| v.abs()).fold(1.0, f64::max) * 2.0;
@@ -122,20 +146,38 @@ fn the_bound_covers_the_projected_edge() {
                         .sum::<f64>()
                 })
                 .fold(f64::INFINITY, f64::min);
-            if zmin < near * (1.0 + 1e-3) {
+            // Corner too close to the eye plane: f32 error on the depth is amplified into the pixels.
+            if zmin.abs() < 1e-3 * spread {
                 continue;
             }
             let bounds = SpatialBounds::new(lo, lo.map(|v| v + side)).expect("cube");
             let projected = camera.projected_voxel_edge_pixels(bounds, [0.0; 3], VIEWPORT);
             let relative: [f32; 3] = std::array::from_fn(|axis| (lo[axis] - position[axis]) as f32);
-            let bound = f64::from(edge_bound(&view, relative, side as f32));
+            let edge = f64::from(edge_px(&view, relative, side as f32));
+            if zmin < 0.0 {
+                assert!(
+                    projected.is_infinite() && edge.is_infinite(),
+                    "{edge} vs {projected}"
+                );
+                behind += 1;
+                continue;
+            }
+            let diff = (edge - projected).abs() / projected;
+            // f32 rounding of the far corner `lo + side` weighs `|lo| / side` times its epsilon.
+            let reach = relative
+                .iter()
+                .map(|v| f64::from(v.abs()))
+                .fold(0.0, f64::max)
+                / side;
+            worst = worst.max(diff / (1.0 + reach));
             assert!(
-                bound >= projected * (1.0 - 1e-5),
-                "bound {bound} below the projected edge {projected} (lo {lo:?}, side {side}, camera {camera:?})"
+                diff <= 1e-4 + 1e-7 * reach,
+                "edge_px {edge} vs projected {projected} (lo {lo:?}, side {side}, camera {camera:?})"
             );
-            checked += 1;
+            in_front += 1;
         }
     }
+    eprintln!("worst relative difference over (1 + |lo| / side): {worst:e}");
 }
 
 /// `(lo, side)` of the cell `rel` of level `level` of a node with corner `anchor`.
@@ -144,9 +186,15 @@ fn chain_cell(node: &NodeLod, rel: [u32; 3], level: u32, side0: f32) -> ([f32; 3
     (cell_lo(node, rel, side), side)
 }
 
+/// Measurement: counts child/parent pairs where the child refines and the parent does not. The
+/// actual projected edge is not monotone for chains crossing the eye plane, so only chains whose
+/// root cell is fully in front of the eye and whose cells f32 resolves are counted; the draw rule does not rely on this.
 #[test]
 fn refines_is_monotone_from_child_to_parent() {
     let mut rng = Rng(2);
+    let mut pairs = 0u64;
+    let mut violations = 0u64;
+    let mut first = None;
     for case in 0..4000 {
         let far = case % 4 == 0;
         let span = if far { 29 } else { rng.below(12) as u32 + 1 };
@@ -162,27 +210,44 @@ fn refines_is_monotone_from_child_to_parent() {
         let side0 = (side_fine * (1u64 << span) as f64) as f32;
         let mut view = random_view(&mut rng);
         let rel: [u32; 3] = [0; 3].map(|_| (rng.next() % (1u64 << span)) as u32);
+        let (root_lo, root_side) = chain_cell(&node, [0; 3], 0, side0);
+        if edge_px(&view, root_lo, root_side).is_infinite() {
+            continue;
+        }
         // Targets at the borders of the chain: the threshold crosses between two levels.
         for level in 0..=span {
             let (lo, side) = chain_cell(&node, rel.map(|r| r >> (span - level)), level, side0);
             if rng.below(2) == 0 {
                 view.target_px =
-                    edge_bound(&view, lo, side) * (1.0 + (rng.unit() as f32 - 0.5) * 1e-3);
+                    edge_px(&view, lo, side) * (1.0 + (rng.unit() as f32 - 0.5) * 1e-3);
             }
-            let mut child = (lo, side, level);
+            // Beyond ~1e6 cells of reach the f32 corners no longer resolve the cell: rounding noise.
+            if lo.iter().map(|v| v.abs()).fold(0.0, f32::max) > 1e6 * side {
+                continue;
+            }
             let mut previous_refines = refines(&view, lo, side);
             for up in (0..level).rev() {
                 let (plo, pside) = chain_cell(&node, rel.map(|r| r >> (span - up)), up, side0);
                 let parent_refines = refines(&view, plo, pside);
-                assert!(
-                    !previous_refines || parent_refines,
-                    "child {child:?} refines but its parent ({plo:?}, {pside}, {up}) does not; view {view:?}"
-                );
+                pairs += 1;
+                if previous_refines && !parent_refines {
+                    violations += 1;
+                    first.get_or_insert_with(|| {
+                        format!(
+                            "child ({lo:?}, {side}, {level}) refines but parent ({plo:?}, {pside}, {up}) does not; view {view:?}"
+                        )
+                    });
+                }
                 previous_refines = parent_refines;
-                child = (plo, pside, up);
             }
         }
     }
+    assert_eq!(
+        violations,
+        0,
+        "{violations} of {pairs} pairs are not monotone; first: {}",
+        first.unwrap_or_default()
+    );
 }
 
 #[test]
@@ -192,18 +257,24 @@ fn a_cell_around_the_eye_refines() {
         let mut view = random_view(&mut rng);
         view.target_px = 1.0;
         view.min_side = 0.0;
-        let side = (view.near * rng.log_range(1.0, 1e4) as f32).max(view.near);
+        let side = rng.log_range(0.01, 100.0) as f32;
         let inside: [f32; 3] = std::array::from_fn(|_| -side * rng.range(0.01, 0.99) as f32);
-        // A cube crossing `near`: its nearest corner is closer than `near`, the eye outside.
-        let crossing: [f32; 3] =
-            std::array::from_fn(|axis| view.forward[axis] * (view.near * 0.5 - 1e-3));
-        for lo in [inside, crossing] {
-            let bound = edge_bound(&view, lo, side);
-            assert!(bound.is_finite(), "bound {bound} for lo {lo:?} side {side}");
+        // A cube whose nearest corner is behind the eye plane while the eye is outside it.
+        let behind: [f32; 3] = std::array::from_fn(|axis| -view.forward[axis] * side * 0.25);
+        for lo in [inside, behind] {
+            let edge = edge_px(&view, lo, side);
+            assert!(
+                edge == f32::INFINITY,
+                "edge {edge} for lo {lo:?} side {side}"
+            );
             assert!(
                 refines(&view, lo, side),
                 "lo {lo:?} side {side} view {view:?}"
             );
+            // At or below `min_side` it stops, still never NaN.
+            view.min_side = side;
+            assert!(!refines(&view, lo, side));
+            view.min_side = 0.0;
         }
     }
 }
@@ -411,7 +482,7 @@ fn exactly_one_cell_draws_each_point() {
             .collect();
         for band_border in [false, true] {
             if band_border {
-                // Land the target within 1e-3 of the bound of some cell of the point's chain.
+                // Land the target within 1e-3 of the edge of some cell of the point's chain.
                 let node_lo = scene.node.anchor.map(f64::from);
                 let level = rng.below(6) as u32;
                 let side = scene.side0 / f64::from(pow2(level));
@@ -421,8 +492,8 @@ fn exactly_one_cell_draws_each_point() {
                         .floor()
                         .clamp(0.0, cells - 1.0) as u32
                 });
-                let bound = edge_bound(&view, cell_lo(&scene.node, rel, side as f32), side as f32);
-                view.target_px = bound * (1.0 + (rng.unit() as f32 - 0.5) * 2e-3);
+                let edge = edge_px(&view, cell_lo(&scene.node, rel, side as f32), side as f32);
+                view.target_px = edge * (1.0 + (rng.unit() as f32 - 0.5) * 2e-3);
             }
             for &point in &points {
                 let (count, drawn, oracle) = count_drawing(&view, &scene, point);
@@ -445,35 +516,4 @@ fn exactly_one_cell_draws_each_point() {
         }
     }
     assert!(checked >= 1000 * 64);
-}
-
-#[test]
-fn the_bound_clamps_zmin_to_near() {
-    let side = 8.0f32;
-    let half = side / 2.0;
-    let view = LodView {
-        forward: [0.0, 0.0, 1.0],
-        focal: 1000.0,
-        near: 0.5,
-        target_px: 1.0,
-        min_side: 0.0,
-    };
-    // `(lo, dmax)`: zmin is exactly 0 (the eye on the near face plane), then negative (inside).
-    let on_plane = (
-        [-half, -half, 0.0],
-        (half * half * 2.0 + side * side).sqrt(),
-    );
-    let inside = ([-half, -half, -half], (3.0 * half * half).sqrt());
-    for (lo, dmax) in [on_plane, inside] {
-        let expected = side * view.focal * dmax / (view.near * view.near);
-        let bound = edge_bound(&view, lo, side);
-        assert!(
-            bound.is_finite() && bound > 0.0,
-            "bound {bound} for lo {lo:?}"
-        );
-        assert!(
-            (bound - expected).abs() <= expected * 1e-6,
-            "bound {bound} expected {expected} for lo {lo:?}"
-        );
-    }
 }

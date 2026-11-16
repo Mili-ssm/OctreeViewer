@@ -2,7 +2,8 @@
 //!
 //! Every length is in scaled render units with the eye at the origin. The WGSL port mirrors
 //! these functions operation by operation (plain `*` then `+`, no `mul_add`), so a cell and its
-//! children evaluate the same floats on both sides.
+//! children evaluate the same floats on both sides. `refines` is not monotone in general, so
+//! the draw rule checks every coarser active depth instead of relying on it.
 //!
 //! Integer cell coordinates are relative to the node corner: at depth `d` a cell's `rel` ranges
 //! over `[0, 2^(d - node_depth))`, and bit `i` of [`NodeLod::active`] is depth `node_depth + i`.
@@ -23,9 +24,9 @@ const MASK_DEPTH_OFFSET: u8 = 3;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LodView {
     pub forward: [f32; 3],
+    pub right: [f32; 3],
+    pub up: [f32; 3],
     pub focal: f32,
-    /// `OrbitCamera::lod_min_depth` in scaled units: the bound clamps the nearest depth to it.
-    pub near: f32,
     pub target_px: f32,
     /// A cell with `side <= min_side` never refines.
     pub min_side: f32,
@@ -39,11 +40,12 @@ impl LodView {
         target_px: f32,
         min_side_scaled: f32,
     ) -> LodView {
-        let forward = camera.forward();
+        let (right, up) = camera.right_up();
         LodView {
-            forward: [forward[0] as f32, forward[1] as f32, forward[2] as f32],
+            forward: camera.forward().map(|c| c as f32),
+            right: right.map(|c| c as f32),
+            up: up.map(|c| c as f32),
             focal: (f64::from(viewport[1]) / (2.0 * (VERTICAL_FOV * 0.5).tan())) as f32,
-            near: camera.lod_min_depth() as f32,
             target_px,
             min_side: min_side_scaled,
         }
@@ -92,26 +94,55 @@ impl NodeLod {
     }
 }
 
-/// Upper bound of the projected edge of the cube `[lo, lo + side]`, in pixels:
-/// `side * focal * dmax / max(zmin, near)^2`, with `dmax` the distance from the eye to the
-/// farthest corner. Clamping `zmin` to `near` keeps it finite for a cell around the eye.
-pub fn edge_bound(view: &LodView, lo: [f32; 3], side: f32) -> f32 {
-    let half = side * 0.5;
-    let centre = [lo[0] + half, lo[1] + half, lo[2] + half];
-    let forward = view.forward;
-    let depth = centre[0] * forward[0] + centre[1] * forward[1] + centre[2] * forward[2];
-    let spread = forward[0].abs() + forward[1].abs() + forward[2].abs();
-    let zmin = (depth - half * spread).max(view.near);
-    let fx = centre[0].abs() + half;
-    let fy = centre[1].abs() + half;
-    let fz = centre[2].abs() + half;
-    let dmax = (fx * fx + fy * fy + fz * fz).sqrt();
-    side * view.focal * dmax / (zmin * zmin)
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// Longest projected edge of the cube `[lo, lo + side]`, in pixels (the twin of
+/// `OrbitCamera::projected_voxel_edge_pixels`); `+inf` when any corner is at or behind the eye
+/// plane, so a cell around the eye always refines.
+///
+/// Operation order, copied literally by the WGSL port: corner coordinate `lo[a]` or `lo[a] + side`
+/// (corner bit `a` of the index selects the far side); `d = x*fx + y*fy + z*fz`; `+inf` if
+/// `d <= 0`; pixels `focal * (dot(o, right) / d)` and `focal * (dot(o, up) / d)`; the result is
+/// the maximum over the 12 edges of `sqrt(dx*dx + dy*dy)`.
+pub fn edge_px(view: &LodView, lo: [f32; 3], side: f32) -> f32 {
+    let mut projected = [[0.0f32; 2]; 8];
+    for (index, pixel) in projected.iter_mut().enumerate() {
+        let corner: [f32; 3] = std::array::from_fn(|a| {
+            if index >> a & 1 == 0 {
+                lo[a]
+            } else {
+                lo[a] + side
+            }
+        });
+        let depth = dot(corner, view.forward);
+        if depth <= 0.0 {
+            return f32::INFINITY;
+        }
+        *pixel = [
+            view.focal * (dot(corner, view.right) / depth),
+            view.focal * (dot(corner, view.up) / depth),
+        ];
+    }
+    let mut maximum = 0.0f32;
+    for index in 0..8usize {
+        for axis in 0..3 {
+            if index >> axis & 1 != 0 {
+                continue;
+            }
+            let other = index | 1 << axis;
+            let dx = projected[index][0] - projected[other][0];
+            let dy = projected[index][1] - projected[other][1];
+            maximum = maximum.max((dx * dx + dy * dy).sqrt());
+        }
+    }
+    maximum
 }
 
 /// E1: the cell is worth replacing by finer ones.
 pub fn refines(view: &LodView, lo: [f32; 3], side: f32) -> bool {
-    side > view.min_side && edge_bound(view, lo, side) > view.target_px
+    side > view.min_side && edge_px(view, lo, side) > view.target_px
 }
 
 /// `2^exponent` as an `f32`, exact for `0 <= exponent <= MAX_NODE_SPAN`.
@@ -143,7 +174,7 @@ pub fn masked_any(node: &NodeLod, depth: u8, rel: [u32; 3]) -> bool {
     }
 }
 
-/// E4: does the cell `rel` of `depth` (side `side`) draw its points?
+/// E4 (all ancestors): does the cell `rel` of `depth` (side `side`) draw its points?
 /// Exactly one active depth draws each unmasked point whose depths are all evaluated.
 pub fn draws(view: &LodView, node: &NodeLod, depth: u8, rel: [u32; 3], side: f32) -> bool {
     debug_assert!(depth >= node.node_depth && depth - node.node_depth <= MAX_NODE_SPAN);
@@ -155,17 +186,25 @@ pub fn draws(view: &LodView, node: &NodeLod, depth: u8, rel: [u32; 3], side: f32
     if finer && refines(view, cell_lo(node, rel, side), side) {
         return false;
     }
-    let coarser = node.active & ((1u64 << level) - 1);
-    if coarser == 0 {
-        return true;
+    // Every coarser active depth must refine (or be masked over this cell), coarsest first.
+    let mut coarser = node.active & ((1u64 << level) - 1);
+    while coarser != 0 {
+        let ancestor_level = coarser.trailing_zeros();
+        coarser &= coarser - 1;
+        let up = level - ancestor_level;
+        let ancestor_rel = rel.map(|r| r >> up);
+        let ancestor_side = side * pow2(up);
+        let ancestor_depth = node.node_depth + ancestor_level as u8;
+        if !(refines(
+            view,
+            cell_lo(node, ancestor_rel, ancestor_side),
+            ancestor_side,
+        ) || masked_any(node, ancestor_depth, ancestor_rel))
+        {
+            return false;
+        }
     }
-    let prev_level = 63 - coarser.leading_zeros();
-    let up = level - prev_level;
-    let prev_rel = rel.map(|r| r >> up);
-    let prev_side = side * pow2(up);
-    let prev_depth = node.node_depth + prev_level as u8;
-    refines(view, cell_lo(node, prev_rel, prev_side), prev_side)
-        || masked_any(node, prev_depth, prev_rel)
+    true
 }
 
 /// Oracle for simulations: the active depth whose cell containing `point` draws it, if any.

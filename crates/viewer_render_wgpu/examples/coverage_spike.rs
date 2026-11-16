@@ -2387,7 +2387,25 @@ struct LodView<'a> {
     scale: f64,
 }
 
-/// Refine rule of the descent: `Bound` is `cell_lod::refines` (phase 2a E1), `Edge` refines while
+/// The phase 2a E1 bound the metric gate measured (it failed; `cell_lod` now uses the actual edge):
+/// `side * focal * dmax / max(zmin, near)^2`, kept here so the record stays reproducible. `near` is
+/// the frustum near plane's distance in scaled units, the nearest equivalent the spike has of the
+/// `lod_min_depth` the library function used.
+fn bound_refines(view: &cell_lod::LodView, near: f32, lo: [f32; 3], side: f32) -> bool {
+    let half = side * 0.5;
+    let centre = [lo[0] + half, lo[1] + half, lo[2] + half];
+    let forward = view.forward;
+    let depth = centre[0] * forward[0] + centre[1] * forward[1] + centre[2] * forward[2];
+    let spread = forward[0].abs() + forward[1].abs() + forward[2].abs();
+    let zmin = (depth - half * spread).max(near);
+    let fx = centre[0].abs() + half;
+    let fy = centre[1].abs() + half;
+    let fz = centre[2].abs() + half;
+    let dmax = (fx * fx + fy * fy + fz * fz).sqrt();
+    side > view.min_side && side * view.focal * dmax / (zmin * zmin) > view.target_px
+}
+
+/// Refine rule of the descent: `Bound` is the failed phase 2a E1 bound (`bound_refines`), `Edge` refines while
 /// the actual projected edge is above the target, `Distance` is the phase 0a rule.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Metric {
@@ -2450,7 +2468,12 @@ impl LodView<'_> {
                 // Eye-relative scaled f32 coordinates, as the cut computes them.
                 let lo: [f32; 3] =
                     std::array::from_fn(|i| (min[i] * self.scale - self.eye_scaled[i]) as f32);
-                cell_lod::refines(&self.bound, lo, (side * self.scale) as f32)
+                bound_refines(
+                    &self.bound,
+                    (self.near * self.scale) as f32,
+                    lo,
+                    (side * self.scale) as f32,
+                )
             }
             Metric::Edge => {
                 let Ok(bounds) = SpatialBounds::new(min, min.map(|v| v + side)) else {

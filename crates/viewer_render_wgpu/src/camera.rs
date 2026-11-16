@@ -531,6 +531,12 @@ impl OrbitCamera {
         self.basis().1.to_array()
     }
 
+    /// Unit `(right, up)` image axes, in the same units as `position`.
+    pub(crate) fn right_up(&self) -> ([f64; 3], [f64; 3]) {
+        let (_, _, right, up) = self.basis();
+        (right.to_array(), up.to_array())
+    }
+
     fn basis(&self) -> (DVec3, DVec3, DVec3, DVec3) {
         let offset = DVec3::new(
             self.yaw.sin() * self.pitch.cos(),
@@ -546,7 +552,7 @@ impl OrbitCamera {
 
     /// Depth below which the LOD error stops growing. It deliberately ignores the render near
     /// plane: lowering that one must not make selection refine ~100x more near the camera.
-    pub(crate) fn lod_min_depth(&self) -> f64 {
+    fn lod_min_depth(&self) -> f64 {
         let (position, forward, _, _) = self.basis();
         let center_depth = (self.scene_center - position).dot(forward);
         (center_depth - self.radius * 1.2)
