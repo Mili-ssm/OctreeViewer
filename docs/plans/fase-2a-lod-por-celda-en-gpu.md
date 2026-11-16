@@ -222,10 +222,10 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Consumes: `CellDriver::set_lod_mode` (Task 9).
 - Produces: `viewer.setCellLod('octant' | 'cell')` and the worker message `{type: 'setCellLod', mode}`; an unknown string is rejected with an error and the mode is kept; `?cellLod=cell` sets it at start (no UI control in this phase).
 
-- [ ] **Step 1: Write the failing tests:** `switching_mode_rewrites_the_page_table`; `set_cell_lod_rejects_unknown_modes`; the JS round trip in `cells-protocol`.
-- [ ] **Step 2:** `cargo test -p viewer_wasm --profile fast --offline --lib lod_cells` and `node --test examples/web-host/tests/cells-protocol.test.mjs` → FAIL.
-- [ ] **Step 3:** implement → both PASS.
-- [ ] **Step 4:** commit `feat(wasm): expose the cellLod option`.
+- [x] **Step 1: Write the failing tests:** `switching_mode_rewrites_the_page_table`; `set_cell_lod_rejects_unknown_modes`; the JS round trip in `cells-protocol`.
+- [x] **Step 2:** `cargo test -p viewer_wasm --profile fast --offline --lib lod_cells` and `node --test examples/web-host/tests/cells-protocol.test.mjs` → FAIL.
+- [x] **Step 3:** implement → both PASS.
+- [x] **Step 4:** commit `feat(wasm): expose the cellLod option`.
 
 ### Task 11: Probes, docs and record
 
