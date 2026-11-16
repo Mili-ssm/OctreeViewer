@@ -2704,6 +2704,7 @@ fn drawing(node: u64, octants: &[usize]) -> CellCutEntry {
         wanted: [Some(7); 8],
         drawn: std::array::from_fn(|o| octants.contains(&o).then_some(7)),
         stage: [false; 8],
+        range: None,
         mask: [0; 8],
     }
 }
@@ -3323,6 +3324,7 @@ fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
         NodeDepths {
             node: node.clone(),
             depths: [below; 8],
+            far: (0, 0),
             pose: Pose {
                 eye: [0.0; 3],
                 forward: [0.0, 0.0, 1.0],
@@ -3636,4 +3638,35 @@ fn min_side_bounds_the_wanted_depth() {
             }
         }
     }
+}
+
+#[test]
+fn cell_mode_activates_resident_depths_across_the_range() {
+    // Residents at every stored depth: the active set also holds the resident depths between
+    // the node's far (lo) and near (hi) depths that no octant draws.
+    let cam = camera("zoom");
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+    )]);
+    let mut rig = Rig::new(nodes, 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    rig.pool.residency_epoch += 1;
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
+    let entry = &plan.entries[0];
+    let (lo, hi) = entry.range.expect("a cell-mode node has a range");
+    assert!(lo < hi, "{lo}..{hi}");
+    let required = entry.required_levels();
+    assert!(required.iter().all(|d| *d <= hi));
+    assert!(
+        (lo..=hi).any(|d| !required.contains(&d)),
+        "the range reaches depths no octant draws: {lo}..{hi} vs {required:?}"
+    );
+    let expected: Vec<u8> = (lo..=hi)
+        .chain(required.iter().copied())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    assert_eq!(active_depths(&plan, &rig, 1), expected);
 }

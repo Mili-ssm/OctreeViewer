@@ -85,8 +85,9 @@ use crate::node_cells::{node_range, representative_depth_for_spacing};
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
     cell_cut::{
-        FastMap, FastSet, MAX_MASK_LEVELS, cell_cut_with, cell_depth_range, drawn_levels,
-        in_cell_range, octant_wanted_depth, octant_wanted_depth_near, served_depth,
+        FastMap, FastSet, MAX_MASK_LEVELS, cell_cut_ranged, cell_cut_with, cell_depth_range,
+        drawn_levels, in_cell_range, node_far_depth, octant_wanted_depth, octant_wanted_depth_near,
+        served_depth,
     },
     representative_depth,
 };
@@ -283,6 +284,9 @@ struct Pose {
 struct NodeDepths {
     node: PoolNode,
     depths: [u8; 8],
+    /// Cell mode: the node's far wanted depth and the octants in front of the eye
+    /// (`node_far_depth`); `(0, 0)` in octant mode, which never reads them.
+    far: (u8, u8),
     pose: Pose,
     /// Effective view depth of the node at that pose, in scaled units: the depth of its nearest
     /// point along the view direction, times the cosine of its off-axis angle (`depth^2 /
@@ -810,6 +814,12 @@ impl Ctx<'_> {
     fn depth(&self, id: NodeId, octant: usize, data: &CellCutNode) -> u8 {
         self.depths[&id].depths[octant].min(data.buildable.1)
     }
+
+    /// `node_far_depth` of the node (cell mode), capped like `depth`.
+    fn far(&self, id: NodeId, data: &CellCutNode) -> (u8, u8) {
+        let (far, front) = self.depths[&id].far;
+        (far.min(data.buildable.1), front)
+    }
 }
 
 impl CellPool {
@@ -886,6 +896,8 @@ impl CellPool {
         self.lod_mode = mode;
         self.wanted_memo = None;
         self.real_memo = None;
+        // The cached far depths are only computed in cell mode.
+        self.depths.clear();
         for slot in self.mask_slots.values_mut() {
             slot.stale = true;
         }
@@ -918,7 +930,18 @@ impl CellPool {
         node_depth: u8,
         new_d5: Option<u8>,
     ) -> Vec<u8> {
-        let mut depths: Vec<u8> = in_cell_range(&entry.required_levels(), node_depth)
+        // Every depth inside the node's range `[lo, hi]` that is already resident is
+        // active too (no request or build): the GPU picks per cell among them.
+        let mut wanted = entry.required_levels();
+        // A node that draws nothing (held, nothing resident in its span) stays out entirely.
+        if let Some((lo, hi)) = entry.range
+            && !wanted.is_empty()
+        {
+            wanted.extend(lo..=hi);
+            wanted.sort_unstable();
+            wanted.dedup();
+        }
+        let mut depths: Vec<u8> = in_cell_range(&wanted, node_depth)
             .into_iter()
             .filter(|depth| {
                 let key = self.key(entry.node, *depth);
@@ -2302,7 +2325,28 @@ impl CellPool {
                 Some(limit) => depths.map(|depth| continuity_depth(data.buildable, depth, limit)),
                 None => depths,
             };
-            let differs = was.is_none_or(|cached| cached.depths != depths);
+            let far = if self.lod_mode == LodMode::Cell {
+                let (far, front) = node_far_depth(
+                    view,
+                    grid,
+                    origin,
+                    data.bounds,
+                    data.buildable,
+                    target_px,
+                    hints
+                        .is_some()
+                        .then(|| was.map(|cached| cached.far.0))
+                        .flatten(),
+                );
+                (
+                    finest_allowed
+                        .map_or(far, |limit| continuity_depth(data.buildable, far, limit)),
+                    front,
+                )
+            } else {
+                (0, 0)
+            };
+            let differs = was.is_none_or(|cached| cached.depths != depths || cached.far != far);
             if extra_set.contains(&id) {
                 extra_changed |= differs;
             } else {
@@ -2314,6 +2358,7 @@ impl CellPool {
                 NodeDepths {
                     node: data.clone(),
                     depths,
+                    far,
                     pose,
                     depth: effective_depth(pose, data.bounds, origin),
                     exact,
@@ -2581,14 +2626,18 @@ impl CellPool {
                 Some(node)
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
-            let entries =
-                match cell_cut_with(real_cut, &lookup, grid, self.lod_mode, &|id, o, data| {
-                    ctx.depth(id, o, data)
-                }) {
-                    Ok(entries) => Some(entries),
-                    Err(CellCutError::DescendantTooFine { .. }) => None,
-                    Err(other) => return Err(other),
-                };
+            let entries = match cell_cut_ranged(
+                real_cut,
+                &lookup,
+                grid,
+                self.lod_mode,
+                &|id, o, data| ctx.depth(id, o, data),
+                Some(&|id, data| ctx.far(id, data)),
+            ) {
+                Ok(entries) => Some(entries),
+                Err(CellCutError::DescendantTooFine { .. }) => None,
+                Err(other) => return Err(other),
+            };
             let planned_missing = entries.as_deref().map_or(cut.len() as u32, |entries| {
                 missing_levels(entries) + found.excluded.len() as u32
             });

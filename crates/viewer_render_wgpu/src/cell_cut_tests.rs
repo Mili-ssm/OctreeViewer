@@ -559,6 +559,7 @@ fn digest_tells_a_hidden_octant_from_depth_zero() {
         wanted: [wanted; 8],
         drawn: [wanted; 8],
         stage: [false; 8],
+        range: None,
         mask: [0; 8],
     };
     assert_ne!(
@@ -1467,4 +1468,159 @@ fn the_octant_wanted_depth_keeps_cells_at_least_the_target() {
         }
     }
     assert!(finer > 500, "{finer} finer octants");
+}
+
+// ---- Phase 2b task 1: the depth range of a node ----
+
+fn huge_grid() -> CellGrid {
+    CellGrid {
+        root_min: [-1000.0; 3],
+        root_side: 2000.0,
+    }
+}
+
+/// Cell-mode entry of one node with every depth of `buildable` stored and resident, its octant
+/// depths and range from the view as the pool computes them (origin `[0; 3]`).
+fn ranged_entry(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    bounds: SpatialBounds,
+    buildable: (u8, u8),
+    target: f64,
+) -> CellCutEntry {
+    let stored: Vec<u8> = (buildable.0..=buildable.1).collect();
+    let node = CellCutNode {
+        bounds,
+        buildable,
+        resident: stored.clone(),
+        stored,
+    };
+    cell_cut_ranged(
+        &ids(&[1]),
+        &|_| Some(node.clone()),
+        grid,
+        LodMode::Cell,
+        &|_, octant, data| {
+            octant_wanted_depth(view, grid, [0.0; 3], bounds, octant, data.buildable, target)
+        },
+        Some(&|_, data| node_far_depth(view, grid, [0.0; 3], bounds, data.buildable, target, None)),
+    )
+    .unwrap()
+    .remove(0)
+}
+
+fn posed(eye: [f64; 3], at: [f64; 3]) -> ViewProjection {
+    let mut camera = cameras().remove(0).1;
+    assert!(camera.set_pose(eye, at));
+    view(&camera)
+}
+
+#[test]
+fn the_far_wanted_depth_is_never_finer_than_the_near_one() {
+    let grid = huge_grid();
+    let mut state = 0x2545_F491_4F6C_DD1D_u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1_u64 << 53) as f64
+    };
+    let mut checked = 0;
+    for _ in 0..800 {
+        let eye: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1600.0);
+        let at: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1000.0);
+        let mut camera = cameras().remove(0).1;
+        if !camera.set_pose(eye, at) {
+            continue;
+        }
+        let view = view(&camera);
+        let target = [1.0, 4.0, 16.0][(next() * 3.0) as usize % 3];
+        // A random box inside the grid: the root or one of its octants.
+        let side = 2000.0 / f64::from(1_u32 << ((next() * 3.0) as u32));
+        let min: [f64; 3] = std::array::from_fn(|_| {
+            -1000.0 + ((next() * 2000.0 / side).floor() * side).min(2000.0 - side)
+        });
+        let bounds = SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
+        let (far, front) = node_far_depth(&view, &grid, [0.0; 3], bounds, (3, 12), target, None);
+        let near = (0..8)
+            .filter(|o| front >> o & 1 == 1)
+            .map(|o| octant_wanted_depth(&view, &grid, [0.0; 3], bounds, o, (3, 12), target))
+            .max();
+        if let Some(near) = near {
+            assert!(
+                far <= near,
+                "far {far} > near {near}: eye {eye:?} at {at:?} box {bounds:?} target {target}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 300, "{checked} poses checked");
+}
+
+#[test]
+fn a_node_straddling_the_eye_plane_has_a_sane_range() {
+    // The eye sits beside the node, level with its middle, looking along +x: the node's lower-x
+    // half is behind the eye plane, the upper-x half in front.
+    let grid = huge_grid();
+    let bounds = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    let view = posed([100.0, 3000.0, 0.0], [1000.0, 3000.0, 0.0]);
+    let entry = ranged_entry(&view, &grid, bounds, (3, 12), 4.0);
+    let (lo, hi) = entry.range.expect("range");
+    assert!(lo <= hi && (3..=12).contains(&lo) && hi <= 12, "{lo}..{hi}");
+}
+
+#[test]
+fn the_eye_inside_the_node_gives_lo_le_hi() {
+    let grid = huge_grid();
+    let bounds = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    for at in [
+        [900.0, 0.0, 0.0],
+        [0.0, -900.0, 100.0],
+        [-500.0, 500.0, 500.0],
+    ] {
+        let view = posed([10.0, 20.0, 30.0], at);
+        for target in [1.0, 4.0, 16.0] {
+            let entry = ranged_entry(&view, &grid, bounds, (3, 12), target);
+            let (lo, hi) = entry.range.expect("range");
+            assert!(lo <= hi, "{lo}..{hi} at {at:?} target {target}");
+        }
+    }
+}
+
+#[test]
+fn an_octant_behind_the_eye_does_not_widen_the_range() {
+    // Octants 0..4 are behind the eye: they "want" the finest depth (12) only because their cube
+    // measures +inf, so they must not set `hi`; the visible ones want 5, the far side 4.
+    let nodes = root_with(&[3, 4, 5, 6, 12], &[3, 4, 5, 6, 12]);
+    let range = |front: u8| {
+        cell_cut_ranged(
+            &ids(&[1]),
+            &|id| nodes.get(&id).cloned(),
+            &dataset_grid(ORIGIN),
+            LodMode::Cell,
+            &|_, octant, _| if octant < 4 { 12 } else { 5 },
+            Some(&|_, _| (4, front)),
+        )
+        .unwrap()[0]
+            .range
+    };
+    assert_eq!(range(0b1111_0000), Some((4, 5)));
+    // None in front (every octant crosses the plane): hi = lo.
+    assert_eq!(range(0), Some((4, 4)));
+}
+
+#[test]
+fn octant_mode_entries_have_no_range() {
+    let nodes = root_with(&[0, 1, 2, 3], &[0, 1, 2, 3]);
+    let camera = cameras().remove(0).1;
+    let entries = run(
+        &ids(&[1]),
+        &nodes,
+        &camera,
+        &dataset_grid(ORIGIN),
+        ORIGIN,
+        4.0,
+    )
+    .unwrap();
+    assert!(entries.iter().all(|entry| entry.range.is_none()));
 }
