@@ -18,13 +18,35 @@ point, so a node whose octants are all near has one active depth and the per-cel
 (RF-31), D4 of the [master plan](nivel-pedido-y-lod-por-celda.md), R3-Q11/Q19/Q21 in [requirements](../requirements.md),
 design E1–E8 of [phase 2a](fase-2a-lod-por-celda-en-gpu.md).
 
-## Design decisions (agent, 16-11-2026)
+## Design decisions (agent, 16-11-2026; pre-mortem applied)
 
 | # | Decision | Why |
 | --- | --- | --- |
-| F1 | Each octant gets a **far** wanted depth besides the near one: the same probe (`OctantProbe`, actual projected edge) with the cube placed at the octant's point **farthest** from the eye. The node's wanted range is `[min far, max near]` over its non-masked octants, clamped to its buildable range and the cell span | The coarsest depth any cell of the node can want is the one at its farthest point; the finest, at its nearest |
-| F2 | Cell mode wants **every** depth of the range: missing ones are requested (built on demand, phase 1), coarse to fine; the active set is the closest resident (finer on a tie) to each depth of the range | Contiguous active depths: bands inside the node and neighbours ≤ 1 level apart (ADR 0053, spatial) |
-| F3 | Octant mode unchanged | Default of the library |
+| F1 | Each node gets a **far** wanted depth besides the per-octant near ones: the same probe (actual projected edge) at the node corner with the largest depth along `forward`; octants entirely behind the eye contribute nothing; `far = min(far, near)`. The near side is bounded by the near plane (D4). Range = `[far, max near]`, clamped to buildable, caps and span, with `lo ≤ hi` | The coarsest depth any cell wants is at the node's farthest point; a Euclidean farthest corner behind the eye would project to +inf and want the tail (the #57 OOM path) |
+| F2 | The range lives in a cell-mode-only field of `CellCutEntry` (`range: Option<(u8, u8)>`); `wanted`/`drawn`/`stage` keep their per-octant near-depth meaning (holds, stage counts, digests and oracles unchanged) | Squeezing a range into the 8 octant slots breaks the R3-Q21 hold and the oracles |
+| F3 | Built step by step: (1b) activate every **already resident** depth in the range — no builds, no new bytes; (1c) fetch stored depths in the range; (1d) build missing ones on demand, but never below the node's spacing/separation depth (the tail stays as today until Task 4); the fit counts requested depths at their estimated size | The cheapest step may already give the bands; the tail measured ~531 MiB in phase 0a |
+| F4 | **Cross-node chain instead of the per-node mask** (Task 2): a child node's cell treats its ancestor node's active depths as its coarser ancestors in the E4 rule, and the ancestor's cells yield only where a finer depth the child holds is wanted; no whole-footprint masking | The owner (16-11-2026) sees straight node borders where a child replaces its parent wholesale; ADR 0050 forbids whole octants or nodes changing at once |
+| F5 | Octant mode unchanged | Default of the library |
+
+## Global Constraints
+
+As in phase 2a (English code/commits, Spanish docs, no AI attribution; octant mode byte-for-byte unchanged; checks
+`cargo test -p <crate> --profile fast --offline --lib`, clippy, `scripts/check.sh` with the real input before merge).
+
+## Kill criteria
+
+- Uncapped need above 460 MiB at ≥ 2 px (Majadas inside a leaf), or the fit coarsening nodes where phase 2a did not → stop 1d, keep 1b/1c.
+- Any node with `far > near`, or a range wider than ~6 for a node that does not contain the eye → fix the probe first.
+- After 1b the owner's pose shows no bands → the diagnosis is wrong; re-plan with the owner before 1c/1d.
+- Request queue not draining within ~2 s at the owner's pose, build-worker heap over the CPU budget, or frame p95 over twice phase 2a while loading → stop on-demand range builds.
+- Task 2 GPU partition test (parent + child pairs) finds a double or a hole away from the threshold → stop and re-plan.
+
+--- | --- | --- |
+| F1 | Each node gets a **far** wanted depth besides the per-octant near ones: the same probe (actual projected edge) at the node corner with the largest depth along `forward`; octants entirely behind the eye contribute nothing; `far = min(far, near)`. The near side is bounded by the near plane (D4). Range = `[far, max near]`, clamped to buildable, caps and span, with `lo ≤ hi` | The coarsest depth any cell wants is at the node's farthest point; a Euclidean farthest corner behind the eye would project to +inf and want the tail (the #57 OOM path) |
+| F2 | The range lives in a cell-mode-only field of `CellCutEntry` (`range: Option<(u8, u8)>`); `wanted`/`drawn`/`stage` keep their per-octant near-depth meaning (holds, stage counts, digests and oracles unchanged) | Squeezing a range into the 8 octant slots breaks the R3-Q21 hold and the oracles |
+| F3 | Built step by step: (1b) activate every **already resident** depth in the range — no builds, no new bytes; (1c) fetch stored depths in the range; (1d) build missing ones on demand, but never below the node's spacing/separation depth (the tail stays as today until Task 4); the fit counts requested depths at their estimated size | The cheapest step may already give the bands; the tail measured ~531 MiB in phase 0a |
+| F4 | **Cross-node chain instead of the per-node mask** (Task 2): a child node's cell treats its ancestor node's active depths as its coarser ancestors in the E4 rule, and the ancestor's cells yield only where a finer depth the child holds is wanted; no whole-footprint masking | The owner (16-11-2026) sees straight node borders where a child replaces its parent wholesale; ADR 0050 forbids whole octants or nodes changing at once |
+| F5 | Octant mode unchanged | Default of the library |
 
 ## Global Constraints
 
@@ -38,25 +60,18 @@ As in phase 2a (English code/commits, Spanish docs, no AI attribution; octant mo
 
 ---
 
-### Task 1: The wanted range per node (F1, F2)
+### Task 1: The depth range per node (F1–F3)
 
-**Files:** `crates/viewer_render_wgpu/src/cell_cut.rs` (far probe, range), `cell_pool.rs` (cached far depths next to
-`NodeDepths.depths`, requests and active set over the range in cell mode), tests; simulations in `crates/viewer_wasm`
-must keep passing in both modes.
+- [ ] **1a** compute and expose the range (`CellCutEntry.range`), no behaviour change; tests: far ≤ near, a node straddling the eye plane, the eye inside the node, an octant behind the eye.
+- [ ] **1b** activate every already-resident depth inside the range (cell mode); browser screenshot of the owner's pose (kill criterion: no bands → stop).
+- [ ] **1c** fetch stored depths inside the range.
+- [ ] **1d** build missing depths on demand down to the spacing/separation depth only; the fit counts requested depths; measure the uncapped need, `levels.bin` coverage, request queue and build-worker heap in the browser.
+- [ ] Test: no drawn cell finer than its parent cell needed (`refines()` of the parent), exempting the buildable minimum, caps and the span floor; the sims' `finer_than_wanted` counter drops.
 
-- [ ] **Step 1: failing tests:** `the_far_probe_wants_coarser_than_the_near_one` (an octant spanning near and far
-  distances); `cell_mode_wants_the_whole_range_of_a_near_node` (a node whose 8 octants are all near: its active set
-  covers `[min far, max near]`, the missing depths are requested coarse to fine); `cell_mode_never_draws_a_far_cell_finer_than_needed`
-  (twin oracle: with the range resident, no drawn cell's projected edge is below target/2 unless it is the finest
-  buildable depth or a masked/held case).
-- [ ] **Step 2:** implement; octant mode untouched.
-- [ ] **Step 3:** measure resident bytes and instances in the native bench (`cell_pool_bench --cell-lod`) on Majadas
-  and Belvedere at 1/4 px (grazing, inside a leaf) against the kill criteria; browser screenshots of the owner's pose
-  (near node) in cell mode before/after.
-- [ ] **Step 4:** commit `feat(render): want the whole depth range of a node in cell mode`.
+### Task 2: Cross-node chain instead of the per-node mask (F4) — to detail after Task 1 (node record links to its ancestor's record; GPU partition test over parent + child pairs)
 
-### Task 2: One level per frame (ADR 0053, temporal) — to detail after Task 1
+### Task 3: One level per frame (ADR 0053, temporal) — to detail after Task 2
 
-### Task 3: Residency D4 and coarse levels derived from children — to detail after Task 1
+### Task 4: Residency D4 and coarse levels derived from children
 
-### Task 4: The tail below spacing (ADR 0053, pending review) — measure, then decide with the owner
+### Task 5: The tail below spacing (ADR 0053, pending review) — measure, then decide with the owner
