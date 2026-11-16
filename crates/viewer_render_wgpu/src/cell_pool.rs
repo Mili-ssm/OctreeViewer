@@ -42,6 +42,9 @@
 //! `HOLD_PASSES` times) until the held set no longer changes; when it does not settle, the nodes
 //! held in either set stay held and `hold_unsettled` counts them. It is per node because the
 //! mask hides the whole footprint of `C`. The levels of `C` are requested and uploaded as usual.
+//! Cell mode adds the D5 gate (E7): a `C` that would mask an ancestor of the real cut stays held
+//! (same mechanism) while that ancestor has no resident depth >= its `rep`; that depth is
+//! requested first and protected, and joins the ancestor's active set once its mask is set.
 //! Requests and uploads go coarse to fine: the first
 //! level of the nodes that draw nothing, then absolute level depth, then distance.
 //!
@@ -888,10 +891,51 @@ impl CellPool {
     /// Cell mode: the drawn depths of `entry` that are resident and inside the node's span, the
     /// ones emitted as active levels (a retained cut may hold depths of another mode or span).
     fn cell_active_depths(&self, entry: &CellCutEntry, node_depth: u8) -> Vec<u8> {
-        in_cell_range(&entry.required_levels(), node_depth)
+        let mut depths: Vec<u8> = in_cell_range(&entry.required_levels(), node_depth)
             .into_iter()
             .filter(|depth| self.is_resident(self.key(entry.node, *depth)))
-            .collect()
+            .collect();
+        // D5 (E7): a node whose mask is set also has its D5 depth active, which covers the
+        // unmasked part of its coarse cells.
+        if entry.mask.iter().any(|word| *word != 0)
+            && let Some(node) = self.applied_index.nodes.get(&entry.node)
+            && let Some(grid) = &self.applied_index.grid
+            && let Some(d5) = self.d5_resident(entry.node, node, grid)
+            && !depths.contains(&d5)
+        {
+            depths.push(d5);
+            depths.sort_unstable();
+        }
+        depths
+    }
+
+    /// Stored depths of `node` that cell mode can use (inside its span, under the fit cap).
+    fn d5_stored(&self, id: NodeId, node: &PoolNode, grid: &CellGrid) -> Vec<u8> {
+        self.drawable_stored(&capped(&node.stored, self.caps.get(&id)), grid, node.bounds)
+    }
+
+    /// The D5 depth of a node (E7): its smallest resident depth `>= rep` (`node_depth + 3`)
+    /// inside the cell span.
+    fn d5_resident(&self, id: NodeId, node: &PoolNode, grid: &CellGrid) -> Option<u8> {
+        let rep = representative_depth(grid, node.bounds);
+        self.d5_stored(id, node, grid)
+            .into_iter()
+            .find(|depth| *depth >= rep && self.is_resident(self.key(id, *depth)))
+    }
+
+    /// The depth to request as the D5 depth of a node: the smallest stored depth `>= rep` and,
+    /// when none is stored, the first buildable one inside the span.
+    fn d5_wanted(&self, id: NodeId, node: &PoolNode, grid: &CellGrid) -> Option<u8> {
+        let rep = representative_depth(grid, node.bounds);
+        self.d5_stored(id, node, grid)
+            .into_iter()
+            .find(|depth| *depth >= rep)
+            .or_else(|| {
+                let buildable = capped_range(node.buildable, self.caps.get(&id));
+                let (lo, hi) = cell_depth_range(Self::node_depth(grid, node.bounds));
+                let first = rep.max(lo).max(buildable.0);
+                (first <= hi.min(buildable.1)).then_some(first)
+            })
     }
 
     /// The coarsest buildable depth inside the node's span, which cell mode requests (and pins)
@@ -1684,6 +1728,92 @@ impl CellPool {
         hold: &FastSet<NodeId>,
         wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
     ) -> HoldEval {
+        let mut out = self.eval_refine_hold(entries, cut, nodes, grid, hold, wanted_depth);
+        self.add_d5_gate(&mut out, entries, cut, nodes, grid);
+        out
+    }
+
+    /// E7, cell mode: a cut node that would mask an ancestor of the real cut stays held while
+    /// that ancestor draws but has no resident D5 depth, so a partially masked coarse cell never
+    /// leaves a hole. It looks at what the node would draw (its resident levels), not at the
+    /// mask, so the held set does not depend on itself.
+    fn add_d5_gate(
+        &self,
+        out: &mut HoldEval,
+        entries: &[CellCutEntry],
+        cut: &[NodeId],
+        nodes: &FastMap<NodeId, PoolNode>,
+        grid: &CellGrid,
+    ) {
+        if self.lod_mode != LodMode::Cell {
+            return;
+        }
+        let mut cells: FastMap<(u8, [u64; 3]), NodeId> = FastMap::default();
+        for entry in entries {
+            let f = Footprint::new(grid, nodes[&entry.node].bounds);
+            cells.entry((f.rep, f.lo)).or_insert(entry.node);
+        }
+        for entry in &entries[..cut.len()] {
+            let id = entry.node;
+            let data = &nodes[&id];
+            if !self.has_resident_level(id, data, grid) {
+                continue;
+            }
+            let f = Footprint::new(grid, data.bounds);
+            for gap in f.gaps() {
+                let Some(&ancestor) = cells.get(&f.ancestor(gap)) else {
+                    continue;
+                };
+                let a = &nodes[&ancestor];
+                if self.has_resident_level(ancestor, a, grid)
+                    && self.d5_resident(ancestor, a, grid).is_none()
+                {
+                    out.hold.insert(id);
+                    out.settle.insert(id);
+                    out.ancestors.insert(ancestor);
+                }
+            }
+        }
+    }
+
+    /// E7: the D5 depth (`d5_wanted`) of each node of `cut` or `ancestors` that has a node of
+    /// `cut` under it (gap <= `MAX_MASK_LEVELS`, the span a mask can express).
+    fn d5_keys(
+        &self,
+        cut: &[NodeId],
+        ancestors: &[NodeId],
+        nodes: &FastMap<NodeId, PoolNode>,
+        grid: &CellGrid,
+    ) -> FastSet<LevelKey> {
+        let mut cells: FastMap<(u8, [u64; 3]), NodeId> = FastMap::default();
+        for id in cut.iter().chain(ancestors) {
+            let f = Footprint::new(grid, nodes[id].bounds);
+            cells.entry((f.rep, f.lo)).or_insert(*id);
+        }
+        let mut parents: FastSet<NodeId> = FastSet::default();
+        for id in cut {
+            let f = Footprint::new(grid, nodes[id].bounds);
+            parents.extend(f.gaps().filter_map(|gap| cells.get(&f.ancestor(gap))));
+        }
+        parents
+            .into_iter()
+            .filter_map(|id| {
+                let depth = self.d5_wanted(id, &nodes[&id], grid)?;
+                Some(self.key(id, depth))
+            })
+            .collect()
+    }
+
+    /// The R3-Q21 hold ("only refine"), see the module docs.
+    fn eval_refine_hold(
+        &self,
+        entries: &[CellCutEntry],
+        cut: &[NodeId],
+        nodes: &FastMap<NodeId, PoolNode>,
+        grid: &CellGrid,
+        hold: &FastSet<NodeId>,
+        wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
+    ) -> HoldEval {
         let mut out = HoldEval::default();
         if self.applied_drawn.is_empty() {
             return out;
@@ -2467,7 +2597,15 @@ impl CellPool {
                             .filter(|id| !found.excluded.contains(id))
                             .all(|id| {
                                 let f = Footprint::new(grid, nodes[id].bounds);
+                                // A node held by the D5 gate is covered by an ancestor of the
+                                // real cut itself.
                                 f.gaps().any(|gap| {
+                                    entries.iter().any(|a| {
+                                        let af = Footprint::new(grid, nodes[&a.node].bounds);
+                                        (af.rep, af.lo) == f.ancestor(gap)
+                                            && covers_in(entries, &position, a.node, &f, gap)
+                                    })
+                                }) || f.gaps().any(|gap| {
                                     self.applied_index
                                         .cells
                                         .get(&f.ancestor(gap))
@@ -2532,7 +2670,15 @@ impl CellPool {
         // Overflow keeps only the previous cut: nothing of the new one is requested.
         let no_levels = FastSet::default();
         let want: &FastSet<LevelKey> = if overflow { &no_levels } else { &needed };
+        // E7: the D5 depth of every node of the real cut with descendants in the wanted cut is
+        // protected from eviction and requested before anything else.
+        let d5 = if self.lod_mode == LodMode::Cell {
+            self.d5_keys(cut, &found.ancestors, nodes, grid)
+        } else {
+            FastSet::default()
+        };
         protected.extend(want.iter().copied());
+        protected.extend(d5.iter().copied());
         protected.extend(pinned.iter().copied());
         self.pinned = pinned;
 
@@ -2589,8 +2735,13 @@ impl CellPool {
             }
             drawable.insert(key.node);
         }
-        let mut wanted_keys: Vec<LevelKey> = want.iter().copied().collect();
+        let mut wanted_keys: Vec<LevelKey> = if overflow {
+            want.iter().copied().collect()
+        } else {
+            want.iter().chain(&d5).copied().collect()
+        };
         wanted_keys.sort();
+        wanted_keys.dedup();
         for key in wanted_keys {
             let data = &nodes[&key.node];
             if let std::collections::hash_map::Entry::Vacant(slot) = self.levels.entry(key) {
@@ -2615,7 +2766,8 @@ impl CellPool {
                         .first()
                         .copied(),
                 };
-                let first = !drawable.contains(&key.node) && coarsest_drawable == Some(key.depth);
+                let first = d5.contains(&key)
+                    || (!drawable.contains(&key.node) && coarsest_drawable == Some(key.depth));
                 order.push((
                     key,
                     Need {
@@ -2650,11 +2802,20 @@ impl CellPool {
         } else {
             requests.iter().copied().collect()
         };
+        for key in &d5 {
+            let stored = nodes
+                .get(&key.node)
+                .is_some_and(|node| node.stored.contains(&key.depth));
+            if !overflow && !stored && !level_requests.contains(key) {
+                level_requests.push(*key);
+            }
+        }
         level_requests.sort_by(|a, b| {
             let distance =
                 |key: &LevelKey| distance_sq(eye, nodes[&key.node].bounds, coordinate_origin);
-            a.depth
-                .cmp(&b.depth)
+            (!d5.contains(a))
+                .cmp(&!d5.contains(b))
+                .then(a.depth.cmp(&b.depth))
                 .then(distance(a).total_cmp(&distance(b)))
                 .then(a.node.cmp(&b.node))
         });
@@ -2842,7 +3003,16 @@ impl CellPool {
                     .map(|node| Self::node_depth(grid, node.bounds));
                 node_depth.map_or_else(Vec::new, |d| self.cell_active_depths(entry, d))
             });
-            for (depth, bits) in entry.draws() {
+            // Cell mode: active depths the node does not draw itself (its D5 depth) come last.
+            let extra = cell_depths.as_ref().map_or_else(Vec::new, |depths| {
+                let drawn: Vec<u8> = entry.required_levels();
+                depths
+                    .iter()
+                    .filter(|depth| !drawn.contains(depth))
+                    .map(|depth| (*depth, 0xff))
+                    .collect()
+            });
+            for (depth, bits) in entry.draws().into_iter().chain(extra) {
                 if cell_depths
                     .as_ref()
                     .is_some_and(|depths| !depths.contains(&depth))

@@ -3322,3 +3322,176 @@ fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
         Some(vec![near])
     );
 }
+
+/// A cell-mode rig that never delivers a level (delay far beyond the test), so residency is
+/// exactly what the test seeds.
+fn d5_rig(nodes: HashMap<NodeId, PoolNode>) -> Rig {
+    let mut rig = Rig::new(nodes, 512, 8, 10_000);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    rig
+}
+
+/// One frame of the pool alone: the fake GPU cannot follow levels that were seeded by hand.
+fn d5_step(rig: &mut Rig, cut: &[NodeId], camera: &OrbitCamera) -> FramePlan {
+    d5_step_at(rig, cut, camera, 64.0)
+}
+
+fn d5_step_at(rig: &mut Rig, cut: &[NodeId], camera: &OrbitCamera, target: f64) -> FramePlan {
+    let nodes = &rig.nodes;
+    rig.pool
+        .frame(
+            cut,
+            &|id| nodes.get(&id).cloned(),
+            &view(camera),
+            &grid(),
+            ORIGIN,
+            target,
+        )
+        .expect("frame")
+}
+
+fn d5_node(side: f64, stored: &[u8]) -> PoolNode {
+    PoolNode {
+        bounds: cube(ORIGIN, side),
+        stored: stored.to_vec(),
+        buildable: (stored[0], *stored.last().unwrap()),
+        points: 2000,
+    }
+}
+
+fn seed_more(rig: &mut Rig, node: u64, depths: &[u8]) {
+    seed_resident(&mut rig.pool, node, depths);
+    rig.pool.residency_epoch += 1;
+}
+
+fn mask_of(plan: &FramePlan, node: u64) -> [u64; 8] {
+    plan.entries
+        .iter()
+        .find(|entry| entry.node == NodeId::new(node))
+        .expect("entry")
+        .mask
+}
+
+fn active_depths(plan: &FramePlan, rig: &Rig, node: u64) -> Vec<u8> {
+    let slot = plan
+        .entries
+        .iter()
+        .find(|entry| entry.node == NodeId::new(node))
+        .and_then(|entry| rig.pool.mask_slots.get(&entry.node))
+        .map(|slot| slot.slot);
+    let mut depths: Vec<u8> = plan
+        .active
+        .iter()
+        .filter(|level| Some(level.mask_slot) == slot)
+        .map(|level| level.key.depth)
+        .collect();
+    depths.sort_unstable();
+    depths
+}
+
+/// Parent 1 (node depth 0, rep 3) with a coarse resident level 2 only; child 21 (rep 6) fully
+/// resident. The D5 depth of the parent is 4.
+fn d5_pair() -> Rig {
+    let mut rig = d5_rig(HashMap::from([
+        (NodeId::new(1), d5_node(SIDE, &[2, 4, 5])),
+        (NodeId::new(21), d5_node(SIDE / 8.0, &[6, 7])),
+    ]));
+    seed_resident(&mut rig.pool, 1, &[2]);
+    seed_resident(&mut rig.pool, 21, &[6, 7]);
+    rig
+}
+
+#[test]
+fn children_wait_for_the_parent_d5_level() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21]);
+    let mut rig = d5_pair();
+    let plan = d5_step(&mut rig, &cut, &cam);
+    assert_eq!(plan.apply, CutApply::Applied);
+    // The child is held: it neither draws nor masks the parent, which draws its whole zone.
+    assert_eq!(plan.counters.held_nodes, 1);
+    assert_eq!(mask_of(&plan, 1), [0; 8]);
+    assert!(plan.active.iter().all(|l| l.key.node != NodeId::new(21)));
+    assert!(plan.active.iter().any(|l| l.key.node == NodeId::new(1)));
+    // The parent's D5 depth is requested first.
+    assert_eq!(
+        plan.fetch_requests.first(),
+        Some(&rig.pool.key(NodeId::new(1), 4)),
+        "{:?}",
+        plan.fetch_requests
+    );
+    // It stays so while the level is missing, without oscillating.
+    for _ in 0..3 {
+        let plan = d5_step(&mut rig, &cut, &cam);
+        assert_eq!(plan.counters.held_nodes, 1);
+        assert_eq!(mask_of(&plan, 1), [0; 8]);
+    }
+    seed_more(&mut rig, 1, &[4]);
+    let plan = d5_step(&mut rig, &cut, &cam);
+    assert_eq!(plan.counters.held_nodes, 0);
+    assert_ne!(mask_of(&plan, 1), [0; 8]);
+    assert!(plan.active.iter().any(|l| l.key.node == NodeId::new(21)));
+}
+
+#[test]
+fn the_d5_depth_joins_the_active_set_when_the_mask_is_set() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21]);
+    let mut rig = d5_pair();
+    // A resident level above the D5 depth that nothing else makes active.
+    seed_more(&mut rig, 1, &[4]);
+    // A coarse want: the entry draws level 2 only, so level 4 is active only for the gate.
+    let plan = d5_step_at(&mut rig, &cut, &cam, 1.0e6);
+    assert_ne!(mask_of(&plan, 1), [0; 8]);
+    let entry = plan
+        .entries
+        .iter()
+        .find(|e| e.node == NodeId::new(1))
+        .unwrap();
+    assert!(
+        !entry.required_levels().contains(&4),
+        "{:?}",
+        entry.required_levels()
+    );
+    let active = active_depths(&plan, &rig, 1);
+    assert!(active.contains(&4), "{active:?}");
+    let update = plan
+        .mask_updates
+        .iter()
+        .find(|u| Some(u.slot) == rig.pool.mask_slots.get(&NodeId::new(1)).map(|s| s.slot))
+        .expect("update");
+    assert_ne!(update.active & (1 << 4), 0, "{:?}", update);
+}
+
+#[test]
+fn the_d5_gate_settles_within_hold_passes() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 2, 21]);
+    let mut rig = d5_rig(HashMap::from([
+        (NodeId::new(1), d5_node(SIDE, &[2, 4, 5])),
+        (NodeId::new(2), d5_node(SIDE / 2.0, &[2, 5, 6])),
+        (NodeId::new(21), d5_node(SIDE / 8.0, &[6, 7])),
+    ]));
+    seed_resident(&mut rig.pool, 1, &[2]);
+    seed_resident(&mut rig.pool, 2, &[2]);
+    seed_resident(&mut rig.pool, 21, &[6, 7]);
+    for _ in 0..3 {
+        let plan = d5_step(&mut rig, &cut, &cam);
+        assert_eq!(plan.apply, CutApply::Applied);
+        assert_eq!(plan.counters.hold_unsettled, 0);
+        assert_eq!(plan.counters.held_nodes, 2);
+        assert_eq!(mask_of(&plan, 1), [0; 8]);
+        assert_eq!(mask_of(&plan, 2), [0; 8]);
+    }
+    // The grandparent's D5 releases the parent; the child still waits for the parent's.
+    seed_more(&mut rig, 1, &[4]);
+    let plan = d5_step(&mut rig, &cut, &cam);
+    assert_eq!(plan.counters.hold_unsettled, 0);
+    assert_eq!(plan.counters.held_nodes, 1);
+    assert_ne!(mask_of(&plan, 1), [0; 8]);
+    seed_more(&mut rig, 2, &[5]);
+    let plan = d5_step(&mut rig, &cut, &cam);
+    assert_eq!(plan.counters.held_nodes, 0);
+    assert_eq!(plan.counters.hold_unsettled, 0);
+    assert_ne!(mask_of(&plan, 2), [0; 8]);
+}
