@@ -56,3 +56,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0050](0050-nivel-por-celda-segun-distancia.md) | El nivel de detalle sigue la distancia de cada celda, no la de su octante, y las transiciones son graduales (sustituye la regla por octante de 0034) | Aceptada |
 | [0051](0051-granularidad-de-hojas-configurable.md) | La granularidad de las hojas es configurable: puntos máximos, lado mínimo y distancia de fusión (precisa 0044) | Aceptada (pendiente) |
 | [0052](0052-retencion-y-ajuste-al-pool-por-celda.md) | Retención por zona, hijos provisionales con el color del padre y ajuste homogéneo al pool (precisa R3-Q19, R3-Q21 y R3-Q11) | Aceptada (hijos provisionales opcionales, revisión 15-11) |
+| [0053](0053-transiciones-de-un-nivel.md) | Las transiciones de nivel avanzan de un nivel en un nivel, en el espacio y en el tiempo (precisa ADR 0050 y R3-Q21) | Aceptada (cola bajo la separación pendiente de revisión) |

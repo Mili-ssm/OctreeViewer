@@ -47,6 +47,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RF-08 | Mientras la cámara se mueve, el visor deberá reconstruir con la última vista y dibujar la escena anterior hasta que llegue la nueva. | P7, ADR 0018 |
 | RF-09 | El visor deberá leer datasets locales (`Blob`) y remotos (HTTP Range). | P6, ADR 0023 |
 | RF-10 | El visor deberá ofrecer medición (distancias, alturas, áreas), filtro por clasificación y rangos de atributos, recorte por caja o plano y exportación de la selección a LAS/LAZ. | Propietario |
+| RF-31 | Mientras el visor refina o engrosa una zona, el nivel dibujado deberá cambiar como mucho un nivel por paso y dos celdas vecinas dibujadas diferir como mucho en uno, construyendo los niveles intermedios que la cadena no guarda; en la cola bajo la separación de la nube, pendiente de revisión ([ADR 0053](adr/0053-transiciones-de-un-nivel.md), pendiente de implementar en la fase 2b). | Propietario |
 
 ### API pública
 
@@ -202,6 +203,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RF-08 | Técnico | Blando | Medio para no bloquear el frame (ADR 0018) | Otra estrategia dé la misma fluidez |
 | RF-09 | Funcional | Duro | Nubes locales y remotas (P6) | — |
 | RF-10 | Funcional | Duro | Funciones de producto | — |
+| RF-31 | Funcional | Duro (la cola, blando) | Suavidad visual y tiempo de carga; la cola bajo la separación queda pendiente de medir | La medida de la cola muestre que no cabe o no compensa |
 | RF-11 | Funcional | Duro | Integrador, resolución del propietario (ADR 0026) | — |
 | RF-12–RF-15 | Funcional | Duro | Superficie de la API para el integrador | — |
 | RF-20, RF-21 | Funcional | Duro | Entradas y fusión del conversor | — |
