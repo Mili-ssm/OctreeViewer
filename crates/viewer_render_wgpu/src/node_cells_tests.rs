@@ -609,8 +609,9 @@ fn leaf_stops_when_each_finite_point_has_its_own_cell() {
             &[block],
         )
         .unwrap();
+    // A single point is separated at the leaf's coarsest level (its node depth plus three).
     assert_eq!(cells.levels.len(), 1);
-    assert_eq!(cells.levels[0].depth, 15);
+    assert_eq!(cells.levels[0].depth, representative_depth(&grid(), bounds));
 }
 
 #[test]
@@ -710,8 +711,9 @@ fn adaptive_leaf_crosses_region_limit_and_rejects_clamped_collisions() {
         )
     };
     let cells = build(vec![point(0.0), point((SIDE / 2.0_f64.powi(21)) as f32)]).unwrap();
-    assert_eq!(cells.levels[0].depth, 21);
-    assert_eq!(cells.levels[0].cells.len(), 2);
+    let finest = cells.levels.last().unwrap();
+    assert_eq!(finest.depth, 21);
+    assert_eq!(finest.cells.len(), 2);
     assert_eq!(
         build(vec![point(0.0), point((SIDE / 2.0_f64.powi(22)) as f32)])
             .unwrap()
@@ -726,7 +728,7 @@ fn adaptive_leaf_crosses_region_limit_and_rejects_clamped_collisions() {
         Err(crate::NodeCellError::AbsoluteDepthExceeded)
     ));
     let max = build(vec![point(63.0), point(64.0)]).unwrap();
-    assert_eq!(max.levels[0].cells.len(), 2);
+    assert_eq!(max.levels.last().unwrap().cells.len(), 2);
 }
 
 #[test]
@@ -755,17 +757,9 @@ fn subregions_preserve_global_morton_order_and_aggregate_duplicates() {
         plain_block(points.clone()),
         attributed_block(vec![points[0]], vec![7], vec![9]),
     ];
-    let cells = PointNodeCellSource::default()
-        .node_cells(
-            &grid(),
-            NodeId::new(1),
-            cube([0.0; 3], SIDE),
-            Some(unit),
-            true,
-            &blocks,
-        )
+    let level = node_cell_level(&grid(), cube([0.0; 3], SIDE), Some(unit), true, &blocks, 23)
         .unwrap();
-    let level = &cells.levels[0];
+    let level = &level;
     let mut expected: Vec<[u64; 3]> = coords.iter().map(|coord| coord.map(|v| v as u64)).collect();
     expected.sort_by_key(|coord| morton(*coord));
     assert_eq!(
@@ -810,22 +804,17 @@ fn subregions_keep_all_high_bits_at_maximum_depth() {
             .map(|p| Point::new(p, ColorRgb::new(1, 2, 3)))
             .collect(),
     );
-    let cells = PointNodeCellSource::default()
-        .node_cells(
-            &grid,
-            NodeId::new(1),
-            cube([0.0; 3], grid.root_side),
-            Some(1.0),
-            true,
-            &[block],
-        )
-        .unwrap();
-    let coords: Vec<_> = cells.levels[0]
-        .cells
-        .iter()
-        .map(|cell| cell.coord)
-        .collect();
-    assert_eq!(cells.levels[0].depth, 63);
+    let finest = node_cell_level(
+        &grid,
+        cube([0.0; 3], grid.root_side),
+        Some(1.0),
+        true,
+        &[block],
+        63,
+    )
+    .unwrap();
+    let coords: Vec<_> = finest.cells.iter().map(|cell| cell.coord).collect();
+    assert_eq!(finest.depth, 63);
     assert_eq!(
         coords,
         vec![
@@ -862,11 +851,15 @@ fn single_region_matches_generic_at_nonzero_node_origin() {
             ColorRgb::new(8, 8, 8),
         )]),
     ];
-    let source = PointNodeCellSource::default();
+    // The finest depth of the grid, built on its own: the chain would stop at the first level
+    // that separates the points, which differs between the two nodes.
     let build = |bounds, blocks: &[PointBlock]| {
-        source
-            .node_cells(&grid, NodeId::new(1), bounds, Some(1.0), true, blocks)
-            .unwrap()
+        let level = node_cell_level(&grid, bounds, Some(1.0), true, blocks, 23).unwrap();
+        NodeCells {
+            node: NodeId::new(1),
+            levels: vec![level],
+            buildable: (23, 23),
+        }
     };
     let narrow = build(cube([f64::from(origin); 3], 2.0_f64.powi(21)), &shared);
     let wide = build(cube([f64::from(origin); 3], 2.0_f64.powi(22)), &shared);
@@ -1257,6 +1250,23 @@ fn a_level_finer_than_separation_keeps_one_cell_per_position() {
 }
 
 #[test]
+fn a_leaf_can_draw_from_its_node_depth_plus_three() {
+    let bounds = cube([0.0; 3], 16.0);
+    let rep = representative_depth(&grid(), bounds);
+    let spacing = 0.5;
+    assert!(representative_depth_for_spacing(&grid(), spacing) > rep + 1);
+    let block = plain_block(random_points(&mut Lcg(9), [0.0; 3], 16.0, 200));
+    let cells = PointNodeCellSource { min_growth: 1.0 }
+        .node_cells(&grid(), NodeId::new(3), bounds, Some(spacing), true, &[block])
+        .unwrap();
+    assert_eq!(cells.buildable.0, rep);
+    // The coarsest level is the node depth plus three and aggregates several points per cell.
+    let coarsest = &cells.levels[0];
+    assert_eq!(coarsest.depth, rep);
+    assert!(coarsest.cells.len() < 200);
+}
+
+#[test]
 fn buildable_range_matches_the_chain_bounds() {
     let node = NodeId::new(7);
     let bounds = cube([0.0; 3], 16.0);
@@ -1277,13 +1287,9 @@ fn buildable_range_matches_the_chain_bounds() {
     let spaced = source
         .node_cells(&grid(), node, bounds, Some(spacing), true, blocks)
         .unwrap();
-    assert_eq!(
-        spaced.buildable,
-        (
-            representative_depth_for_spacing(&grid(), spacing),
-            MAX_CELL_DEPTH
-        )
-    );
+    // The spacing depth no longer starts the range: a leaf builds from its node depth plus three.
+    assert!(representative_depth_for_spacing(&grid(), spacing) > first);
+    assert_eq!(spaced.buildable, (first, MAX_CELL_DEPTH));
 
     assert_eq!(
         node_cell_level(&grid(), bounds, None, false, blocks, first + 6),
