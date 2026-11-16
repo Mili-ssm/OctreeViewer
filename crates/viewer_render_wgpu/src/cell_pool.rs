@@ -1494,6 +1494,24 @@ impl CellPool {
         set
     }
 
+    /// Cell mode: the range depths of the entries that are buildable but not stored (see
+    /// `range_depths`).
+    fn range_requests(
+        &self,
+        entries: &[CellCutEntry],
+        nodes: &FastMap<NodeId, PoolNode>,
+        caps: &FastMap<NodeId, u8>,
+        grid: &CellGrid,
+    ) -> FastSet<LevelKey> {
+        let mut set = FastSet::default();
+        for entry in entries {
+            for depth in self.range_depths(entry, &nodes[&entry.node], caps, grid).1 {
+                set.insert(self.key(entry.node, depth));
+            }
+        }
+        set
+    }
+
     /// The wanted depths that are buildable but not stored: the levels to request on demand.
     fn requested_levels(
         &self,
@@ -1502,7 +1520,7 @@ impl CellPool {
         caps: &FastMap<NodeId, u8>,
         grid: &CellGrid,
     ) -> FastSet<LevelKey> {
-        let mut set = FastSet::default();
+        let mut set = self.range_requests(entries, nodes, caps, grid);
         for entry in entries {
             let node = &nodes[&entry.node];
             let stored = capped(&node.stored, caps.get(&entry.node));
@@ -1541,8 +1559,12 @@ impl CellPool {
         let mut needed = self.needed_levels(entries, nodes, caps, grid);
         // Cell mode: the D5 levels of the gated ancestors take pages too, so the fit counts them.
         needed.extend(d5.iter().copied());
+        // Cell mode: the range depths requested on demand take pages once built, so the fit
+        // counts them at their estimate (they are not in `needed`: nothing to fetch yet).
+        let requested = self.range_requests(entries, nodes, caps, grid);
         let total = needed
             .iter()
+            .chain(requested.iter().filter(|key| !needed.contains(key)))
             .map(|key| self.pages_of(*key, &nodes[&key.node], grid) as u64)
             .sum();
         (needed, total)
@@ -2974,6 +2996,24 @@ impl CellPool {
                 )
                 .collect()
         };
+        // Range depths no octant wants rank after the wanted ones and the step.
+        let range_only: FastSet<LevelKey> = if overflow {
+            FastSet::default()
+        } else {
+            self.real_memo
+                .as_ref()
+                .and_then(|memo| memo.entries.as_deref())
+                .into_iter()
+                .flatten()
+                .flat_map(|entry| {
+                    self.range_depths(entry, &nodes[&entry.node], &self.caps, grid)
+                        .1
+                        .into_iter()
+                        .filter(|d| !entry.wanted.iter().flatten().any(|w| w == d))
+                        .map(|d| self.key(entry.node, d))
+                })
+                .collect()
+        };
         let stored_step = |key: &LevelKey| {
             nodes
                 .get(&key.node)
@@ -3130,6 +3170,7 @@ impl CellPool {
             (!d5.contains(a))
                 .cmp(&!d5.contains(b))
                 .then((!steps.contains(a)).cmp(&!steps.contains(b)))
+                .then(range_only.contains(a).cmp(&range_only.contains(b)))
                 .then(a.depth.cmp(&b.depth))
                 .then(distance(a).total_cmp(&distance(b)))
                 .then(a.node.cmp(&b.node))

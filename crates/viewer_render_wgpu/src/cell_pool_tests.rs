@@ -3718,3 +3718,68 @@ fn cell_mode_fetches_stored_depths_across_the_range() {
         "{fetched:?}"
     );
 }
+
+/// A node whose range reaches below its stored chain: depths 7 and 8 are buildable, not stored,
+/// and above the spacing depth (the finest stored one, 9); 10 and 11 are below it.
+fn range_gap_rig() -> Rig {
+    let mut node = d5_node(SIDE, &[2, 3, 4, 9]);
+    node.buildable = (2, 14);
+    node.points = 512 * 64;
+    let mut rig = Rig::new(HashMap::from([(NodeId::new(1), node)]), 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2]);
+    rig.pool.residency_epoch += 1;
+    rig
+}
+
+#[test]
+fn cell_mode_requests_missing_depths_across_the_range_down_to_spacing() {
+    let mut rig = range_gap_rig();
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
+    let (lo, hi) = plan.entries[0].range.expect("a cell-mode node has a range");
+    assert_eq!((lo, hi), (7, 11), "setup");
+    let requested: Vec<u8> = plan.level_requests.iter().map(|key| key.depth).collect();
+    for depth in [7, 8] {
+        assert!(requested.contains(&depth), "{depth} missing: {requested:?}");
+    }
+    // 10 lies in the range below the spacing depth and no octant wants it: not built.
+    assert!(!requested.contains(&10), "{requested:?}");
+    // Octant (near) depths keep their behaviour: 11 is wanted by an octant.
+    assert!(requested.contains(&11), "{requested:?}");
+    // The stepping's adjacent depth (8) goes first, then the octant-wanted 11, then the
+    // range-only 7.
+    assert_eq!(requested, [8, 11, 7]);
+    // Not stored, so nothing is fetched for them.
+    let fetched: Vec<u8> = plan.fetch_requests.iter().map(|key| key.depth).collect();
+    assert!(
+        !fetched.contains(&7) && !fetched.contains(&8),
+        "{fetched:?}"
+    );
+}
+
+#[test]
+fn the_fit_counts_requested_range_depths() {
+    let mut rig = range_gap_rig();
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
+    let nodes: FastMap<NodeId, PoolNode> =
+        rig.nodes.iter().map(|(id, n)| (*id, n.clone())).collect();
+    let none = FastMap::default();
+    let (needed, total) =
+        rig.pool
+            .needed_and_pages(&plan.entries, &nodes, &none, &grid(), &FastSet::default());
+    let pages = |depth: u8| {
+        rig.pool.pages_of(
+            rig.pool.key(NodeId::new(1), depth),
+            &nodes[&NodeId::new(1)],
+            &grid(),
+        )
+    };
+    let needed_pages: usize = needed
+        .iter()
+        .map(|key| rig.pool.pages_of(*key, &nodes[&key.node], &grid()))
+        .sum();
+    for depth in [7, 8] {
+        assert!(!needed.contains(&rig.pool.key(NodeId::new(1), depth)));
+    }
+    assert_eq!(total as usize, needed_pages + pages(7) + pages(8));
+}
