@@ -348,17 +348,49 @@ impl CutView {
         self.active[j][octant_of_cell(c)].is_some() && !cell_hidden(&self.entries[j].mask, c)
     }
 
+    /// Depth the entry wants for an octant, as the zone oracles judge it: the raw wanted depth,
+    /// except that an octant flagged as a stage (R3-Q21: the wanted level is not resident, or not
+    /// built yet) is only held to the level it draws.
+    fn wanted_of(&self, i: usize, octant: usize) -> Option<u8> {
+        let entry = &self.entries[i];
+        let wanted = entry.wanted[octant]?;
+        Some(match entry.drawn[octant] {
+            Some(drawn) if entry.stage[octant] => wanted.min(drawn),
+            _ => wanted,
+        })
+    }
+
     /// Depth the cut wants at `p`: the finest wanted depth of the unhidden cells holding it.
-    fn wanted_at(&self, p: [f64; 3]) -> Option<u8> {
+    /// `raw` skips the excuse of `wanted_of`: a staged octant is held to its raw wanted depth.
+    fn wanted_at(&self, p: [f64; 3], raw: bool) -> Option<u8> {
         (0..self.nodes.len())
             .filter_map(|i| {
                 let c = self.cell_at(i, p)?;
                 if cell_hidden(&self.entries[i].mask, c) {
                     return None;
                 }
-                self.entries[i].wanted[octant_of_cell(c)]
+                if raw {
+                    self.entries[i].wanted[octant_of_cell(c)]
+                } else {
+                    self.wanted_of(i, octant_of_cell(c))
+                }
             })
             .max()
+    }
+
+    /// The (entry, octant) drawing the finest depth at `p` (unhidden), if any.
+    fn drawer_at(&self, p: [f64; 3]) -> Option<(usize, usize)> {
+        (0..self.nodes.len())
+            .filter_map(|i| {
+                let c = self.cell_at(i, p)?;
+                if cell_hidden(&self.entries[i].mask, c) {
+                    return None;
+                }
+                let octant = octant_of_cell(c);
+                Some((self.active[i][octant]?, i, octant))
+            })
+            .max()
+            .map(|(_, i, octant)| (i, octant))
     }
 
     /// Finest depth drawn at `p` (unhidden), if any.
@@ -488,6 +520,17 @@ struct Harness {
     /// Cross-node coarsenings: a sample point drawn at depth `before` is drawn at `after` with
     /// `after < min(before, wanted now)`.
     zone_coarsenings: usize,
+    /// `zone_coarsenings` without the stage excuse: a staged octant drawn coarser than before,
+    /// while its raw wanted depth did not get coarser, counts too. Each such drop is excused when
+    /// the octant that draws the sample is staged below its wish and its node was capped by the
+    /// fit that frame or the ladder ran coarser than the target; the rest are
+    /// `unexcused_drops` (asserted 0).
+    staged_coarsenings: usize,
+    stage_excused_drops: usize,
+    unexcused_drops: usize,
+    /// The nodes the fit capped in the frame being checked.
+    frame_capped: Vec<NodeId>,
+    frame_stage_px: f64,
     /// Sample points drawn in the previous cut, still inside the planner's cut, drawn by nothing.
     lost_samples: usize,
     /// The planner's nodes of the cut being drawn, when the dataset has already planned further
@@ -548,6 +591,11 @@ impl Harness {
             sample_depths,
             octant_depths: HashMap::new(),
             zone_coarsenings: 0,
+            staged_coarsenings: 0,
+            stage_excused_drops: 0,
+            unexcused_drops: 0,
+            frame_capped: Vec::new(),
+            frame_stage_px: 0.0,
             lost_samples: 0,
             planner_of_drawn_cut: None,
             hole_frames: 0,
@@ -609,10 +657,11 @@ impl Harness {
                             continue;
                         };
                         let before = self.octant_depths.insert((*node, octant), now);
+                        // Only below what the wish allows counts: a level built on demand is
+                        // dropped when the cut no longer wants it, and a fit-forced lowering to
+                        // the wish is legitimate.
+                        let wanted = cut.wanted_of(i, octant).unwrap_or(u8::MAX);
                         if self.count_octant_coarsenings {
-                            // Same rule as the cross-node metric: only below what the capped
-                            // wish allows counts (a fit-forced lowering to the wish is legitimate).
-                            let wanted = cut.entries[i].wanted[octant].unwrap_or(u8::MAX);
                             if before.is_some_and(|b| now < b) {
                                 self.octant_lowered += 1;
                             }
@@ -621,9 +670,9 @@ impl Harness {
                             }
                         } else {
                             assert!(
-                                before.is_none_or(|before| now >= before),
+                                before.is_none_or(|before| now >= before.min(wanted)),
                                 "frame {number}: node {node:?} octant {octant} went from depth \
-                                 {before:?} to {now}"
+                                 {before:?} to {now} (wanted {wanted})"
                             );
                         }
                     }
@@ -652,9 +701,28 @@ impl Harness {
                 for (i, p) in self.sample_points.iter().enumerate() {
                     let now = cut.depth_at(*p);
                     if let (Some(before), Some(after)) = (self.sample_depths[i], now)
-                        && after < before.min(cut.wanted_at(*p).unwrap_or(u8::MAX))
+                        && after < before.min(cut.wanted_at(*p, false).unwrap_or(u8::MAX))
                     {
                         self.zone_coarsenings += 1;
+                    }
+                    if let (Some(before), Some(after)) = (self.sample_depths[i], now)
+                        && after < before.min(cut.wanted_at(*p, true).unwrap_or(u8::MAX))
+                    {
+                        // Only a counted stage explains a drop below the raw wish, and only for
+                        // the octant that draws the point, staged below its wish: its node was
+                        // capped by the fit this frame (R3-Q11), or the ladder runs coarser than
+                        // the target (R3-Q3 stage pixels).
+                        let excused = cut.drawer_at(*p).is_some_and(|(node, octant)| {
+                            cut.entries[node].stage[octant]
+                                && (self.frame_capped.contains(&cut.nodes[node])
+                                    || self.frame_stage_px > self.target_px)
+                        });
+                        if excused {
+                            self.stage_excused_drops += 1;
+                        } else {
+                            self.unexcused_drops += 1;
+                        }
+                        self.staged_coarsenings += 1;
                     }
                     let drawn_before = self
                         .last_cut
@@ -706,6 +774,8 @@ impl Harness {
         let plan = &out.update.report.plan;
         self.target.check_plan(plan);
         let digest = cell_cut_digest(&plan.entries);
+        self.frame_capped = plan.coarsened_nodes.clone();
+        self.frame_stage_px = out.stage_pixels;
         self.check_drawn_cut(number, plan, digest);
         if let Some(last) = self.last_stage
             && out.stage_pixels > last
@@ -824,7 +894,7 @@ impl Harness {
         println!(
             "{label}: frames {} | longest RetainedPrevious streak {} | max gap {} (gaps>1: {}) | \
              DescendantTooFine {} | uploads {} | grafted {} refused {} | stage drops {} | \
-             digest {:016x} | pages used {} | zone coarsenings {} | lost samples {} | hold age max {} (waiting frames {}, held peak {}, \
+             digest {:016x} | pages used {} | zone coarsenings {} (staged, raw wanted: {}) | lost samples {} | hold age max {} (waiting frames {}, held peak {}, \
              excluded peak {}, fallback pages peak {}, unsettled {})",
             t.frames,
             t.longest_retained,
@@ -838,6 +908,7 @@ impl Harness {
             t.drawn_digest,
             self.dataset.pages.as_ref().map_or(0, |p| p.pages()),
             self.zone_coarsenings,
+            self.staged_coarsenings,
             self.lost_samples,
             t.hold_age_max,
             t.wait_frames,
@@ -1367,6 +1438,7 @@ fn real_streaming_ladder_belvedere() {
     // Coarse to fine through every rung; a straight jump to 4 px would show up here.
     assert_eq!(t.stages, vec![16.0, 8.0, 4.0]);
     assert_eq!(real.harness.zone_coarsenings, 0);
+    assert_eq!(real.harness.unexcused_drops, 0);
     assert_eq!(real.harness.lost_samples, 0);
 }
 
@@ -1437,6 +1509,7 @@ fn real_regraft_belvedere() {
     assert!(t.max_gap <= MAX_CELL_CUT_GAP);
     assert_eq!(t.dtf, 0);
     assert_eq!(real.harness.zone_coarsenings, 0);
+    assert_eq!(real.harness.unexcused_drops, 0);
     assert_eq!(real.harness.lost_samples, 0);
 }
 
@@ -1490,6 +1563,7 @@ fn real_pages_with_drawn_nodes_are_not_evicted() {
     println!("belvedere pinned: {refused} grafts refused, {retained_frames} frames retained");
     assert!(refused > 0, "the budget must refuse at least one graft");
     assert_eq!(real.harness.zone_coarsenings, 0);
+    assert_eq!(real.harness.unexcused_drops, 0);
     assert_eq!(real.harness.lost_samples, 0);
 }
 

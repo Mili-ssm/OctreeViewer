@@ -6,8 +6,9 @@ use viewer_core::{
 };
 
 use crate::{
-    CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, NodeCellSource, NodeCells, OrbitCamera,
-    PointNodeCellSource, SceneBounds, chain_keep_mask, node_cells_digest, representative_depth,
+    CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCellError, NodeCellSource,
+    NodeCells, OrbitCamera, PointNodeCellSource, SceneBounds, chain_keep_mask, node_cell_level,
+    node_cells_digest, representative_depth, representative_depth_for_spacing,
 };
 
 const SIDE: f64 = 64.0;
@@ -1200,4 +1201,116 @@ fn small_leaf_under_a_sign_crossing_root_separates_close_points_exactly() {
         let coords: Vec<_> = finest.cells.iter().map(|cell| cell.coord).collect();
         assert_eq!(coords, expected, "side {side}");
     }
+}
+
+/// Root-sized leaf whose chain grows at every level (see `leaf_chain_extends_past_previous_fixed_span`).
+fn growing_leaf_fixture() -> (SpatialBounds, PointBlock) {
+    let bounds = cube([0.0; 3], SIDE);
+    let d0 = representative_depth(&grid(), bounds);
+    let mut points = vec![Point::new([0.0; 3], ColorRgb::new(1, 1, 1))];
+    for j in 0..=u32::from(CHAIN_SPAN) + 2 {
+        let x = (SIDE * 1.5 / f64::from(1_u32 << (u32::from(d0) + j))) as f32;
+        points.push(Point::new([x, 0.0, 0.0], ColorRgb::new(2, 2, 2)));
+    }
+    (bounds, plain_block(points))
+}
+
+#[test]
+fn single_level_matches_the_unpruned_chain() {
+    let (bounds, block) = growing_leaf_fixture();
+    let blocks = std::slice::from_ref(&block);
+    let chain = PointNodeCellSource { min_growth: 1.0 }
+        .node_cells(&grid(), NodeId::new(7), bounds, None, true, blocks)
+        .unwrap();
+    assert!(chain.levels.len() > 1);
+    for level in &chain.levels {
+        let single = node_cell_level(&grid(), bounds, None, true, blocks, level.depth).unwrap();
+        assert_eq!(&single, level, "depth {}", level.depth);
+    }
+    // Internal node: the octant split must match as well.
+    let node = cube([0.0; 3], 16.0);
+    let mut rng = Lcg(0x77);
+    let internal = plain_block(random_points(&mut rng, [0.0; 3], 16.0, 500));
+    let blocks = std::slice::from_ref(&internal);
+    let chain = PointNodeCellSource { min_growth: 1.0 }
+        .node_cells(&grid(), NodeId::new(7), node, None, false, blocks)
+        .unwrap();
+    for level in &chain.levels {
+        let single = node_cell_level(&grid(), node, None, false, blocks, level.depth).unwrap();
+        assert_eq!(&single, level, "internal depth {}", level.depth);
+    }
+}
+
+#[test]
+fn a_level_finer_than_separation_keeps_one_cell_per_position() {
+    let (bounds, block) = growing_leaf_fixture();
+    let blocks = std::slice::from_ref(&block);
+    let chain = PointNodeCellSource { min_growth: 1.0 }
+        .node_cells(&grid(), NodeId::new(7), bounds, None, true, blocks)
+        .unwrap();
+    let deepest = chain.levels.last().unwrap().depth;
+    let level = node_cell_level(&grid(), bounds, None, true, blocks, deepest + 2).unwrap();
+    assert_eq!(level.depth, deepest + 2);
+    assert_eq!(level.cells.len(), block.points().points().len());
+}
+
+#[test]
+fn buildable_range_matches_the_chain_bounds() {
+    let node = NodeId::new(7);
+    let bounds = cube([0.0; 3], 16.0);
+    let first = representative_depth(&grid(), bounds);
+    let block = plain_block(random_points(&mut Lcg(5), [0.0; 3], 16.0, 50));
+    let blocks = std::slice::from_ref(&block);
+    let source = PointNodeCellSource::default();
+
+    let leaf = source
+        .node_cells(&grid(), node, bounds, None, true, blocks)
+        .unwrap();
+    assert_eq!(leaf.buildable, (first, MAX_CELL_DEPTH));
+    let internal = source
+        .node_cells(&grid(), node, bounds, None, false, blocks)
+        .unwrap();
+    assert_eq!(internal.buildable, (first, first + 5));
+    let spacing = 0.5;
+    let spaced = source
+        .node_cells(&grid(), node, bounds, Some(spacing), true, blocks)
+        .unwrap();
+    assert_eq!(
+        spaced.buildable,
+        (
+            representative_depth_for_spacing(&grid(), spacing),
+            MAX_CELL_DEPTH
+        )
+    );
+
+    assert_eq!(
+        node_cell_level(&grid(), bounds, None, false, blocks, first + 6),
+        Err(NodeCellError::AbsoluteDepthExceeded)
+    );
+    assert_eq!(
+        node_cell_level(&grid(), bounds, None, true, blocks, first - 1),
+        Err(NodeCellError::AbsoluteDepthExceeded)
+    );
+    assert_eq!(
+        node_cell_level(&grid(), bounds, None, true, blocks, MAX_CELL_DEPTH + 1),
+        Err(NodeCellError::AbsoluteDepthExceeded)
+    );
+}
+
+#[test]
+fn a_leaf_level_at_max_depth_with_merged_positions_is_an_error() {
+    let points = vec![
+        Point::new([16.0; 3], ColorRgb::new(1, 2, 3)),
+        Point::new([16.000_1; 3], ColorRgb::new(4, 5, 6)),
+    ];
+    let block = plain_block(points);
+    let result = node_cell_level(
+        &grid(),
+        cube([8.0; 3], 8.0),
+        None,
+        true,
+        std::slice::from_ref(&block),
+        MAX_CELL_DEPTH,
+    );
+    assert_eq!(result, Err(NodeCellError::AbsoluteDepthExceeded));
 }

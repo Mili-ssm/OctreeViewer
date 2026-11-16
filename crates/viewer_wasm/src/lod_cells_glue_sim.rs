@@ -13,6 +13,9 @@ use viewer_render_wgpu::decode_node_levels;
 /// Build to render. `nodeCells` is never merged; `cellCut` is latest-wins at the viewer.
 enum Wire {
     Node(u64, Vec<u8>),
+    Levels(u64, Vec<u8>),
+    /// `levelsRefused`.
+    Refused(Vec<(NodeId, u8)>),
     Cut {
         epoch: u64,
         view_epoch: u64,
@@ -40,6 +43,7 @@ struct GlueSim {
     byte_cap: usize,
     to_render: VecDeque<Wire>,
     inflight: CellMessages,
+    inflight_levels: Option<Vec<(NodeId, u8)>>,
     inflight_delay: usize,
     /// The render side's view counter: what `viewEpoch()` returns.
     view_gen: u64,
@@ -70,6 +74,7 @@ impl GlueSim {
             byte_cap,
             to_render: VecDeque::new(),
             inflight: CellMessages::default(),
+            inflight_levels: None,
             inflight_delay: 0,
             view_gen: 1,
             build_seen: 0,
@@ -97,7 +102,10 @@ impl GlueSim {
     fn build_step(&mut self, view: &ViewProjection) {
         if self.inflight_delay > 0 {
             self.inflight_delay -= 1;
-        } else if !self.inflight.is_empty() {
+        } else {
+            if let Some(requests) = self.inflight_levels.take() {
+                self.builder.level_requests(&mut self.h.dataset, &requests);
+            }
             let messages = std::mem::take(&mut self.inflight);
             let ds = &mut self.h.dataset;
             if messages.driver_replaced {
@@ -139,6 +147,13 @@ impl GlueSim {
             self.to_render
                 .push_back(Wire::Node(out.generation, node.bytes));
         }
+        for node in out.levels {
+            self.to_render
+                .push_back(Wire::Levels(out.generation, node.bytes));
+        }
+        if !out.refused.is_empty() {
+            self.to_render.push_back(Wire::Refused(out.refused));
+        }
         self.to_render.push_back(Wire::Cut {
             epoch: out.cut_epoch,
             view_epoch: out.view_epoch,
@@ -156,6 +171,11 @@ impl GlueSim {
                     .viewer
                     .push_node(generation, bytes)
                     .unwrap_or_else(|error| panic!("push_node: {error}")),
+                Some(Wire::Levels(generation, bytes)) => self
+                    .viewer
+                    .push_levels(generation, bytes)
+                    .unwrap_or_else(|error| panic!("push_levels: {error}")),
+                Some(Wire::Refused(refused)) => self.viewer.refuse_levels(&refused),
                 Some(Wire::Cut {
                     epoch,
                     view_epoch,
@@ -187,6 +207,9 @@ impl GlueSim {
         self.inflight.evict.extend(messages.evict);
         if messages.ack.is_some() {
             self.inflight.ack = messages.ack;
+        }
+        if let Some(requests) = self.viewer.take_level_requests() {
+            self.inflight_levels = Some(requests);
         }
     }
 
@@ -256,6 +279,7 @@ impl GlueSim {
                     self.h.target = StrictTarget::default();
                     self.to_render.clear();
                     self.inflight = CellMessages::default();
+                    self.inflight_levels = None;
                     self.stats.driver_replacements += 1;
                 }
                 self.step(view);
@@ -279,6 +303,7 @@ fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
     let full = synthetic_cpu_bytes(&views);
     let budget = full / 3;
     let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let mut reports = 0;
     for (i, seed) in GLUE_SEEDS.iter().enumerate() {
         // A cap of one byte applies one node per frame; the other seeds apply bursts.
         let cap = if i == 0 { 1 } else { 256 << 10 };
@@ -287,13 +312,12 @@ fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
         println!("glue {name} seed {seed}: {:?}", sim.stats);
         assert_eq!(digest, expected, "{name} seed {seed}");
         assert!(sim.stats.node_messages > 0);
-        if inject.driver_replaced_at.is_some() {
-            assert!(
-                sim.stats.missing_reports > 0,
-                "the missing path was not exercised: {:?}",
-                sim.stats
-            );
-        }
+        reports += sim.stats.missing_reports;
+    }
+    // Which seeds hit the path depends on the interleaving: an ack naming the missing nodes can
+    // be superseded before the builder reads it, or the builder learns of the replacement first.
+    if inject.driver_replaced_at.is_some() {
+        assert!(reports > 0, "the missing path was not exercised");
     }
 }
 
@@ -322,7 +346,10 @@ fn glue_synthetic_pool_reset_and_driver_replaced_mid_load_converge() {
 fn the_viewer_stats_report_the_cut_apply_and_the_nodes_forgotten_for_the_cpu_budget() {
     use viewer_render_wgpu::CutApply;
     let views = synth_orbit();
-    let budget = synthetic_cpu_bytes(&views) / 3;
+    // The at-rest set now carries the levels built on demand (569 112 bytes, 206 200 before them,
+    // same nodes): an eighth is the absolute budget a third was (about 70 000 bytes), the one at
+    // which this seed forgets a node.
+    let budget = synthetic_cpu_bytes(&views) / 8;
     let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, 7, 256 << 10);
     let before = sim.viewer.stats(&sim.h.target);
     assert_eq!((before.cut_apply, before.forgotten_total), (None, 0));
@@ -331,7 +358,7 @@ fn the_viewer_stats_report_the_cut_apply_and_the_nodes_forgotten_for_the_cpu_bud
     assert_eq!(after.cut_apply, Some(CutApply::Applied));
     assert!(
         after.forgotten_total > 0,
-        "a third of the working set forgot nothing"
+        "an eighth of the working set forgot nothing"
     );
     // Retained: a pool too small for the cut keeps the previous one (overflow).
     let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, 7, 256 << 10);
@@ -497,6 +524,84 @@ fn the_in_process_glue_reaches_the_in_process_digest() {
     }
 }
 
+/// The in-process path (`InProcessCells::update` is `update_cells_staged` plus page rounds, which
+/// the synthetic cloud does not need): the views of the orbit, then updates on the last one.
+/// Returns the deepest depth the last drawn cut draws, the octants it draws, and the bytes the
+/// driver holds; `max_level_builds` is how many on-demand level builds an update may do.
+fn in_process_drawn_depths(max_level_builds: usize) -> (u8, usize, u64) {
+    use crate::cells_glue::WASM_CPU_BUDGET_BYTES;
+    use crate::lod_driver::{CellStep, update_cells_staged};
+    use viewer_render_wgpu::CellDriver;
+    let views = synth_orbit();
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    let config = CellUpdateConfig {
+        max_level_builds,
+        ..h.config
+    };
+    let mut driver = CellDriver::new(driver_config(
+        h.dataset.cell_grid(),
+        h.dataset.coordinate_origin(),
+        WASM_CPU_BUDGET_BYTES,
+    ));
+    let mut target = StrictTarget::default();
+    let (mut stage_pixels, mut dirty) = (None, true);
+    let mut last = None;
+    for (i, view) in views.iter().enumerate() {
+        let rounds = if i + 1 == views.len() { 300 } else { 3 };
+        for _ in 0..rounds {
+            target.eye = view.camera().position();
+            let step = CellStep {
+                view,
+                target_pixels: 2.0,
+                config,
+                can_load_blocks: true,
+            };
+            let blocks = &mut h.blocks;
+            let done = update_cells_staged(
+                &mut h.dataset,
+                &step,
+                &mut stage_pixels,
+                &mut dirty,
+                &mut driver,
+                &mut target,
+                None,
+                blocks,
+            )
+            .unwrap();
+            last = Some(done.update.report);
+        }
+    }
+    let plan = last.unwrap().plan;
+    let depths: Vec<u8> = plan
+        .entries
+        .iter()
+        .flat_map(|entry| entry.drawn)
+        .flatten()
+        .collect();
+    (
+        depths.iter().copied().max().unwrap(),
+        depths.len(),
+        driver.cpu_bytes(),
+    )
+}
+
+#[test]
+fn update_cells_staged_serves_a_level_request() {
+    // Without level builds a requested depth the nodes did not ship is never available: the cut
+    // draws only what the chains hold.
+    let (deepest_without, _, bytes_without) = in_process_drawn_depths(0);
+    // With them the pruned depths are built, shipped to the driver and drawn by the cut.
+    let (deepest, _, bytes) = in_process_drawn_depths(CellUpdateConfig::default().max_level_builds);
+    assert!(
+        bytes > bytes_without,
+        "the levels were shipped to the driver"
+    );
+    assert!(
+        deepest > deepest_without,
+        "a depth absent from the chains is drawn: {deepest} against {deepest_without}"
+    );
+}
+
 /// One builder and one viewer driven by hand (no simulated latency): `send` plans until the
 /// builder is idle and hands everything to the viewer, `pump` runs viewer frames until it is
 /// quiet.
@@ -506,6 +611,13 @@ struct Pair {
     viewer: ViewerCells,
     target: StrictTarget,
     view: ViewProjection,
+    target_px: f64,
+    /// Every (node, depth) the builder shipped through the level path, in order.
+    shipped_levels: Vec<(NodeId, u8)>,
+    /// Every (node, depth) of the chains the builder shipped as nodes.
+    shipped_chains: Vec<(NodeId, u8)>,
+    /// The last frame report of `pump` that drew.
+    last_report: Option<viewer_render_wgpu::FrameReport>,
 }
 
 impl Pair {
@@ -530,6 +642,10 @@ impl Pair {
             h,
             target,
             view,
+            target_px: 2.0,
+            shipped_levels: Vec::new(),
+            shipped_chains: Vec::new(),
+            last_report: None,
         }
     }
 
@@ -539,7 +655,7 @@ impl Pair {
             .plan(
                 &mut self.h.dataset,
                 &self.view,
-                2.0,
+                self.target_px,
                 true,
                 false,
                 Some(&mut ()),
@@ -552,6 +668,35 @@ impl Pair {
     /// Plans until idle for `view_epoch`, sending nodes and the last cut when `deliver`.
     /// Returns the nodes' bytes in order (every round).
     fn send(&mut self, view_epoch: u64, deliver: bool) -> Vec<(u64, Vec<u8>)> {
+        let mut nodes = self.send_round(view_epoch, deliver);
+        // The viewer's requests for levels are served by more rounds until it asks for no more.
+        while deliver && self.serve_requests() {
+            nodes.extend(self.send_round(view_epoch, deliver));
+        }
+        nodes
+    }
+
+    /// Runs viewer frames until quiet and hands the driver's level requests to the builder.
+    /// Whether it had any.
+    fn serve_requests(&mut self) -> bool {
+        self.pump();
+        self.relay_level_requests()
+    }
+
+    fn send_round(&mut self, view_epoch: u64, deliver: bool) -> Vec<(u64, Vec<u8>)> {
+        let (nodes, idle) = self.send_round_bounded(view_epoch, deliver, false);
+        assert!(idle, "the builder never went idle");
+        nodes
+    }
+
+    /// One round of at most 500 plans. Whether the builder went idle; when `always_cut`, every
+    /// plan's cut is delivered (idle or not) so a builder that never settles still draws.
+    fn send_round_bounded(
+        &mut self,
+        view_epoch: u64,
+        deliver: bool,
+        always_cut: bool,
+    ) -> (Vec<(u64, Vec<u8>)>, bool) {
         self.builder.set_view_epoch(view_epoch);
         self.builder.mark_dirty();
         let mut nodes = Vec::new();
@@ -559,13 +704,27 @@ impl Pair {
             let out = self.plan();
             for node in &out.nodes {
                 nodes.push((out.generation, node.bytes.clone()));
+                let chain = decode_node_levels(&node.bytes).unwrap();
+                self.shipped_chains
+                    .extend(chain.levels.iter().map(|level| (chain.id, level.depth)));
                 if deliver {
                     self.viewer
                         .push_node(out.generation, node.bytes.clone())
                         .unwrap();
                 }
             }
-            if out.idle {
+            if deliver {
+                for node in &out.levels {
+                    let levels = decode_node_levels(&node.bytes).unwrap();
+                    self.shipped_levels
+                        .extend(levels.levels.iter().map(|level| (levels.id, level.depth)));
+                    self.viewer
+                        .push_levels(out.generation, node.bytes.clone())
+                        .unwrap();
+                }
+                self.viewer.refuse_levels(&out.refused);
+            }
+            if out.idle || always_cut {
                 assert!(out.view_epoch == view_epoch, "the plan lost the view epoch");
                 if deliver {
                     self.viewer.push_cut(
@@ -573,14 +732,16 @@ impl Pair {
                         out.view_epoch,
                         out.cut,
                         out.support,
-                        true,
-                        2.0,
+                        out.idle,
+                        self.target_px,
                     );
                 }
-                return nodes;
+            }
+            if out.idle {
+                return (nodes, true);
             }
         }
-        panic!("the builder never went idle");
+        (nodes, false)
     }
 
     /// [`Pair::send`] with a viewer frame after every plan round and the strict target's and
@@ -589,7 +750,7 @@ impl Pair {
         self.builder.set_view_epoch(view_epoch);
         self.builder.mark_dirty();
         let mut nodes = Vec::new();
-        for _ in 0..500 {
+        'plans: for _ in 0..500 {
             let out = self.plan();
             for node in &out.nodes {
                 nodes.push((out.generation, node.bytes.clone()));
@@ -597,6 +758,12 @@ impl Pair {
                     .push_node(out.generation, node.bytes.clone())
                     .unwrap();
             }
+            for node in &out.levels {
+                self.viewer
+                    .push_levels(out.generation, node.bytes.clone())
+                    .unwrap();
+            }
+            self.viewer.refuse_levels(&out.refused);
             let idle = out.idle;
             self.viewer.push_cut(
                 out.cut_epoch,
@@ -607,9 +774,15 @@ impl Pair {
                 2.0,
             );
             self.checked_frame();
+            if self.relay_level_requests() {
+                continue;
+            }
             if idle {
                 for _ in 0..500 {
                     self.checked_frame();
+                    if self.relay_level_requests() {
+                        continue 'plans;
+                    }
                     if !self.viewer.cells_busy(&self.target) {
                         return nodes;
                     }
@@ -618,6 +791,15 @@ impl Pair {
             }
         }
         panic!("the builder never went idle");
+    }
+
+    /// The viewer's changed level requests go to the builder, which plans again. Whether any.
+    fn relay_level_requests(&mut self) -> bool {
+        let Some(requests) = self.viewer.take_level_requests() else {
+            return false;
+        };
+        self.builder.level_requests(&mut self.h.dataset, &requests);
+        true
     }
 
     fn checked_frame(&mut self) {
@@ -635,7 +817,9 @@ impl Pair {
 
     fn pump(&mut self) {
         for frame in 0..500 {
-            self.viewer.frame(&mut self.target, &self.view).unwrap();
+            if let Some(report) = self.viewer.frame(&mut self.target, &self.view).unwrap() {
+                self.last_report = Some(report);
+            }
             if !self.viewer.cells_busy(&self.target) {
                 return;
             }
@@ -647,6 +831,276 @@ impl Pair {
     fn rest(&self) -> Option<u64> {
         let _ = self.viewer.cut_digest_at_rest(&self.target);
         self.viewer.cut_digest_at_rest(&self.target)
+    }
+}
+
+/// A leaf of 100 close pairs on a coarse lattice: the cell count stays at 100 from the lattice
+/// spacing down to the pair gap, so `chain_keep_mask` drops every coarse level (#35).
+fn close_pair_leaf() -> Harness {
+    let bounds = SpatialBounds::new([0.0; 3], [SIDE; 3]).unwrap();
+    let node = SpatialNode::new(
+        NodeId::new(1),
+        None,
+        0,
+        bounds,
+        200,
+        0.0,
+        vec![BlockId::new(101)],
+    )
+    .unwrap();
+    let dataset = octree_dataset(vec![node], HierarchySemantics::Replacement, true);
+    let mut points = Vec::new();
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..4 {
+                let at = [x, y, z].map(|i| 6.0 + 12.0 * f64::from(i));
+                for gap in [0.0, 0.01] {
+                    points.push(Point::new(
+                        [(at[0] + gap) as f32, at[1] as f32, at[2] as f32],
+                        ColorRgb::new(10, 120, 200),
+                    ));
+                }
+            }
+        }
+    }
+    let block = PointBlock::new(BlockId::new(101), PointBatch::new(points), Vec::new());
+    Harness::new(
+        dataset,
+        4.0,
+        Box::new(move |_| Ok(Some(block.clone()))),
+        Box::new(|_| Err("no pages".into())),
+    )
+}
+
+/// What a bounded run of the close-pair leaf drew and shipped.
+struct CloseRun {
+    /// Depth the full, unpruned chain draws, per octant.
+    expected: Vec<u8>,
+    full_depths: Vec<u8>,
+    /// Depths of the chain the node shipped (pruned).
+    pruned: Vec<u8>,
+    drawn: [Option<u8>; 8],
+    /// Depths shipped through the level path.
+    shipped_levels: Vec<u8>,
+    idle: bool,
+}
+
+/// The #35 scenario: the close-pair leaf viewed from far at 4 px, a few request round-trips, with
+/// `max_level_builds` on-demand builds per update. A builder that never settles (no builds) is
+/// bounded and still reports what the viewer drew.
+fn close_pair_run(max_level_builds: usize) -> CloseRun {
+    use viewer_render_wgpu::{NodeCellSource, PointNodeCellSource, octant_wanted_depth};
+    let id = NodeId::new(1);
+    let target_px = 4.0;
+    let mut pair = Pair::with_harness(close_pair_leaf());
+    pair.target_px = target_px;
+    pair.builder = BuilderCells::new(CellUpdateConfig {
+        max_level_builds,
+        ..pair.h.config
+    });
+    let c = SIDE / 2.0;
+    pair.view = synth_view([c + 4.0 * SIDE, c + 0.5 * SIDE, c + 1.0 * SIDE], [c; 3]);
+    pair.target.eye = pair.view.camera().position();
+
+    let grid = pair.h.dataset.cell_grid();
+    let origin = pair.h.dataset.coordinate_origin();
+    let bounds = pair
+        .h
+        .dataset
+        .metadata
+        .hierarchy()
+        .node(id)
+        .unwrap()
+        .bounds();
+    let block = (pair.h.blocks)(BlockId::new(101)).unwrap().unwrap();
+    let full = PointNodeCellSource { min_growth: 1.0 }
+        .node_cells(&grid, id, bounds, None, true, &[block])
+        .unwrap();
+    let full_depths = full.levels.iter().map(|level| level.depth).collect();
+    let expected = (0..8)
+        .map(|octant| {
+            octant_wanted_depth(
+                &pair.view,
+                &grid,
+                origin,
+                bounds,
+                octant,
+                full.buildable,
+                target_px,
+            )
+        })
+        .collect();
+
+    let mut idle = false;
+    for _ in 0..4 {
+        idle = pair.send_round_bounded(0, true, true).1;
+        pair.pump();
+        if !pair.relay_level_requests() {
+            break;
+        }
+    }
+    let report = pair.last_report.take().expect("a frame drew");
+    let entry = report.plan.entries.iter().find(|e| e.node == id).unwrap();
+    let chain = |from: &[(NodeId, u8)]| {
+        from.iter()
+            .filter(|(node, _)| *node == id)
+            .map(|(_, depth)| *depth)
+            .collect::<Vec<u8>>()
+    };
+    CloseRun {
+        expected,
+        full_depths,
+        pruned: chain(&pair.shipped_chains),
+        drawn: entry.drawn,
+        shipped_levels: chain(&pair.shipped_levels),
+        idle,
+    }
+}
+
+#[test]
+fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
+    let run = close_pair_run(CellUpdateConfig::default().max_level_builds);
+    assert!(!run.pruned.is_empty(), "the node was shipped");
+    // The value first: every octant draws the depth the full chain would draw.
+    for (octant, depth) in run.drawn.iter().enumerate() {
+        assert_eq!(
+            *depth,
+            Some(run.expected[octant]),
+            "octant {octant}: {:?}",
+            run.drawn
+        );
+    }
+    for depth in &run.expected {
+        assert!(
+            run.full_depths.contains(depth),
+            "full chain {:?}",
+            run.full_depths
+        );
+        assert!(
+            !run.pruned.contains(depth),
+            "depth {depth} is absent from the pruned chain {:?}",
+            run.pruned
+        );
+        assert!(
+            run.shipped_levels.contains(depth),
+            "depth {depth} shipped on demand: {:?}",
+            run.shipped_levels
+        );
+    }
+    assert!(run.idle, "the builder settled");
+}
+
+/// A depth the build side refuses (a leaf merged at the deepest cell depth) must stop being
+/// wanted across the worker split. No real view wants depth 63, so the refusal is injected on
+/// the path the build worker uses (`levelsRefused`) for the deeper depths the viewer asks for;
+/// the coarsest buildable depth is real and the builder serves it.
+#[test]
+fn a_refused_depth_stops_being_wanted_and_the_view_settles() {
+    let mut pair = Pair::with_harness(close_pair_leaf());
+    pair.target_px = 4.0;
+    let c = SIDE / 2.0;
+    pair.view = synth_view([c + 4.0 * SIDE, c + 0.5 * SIDE, c + 1.0 * SIDE], [c; 3]);
+    pair.target.eye = pair.view.camera().position();
+    pair.send_round(0, true);
+    pair.pump();
+    let first = pair
+        .viewer
+        .take_level_requests()
+        .expect("the view wants a depth the chain does not hold");
+    assert!(!first.is_empty());
+    assert!(
+        pair.rest().is_none(),
+        "the wanted levels keep the view open"
+    );
+    // The builder is never told of these requests: the viewer hears only the refusals, each of
+    // which lowers what the node can want (the first set is the finest wanted depth).
+    let mut refused = first.clone();
+    let mut rounds = 0;
+    let served = loop {
+        pair.viewer.refuse_levels(&refused);
+        pair.pump();
+        let Some(next) = pair.viewer.take_level_requests() else {
+            break None;
+        };
+        rounds += 1;
+        // Stop injecting after three rounds or once nothing more is wanted; what is left is served.
+        if next.is_empty() || rounds == 3 {
+            break Some(next);
+        }
+        refused = next;
+    };
+    let served = served.expect("the wanted set changed with every refusal");
+    assert!(
+        served.iter().all(|request| !first.contains(request)),
+        "a refused depth is still listed: {served:?}"
+    );
+    // What is still wanted is buildable: the builder serves it and the view settles.
+    pair.builder.level_requests(&mut pair.h.dataset, &served);
+    pair.send(0, true);
+    pair.pump();
+    let listed = pair.viewer.take_level_requests().unwrap_or_default();
+    assert!(
+        listed.iter().all(|request| !first.contains(request)),
+        "a refused depth is listed again: {listed:?}"
+    );
+    assert!(listed.is_empty(), "still wanted: {listed:?}");
+    assert!(
+        pair.rest().is_some(),
+        "the view never settled (levels still wanted or work held)"
+    );
+    assert!(!pair.viewer.cells_busy(&pair.target), "a node stays held");
+}
+
+/// The producer side of a refusal: a request for a depth `node_cell_level` rejects
+/// (`AbsoluteDepthExceeded`) leaves the builder as `BuilderOutput.refused` on the next plan, once.
+#[test]
+fn an_unservable_request_is_reported_as_refused_on_the_next_update() {
+    let mut pair = Pair::with_harness(close_pair_leaf());
+    let leaf = NodeId::new(1);
+    pair.send_round(0, false);
+    // Two distinct positions closer than a depth-63 cell, next to the origin where f32
+    // resolves them: in range, but merged at the deepest depth.
+    let block = BlockId::new(101);
+    let at = |value: f32| [value; 3];
+    let merged = PointBlock::new(
+        block,
+        PointBatch::new(vec![
+            Point::new(at(1.0e-19), ColorRgb::new(1, 2, 3)),
+            Point::new(at(2.0e-19), ColorRgb::new(4, 5, 6)),
+        ]),
+        Vec::new(),
+    );
+    pair.h.dataset.cache.remove(block);
+    pair.h.dataset.insert_block(merged).unwrap();
+    let depth = viewer_render_wgpu::MAX_CELL_DEPTH;
+    pair.builder
+        .level_requests(&mut pair.h.dataset, &[(leaf, depth)]);
+    pair.builder.mark_dirty();
+    let first = pair.plan();
+    assert_eq!(first.refused, [(leaf, depth)]);
+    assert!(first.levels.is_empty());
+    // Reported once: later updates do not repeat it (a request asked again is answered again,
+    // without a rebuild).
+    pair.builder.mark_dirty();
+    let second = pair.plan();
+    assert!(second.refused.is_empty() && second.levels.is_empty());
+}
+
+/// Negative control: this is the #35 bug, a leaf drawing its fine levels from far.
+#[test]
+fn without_on_demand_builds_a_close_pair_leaf_draws_too_fine() {
+    let run = close_pair_run(0);
+    assert!(
+        run.shipped_levels.is_empty(),
+        "no on-demand level was built"
+    );
+    for (octant, depth) in run.drawn.iter().enumerate() {
+        let depth = depth.expect("the pruned chain still draws");
+        assert!(
+            depth > run.expected[octant],
+            "octant {octant}: drawn {depth} is finer than {}",
+            run.expected[octant]
+        );
     }
 }
 
@@ -903,13 +1357,16 @@ fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_ho
     )
     .with_reference_spacing(pair.h.dataset.reference_spacing());
     let sent = pair.send_checked(0);
-    let stored: std::collections::HashMap<NodeId, Vec<u8>> = sent
+    let stored: std::collections::HashMap<NodeId, (Vec<u8>, (u8, u8))> = sent
         .iter()
         .map(|(_, bytes)| {
             let node = decode_node_levels(bytes).unwrap();
             (
                 node.id,
-                node.levels.iter().map(|level| level.depth).collect(),
+                (
+                    node.levels.iter().map(|level| level.depth).collect(),
+                    node.buildable,
+                ),
             )
         })
         .collect();
@@ -942,17 +1399,22 @@ fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_ho
     // No cell below the minimum side (depth 3), except in a node whose coarsest level is finer.
     let mut capped = 0;
     for entry in &limited.plan.entries {
-        let allowed = stored[&entry.node]
+        let (levels, buildable) = &stored[&entry.node];
+        let allowed = levels
             .iter()
             .copied()
             .rfind(|depth| *depth <= 3)
-            .unwrap_or(stored[&entry.node][0]);
+            .unwrap_or(levels[0]);
+        // The wanted depth may be any buildable one, stored or not.
+        let allowed_wanted = (buildable.0..=buildable.1)
+            .rfind(|depth| *depth <= 3)
+            .unwrap_or(buildable.0);
         for o in 0..8 {
             let (Some(drawn), Some(wanted)) = (entry.drawn[o], entry.wanted[o]) else {
                 continue;
             };
             assert!(drawn <= allowed, "node {:?} drew depth {drawn}", entry.node);
-            assert!(wanted <= allowed, "the cap is the wanted look");
+            assert!(wanted <= allowed_wanted, "the cap is the wanted look");
             capped += 1;
         }
     }

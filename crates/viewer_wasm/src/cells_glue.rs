@@ -34,7 +34,7 @@ use viewer_render_wgpu::{
 
 use crate::{
     CellPlanStats, CellUpdateConfig, CutRestProbe, LodDataset, LodDatasetError, PageInsert,
-    PoolAck, add_cell_nodes, draw_cell_cut,
+    PoolAck, add_cell_levels, add_cell_nodes, draw_cell_cut,
     lod_driver::{CellStep, plan_cells_staged, update_cells_staged},
 };
 
@@ -198,6 +198,12 @@ pub(crate) struct BuilderOutput {
     pub support: Vec<NodeId>,
     /// In build order (parents first); never merged or reordered.
     pub nodes: Vec<EncodedNode>,
+    /// Levels built on demand (`encode_node_levels`: one node per entry holding only the new
+    /// depths), after `nodes` and before the cut.
+    pub levels: Vec<EncodedNode>,
+    /// Requested depths the build side cannot serve (`CellUpdate::refused_levels`): the render
+    /// side stops wanting them (`levelsRefused`).
+    pub refused: Vec<(NodeId, u8)>,
     /// The build side has nothing more to do for this view: with the render side having applied
     /// this epoch, the cut is at rest.
     pub idle: bool,
@@ -254,6 +260,13 @@ impl BuilderCells {
 
     /// The cells' colour generation changed: plan again so the nodes are built anew.
     pub(crate) fn recolored(&mut self) {
+        self.dirty = true;
+    }
+
+    /// The render side's levels to build (`CellDriver::take_level_requests`): replaces the pending
+    /// set and plans again.
+    pub(crate) fn level_requests(&mut self, dataset: &mut LodDataset, requests: &[(NodeId, u8)]) {
+        dataset.apply_level_requests(requests);
         self.dirty = true;
     }
 
@@ -321,6 +334,8 @@ impl BuilderCells {
     ) -> Result<BuilderOutput, String> {
         let generation = dataset.cell_generation();
         let mut nodes = Vec::new();
+        let mut levels = Vec::new();
+        let mut refused = Vec::new();
         let mut rounds = 0;
         loop {
             let mut order = Vec::new();
@@ -350,6 +365,12 @@ impl BuilderCells {
                 let bytes = encode_node_levels(node).map_err(|error| error.to_string())?;
                 nodes.push(EncodedNode { bytes });
             }
+            for (node_generation, node) in &update.new_levels {
+                debug_assert_eq!(*node_generation, generation);
+                let bytes = encode_node_levels(node).map_err(|error| error.to_string())?;
+                levels.push(EncodedNode { bytes });
+            }
+            refused.extend(update.refused_levels.iter().copied());
             let pending = update.stats.pending_page_anchors.clone();
             let done = pending.is_empty() || rounds == MAX_PAGE_ROUNDS;
             let Some(reader) = reader.as_deref_mut().filter(|_| !done) else {
@@ -360,6 +381,8 @@ impl BuilderCells {
                     cut: update.cut,
                     support: update.support,
                     nodes,
+                    levels,
+                    refused,
                     idle: !self.dirty,
                     target_pixels,
                     stage_pixels: planned.stage_pixels,
@@ -421,6 +444,11 @@ enum Item {
         generation: u64,
         bytes: Vec<u8>,
     },
+    /// Levels built on demand, applied after the node they belong to.
+    Levels {
+        generation: u64,
+        bytes: Vec<u8>,
+    },
     Cut {
         epoch: u64,
         view_epoch: u64,
@@ -476,6 +504,10 @@ pub(crate) struct ViewerCells {
     forgotten_total: u64,
     nodes_received_total: u64,
     out: CellMessages,
+    /// The driver wants levels the build side has not delivered: the cut is not at rest.
+    levels_wanted: bool,
+    /// The driver's level requests the build side has not been told, latest wins.
+    level_requests: Option<Vec<(NodeId, u8)>>,
     probe_last: Cell<Option<u64>>,
     continuity: Continuity,
     /// Reference spacing of the open cloud (`cellsInfo`), for the continuity minimum.
@@ -507,6 +539,8 @@ impl ViewerCells {
                 driver_replaced: true,
                 ..CellMessages::default()
             },
+            levels_wanted: false,
+            level_requests: None,
             probe_last: Cell::new(None),
             continuity: Continuity::default(),
             reference_spacing: None,
@@ -556,6 +590,15 @@ impl ViewerCells {
         Ok(())
     }
 
+    /// One entry of a `nodeLevels` message (`BuilderOutput::levels`), validated like
+    /// [`push_node`](Self::push_node) and applied in order after the nodes sent before it.
+    pub(crate) fn push_levels(&mut self, generation: u64, bytes: Vec<u8>) -> Result<(), String> {
+        decode_node_levels(&bytes)
+            .map_err(|error| format!("malformed nodeLevels entry: {error}"))?;
+        self.queue.push_back(Item::Levels { generation, bytes });
+        Ok(())
+    }
+
     /// One `cellCut` message. The last one wins: an earlier cut still waiting behind nodes is
     /// dropped. It takes effect when the nodes sent before it have been applied.
     pub(crate) fn push_cut(
@@ -571,7 +614,8 @@ impl ViewerCells {
             return;
         }
         self.received_epoch = epoch;
-        self.queue.retain(|item| matches!(item, Item::Node { .. }));
+        self.queue
+            .retain(|item| matches!(item, Item::Node { .. } | Item::Levels { .. }));
         self.queue.push_back(Item::Cut {
             epoch,
             view_epoch,
@@ -617,6 +661,11 @@ impl ViewerCells {
                     applied_bytes += bytes.len();
                     let node = decode_node_levels(&bytes).map_err(|error| error.to_string())?;
                     add_cell_nodes(&mut self.driver, [(generation, node)])
+                        .map_err(|error| error.to_string())?;
+                }
+                Some(Item::Levels { generation, bytes }) => {
+                    let node = decode_node_levels(&bytes).map_err(|error| error.to_string())?;
+                    add_cell_levels(&mut self.driver, [(generation, node)])
                         .map_err(|error| error.to_string())?;
                 }
                 Some(Item::Cut {
@@ -672,7 +721,24 @@ impl ViewerCells {
         self.out.evict.extend(draw.evicted);
         self.out.pool_reset |= draw.pool_reset;
         self.out.ack = Some(draw.ack);
+        if let Some(requests) = self.driver.take_level_requests() {
+            self.levels_wanted = !requests.is_empty();
+            self.level_requests = Some(requests);
+        }
         Ok(Some(draw.report))
+    }
+
+    /// A `levelsRefused` message: the driver stops wanting these depths. Applied at once (it
+    /// depends on no queued node) and drawn on the next frame.
+    pub(crate) fn refuse_levels(&mut self, refused: &[(NodeId, u8)]) {
+        self.driver.refuse_levels(refused);
+        self.view_dirty = true;
+    }
+
+    /// The levels the driver wants built on demand, when the set changed since the last call: the
+    /// build side serves them (`BuilderCells::level_requests`).
+    pub(crate) fn take_level_requests(&mut self) -> Option<Vec<(NodeId, u8)>> {
+        self.level_requests.take()
     }
 
     /// The messages for the build side, in the order it must apply them: `driverReplaced`, then
@@ -692,6 +758,7 @@ impl ViewerCells {
         }) && !self.view_dirty
             && self.received_epoch == self.applied_epoch
             && self.queue.is_empty()
+            && !self.levels_wanted
             && !self.driver.needs_frame_on(target)
             && self.last_missing == 0;
         let digest = self.digest.filter(|_| rest);

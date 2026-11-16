@@ -8,7 +8,8 @@ use viewer_core::{NodeId, SpatialBounds};
 
 use super::*;
 use crate::{
-    NodeCell, NodeCellLevel, OrbitCamera, POOL_PAGE_BYTES, VoxelBuildLimits, pack_level,
+    CellInstance, NodeCell, NodeCellLevel, OrbitCamera, POOL_PAGE_BYTES, VoxelBuildLimits,
+    pack_level,
     scene_digest_tests::{ORIGIN, SIDE, VIEWPORT, ids},
     test_support::*,
 };
@@ -354,6 +355,10 @@ fn node_cells(node: u64, depths: &[u8]) -> NodeCells {
                 octant_offsets: None,
             })
             .collect(),
+        buildable: (
+            depths.iter().copied().min().unwrap_or(0),
+            depths.iter().copied().max().unwrap_or(0),
+        ),
     }
 }
 
@@ -915,6 +920,10 @@ fn add_generation(
             id,
             bounds: node.bounds,
             points: node.points,
+            buildable: (
+                node.stored.first().copied().unwrap_or(0),
+                node.stored.last().copied().unwrap_or(0),
+            ),
             levels,
         },
     )
@@ -1006,6 +1015,7 @@ fn a_recolour_with_another_shape_is_refused() {
         id: NodeId::new(2),
         bounds: node.bounds,
         points: node.points,
+        buildable: node.buildable,
         levels: std::mem::take(&mut levels),
     };
     assert!(matches!(
@@ -1031,4 +1041,400 @@ fn outdated_nodes_are_forgotten_before_current_ones() {
     fx.driver.config.cpu_budget_bytes = fx.driver.cpu_bytes() - 1;
     let report = fx.step(&[], &cam, 64.0);
     assert_eq!(report.forgotten, ids(&[2]));
+}
+
+/// A node of `depths` (two pages each) in the generation, standing in for one built on demand.
+fn packed_at(id: u64, depths: &[u8]) -> PackedNode {
+    let node = NodeId::new(id);
+    PackedNode {
+        id: node,
+        bounds: octant_nodes()[&node].bounds,
+        points: 2000,
+        buildable: (10, 14),
+        levels: depths
+            .iter()
+            .map(|depth| level_of(node, *depth, 2))
+            .collect(),
+    }
+}
+
+fn stored_depths(driver: &CellDriver, id: u64) -> Vec<u8> {
+    driver.nodes[&NodeId::new(id)].pool.stored.clone()
+}
+
+fn colour_depths(driver: &CellDriver, id: u64) -> Vec<u8> {
+    driver.nodes[&NodeId::new(id)]
+        .colors
+        .iter()
+        .map(|(depth, _)| *depth)
+        .collect()
+}
+
+#[test]
+fn added_levels_extend_the_stored_chain_in_order() {
+    let generation = cell_generation(5, 0);
+    let mut driver = CellDriver::new(config(44, 4, u64::MAX));
+    driver
+        .add_packed_generation(generation, packed_at(2, &[10, 14]))
+        .unwrap();
+    let before = driver.cpu_bytes();
+    let added = driver
+        .add_packed_levels(generation, packed_at(2, &[12]))
+        .unwrap();
+    assert_eq!(added, LevelsAdded::Added(1));
+    assert_eq!(stored_depths(&driver, 2), [10, 12, 14]);
+    assert_eq!(colour_depths(&driver, 2), [10, 12, 14]);
+    let id = NodeId::new(2);
+    let level = level_of(id, 12, 2);
+    assert_eq!(driver.cpu_bytes(), before + level_bytes(&level));
+    assert_eq!(driver.pool.known_pages(driver.pool.key(id, 12)), Some(2));
+    assert_eq!(driver.nodes[&id].levels.len(), 3);
+    assert_eq!(driver.nodes[&id].pool.buildable, (10, 14));
+}
+
+#[test]
+fn on_demand_levels_count_toward_the_cpu_budget() {
+    let generation = cell_generation(5, 0);
+    let mut fx = Fixture::new(HashMap::new(), config(256, 4, u64::MAX));
+    for id in [2, 3] {
+        fx.driver
+            .add_packed_generation(generation, packed_at(id, &[10, 14]))
+            .unwrap();
+    }
+    let at_rest = fx.driver.cpu_bytes();
+    // The budget holds both nodes as stored; the levels added to one push it over.
+    fx.driver.config.cpu_budget_bytes = at_rest;
+    let cam = camera("fit");
+    assert!(fx.step(&[], &cam, 64.0).forgotten.is_empty());
+    fx.driver
+        .add_packed_levels(generation, packed_at(2, &[12]))
+        .unwrap();
+    assert_eq!(
+        fx.driver.cpu_bytes(),
+        at_rest + level_bytes(&level_of(NodeId::new(2), 12, 2))
+    );
+    let report = fx.step(&[], &cam, 64.0);
+    assert_eq!(report.forgotten.len(), 1, "one idle node goes");
+    assert!(fx.driver.cpu_bytes() <= at_rest);
+    // The bytes of the forgotten node include its on-demand level: nothing leaks.
+    let kept = fx.driver.nodes.values().map(|node| node.bytes).sum::<u64>();
+    assert_eq!(fx.driver.cpu_bytes(), kept);
+}
+
+#[test]
+fn an_already_stored_depth_is_ignored() {
+    let generation = cell_generation(5, 0);
+    let mut driver = CellDriver::new(config(44, 4, u64::MAX));
+    driver
+        .add_packed_generation(generation, packed_at(2, &[10, 14]))
+        .unwrap();
+    let before = driver.cpu_bytes();
+    assert_eq!(
+        driver.add_packed_levels(generation, packed_at(2, &[14])),
+        Ok(LevelsAdded::Ignored)
+    );
+    assert_eq!(driver.cpu_bytes(), before);
+    assert_eq!(stored_depths(&driver, 2), [10, 14]);
+}
+
+#[test]
+fn levels_for_a_forgotten_node_or_old_generation_are_ignored() {
+    let (g0, g1) = (cell_generation(5, 0), cell_generation(5, 1));
+    let mut driver = CellDriver::new(config(44, 4, u64::MAX));
+    assert_eq!(
+        driver.add_packed_levels(g0, packed_at(2, &[12])),
+        Ok(LevelsAdded::Ignored),
+        "unknown node"
+    );
+    driver
+        .add_packed_generation(g0, packed_at(2, &[10, 14]))
+        .unwrap();
+    driver
+        .add_packed_generation(g1, packed_at(3, &[10, 14]))
+        .unwrap();
+    // Node 2 still holds colour 0 and colour 1 was seen: its levels are old.
+    assert_eq!(
+        driver.add_packed_levels(g0, packed_at(2, &[12])),
+        Ok(LevelsAdded::Ignored),
+        "old generation"
+    );
+    assert_eq!(
+        driver.add_packed_levels(g1, packed_at(2, &[12])),
+        Ok(LevelsAdded::Ignored),
+        "colour the node does not hold"
+    );
+    assert_eq!(stored_depths(&driver, 2), [10, 14]);
+    assert_eq!(
+        driver.add_packed_levels(g1, packed_at(3, &[12])),
+        Ok(LevelsAdded::Added(1))
+    );
+}
+
+#[test]
+fn recolor_drops_on_demand_levels() {
+    let (g0, g1) = (cell_generation(5, 0), cell_generation(5, 1));
+    let mut driver = CellDriver::new(config(44, 4, u64::MAX));
+    driver
+        .add_packed_generation(g0, packed_at(2, &[10, 14]))
+        .unwrap();
+    let base = driver.cpu_bytes();
+    driver.add_packed_levels(g0, packed_at(2, &[12])).unwrap();
+    assert_eq!(stored_depths(&driver, 2), [10, 12, 14]);
+    assert_eq!(
+        driver.add_packed_generation(g1, packed_at(2, &[10, 14])),
+        Ok(NodeAdded::Recolored { levels: 2 })
+    );
+    assert_eq!(stored_depths(&driver, 2), [10, 14]);
+    assert_eq!(colour_depths(&driver, 2), [10, 14]);
+    assert_eq!(driver.nodes[&NodeId::new(2)].levels.len(), 2);
+    assert_eq!(driver.cpu_bytes(), base);
+    // A recolour of another shape is still refused and drops nothing.
+    driver.add_packed_levels(g1, packed_at(2, &[12])).unwrap();
+    let with_12 = driver.cpu_bytes();
+    let mut odd = packed_at(2, &[10, 14]);
+    odd.levels[0] = level_of(NodeId::new(2), 10, 3);
+    assert_eq!(
+        driver.add_packed_generation(cell_generation(5, 2), odd),
+        Err(NodeInputError::InvalidLevel(NodeId::new(2)))
+    );
+    assert_eq!(stored_depths(&driver, 2), [10, 12, 14]);
+    assert_eq!(driver.cpu_bytes(), with_12);
+}
+
+/// Packed levels of node 2 for a recolour: depths 5 to 7 as the fixture packs them, tagged.
+fn recoloured_node_2(fx: &Fixture, tag: u32) -> PackedNode {
+    let node = &fx.nodes[&NodeId::new(2)];
+    let levels = node
+        .stored
+        .iter()
+        .filter(|depth| **depth != 4)
+        .map(|depth| {
+            let mut level = level_of(NodeId::new(2), *depth, pages_of(node, *depth));
+            level.instances[0].0[0] = tag;
+            level
+        })
+        .collect();
+    PackedNode {
+        id: NodeId::new(2),
+        bounds: node.bounds,
+        points: node.points,
+        buildable: (4, 7),
+        levels,
+    }
+}
+
+#[test]
+fn a_dropped_on_demand_level_leaves_the_pool_and_a_drawn_one_is_refreshed_when_it_returns() {
+    let (g0, g1) = (cell_generation(5, 0), cell_generation(5, 1));
+    let cam = camera("fit");
+    let id = NodeId::new(2);
+    let first_levels = |fx: &Fixture, depth: u8| {
+        let key = fx.driver.pool.key(id, depth);
+        fx.driver
+            .pool
+            .level(key)
+            .map(|level| level.instances[0].0[0])
+    };
+
+    // Not drawn when the node is recoloured: depth 4 (the "on-demand" one) is evicted.
+    let mut fx = generation_fixture(g0);
+    fx.run(10, &ids(&[2, 3]), &cam, 64.0);
+    let key = fx.driver.pool.key(id, 4);
+    assert!(fx.driver.pool.is_resident(key));
+    fx.run(4, &ids(&[3]), &cam, 64.0);
+    let tagged = recoloured_node_2(&fx, 1);
+    assert_eq!(
+        fx.driver.add_packed_generation(g1, tagged),
+        Ok(NodeAdded::Recolored { levels: 3 })
+    );
+    assert!(!fx.driver.pool.is_resident(key), "the dropped depth left");
+    fx.run(2, &ids(&[3]), &cam, 64.0);
+    assert!(fx.driver.pool.level(key).is_none());
+
+    // Drawn: it stays with the old colours until the depth returns with the new ones.
+    let mut fx = generation_fixture(g0);
+    fx.run(10, &ids(&[2, 3]), &cam, 64.0);
+    assert!(fx.driver.pool.is_resident(key));
+    assert_eq!(first_levels(&fx, 4), Some(CellInstance::EMPTY.0[0]));
+    let tagged = recoloured_node_2(&fx, 1);
+    fx.driver.add_packed_generation(g1, tagged).unwrap();
+    assert!(
+        fx.driver.pool.is_resident(key),
+        "a drawn level is not evicted"
+    );
+    let mut back = PackedNode {
+        levels: vec![level_of(id, 4, 1)],
+        ..recoloured_node_2(&fx, 1)
+    };
+    back.levels[0].instances[0].0[0] = 9;
+    assert_eq!(
+        fx.driver.add_packed_levels(g1, back),
+        Ok(LevelsAdded::Added(1))
+    );
+    fx.nodes = fx
+        .nodes
+        .iter()
+        .map(|(id, node)| (*id, node.clone()))
+        .collect();
+    fx.run(3, &ids(&[2, 3]), &cam, 64.0);
+    assert_eq!(
+        first_levels(&fx, 4),
+        Some(9),
+        "the new colours replaced the old"
+    );
+}
+
+/// Node 2 with only its coarsest level stored and depths up to 7 buildable, in `generation`.
+fn on_demand_fixture(generation: u64) -> Fixture {
+    let mut fx = Fixture::new(HashMap::new(), config(64, 4, u64::MAX));
+    fx.nodes = octant_nodes();
+    fx.driver
+        .add_packed_generation(generation, on_demand_node(&[4], 0))
+        .unwrap();
+    fx
+}
+
+/// Node 2 with one page per level at `depths`, buildable 4..=7; `tag` marks the first cell.
+fn on_demand_node(depths: &[u8], tag: u32) -> PackedNode {
+    let id = NodeId::new(2);
+    PackedNode {
+        id,
+        bounds: octant_nodes()[&id].bounds,
+        points: 2000,
+        buildable: (4, 7),
+        levels: depths
+            .iter()
+            .map(|depth| {
+                let mut level = level_of(id, *depth, 1);
+                level.instances[0].0[0] = tag;
+                level
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn a_missing_level_is_requested_without_failing_the_frame() {
+    let g0 = cell_generation(5, 0);
+    let mut fx = on_demand_fixture(g0);
+    let cam = camera("zoom");
+    let cut = ids(&[2]);
+    let report = fx.run(4, &cut, &cam, 1.0);
+    let wanted = report.plan.entries[0].wanted[0].expect("wanted");
+    assert!(wanted > 4, "setup: the view wants a buildable level");
+    assert!(report.plan.fetch_requests.iter().all(|key| key.depth == 4));
+    let id = NodeId::new(2);
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, wanted)]));
+    fx.step(&cut, &cam, 1.0);
+    assert_eq!(fx.driver.take_level_requests(), None);
+}
+
+#[test]
+fn an_arrived_level_is_offered_on_the_next_frame() {
+    let g0 = cell_generation(5, 0);
+    let mut fx = on_demand_fixture(g0);
+    let cam = camera("zoom");
+    let cut = ids(&[2]);
+    let id = NodeId::new(2);
+    let before = fx.run(4, &cut, &cam, 1.0);
+    let wanted = before.plan.entries[0].wanted[0].expect("wanted");
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, wanted)]));
+    assert_eq!(before.plan.entries[0].drawn[0], Some(4));
+    assert!(before.plan.entries[0].stage[0]);
+    assert_eq!(
+        fx.driver
+            .add_packed_levels(g0, on_demand_node(&[wanted], 0)),
+        Ok(LevelsAdded::Added(1))
+    );
+    let mut offered = false;
+    let mut last = before;
+    for _ in 0..4 {
+        last = fx.step(&cut, &cam, 1.0);
+        offered |= last
+            .plan
+            .fetch_requests
+            .iter()
+            .any(|key| (key.node, key.depth) == (id, wanted));
+    }
+    assert!(offered, "the arrived level is fetched and offered");
+    assert_eq!(last.plan.entries[0].drawn[0], Some(wanted));
+    assert!(!last.plan.entries[0].stage[0]);
+    assert!(fx.driver.pool().is_resident(fx.driver.pool.key(id, wanted)));
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![]));
+}
+
+#[test]
+fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours() {
+    let (g0, g1) = (cell_generation(5, 0), cell_generation(5, 1));
+    let mut fx = on_demand_fixture(g0);
+    let cam = camera("zoom");
+    let cut = ids(&[2]);
+    let id = NodeId::new(2);
+    let wanted = fx.run(4, &cut, &cam, 1.0).plan.entries[0].wanted[0].expect("wanted");
+    fx.driver
+        .add_packed_levels(g0, on_demand_node(&[wanted], 0))
+        .unwrap();
+    fx.run(6, &cut, &cam, 1.0);
+    let key = fx.driver.pool.key(id, wanted);
+    assert!(fx.driver.pool.is_resident(key));
+    let _ = fx.driver.take_level_requests();
+    // The recolour drops the added depth: the node asks for it again while the old one draws.
+    fx.driver
+        .add_packed_generation(g1, on_demand_node(&[4], 1))
+        .unwrap();
+    assert_eq!(stored_depths(&fx.driver, 2), [4]);
+    fx.run(2, &cut, &cam, 1.0);
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, wanted)]));
+    fx.driver
+        .add_packed_levels(g1, on_demand_node(&[wanted], 9))
+        .unwrap();
+    fx.run(6, &cut, &cam, 1.0);
+    let colour = fx
+        .driver
+        .pool
+        .level(key)
+        .map(|level| level.instances[0].0[0]);
+    assert_eq!(colour, Some(9), "the new colours replaced the old");
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![]));
+}
+
+#[test]
+fn a_refused_depth_lowers_what_the_node_can_want_and_the_view_settles() {
+    let mut fx = on_demand_fixture(cell_generation(5, 0));
+    let cam = camera("zoom");
+    let cut = ids(&[2]);
+    let id = NodeId::new(2);
+    let first = fx.run(4, &cut, &cam, 1.0);
+    let wanted = first.plan.entries[0].wanted[0].expect("wanted");
+    assert!(wanted > 4, "setup: the view wants a buildable level");
+    // The build side refuses every depth it is asked for, as for a leaf merged at the deepest
+    // cell depth: each refusal lowers what the node can want.
+    for _ in 0..4 {
+        if let Some(requests) = fx.driver.take_level_requests() {
+            fx.driver.refuse_levels(&requests);
+        }
+        fx.run(2, &cut, &cam, 1.0);
+    }
+    assert_eq!(fx.driver.nodes[&id].pool.buildable.1, 4);
+    let last = fx.run(4, &cut, &cam, 1.0);
+    assert_eq!(fx.driver.take_level_requests().unwrap_or_default(), vec![]);
+    assert_eq!(last.plan.entries[0].drawn[0], Some(4));
+    assert!(
+        !last.plan.entries[0].stage[0],
+        "the node draws what it wants"
+    );
+    assert!(last.plan.entries.iter().all(|entry| entry.node == id));
+    assert!(!fx.driver.needs_frame(), "nothing is held or pending");
+}
+
+#[test]
+fn reordered_level_requests_are_not_a_change() {
+    let mut fx = on_demand_fixture(cell_generation(5, 0));
+    let id = NodeId::new(2);
+    fx.driver.level_requests = vec![(id, 6), (id, 7)];
+    assert!(fx.driver.take_level_requests().is_some());
+    fx.driver.level_requests = vec![(id, 7), (id, 6)];
+    assert_eq!(fx.driver.take_level_requests(), None);
+    fx.driver.level_requests = vec![(id, 7)];
+    assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, 7)]));
 }

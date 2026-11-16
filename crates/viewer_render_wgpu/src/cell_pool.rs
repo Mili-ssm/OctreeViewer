@@ -78,7 +78,7 @@ use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
     cell_cut::{
         FastMap, FastSet, MAX_MASK_LEVELS, cell_cut_with, drawn_levels, octant_wanted_depth,
-        octant_wanted_depth_near,
+        octant_wanted_depth_near, served_depth,
     },
     representative_depth,
 };
@@ -151,6 +151,8 @@ pub struct PoolNode {
     pub bounds: SpatialBounds,
     /// Absolute depths of the stored levels, ascending.
     pub stored: Vec<u8>,
+    /// Depths the node can build on demand, inclusive: `stored` lies inside it.
+    pub buildable: (u8, u8),
     /// Points of the node, for the size estimate of levels that have not arrived.
     pub points: u64,
 }
@@ -241,6 +243,9 @@ pub struct FramePlan {
     /// The cut to draw: the new one, or the retained one.
     pub entries: Vec<CellCutEntry>,
     pub fetch_requests: Vec<LevelKey>,
+    /// Wanted depths that are buildable but not stored, coarse to fine: the owner builds them on
+    /// demand. They are not fetched; the node keeps drawing its resident levels meanwhile.
+    pub level_requests: Vec<LevelKey>,
     pub uploads: Vec<PageUpload>,
     /// Page slots to make inert; they are free for the uploads of this same frame.
     pub page_frees: Vec<u32>,
@@ -248,6 +253,8 @@ pub struct FramePlan {
     pub active: Vec<ActiveLevel>,
     pub events: Vec<CellPoolEvent>,
     pub counters: PoolCounters,
+    /// The nodes the fit truncates this frame (`counters.pool_coarsened` of them), ascending.
+    pub coarsened_nodes: Vec<NodeId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -290,6 +297,8 @@ struct WantedMemo {
     size_epoch: u64,
     generation: u64,
     needed: Rc<FastSet<LevelKey>>,
+    /// Wanted levels that are buildable but not stored.
+    requests: Rc<FastSet<LevelKey>>,
     /// Nodes left out of `needed` because they are too fine for an ancestor in the cut.
     offenders: BTreeSet<NodeId>,
     overflow: bool,
@@ -754,12 +763,11 @@ struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
-    /// `octant_wanted_depth` of the octant for `data.stored`, from the cache of the full list: the
-    /// first stored depth that meets the target, else the finest, so a prefix of the list gets
-    /// the same depth capped at its last element.
+    /// `octant_wanted_depth` of the octant for `data.buildable`, from the cache of the full
+    /// range: the coarsest depth that meets the target, else the finest, so a range cut short by
+    /// a cap gets the same depth capped at its finest.
     fn depth(&self, id: NodeId, octant: usize, data: &CellCutNode) -> u8 {
-        let last = *data.stored.last().expect("stored levels are not empty");
-        self.depths[&id].depths[octant].min(last)
+        self.depths[&id].depths[octant].min(data.buildable.1)
     }
 }
 
@@ -976,7 +984,7 @@ impl CellPool {
     }
 
     /// The size of a level when known: its data, else its exact size.
-    fn known_pages(&self, key: LevelKey) -> Option<usize> {
+    pub(crate) fn known_pages(&self, key: LevelKey) -> Option<usize> {
         self.levels
             .get(&key)
             .and_then(Level::pages)
@@ -1138,6 +1146,7 @@ impl CellPool {
                 };
                 Some(CellCutNode {
                     bounds: node.bounds,
+                    buildable: capped_range(node.buildable, caps.get(&id)),
                     stored,
                     resident,
                 })
@@ -1169,8 +1178,36 @@ impl CellPool {
             if let Some(coarsest) = coarsest(&node.stored, caps.get(&entry.node)) {
                 set.insert(self.key(entry.node, coarsest));
             }
+            // A wanted depth is fetched as the stored one that serves it; when it is not stored
+            // itself it is also requested on demand (`requested_levels`).
+            let stored = capped(&node.stored, caps.get(&entry.node));
             for depth in entry.wanted.iter().flatten() {
-                set.insert(self.key(entry.node, *depth));
+                set.insert(self.key(entry.node, served_depth(&stored, *depth)));
+            }
+        }
+        set
+    }
+
+    /// The wanted depths that are buildable but not stored: the levels to request on demand.
+    fn requested_levels(
+        &self,
+        entries: &[CellCutEntry],
+        nodes: &FastMap<NodeId, PoolNode>,
+        caps: &FastMap<NodeId, u8>,
+    ) -> FastSet<LevelKey> {
+        let mut set = FastSet::default();
+        for entry in entries {
+            let node = &nodes[&entry.node];
+            let stored = capped(&node.stored, caps.get(&entry.node));
+            let buildable = capped_range(node.buildable, caps.get(&entry.node));
+            for depth in entry.wanted.iter().flatten() {
+                if !stored.contains(depth) {
+                    debug_assert!(
+                        (buildable.0..=buildable.1).contains(depth),
+                        "a wanted depth is stored or buildable"
+                    );
+                    set.insert(self.key(entry.node, *depth));
+                }
             }
         }
         set
@@ -1192,8 +1229,9 @@ impl CellPool {
         (needed, total)
     }
 
-    /// R3-Q11. Returns the levels the wanted entries need after the fit, and whether even the
-    /// coarsest levels overflow the usable capacity.
+    /// R3-Q11. Returns the levels the wanted entries need after the fit (the stored ones that
+    /// serve them), the wanted depths that are not stored (to request), and whether even the coarsest levels overflow the usable
+    /// capacity.
     #[allow(clippy::too_many_arguments)]
     fn fit(
         &mut self,
@@ -1202,7 +1240,7 @@ impl CellPool {
         offenders: &mut BTreeSet<NodeId>,
         eye: [f64; 3],
         ctx: &Ctx,
-    ) -> Result<(FastSet<LevelKey>, bool), CellCutError> {
+    ) -> Result<(FastSet<LevelKey>, FastSet<LevelKey>, bool), CellCutError> {
         let usable = self.usable();
         let (high, low) = (usable * HIGH_PERCENT / 100, usable * LOW_PERCENT / 100);
         let mut caps = std::mem::take(&mut self.caps);
@@ -1249,13 +1287,18 @@ impl CellPool {
                         continue;
                     };
                     let stored = capped(&nodes[&id].stored, caps.get(&id));
-                    // The finest level below `top` that is smaller; estimates can tie.
+                    let top = served_depth(&stored, top);
+                    // The finest level below `top` that saves pages: smaller, or already needed
+                    // (dropping `top` then frees it outright). Estimates can tie, and a tie must
+                    // not stop the fit: the cut would overflow with nothing coarsened.
                     let size =
                         |depth: u8| self.pages_of(self.key(id, depth), &nodes[&id], ctx.grid);
                     if let Some(below) = stored
                         .iter()
                         .copied()
-                        .filter(|d| *d < top && size(*d) < size(top))
+                        .filter(|d| {
+                            *d < top && (size(*d) < size(top) || needed.contains(&self.key(id, *d)))
+                        })
                         .max()
                     {
                         caps.insert(id, below);
@@ -1271,8 +1314,9 @@ impl CellPool {
         }
         self.old_released
             .retain(|id, cap| caps.get(id) == Some(cap));
+        let requests = self.requested_levels(&entries, nodes, &caps);
         self.caps = caps;
-        Ok((needed, total > usable))
+        Ok((needed, requests, total > usable))
     }
 
     /// R3-Q21 under a fit cap: a capped node (`node`: its levels below `cap`) that lacks, in an
@@ -1308,10 +1352,28 @@ impl CellPool {
             return None;
         }
         let lacks = (0..8).any(|octant| {
-            let wanted = ctx.depth(id, octant, node);
+            let wanted = served_depth(&node.stored, ctx.depth(id, octant, node));
             needed.contains(&self.key(id, wanted)) && !node.resident.iter().any(|d| *d >= wanted)
         });
         lacks.then_some(old)
+    }
+
+    /// The levels of a node were dropped (a recolour): a fit cap that points at a depth no longer
+    /// stored moves to the finest stored depth below it, or goes if there is none.
+    pub(crate) fn reconcile_cap(&mut self, id: NodeId, stored: &[u8]) {
+        let Some(cap) = self.caps.get(&id).copied() else {
+            return;
+        };
+        if stored.contains(&cap) {
+            return;
+        }
+        // Keep the cap: removing it would let finer levels back in and undo the fit. With no
+        // stored depth below it, it clamps to the coarsest one (the node draws that and no finer).
+        let below = stored.iter().copied().filter(|depth| *depth < cap).max();
+        if let Some(depth) = below.or_else(|| stored.iter().copied().min()) {
+            self.caps.insert(id, depth);
+        }
+        self.size_epoch += 1;
     }
 
     /// Does any stored level of the node, below its fit cap, have pages resident?
@@ -1595,6 +1657,25 @@ impl CellPool {
                     *slot = f.octants_of(gap, o).filter_map(|a| drawn[a]).max();
                 }
             }
+            // The covering node may not have drawn over this zone before (it is new in the cut
+            // or drew elsewhere): what drew there was the nearest applied ancestor above it.
+            if let Some((_, gap)) = above {
+                for k in f.gaps().filter(|k| *k > gap) {
+                    let Some(drawn) = self
+                        .applied_index
+                        .cells
+                        .get(&f.ancestor(k))
+                        .and_then(|a| self.applied_drawn.get(a))
+                    else {
+                        continue;
+                    };
+                    for (o, slot) in limit.iter_mut().enumerate() {
+                        if slot.is_none() {
+                            *slot = f.octants_of(k, o).filter_map(|a| drawn[a]).max();
+                        }
+                    }
+                }
+            }
             for (d, k) in &below {
                 let df = Footprint::new(grid, self.applied_index.nodes[d].bounds);
                 for (o, drawn) in self.applied_drawn[d].iter().enumerate() {
@@ -1613,6 +1694,7 @@ impl CellPool {
                     &|_| {
                         Some(CellCutNode {
                             bounds: data.bounds,
+                            buildable: capped_range(data.buildable, self.caps.get(&id)),
                             stored: stored.clone(),
                             resident: resident.clone(),
                         })
@@ -1624,8 +1706,16 @@ impl CellPool {
                     .and_then(|solo| solo.first().map(|e| e.wanted))
                     .unwrap_or(entry.wanted)
             };
-            let (here, _) = drawn_levels(&wanted, &resident, f.rep.saturating_sub(MAX_MASK_LEVELS));
+            let (here, _) = drawn_levels(
+                &wanted,
+                &stored,
+                &resident,
+                f.rep.saturating_sub(MAX_MASK_LEVELS),
+            );
             let short = (0..8).any(|o| {
+                // The raw wanted depth, not the stored one (R3-Q21): a child storing only a
+                // level coarser than what its parent draws does not take over until that level
+                // is built on demand.
                 wanted[o]
                     .is_some_and(|w| limit[o].is_some_and(|l| here[o].is_none_or(|d| d < l.min(w))))
             });
@@ -1862,7 +1952,7 @@ impl CellPool {
                     origin,
                     data.bounds,
                     octant,
-                    &data.stored,
+                    data.buildable,
                     target_px,
                     hints[octant],
                 ),
@@ -1872,12 +1962,12 @@ impl CellPool {
                     origin,
                     data.bounds,
                     octant,
-                    &data.stored,
+                    data.buildable,
                     target_px,
                 ),
             });
             let depths = match finest_allowed {
-                Some(limit) => depths.map(|depth| continuity_depth(&data.stored, depth, limit)),
+                Some(limit) => depths.map(|depth| continuity_depth(data.buildable, depth, limit)),
                 None => depths,
             };
             let differs = was.is_none_or(|cached| cached.depths != depths);
@@ -2044,8 +2134,10 @@ impl CellPool {
             });
         if !reusable {
             let mut offenders = BTreeSet::new();
-            let (mut needed, overflow) = self.fit(cut, nodes, &mut offenders, eye, &ctx)?;
+            let (mut needed, mut requests, overflow) =
+                self.fit(cut, nodes, &mut offenders, eye, &ctx)?;
             needed.retain(|key| !offenders.contains(&key.node));
+            requests.retain(|key| !offenders.contains(&key.node));
             self.wanted_generation += 1;
             let min_depth = cut
                 .iter()
@@ -2065,6 +2157,7 @@ impl CellPool {
                 size_epoch: self.size_epoch,
                 generation: self.wanted_generation,
                 needed: Rc::new(needed),
+                requests: Rc::new(requests),
                 offenders,
                 overflow,
                 eye,
@@ -2073,8 +2166,12 @@ impl CellPool {
             });
         }
         let memo = self.wanted_memo.as_ref().expect("set above");
-        let (overflow, generation, needed) =
-            (memo.overflow, memo.generation, Rc::clone(&memo.needed));
+        let (overflow, generation, needed, requests) = (
+            memo.overflow,
+            memo.generation,
+            Rc::clone(&memo.needed),
+            Rc::clone(&memo.requests),
+        );
         if overflow && self.overflow_frame != frame {
             self.overflow += 1;
             self.overflow_frame = frame;
@@ -2128,6 +2225,7 @@ impl CellPool {
                 };
                 let mut node = CellCutNode {
                     bounds: data.bounds,
+                    buildable: capped_range(data.buildable, caps.get(&id)),
                     stored,
                     resident,
                 };
@@ -2392,6 +2490,22 @@ impl CellPool {
             .filter(|key| fresh.contains(key))
             .collect();
 
+        // Missing levels the view wants and the node can build, coarse to fine like the fetches.
+        // They hold no pool state: the level arrives as a stored one (`add_packed_levels`).
+        let mut level_requests: Vec<LevelKey> = if overflow {
+            Vec::new()
+        } else {
+            requests.iter().copied().collect()
+        };
+        level_requests.sort_by(|a, b| {
+            let distance =
+                |key: &LevelKey| distance_sq(eye, nodes[&key.node].bounds, coordinate_origin);
+            a.depth
+                .cmp(&b.depth)
+                .then(distance(a).total_cmp(&distance(b)))
+                .then(a.node.cmp(&b.node))
+        });
+
         // Eviction: on demand for what is missing, and down to the soft limit.
         let missing: usize = order
             .iter()
@@ -2645,12 +2759,18 @@ impl CellPool {
             apply,
             entries: self.applied.clone(),
             fetch_requests,
+            level_requests,
             uploads,
             page_frees,
             mask_updates,
             active,
             events: std::mem::take(&mut self.events),
             counters,
+            coarsened_nodes: {
+                let mut ids: Vec<NodeId> = caps.keys().copied().collect();
+                ids.sort_unstable();
+                ids
+            },
         })))
     }
 }
@@ -2817,25 +2937,35 @@ fn uncovered_levels(
     (uncovered, octants)
 }
 
-/// `wanted` limited to the finest stored depth at or below `limit` (cells of that depth or
-/// coarser have a side of at least the continuity minimum); the coarsest stored depth when all
+/// `wanted` limited to the finest buildable depth at or below `limit` (cells of that depth or
+/// coarser have a side of at least the continuity minimum); the coarsest buildable depth when all
 /// are finer.
-fn continuity_depth(stored: &[u8], wanted: u8, limit: u8) -> u8 {
-    let allowed = stored
-        .iter()
-        .copied()
-        .rfind(|depth| *depth <= limit)
-        .unwrap_or(stored[0]);
-    wanted.min(allowed)
+fn continuity_depth(buildable: (u8, u8), wanted: u8, limit: u8) -> u8 {
+    wanted.min(limit.clamp(buildable.0, buildable.1))
+}
+
+/// `buildable` with its finest depth lowered to the cap (never below its coarsest).
+fn capped_range(buildable: (u8, u8), cap: Option<&u8>) -> (u8, u8) {
+    cap.map_or(buildable, |cap| {
+        (buildable.0, buildable.1.min(*cap).max(buildable.0))
+    })
 }
 
 /// `stored` truncated to depths at or below the cap.
+///
+/// Never empty while `stored` is not: a cap below every stored level (its depth was dropped by a
+/// recolour) leaves the coarsest one.
 fn capped(stored: &[u8], cap: Option<&u8>) -> Vec<u8> {
-    stored
+    let kept: Vec<u8> = stored
         .iter()
         .copied()
         .filter(|depth| cap.is_none_or(|cap| depth <= cap))
-        .collect()
+        .collect();
+    if kept.is_empty() {
+        stored.first().copied().into_iter().collect()
+    } else {
+        kept
+    }
 }
 
 #[cfg(test)]

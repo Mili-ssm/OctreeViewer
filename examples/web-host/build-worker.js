@@ -18,12 +18,21 @@ import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./h
 //
 // Cells path (R3, requested with `open.cells`, which the render worker sets by default; every colour mode, R3-Q32/Q33): the builder emits no `scene`.
 // build -> render: nodeCells{gen,generation,buffers} (one per node batch, transferred, in order, never
-//                  coalesced), cellCut{gen,cutEpoch,viewEpoch,cut,support,idle,targetPixels} (latest wins),
+//                  coalesced), nodeLevels{gen,generation,buffers} (levels built on demand; sent right after the
+//                  nodeCells of the same batch, transferred, in order, never coalesced),
+//                  levelsRefused{gen,nodes,depths} (BigUint64Array ids and a parallel Uint8Array of depths the
+//                  builder cannot serve, e.g. a leaf already at the deepest cell depth; the driver stops wanting
+//                  them, so the view can settle; sent after nodeLevels, before cellCut, through the same
+//                  messageQueue as the node messages), cellCut{gen,cutEpoch,viewEpoch,cut,support,idle,targetPixels} (latest wins),
 //                  cellLod{gen,cutEpoch,viewEpoch,lod} (stats for the LOD panel).
 // render -> build: poolAck{gen,cutEpoch,drawn,missing} (latest wins), evict{gen,nodes} (ordered, never
-//                  coalesced), poolReset{gen}, driverReplaced{gen}. They wait in `cellInbox` and are applied
+//                  coalesced), poolReset{gen}, driverReplaced{gen},
+//                  levelRequests{gen,nodes,depths} (BigUint64Array ids and a parallel Uint8Array of
+//                  depths: the whole set of levels the driver wants built; it replaces the previous set, so the
+//                  latest wins; messages are handled in order, so one sent behind `open` finds the builder
+//                  ready). They wait in `cellInbox` and are applied
 //                  before the next update in the order the builder requires: driverReplaced, poolReset,
-//                  evict, poolAck: the order of `ViewerCells::take_messages` and of the in-process path. The
+//                  evict, poolAck, levelRequests: the order of `ViewerCells::take_messages` and of the in-process path. The
 //                  ack of a batch comes from the driver's last frame, after every eviction in the same
 //                  batch, so its `drawn` holds no evicted node: evictions go first (they only clear `built`)
 //                  and the ack then sets `drawn` last, so an evicted node is never marked drawn.
@@ -43,7 +52,7 @@ let asyncHasAttributes = false;
 let asyncAttributeIndices = new Map();
 let currentColorMode = "rgb";
 let cellsEnabled = false;
-const cellInbox = { driverReplaced: false, poolReset: false, evict: [], poolAck: null };
+const cellInbox = { driverReplaced: false, poolReset: false, evict: [], poolAck: null, levelRequests: null };
 let latestView = null;
 // The view the last cells update planned. A render report (ack, evict) on that same view that
 // leaves the builder not dirty needs no new cut: replanning would send a cut per ack, the render
@@ -120,12 +129,12 @@ function resetMetrics() {
 }
 
 function clearCellInbox() {
-    Object.assign(cellInbox, { driverReplaced: false, poolReset: false, evict: [], poolAck: null });
+    Object.assign(cellInbox, { driverReplaced: false, poolReset: false, evict: [], poolAck: null, levelRequests: null });
 }
 
 // Applies what the render worker reported since the last update, in the builder's required order.
 function applyCellInbox() {
-    const { driverReplaced, poolReset, evict, poolAck } = cellInbox;
+    const { driverReplaced, poolReset, evict, poolAck, levelRequests } = cellInbox;
     clearCellInbox();
     const failures = [];
     const apply = (call) => {
@@ -139,6 +148,7 @@ function applyCellInbox() {
     if (poolReset) apply(() => builder.poolReset());
     for (const nodes of evict) apply(() => builder.applyEvict(nodes));
     if (poolAck) apply(() => builder.applyPoolAck(poolAck));
+    if (levelRequests) apply(() => builder.applyLevelRequests(levelRequests.nodes, levelRequests.depths));
     if (failures.length > 0) {
         self.postMessage({ type: "error", operation: "build:cellInbox", message: failures.join("; ") });
     }
@@ -153,6 +163,14 @@ function postCellUpdate(result, view, buildMs) {
         for (const buffer of buffers) cellTotals.nodeCellBytes += buffer.byteLength;
         // The transfer list is the buffers themselves: nothing is copied.
         self.postMessage({ type: "nodeCells", gen: generation, generation: result.generation, buffers }, buffers);
+    }
+    const levels = result.nodeLevels ?? [];
+    if (levels.length > 0) {
+        self.postMessage({ type: "nodeLevels", gen: generation, generation: result.generation, buffers: levels }, levels);
+    }
+    if (result.levelsRefused) {
+        const { nodes, depths } = result.levelsRefused;
+        self.postMessage({ type: "levelsRefused", gen: generation, nodes, depths }, [nodes.buffer, depths.buffer]);
     }
     self.postMessage({
         type: "cellCut",
@@ -503,6 +521,7 @@ async function handleMessage({ data }) {
                 break;
             case "poolAck":
             case "evict":
+            case "levelRequests":
             case "poolReset":
             case "driverReplaced":
                 if (data.gen !== generation || !builder || !cellsEnabled) break;
@@ -510,6 +529,8 @@ async function handleMessage({ data }) {
                     cellInbox.poolAck = { cutEpoch: data.cutEpoch, drawn: data.drawn, missing: data.missing };
                 } else if (data.type === "evict") {
                     cellInbox.evict.push(data.nodes);
+                } else if (data.type === "levelRequests") {
+                    cellInbox.levelRequests = { nodes: data.nodes, depths: data.depths };
                 } else {
                     cellInbox[data.type] = true;
                 }

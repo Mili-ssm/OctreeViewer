@@ -3,6 +3,8 @@
 
 use std::collections::HashMap;
 
+use crate::NodeCells;
+
 use viewer_core::{HierarchySemantics, NodeId, PointBlock, SpatialBounds};
 
 use super::*;
@@ -32,42 +34,51 @@ fn dataset_grid(root_min: [f64; 3]) -> CellGrid {
     }
 }
 
-/// Stored levels of every fixture node, built like `refinement_tests.rs` (local frame).
-fn fixture_nodes(fixture: &Fixture) -> HashMap<NodeId, CellCutNode> {
+/// The cells the fixture builds for node `id` (local frame, like `refinement_tests.rs`), and its
+/// bounds in the dataset frame.
+fn fixture_cells(fixture: &Fixture, id: NodeId) -> (SpatialBounds, NodeCells) {
     let local_grid = CellGrid {
         root_min: [0.0; 3],
         root_side: SIDE,
     };
+    let node = fixture.hierarchy.node(id).expect("node");
+    let bounds = node.bounds();
+    let local = SpatialBounds::new(
+        std::array::from_fn(|axis| bounds.min()[axis] - ORIGIN[axis]),
+        std::array::from_fn(|axis| bounds.max()[axis] - ORIGIN[axis]),
+    )
+    .unwrap();
+    let blocks: Vec<PointBlock> = node
+        .blocks()
+        .iter()
+        .map(|block| fixture.cache.peek(*block).expect("block").clone())
+        .collect();
+    let cells = PointNodeCellSource::default()
+        .node_cells(
+            &local_grid,
+            id,
+            local,
+            node.spacing(),
+            fixture.hierarchy.is_leaf(id),
+            &blocks,
+        )
+        .expect("cells");
+    (bounds, cells)
+}
+
+/// Stored levels of every fixture node. Its range is the stored span, so every wanted depth is a
+/// stored one.
+fn fixture_nodes(fixture: &Fixture) -> HashMap<NodeId, CellCutNode> {
     (1..=9)
         .map(NodeId::new)
         .map(|id| {
-            let node = fixture.hierarchy.node(id).expect("node");
-            let bounds = node.bounds();
-            let local = SpatialBounds::new(
-                std::array::from_fn(|axis| bounds.min()[axis] - ORIGIN[axis]),
-                std::array::from_fn(|axis| bounds.max()[axis] - ORIGIN[axis]),
-            )
-            .unwrap();
-            let blocks: Vec<PointBlock> = node
-                .blocks()
-                .iter()
-                .map(|block| fixture.cache.peek(*block).expect("block").clone())
-                .collect();
-            let cells = PointNodeCellSource::default()
-                .node_cells(
-                    &local_grid,
-                    id,
-                    local,
-                    node.spacing(),
-                    fixture.hierarchy.is_leaf(id),
-                    &blocks,
-                )
-                .expect("cells");
+            let (bounds, cells) = fixture_cells(fixture, id);
             let stored: Vec<u8> = cells.levels.iter().map(|level| level.depth).collect();
             (
                 id,
                 CellCutNode {
                     bounds,
+                    buildable: (stored[0], *stored.last().expect("levels")),
                     resident: stored.clone(),
                     stored,
                 },
@@ -179,7 +190,8 @@ fn assert_octant_oracle(
         // Independent of the library: the node side against the root side.
         let node_side = node.bounds.max()[0] - node.bounds.min()[0];
         let node_depth = (grid.root_side / node_side).log2().round() as u8;
-        let finest = *node.stored.last().unwrap();
+        let range: Vec<u8> = (node.buildable.0..=node.buildable.1).collect();
+        let finest = *range.last().unwrap();
         for o in 0..8 {
             let Some(wanted) = entry.wanted[o] else {
                 continue;
@@ -190,13 +202,13 @@ fn assert_octant_oracle(
                 grid.root_side,
                 node.bounds,
                 o,
-                &node.stored,
+                &range,
                 target,
             );
             let expected = if raw > node_depth {
                 raw
             } else {
-                node.stored
+                range
                     .iter()
                     .copied()
                     .find(|d| *d > node_depth)
@@ -224,6 +236,7 @@ fn octant_choice_matches_the_brute_force_oracle() {
     for node in wide.values_mut() {
         let first = node.stored[0];
         node.stored = (first..first + 8).collect();
+        node.buildable = (first, first + 7);
         node.resident = node.stored.clone();
     }
     let crs = [1.0e6; 3];
@@ -231,6 +244,7 @@ fn octant_choice_matches_the_brute_force_oracle() {
     for node in wide_crs.values_mut() {
         let first = node.stored[0];
         node.stored = (first..first + 8).collect();
+        node.buildable = (first, first + 7);
         node.resident = node.stored.clone();
     }
     // Hand-checked: chain node 3 is two halvings of the root (side 64 -> 16), also at 1e6.
@@ -286,26 +300,106 @@ fn octants_of_one_node_can_choose_different_levels() {
 }
 
 #[test]
-fn pruned_depth_resolves_to_next_stored_finer() {
+fn a_pruned_depth_is_wanted_as_is() {
     let grid = dataset_grid(ORIGIN);
     let bounds = SpatialBounds::new(ORIGIN, ORIGIN.map(|v| v + SIDE)).unwrap();
-    let full: Vec<u8> = (3..=10).collect();
-    let pruned = [3, 10];
-    let mut differing = 0;
+    let mut nodes = root_with(&[3, 10], &[3, 10]);
+    nodes.get_mut(&NodeId::new(1)).unwrap().buildable = (3, 10);
+    let mut pruned_away = 0;
     for (_, camera) in cameras() {
         let view = view(&camera);
         for target in TARGETS {
-            for o in 0..8 {
-                let w_full = octant_wanted_depth(&view, &grid, ORIGIN, bounds, o, &full, target);
-                let w_pruned =
-                    octant_wanted_depth(&view, &grid, ORIGIN, bounds, o, &pruned, target);
-                let expected = pruned.iter().copied().find(|d| *d >= w_full).unwrap();
-                assert_eq!(w_pruned, expected);
-                differing += usize::from(w_full != w_pruned);
+            let entries = run(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, target).unwrap();
+            for (o, wanted) in entries[0].wanted.iter().enumerate() {
+                let w_full = octant_wanted_depth(&view, &grid, ORIGIN, bounds, o, (3, 10), target);
+                assert_eq!(*wanted, Some(w_full), "octant {o} at {target}px");
+                pruned_away += usize::from(![3, 10].contains(&w_full));
             }
         }
     }
-    assert!(differing > 0, "no case exercised a pruned depth");
+    assert!(pruned_away > 0, "no case wanted a depth that is not stored");
+}
+
+#[test]
+fn internal_nodes_never_want_beyond_their_range() {
+    let fixture = fixture(HierarchySemantics::Replacement);
+    let grid = dataset_grid(ORIGIN);
+    let (mut checked, mut capped) = (0, 0);
+    for id in (1..=9).map(NodeId::new) {
+        if fixture.hierarchy.is_leaf(id) {
+            continue;
+        }
+        let (bounds, cells) = fixture_cells(&fixture, id);
+        let stored: Vec<u8> = cells.levels.iter().map(|level| level.depth).collect();
+        let (first, last) = cells.buildable;
+        assert!(
+            last <= first + 5,
+            "node {} builds {first}..={last}",
+            id.get()
+        );
+        let nodes = HashMap::from([(
+            id,
+            CellCutNode {
+                bounds,
+                buildable: cells.buildable,
+                resident: stored.clone(),
+                stored,
+            },
+        )]);
+        // Eye inside the node, looking at a point of it: the finest wish is the deepest depth.
+        let mut camera = cameras().remove(0).1;
+        let inside = bounds.min().map(|v| v + 0.25 * SIDE / 2.0);
+        let target = bounds.min().map(|v| v + 0.5 * SIDE / 2.0);
+        assert!(camera.set_pose(inside, target));
+        for px in [0.01, 1.0] {
+            let entries = run(&[id], &nodes, &camera, &grid, ORIGIN, px).unwrap();
+            for wanted in entries[0].wanted.iter().flatten() {
+                assert!(
+                    *wanted <= first + 5,
+                    "node {}: {wanted} at {px}px",
+                    id.get()
+                );
+                checked += 1;
+                capped += usize::from(*wanted == last);
+            }
+        }
+    }
+    assert!(checked > 0, "no octant was wanted");
+    assert!(capped > 0, "no octant reached the end of its range");
+}
+
+#[test]
+fn a_leaf_can_want_finer_than_its_chain() {
+    let grid = dataset_grid(ORIGIN);
+    let mut nodes = root_with(&[3, 4, 5], &[3, 4, 5]);
+    // A leaf stores a short chain but can build deeper levels on demand.
+    nodes.get_mut(&NodeId::new(1)).unwrap().buildable = (3, 9);
+    let mut camera = cameras().remove(0).1;
+    assert!(camera.set_pose([SIDE / 4.0; 3], [SIDE / 2.0; 3]));
+    let entries = run(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 1.0).unwrap();
+    let stored_finest = 5;
+    assert!(
+        entries[0]
+            .wanted
+            .iter()
+            .flatten()
+            .any(|w| *w > stored_finest),
+        "{:?}",
+        entries[0].wanted
+    );
+    // Residents keep drawing: the depth that serves it is still resident.
+    assert!(
+        entries[0]
+            .drawn
+            .iter()
+            .flatten()
+            .all(|d| *d <= stored_finest)
+    );
+    // The target is not reached while the wanted depth is not drawn (R3-Q3): a stage.
+    for o in 0..8 {
+        let wanted = entries[0].wanted[o].unwrap();
+        assert_eq!(entries[0].stage[o], wanted > stored_finest, "octant {o}");
+    }
 }
 
 #[test]
@@ -315,14 +409,14 @@ fn camera_inside_node_returns_finest_for_its_octant() {
         root_min: [-1000.0; 3],
         root_side: 2000.0,
     };
-    let stored = [3, 5, 9];
+    let stored: Vec<u8> = (3..=9).collect();
     let mut camera = cameras().remove(0).1;
     // Eye inside the +x +y -z octant (index 4 + 2 + 0 = 6), looking along -x.
     assert!(camera.set_pose([500.0, 300.0, -200.0], [0.0, 300.0, -200.0]));
     let view = view(&camera);
     for target in TARGETS {
         let wanted: Vec<u8> = (0..8)
-            .map(|o| octant_wanted_depth(&view, &grid, [0.0; 3], huge, o, &stored, target))
+            .map(|o| octant_wanted_depth(&view, &grid, [0.0; 3], huge, o, (3, 9), target))
             .collect();
         assert_eq!(wanted[6], 9, "octant holding the eye");
         for (o, depth) in wanted.iter().enumerate() {
@@ -339,6 +433,7 @@ fn camera_inside_the_dataset_matches_the_oracle() {
     for node in nodes.values_mut() {
         let first = node.stored[0];
         node.stored = (first..first + 8).collect();
+        node.buildable = (first, first + 7);
         node.resident = node.stored.clone();
     }
     let mut camera = cameras().remove(0).1;
@@ -370,6 +465,7 @@ fn shifted_origin_and_visual_scale_do_not_change_the_levels() {
         );
         for node in nodes.values_mut() {
             node.stored = stored.clone();
+            node.buildable = (3, 11);
             node.resident = stored.clone();
         }
         nodes
@@ -431,13 +527,14 @@ fn fully_masked_octant_requests_no_level() {
 }
 
 #[test]
-fn spanning_levels_promote_octants_to_the_next_stored_level() {
+fn spanning_levels_promote_octants_to_the_next_buildable_level() {
     let camera = cameras().remove(0).1;
     let grid = dataset_grid(ORIGIN);
     // The node is at depth 0: a level at depth 0 spans octants, so a coarse choice moves on.
     let nodes = root_with(&[0, 2], &[0, 2]);
     let entries = run(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 1.0e6).unwrap();
-    assert_eq!(entries[0].wanted, [Some(2); 8]);
+    // Depth 1 is not stored but buildable: it is the first one past the spanning level.
+    assert_eq!(entries[0].wanted, [Some(1); 8]);
     // Nothing finer than the spanning level: every octant uses it.
     let nodes = root_with(&[0], &[0]);
     let entries = run(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 1.0e6).unwrap();
@@ -525,6 +622,7 @@ fn assert_draw_cover(
         NodeId::new(1),
         CellCutNode {
             bounds,
+            buildable: (depths[0], *depths.last().unwrap()),
             stored: depths.to_vec(),
             resident: resident.to_vec(),
         },
@@ -686,6 +784,10 @@ fn root_with(stored: &[u8], resident: &[u8]) -> HashMap<NodeId, CellCutNode> {
         NodeId::new(1),
         CellCutNode {
             bounds,
+            buildable: stored
+                .first()
+                .zip(stored.last())
+                .map_or((0, 0), |(a, b)| (*a, *b)),
             stored: stored.to_vec(),
             resident: resident.to_vec(),
         },
@@ -695,10 +797,11 @@ fn root_with(stored: &[u8], resident: &[u8]) -> HashMap<NodeId, CellCutNode> {
 #[test]
 fn missing_level_draws_the_closest_resident_level() {
     assert_eq!(resident_depth(5, &[3, 5]), Some((5, false)));
-    // R3-Q21: the finest of the coarser levels ...
-    assert_eq!(resident_depth(5, &[4, 3]), Some((4, true)));
+    // R3-Q21: the closest resident level, a stage when coarser than wanted ...
     assert_eq!(resident_depth(5, &[3, 7, 4]), Some((4, true)));
-    // ... else the coarsest of the finer ones, which meets the target (not a stage).
+    assert_eq!(resident_depth(5, &[4, 3]), Some((4, true)));
+    // ... a tie goes to the finer one, which is no stage.
+    assert_eq!(resident_depth(5, &[4, 6]), Some((6, false)));
     assert_eq!(resident_depth(5, &[7]), Some((7, false)));
     assert_eq!(resident_depth(5, &[9, 7]), Some((7, false)));
     assert_eq!(resident_depth(5, &[]), None);
@@ -741,8 +844,8 @@ fn the_closest_level_avoids_coarsening_within_a_node() {
 #[test]
 fn a_spanning_level_wins_also_when_other_octants_have_finer_resident_levels() {
     // Octant 0 wants depth 1 (above the node's detail), the others depth 3. With 0 and 3
-    // resident, the closest level of octant 0 is the spanning 0 (nothing is coarser than 1 but
-    // it), so the node draws 0 whole even though depth 3 is resident for the other octants.
+    // resident, the closest level of octant 0 is the coarser 0 (R3-Q21: the closest resident
+    // one), a spanning level, so the node draws 0 whole and every octant is a stage.
     let nodes = root_with(&[0, 1, 3], &[0, 3]);
     let entries = cell_cut_with(
         &ids(&[1]),
@@ -754,10 +857,7 @@ fn a_spanning_level_wins_also_when_other_octants_have_finer_resident_levels() {
     assert_eq!(entries[0].wanted[0], Some(1));
     assert_eq!(entries[0].drawn, [Some(0); 8]);
     assert_eq!(entries[0].draws(), vec![(0, 0xff)]);
-    assert_eq!(
-        entries[0].stage,
-        [true, true, true, true, true, true, true, true]
-    );
+    assert_eq!(entries[0].stage, [true; 8]);
 }
 
 #[test]
@@ -795,6 +895,7 @@ fn chain(root_min: [f64; 3], levels: u8, resident_from: u8) -> HashMap<NodeId, C
                 NodeId::new(u64::from(level) + 1),
                 CellCutNode {
                     bounds,
+                    buildable: (level + 3, level + 5),
                     stored,
                     resident,
                 },
@@ -981,6 +1082,7 @@ fn visible_volume_equals_covered_volume() {
         let mut nodes = chain(ORIGIN, 3, 0);
         // The level-2 leaf stores a long chain down to relative depth 16.
         nodes.get_mut(&NodeId::new(3)).unwrap().stored = vec![5, 8, 12, 18];
+        nodes.get_mut(&NodeId::new(3)).unwrap().buildable = (5, 18);
         nodes.get_mut(&NodeId::new(3)).unwrap().resident = vec![5, 8, 12, 18];
         nodes
     };
@@ -1008,17 +1110,17 @@ fn visible_volume_equals_covered_volume() {
 
 const GOLDEN: &[(&str, u64)] = &[
     ("root/fit/2px", 0x874f97c38baa823a),
-    ("root/fit/4px", 0x874f97c38baa823a),
-    ("root/fit/8px", 0x874f97c38baa823a),
+    ("root/fit/4px", 0x7d1169d9327e7815),
+    ("root/fit/8px", 0x42f9363f7b47c3c8),
     ("root/orbit/2px", 0x874f97c38baa823a),
-    ("root/orbit/4px", 0x874f97c38baa823a),
-    ("root/orbit/8px", 0x874f97c38baa823a),
+    ("root/orbit/4px", 0x2fa845aa5f346e25),
+    ("root/orbit/8px", 0xc94fe0686b55ff68),
     ("root/zoom/2px", 0x874f97c38baa823a),
     ("root/zoom/4px", 0x874f97c38baa823a),
-    ("root/zoom/8px", 0x874f97c38baa823a),
+    ("root/zoom/8px", 0xf0c6b585db2b31a5),
     ("root/pan/2px", 0x874f97c38baa823a),
-    ("root/pan/4px", 0x874f97c38baa823a),
-    ("root/pan/8px", 0x874f97c38baa823a),
+    ("root/pan/4px", 0x68ec0d2c4b5afa9f),
+    ("root/pan/8px", 0x8f0c75bc680f980a),
     ("children/fit/2px", 0xa51da02388ee6c85),
     ("children/fit/4px", 0xa51da02388ee6c85),
     ("children/fit/8px", 0xa51da02388ee6c85),
@@ -1032,17 +1134,17 @@ const GOLDEN: &[(&str, u64)] = &[
     ("children/pan/4px", 0xa51da02388ee6c85),
     ("children/pan/8px", 0xa51da02388ee6c85),
     ("mixed/fit/2px", 0xcfb3dd69675f533e),
-    ("mixed/fit/4px", 0xcfb3dd69675f533e),
-    ("mixed/fit/8px", 0xcfb3dd69675f533e),
+    ("mixed/fit/4px", 0x3d645e2f3ea980ba),
+    ("mixed/fit/8px", 0xde418b595f37d282),
     ("mixed/orbit/2px", 0xcfb3dd69675f533e),
-    ("mixed/orbit/4px", 0xcfb3dd69675f533e),
-    ("mixed/orbit/8px", 0xcfb3dd69675f533e),
+    ("mixed/orbit/4px", 0xa23a9cfb8cb4df9e),
+    ("mixed/orbit/8px", 0x5301c3f944a73fce),
     ("mixed/zoom/2px", 0xcfb3dd69675f533e),
     ("mixed/zoom/4px", 0xcfb3dd69675f533e),
     ("mixed/zoom/8px", 0xcfb3dd69675f533e),
     ("mixed/pan/2px", 0xcfb3dd69675f533e),
-    ("mixed/pan/4px", 0xcfb3dd69675f533e),
-    ("mixed/pan/8px", 0xcfb3dd69675f533e),
+    ("mixed/pan/4px", 0x5ee017fede23060c),
+    ("mixed/pan/8px", 0xcda82b8f251e4148),
     ("wide_chain/fit/2px", 0x5782cd16bba4da29),
     ("wide_chain/fit/4px", 0x6ddc9d7207e4afc9),
     ("wide_chain/fit/8px", 0xb47d3a451a1e318d),
@@ -1079,6 +1181,7 @@ fn cell_cut_digest_golden() {
     for node in wide.values_mut() {
         let first = node.stored[0];
         node.stored = (first..first + 8).collect();
+        node.buildable = (first, first + 7);
         node.resident = node.stored.clone();
     }
     let cut = ids(&[1, 2, 3]);

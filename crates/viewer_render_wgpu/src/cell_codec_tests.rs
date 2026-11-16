@@ -69,6 +69,10 @@ fn node_cells(node: u64, depths: &[(u8, usize)]) -> NodeCells {
     NodeCells {
         node: NodeId::new(node),
         levels,
+        buildable: (
+            depths.iter().map(|&(depth, _)| depth).min().unwrap_or(0),
+            depths.iter().map(|&(depth, _)| depth).max().unwrap_or(0),
+        ),
     }
 }
 
@@ -310,8 +314,8 @@ fn header_and_count_errors() {
         Err(CodecError::BadMagic)
     );
     assert_eq!(
-        decode_node_levels(&patched(4, &2_u32.to_le_bytes())),
-        Err(CodecError::UnsupportedVersion(2))
+        decode_node_levels(&patched(4, &1_u32.to_le_bytes())),
+        Err(CodecError::UnsupportedVersion(1))
     );
     // Bounds that are not a box (NaN).
     assert!(decode_node_levels(&patched(24, &f64::NAN.to_le_bytes())).is_err());
@@ -437,4 +441,34 @@ fn depth_63_boxes_are_checked_against_the_grid() {
     );
     assert!(encode_node_levels(&node(last + 1)).is_err());
     assert!(encode_node_levels(&node(u64::MAX)).is_err());
+}
+
+#[test]
+fn node_levels_round_trip_with_the_buildable_range() {
+    let node = PackedNode {
+        buildable: (1, 9),
+        ..pack(2, &[(3, 5)])
+    };
+    let decoded = decode_node_levels(&encode_node_levels(&node).unwrap()).unwrap();
+    assert_eq!(decoded, node);
+    assert_eq!(decoded.buildable, (1, 9));
+    for range in [(5, 4), (0, 64)] {
+        let bad = PackedNode {
+            buildable: range,
+            ..node.clone()
+        };
+        assert!(encode_node_levels(&bad).is_err(), "{range:?}");
+    }
+}
+
+#[test]
+fn a_version_1_buffer_is_refused() {
+    let mut old = small();
+    // Version 1 had no buildable range between the bounds and the level count.
+    old.drain(HEADER_BYTES - 6..HEADER_BYTES - 4);
+    old[4..8].copy_from_slice(&1_u32.to_le_bytes());
+    assert_eq!(
+        decode_node_levels(&old),
+        Err(CodecError::UnsupportedVersion(1))
+    );
 }

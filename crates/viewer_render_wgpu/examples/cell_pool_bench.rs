@@ -136,6 +136,10 @@ fn load_case(dir: &Path) -> Result<Case> {
             CaseNode {
                 pool: PoolNode {
                     bounds,
+                    buildable: (
+                        stored.iter().copied().min().unwrap_or(0),
+                        stored.iter().copied().max().unwrap_or(0),
+                    ),
                     stored,
                     points: node["points"].as_u64().ok_or("points")?,
                 },
@@ -766,6 +770,7 @@ fn size_diagnostics(case: &Case, rig: &Rig, plan: &FramePlan, camera: OrbitCamer
         let node = case.nodes.get(&id)?;
         Some(CellCutNode {
             bounds: node.pool.bounds,
+            buildable: node.pool.buildable,
             stored: node.pool.stored.clone(),
             resident: node.pool.stored.clone(),
         })

@@ -48,8 +48,8 @@ pub use cell_cut::{
 };
 pub use cell_driver::{
     CellColorRanges, CellDriver, CellDriverError, CellTarget, DriverConfig, FramePhase,
-    FrameReport, NodeAdded, NodeInput, NodeInputError, PackedNode, cell_generation, pack_node,
-    packed_node_bytes,
+    FrameReport, LevelsAdded, NodeAdded, NodeInput, NodeInputError, PackedNode, cell_generation,
+    pack_node, packed_node_bytes,
 };
 pub use cell_pages::{
     CELL_PAGES_WGSL, CellInstance, DecodedCell, FLAG_SPANS_OCTANTS, MAX_INTENSITY, MAX_PAGE_EXTENT,
@@ -68,8 +68,8 @@ pub use gpu::{
 };
 pub use node_cells::{
     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel,
-    NodeCellSource, NodeCells, PointNodeCellSource, chain_keep_mask, node_cells_digest,
-    representative_depth, representative_depth_for_spacing,
+    NodeCellSource, NodeCells, PointNodeCellSource, chain_keep_mask, node_cell_level,
+    node_cells_digest, representative_depth, representative_depth_for_spacing,
 };
 pub use scene::{
     ColorMode, InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL,

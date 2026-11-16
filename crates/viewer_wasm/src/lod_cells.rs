@@ -23,9 +23,9 @@ use super::{
 };
 use viewer_core::{BlockId, LodSelection, ResidentBlockSource, SpatialBounds, SpatialHierarchy};
 use viewer_render_wgpu::{
-    CellDriver, CellDriverError, CellGrid, CellTarget, CutApply, FrameReport, NodeCellSource,
-    NodeInput, PackedNode, PointNodeCellSource, PoolCounters, ViewProjection, pack_node,
-    packed_node_bytes, representative_depth,
+    CellDriver, CellDriverError, CellGrid, CellTarget, CutApply, FrameReport, NodeCellError,
+    NodeCellSource, NodeCells, NodeInput, PackedNode, PointNodeCellSource, PoolCounters,
+    ViewProjection, node_cell_level, pack_node, packed_node_bytes, representative_depth,
 };
 
 /// Deepest ancestor-descendant gap, in geometric cell depths (`representative_depth`), a node
@@ -36,6 +36,9 @@ pub const MAX_CELL_CUT_GAP: u32 = 3;
 pub struct CellUpdateConfig {
     /// Nodes whose cells are built per update, nearest to the eye first.
     pub max_node_builds: usize,
+    /// Cell levels built on demand per update (`LodDataset::apply_level_requests`), apart from
+    /// the node builds: a level is one depth of a node already built.
+    pub max_level_builds: usize,
     /// The driver's CPU budget (`DriverConfig::cpu_budget_bytes`), when the build side must fit
     /// the cut to it (ADR 0037). `None`: unbounded, as native callers and tests that give the
     /// driver no budget.
@@ -49,6 +52,7 @@ impl Default for CellUpdateConfig {
     fn default() -> Self {
         Self {
             max_node_builds: 2,
+            max_level_builds: 8,
             cpu_budget_bytes: None,
             gpu_pool_pages: None,
         }
@@ -196,6 +200,13 @@ pub struct CellUpdate {
     pub support: Vec<NodeId>,
     /// Nodes built by this update, with the dataset generation, in build order (parents first).
     pub new_nodes: Vec<(u64, PackedNode)>,
+    /// Levels built on demand for nodes the driver has, one packed node per node holding only the
+    /// new depths (`CellDriver::add_packed_levels`), sent after `new_nodes`.
+    pub new_levels: Vec<(u64, PackedNode)>,
+    /// `(node, depth)` requests the build side cannot serve (`unservable_levels`) that arrived
+    /// since the last update: the render side stops wanting them
+    /// (`CellDriver::refuse_levels`).
+    pub refused_levels: Vec<(NodeId, u8)>,
     pub stats: CellPlanStats,
 }
 
@@ -340,6 +351,42 @@ pub(super) struct CellState {
     /// The last block read was for an ancestor: the next read goes to the selection, so a block
     /// of the chain that cannot stay cached cannot starve the blocks in view.
     read_ancestor_last: bool,
+    /// The `(node, depth)` levels the render side asked for, in priority order (the last
+    /// `apply_level_requests`; served ones leave it).
+    level_requests: Vec<(NodeId, u8)>,
+    /// What the last `serve_level_requests` let through (`LevelRoom`): the cut nodes, whose
+    /// levels are always servable, and whether the other nodes' levels were servable then.
+    level_cut: HashSet<NodeId>,
+    level_outside_open: bool,
+    /// Requested depths `node_cell_level` cannot build (a leaf at the deepest cell depth whose
+    /// positions are still merged): dropped, and not tried again.
+    unservable_levels: HashSet<(NodeId, u8)>,
+    /// Unservable requests not yet reported in a `CellUpdate`, without repeats.
+    refused_levels: Vec<(NodeId, u8)>,
+    /// Depths shipped on demand per built node. A node built again (new colour generation) is
+    /// swapped whole by the driver, so these are built with it: the node never gets coarser than
+    /// it was drawn.
+    level_depths: HashMap<NodeId, Vec<u8>>,
+}
+
+/// The CPU budget as the level builds see it. Levels of nodes in the `cut` are exempt from the
+/// gate (the pool holds a node until its level exists, and those bytes are the cut itself, which
+/// the budget cannot shrink); their bytes add to `needed` when the node is `counted`, so they
+/// gate the builds of other nodes. A level of any other node waits while the build side is
+/// blocked or `needed` has reached `admit`.
+struct LevelRoom<'a> {
+    cut: &'a HashSet<NodeId>,
+    admit: Option<u64>,
+    needed: &'a mut u64,
+    counted: &'a HashSet<NodeId>,
+}
+
+impl LevelRoom<'_> {
+    /// Whether a level of a node outside the cut may be built now: the build side is not blocked
+    /// and the bytes the cut needs are under the admit share.
+    fn admits_outside_cut(&self, blocked: bool) -> bool {
+        !blocked && self.admit.is_none_or(|admit| *self.needed < admit)
+    }
 }
 
 impl Default for CellState {
@@ -362,6 +409,12 @@ impl Default for CellState {
             color_gen: 0,
             paint: None,
             read_ancestor_last: false,
+            level_requests: Vec::new(),
+            level_cut: HashSet::new(),
+            level_outside_open: true,
+            unservable_levels: HashSet::new(),
+            refused_levels: Vec::new(),
+            level_depths: HashMap::new(),
         }
     }
 }
@@ -501,6 +554,20 @@ pub fn add_cell_nodes(
     Ok(())
 }
 
+/// Step 2a for the levels built on demand: merges them into the nodes the driver stores.
+/// Levels for a node the driver does not hold (forgotten meanwhile) are ignored.
+pub fn add_cell_levels(
+    driver: &mut CellDriver,
+    levels: impl IntoIterator<Item = (u64, PackedNode)>,
+) -> Result<(), LodDatasetError> {
+    for (generation, node) in levels {
+        driver
+            .add_packed_levels(generation, node)
+            .map_err(|error| LodDatasetError::CellDriver(error.to_string()))?;
+    }
+    Ok(())
+}
+
 /// Step 2b: one driver frame for `cut`, restricted to the nodes the driver has. The cut must have
 /// been latched with `CellDriver::cut_received` when its message arrived.
 pub fn draw_cell_cut<T: CellTarget>(
@@ -570,8 +637,175 @@ impl LodDataset {
         }
         self.cells.paint = paint;
         self.cells.color_gen = self.cells.color_gen.saturating_add(1);
+        // Pending requests survive: the rebuilt node (swapped whole) is served them later with
+        // the current colours, and the render side does not ask again for an unchanged set.
         self.clear_loaded_blocks();
         true
+    }
+
+    /// The levels the render side wants built on demand (`CellDriver::take_level_requests`), in
+    /// priority order. Replaces the pending set: a request not in it is dropped. The next update
+    /// builds up to `CellUpdateConfig::max_level_builds` of them (nearest the front first) for
+    /// nodes it has built, reads the blocks of the others, and ships the levels in
+    /// `CellUpdate::new_levels`.
+    pub fn apply_level_requests(&mut self, requests: &[(NodeId, u8)]) {
+        self.cells.level_requests = requests.to_vec();
+    }
+
+    /// Whether some requested level is servable now, so another update makes progress: its node
+    /// has cells, its blocks are cached or the host can read them (`can_load_blocks`), and the
+    /// gate of the last update (`LevelRoom`) let it through: a cut node always, another node only
+    /// while the build side is not blocked and under the admit share.
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn has_pending_level_requests(&self, can_load_blocks: bool) -> bool {
+        self.cells.level_requests.iter().any(|request| {
+            !self.cells.unservable_levels.contains(request)
+                && self.level_node_state(request.0).is_some()
+                && (can_load_blocks || self.level_blocks_cached(request.0))
+                && (self.cells.level_cut.contains(&request.0) || self.cells.level_outside_open)
+        })
+    }
+
+    fn level_blocks_cached(&self, id: NodeId) -> bool {
+        self.metadata.hierarchy().node(id).is_some_and(|node| {
+            node.blocks()
+                .iter()
+                .all(|block| self.cache.contains(*block))
+        })
+    }
+
+    /// `Some(true)` when the node's cells are of the current colour generation, `Some(false)`
+    /// when they are an older one being rebuilt, `None` when the node has none to add levels to.
+    fn level_node_state(&self, id: NodeId) -> Option<bool> {
+        self.cells
+            .built
+            .get(&id)
+            .map(|built| built.color_gen == self.cells.color_gen)
+    }
+
+    /// Blocks of the nodes with pending level requests that are not cached yet.
+    fn level_request_blocks(&self) -> Vec<BlockId> {
+        let hierarchy = self.metadata.hierarchy();
+        let mut blocks: Vec<BlockId> = self
+            .cells
+            .level_requests
+            .iter()
+            .filter(|request| !self.cells.unservable_levels.contains(request))
+            .filter(|request| self.level_node_state(request.0) == Some(true))
+            .filter_map(|request| hierarchy.node(request.0))
+            .flat_map(|node| node.blocks().iter().copied())
+            .filter(|block| !self.cache.contains(*block))
+            .collect();
+        blocks.sort();
+        blocks.dedup();
+        blocks
+    }
+
+    /// Builds the pending levels of nodes whose blocks are cached, at most `max` of them. Returns
+    /// the packed levels, one node per message, and the number of servable requests the budget
+    /// left for the next update. Requests of nodes without cells are dropped, those of nodes
+    /// being rebuilt or with uncached blocks stay, and a depth `node_cell_level` cannot build is
+    /// remembered as unservable and dropped.
+    fn serve_level_requests(
+        &mut self,
+        max: usize,
+        generation: u64,
+        room: LevelRoom<'_>,
+    ) -> Result<(Vec<(u64, PackedNode)>, usize), LodDatasetError> {
+        let blocked = self.cells.cpu_blocked || self.cells.gpu_blocked;
+        let requests = std::mem::take(&mut self.cells.level_requests);
+        let mut keep = Vec::new();
+        let mut deferred = 0;
+        let mut chosen: Vec<(NodeId, Vec<u8>)> = Vec::new();
+        let mut taken = 0;
+        for request in requests {
+            let (id, depth) = request;
+            if self.cells.unservable_levels.contains(&request) {
+                self.report_refused(request);
+                continue;
+            }
+            match self.level_node_state(id) {
+                // No cells for the node: evicted or being rebuilt, so the request is stale, not
+                // unservable. Dropped without a refusal: the render side asks again for what
+                // it still wants once it holds the node, and a refusal would end that for good.
+                None => continue,
+                Some(false) => {
+                    keep.push(request);
+                    continue;
+                }
+                Some(true) => {}
+            }
+            if !self.level_blocks_cached(id) {
+                keep.push(request);
+                continue;
+            }
+            if taken == max {
+                deferred += 1;
+                keep.push(request);
+                continue;
+            }
+            if !room.cut.contains(&id) && !room.admits_outside_cut(blocked) {
+                keep.push(request);
+                continue;
+            }
+            taken += 1;
+            match chosen.iter_mut().find(|(node, _)| *node == id) {
+                Some((_, depths)) => depths.push(depth),
+                None => chosen.push((id, vec![depth])),
+            }
+        }
+        let mut served = Vec::new();
+        let mut chosen = chosen.into_iter();
+        let mut failure = None;
+        while let Some((id, depths)) = chosen.next() {
+            let outcome = self.build_node_levels(id, &depths);
+            let (packed, unservable) = match outcome {
+                Ok(built) => built,
+                Err(error) => {
+                    // The packs already served ship; this node and the rest stay pending and
+                    // the next update tries them again.
+                    keep.extend(depths.iter().map(|depth| (id, *depth)));
+                    for (rest, depths) in chosen.by_ref() {
+                        keep.extend(depths.iter().map(|depth| (rest, *depth)));
+                        deferred += depths.len();
+                    }
+                    deferred += depths.len();
+                    failure = Some(error);
+                    break;
+                }
+            };
+            for depth in unservable {
+                self.cells.unservable_levels.insert((id, depth));
+                self.report_refused((id, depth));
+            }
+            if let Some(packed) = packed {
+                let shipped = self.cells.level_depths.entry(id).or_default();
+                shipped.extend(packed.levels.iter().map(|level| level.depth));
+                shipped.sort_unstable();
+                shipped.dedup();
+                let bytes = packed_node_bytes(&packed);
+                if let Some(built) = self.cells.built.get_mut(&id) {
+                    built.bytes += bytes;
+                }
+                if room.counted.contains(&id) {
+                    *room.needed += bytes;
+                }
+                served.push((generation, packed));
+            }
+        }
+        self.cells.level_requests = keep;
+        self.cells.level_cut = room.cut.clone();
+        self.cells.level_outside_open = room.admits_outside_cut(blocked);
+        match failure {
+            Some(error) if served.is_empty() => Err(error),
+            _ => Ok((served, deferred)),
+        }
+    }
+
+    fn report_refused(&mut self, request: (NodeId, u8)) {
+        if !self.cells.refused_levels.contains(&request) {
+            self.cells.refused_levels.push(request);
+        }
     }
 
     /// The attribute the cells are painted with.
@@ -732,6 +966,8 @@ impl LodDataset {
     pub fn driver_replaced(&mut self) {
         self.cells.built.clear();
         self.cells.pool_drawn.clear();
+        // The new driver asks for what it wants anew; a stale set would keep reading blocks.
+        self.cells.level_requests.clear();
     }
 
     /// Step 3, `poolAck`. The last one wins: an older epoch than the last ack is ignored.
@@ -824,7 +1060,7 @@ impl LodDataset {
         )
         .map_err(|error| LodDatasetError::CellDriver(error.to_string()))?;
         let is_leaf = cell_leaf(hierarchy, id);
-        let cells = PointNodeCellSource::default().node_cells(
+        let mut cells = PointNodeCellSource::default().node_cells(
             &local_grid,
             id,
             local,
@@ -832,6 +1068,29 @@ impl LodDataset {
             is_leaf,
             &blocks,
         )?;
+        // A node built again keeps the levels it was served on demand; a node built from
+        // scratch starts over (the driver asks again for what it wants).
+        let extra = if self.cells.built.contains_key(&id) {
+            self.cells
+                .level_depths
+                .get(&id)
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            self.cells.level_depths.remove(&id);
+            Vec::new()
+        };
+        for depth in extra {
+            if cells.levels.iter().any(|level| level.depth == depth) {
+                continue;
+            }
+            match node_cell_level(&local_grid, local, node.spacing(), is_leaf, &blocks, depth) {
+                Ok(level) => cells.levels.push(level),
+                Err(NodeCellError::AbsoluteDepthExceeded) => {}
+                Err(error) => return Err(LodDatasetError::CellDriver(error.to_string())),
+            }
+        }
+        cells.levels.sort_by_key(|level| level.depth);
         let packed = pack_node(
             &world,
             origin,
@@ -874,6 +1133,77 @@ impl LodDataset {
             },
         );
         Ok(Some(packed))
+    }
+
+    /// Builds and packs the cells of `depths` of `id` from its decoded blocks, alone (the rest of
+    /// the node is not touched). The packed node holds the non-empty levels, if any, and the
+    /// depths `node_cell_level` could not build (see [`apply_level_requests`](Self::apply_level_requests)).
+    /// `Ok((None, ..))` also when a block is not cached.
+    fn build_node_levels(
+        &self,
+        id: NodeId,
+        depths: &[u8],
+    ) -> Result<(Option<PackedNode>, Vec<u8>), LodDatasetError> {
+        let hierarchy = self.metadata.hierarchy();
+        let Some(node) = hierarchy.node(id) else {
+            return Ok((None, Vec::new()));
+        };
+        let blocks: Option<Vec<PointBlock>> = node
+            .blocks()
+            .iter()
+            .map(|block| self.cache.peek(*block).cloned())
+            .collect();
+        let Some(blocks) = blocks else {
+            return Ok((None, Vec::new()));
+        };
+        let origin = self.coordinate_origin();
+        let world = self.cell_grid();
+        let local_grid = CellGrid {
+            root_min: std::array::from_fn(|axis| world.root_min[axis] - origin[axis]),
+            root_side: world.root_side,
+        };
+        let local = SpatialBounds::new(
+            std::array::from_fn(|axis| node.bounds().min()[axis] - origin[axis]),
+            std::array::from_fn(|axis| node.bounds().max()[axis] - origin[axis]),
+        )
+        .map_err(|error| LodDatasetError::CellDriver(error.to_string()))?;
+        let is_leaf = cell_leaf(hierarchy, id);
+        let mut depths = depths.to_vec();
+        depths.sort_unstable();
+        depths.dedup();
+        let (mut levels, mut unservable) = (Vec::new(), Vec::new());
+        for depth in depths {
+            match node_cell_level(&local_grid, local, node.spacing(), is_leaf, &blocks, depth) {
+                Ok(level) => levels.push(level),
+                Err(NodeCellError::AbsoluteDepthExceeded) => unservable.push(depth),
+                Err(error) => return Err(LodDatasetError::CellDriver(error.to_string())),
+            }
+        }
+        let (Some(first), Some(last)) = (
+            levels.first().map(|level| level.depth),
+            levels.last().map(|level| level.depth),
+        ) else {
+            return Ok((None, unservable));
+        };
+        // `add_packed_levels` ignores `buildable`: the node keeps the range it was stored with.
+        let cells = NodeCells {
+            node: id,
+            levels,
+            buildable: (first, last),
+        };
+        let packed = pack_node(
+            &world,
+            origin,
+            NodeInput {
+                id,
+                bounds: node.bounds(),
+                points: node.point_count(),
+                local_grid,
+                cells: &cells,
+            },
+        )
+        .map_err(|error| LodDatasetError::CellDriver(error.to_string()))?;
+        Ok(((!packed.levels.is_empty()).then_some(packed), unservable))
     }
 
     /// Largest and over-one depth gaps between each cut node and its nearest cut ancestor. The
@@ -997,6 +1327,7 @@ impl LodDataset {
         };
 
         let initial_plan = self.prepare_cell_plan(&selection);
+        let in_initial_cut: HashSet<NodeId> = initial_plan.node_ids().iter().copied().collect();
         // CPU budget fit (ADR 0037). `cpu_needed` is what the driver cannot forget for this
         // update: the packed bytes of the built nodes in the cut or in the support set; every
         // node admitted below adds its own. A candidate is admitted only while that stays within
@@ -1107,6 +1438,13 @@ impl LodDataset {
                     .flat_map(|node| node.blocks().iter().copied())
                     .filter(|block| !self.cache.contains(*block)),
             );
+            selection_blocks.sort();
+            selection_blocks.dedup();
+        }
+        // Blocks of the nodes with requested levels: read through the same list.
+        let level_blocks = self.level_request_blocks();
+        if !level_blocks.is_empty() {
+            selection_blocks.extend(level_blocks);
             selection_blocks.sort();
             selection_blocks.dedup();
         }
@@ -1253,24 +1591,43 @@ impl LodDataset {
                 }
             }
         }
+        let (new_levels, levels_deferred) = match self.serve_level_requests(
+            config.max_level_builds,
+            generation,
+            LevelRoom {
+                cut: &in_initial_cut,
+                admit: config
+                    .cpu_budget_bytes
+                    .map(|budget| share(budget, CPU_ADMIT_PERCENT)),
+                needed: &mut cpu_needed,
+                counted: &counted,
+            },
+        ) {
+            Ok(served) => served,
+            Err(error) => {
+                self.forget_unsent(&new_nodes, &previous);
+                return Err(error);
+            }
+        };
         let build_ms = build_started.elapsed_ms();
         let (cpu_blocked, gpu_blocked) = (self.cells.cpu_blocked, self.cells.gpu_blocked);
         let any_blocked = cpu_blocked || gpu_blocked;
-        let build_deferred = if any_blocked {
-            0
-        } else {
-            candidates
-                .iter()
-                .filter(|c| !built_nodes.contains(&c.id) && ready(self, c.id))
-                .count()
-        };
+        let build_deferred = levels_deferred
+            + if any_blocked {
+                0
+            } else {
+                candidates
+                    .iter()
+                    .filter(|c| !built_nodes.contains(&c.id) && ready(self, c.id))
+                    .count()
+            };
         let unbuilt = candidates
             .iter()
             .filter(|c| !built_nodes.contains(&c.id))
             .count();
         let cpu_coarsened = if cpu_blocked { unbuilt } else { 0 };
         let gpu_coarsened = if gpu_blocked { unbuilt } else { 0 };
-        if !built_nodes.is_empty() || next_block.is_some() {
+        if !built_nodes.is_empty() || !new_levels.is_empty() || next_block.is_some() {
             self.state_epoch += 1;
         }
         let mut waiting_blocks = uncached_blocks(self, !recoloring);
@@ -1361,6 +1718,9 @@ impl LodDataset {
                 .collect();
             pending_block_ids.retain(|id| !unwanted.contains(id));
         }
+        if !any_blocked {
+            pending_block_ids.extend(self.level_request_blocks());
+        }
         pending_block_ids.sort();
         pending_block_ids.dedup();
         let stats = CellPlanStats {
@@ -1386,6 +1746,8 @@ impl LodDataset {
             cut,
             support,
             new_nodes,
+            new_levels,
+            refused_levels: std::mem::take(&mut self.cells.refused_levels),
             stats,
         })
     }
@@ -1515,12 +1877,17 @@ impl LodDataset {
             cut,
             support,
             new_nodes,
+            new_levels,
+            refused_levels,
             stats,
         } = update;
-        if let Err(error) = add_cell_nodes(driver, new_nodes) {
+        if let Err(error) =
+            add_cell_nodes(driver, new_nodes).and_then(|()| add_cell_levels(driver, new_levels))
+        {
             self.cell_frame_failed(cut_epoch);
             return Err(error);
         }
+        driver.refuse_levels(&refused_levels);
         driver.cut_received();
         driver.set_support(&support);
         let draw = match draw_cell_cut(driver, target, cut_epoch, &cut, view, target_px) {
@@ -1541,6 +1908,10 @@ impl LodDataset {
         }
         self.apply_evicted(&evicted);
         self.apply_ack(ack);
+        // One thread: the driver's requests of this frame are served by the next update.
+        if let Some(requests) = driver.take_level_requests() {
+            self.apply_level_requests(&requests);
+        }
         let stats = CellUpdateStats::new(stats, &report, driver.cpu_bytes());
         Ok(LodCellUpdate { stats, report })
     }

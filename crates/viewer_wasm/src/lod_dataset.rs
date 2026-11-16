@@ -19,7 +19,7 @@ use viewer_render_wgpu::{
 mod cells;
 pub use cells::{
     CellDraw, CellPlanStats, CellUpdate, CellUpdateConfig, CellUpdateStats, CutRestProbe,
-    LodCellUpdate, PoolAck, add_cell_nodes, draw_cell_cut,
+    LodCellUpdate, PoolAck, add_cell_levels, add_cell_nodes, draw_cell_cut,
 };
 
 /// Decoded blocks and resident spatial metadata for one open dataset.

@@ -5,17 +5,25 @@
 //!
 //! * builder `update` / `updateCells` in cells mode:
 //!   `{ epoch, generation, cutEpoch, viewEpoch, cut, support, idle, targetPixels,
-//!   nodeCells: ArrayBuffer[],
+//!   nodeCells: ArrayBuffer[], nodeLevels: ArrayBuffer[],
 //!   needsRefinement, sceneBuffer: null, instanceCount: 0, blockIds: [], digest: null, lod }`.
-//!   `nodeCells` keeps build order (parents first) and its buffers are transferable.
+//!   `nodeCells` keeps build order (parents first) and its buffers are transferable;
+//!   `nodeLevels` (levels built on demand) go after them, in order, also transferable.
+//!   The result also has `levelsRefused`: `{ nodes, depths }` or null, the requested depths the
+//!   builder cannot serve; the viewer takes them with `refuseCellLevels(nodes, depths)` (at
+//!   once, not queued).
 //!   `viewEpoch` is the one the host gave the builder with the camera (`setViewEpoch`, before
 //!   `update`); the viewer's `viewEpoch()` is the epoch of its current `cameraTransport()`.
 //! * viewer `addCellNode(generation, bytes)` per entry of `nodeCells` (it throws on bytes that
-//!   do not decode), then `setCellCut({ cutEpoch, viewEpoch, cut, support, idle, targetPixels })`.
+//!   do not decode), then `addCellLevels(generation, bytes)` per entry of `nodeLevels`, then
+//!   `setCellCut({ cutEpoch, viewEpoch, cut, support, idle, targetPixels })`.
 //! * viewer `takeCellMessages()` returns `{ poolAck: { cutEpoch, drawn, missing } | null, evict,
-//!   poolReset, driverReplaced }`; the build worker applies them in this order: `driverReplaced`,
-//!   `poolReset`, `applyEvict`, `applyPoolAck` (the same order `ViewerCells::take_messages`
-//!   documents).
+//!   poolReset, driverReplaced, levelRequests: { nodes, depths } | null }`; the build
+//!   worker applies them in this order: `driverReplaced`, `poolReset`, `applyEvict`,
+//!   `applyPoolAck`, `applyLevelRequests(nodes, depths)` (the first four are the order
+//!   `ViewerCells::take_messages` documents). `levelRequests` is the whole set of levels the
+//!   driver wants (`BigUint64Array` ids with a parallel `Uint8Array` of depths); it is present
+//!   only when the set changed, and an empty set replaces the previous one.
 
 use js_sys::{Array, BigUint64Array, Object, Reflect, Uint8Array};
 use viewer_core::NodeId;
@@ -296,7 +304,26 @@ pub(super) fn builder_output_to_js(
         "targetPixels",
         &JsValue::from_f64(output.target_pixels),
     )?;
+    let node_levels: Array = output
+        .levels
+        .iter()
+        .map(|node| Uint8Array::from(node.bytes.as_slice()).buffer())
+        .collect();
     set(&result, "nodeCells", &node_cells)?;
+    set(&result, "nodeLevels", &node_levels)?;
+    set(
+        &result,
+        "levelsRefused",
+        &if output.refused.is_empty() {
+            JsValue::NULL
+        } else {
+            let (nodes, depths): (Vec<NodeId>, Vec<u8>) = output.refused.iter().copied().unzip();
+            let object = Object::new();
+            set(&object, "nodes", &ids_to_js(&nodes))?;
+            set(&object, "depths", &Uint8Array::from(depths.as_slice()))?;
+            object.into()
+        },
+    )?;
     set(
         &result,
         "needsRefinement",
@@ -452,6 +479,26 @@ impl WasmSceneBuilder {
     pub fn pool_reset(&mut self) -> Result<(), JsValue> {
         let (core, cells) = self.cells_parts()?;
         cells.pool_reset(core.session_mut().dataset_mut());
+        Ok(())
+    }
+
+    /// `levelRequests` from the render worker: the whole set of levels its driver wants built on
+    /// demand, as node ids with a parallel array of depths. It replaces the previous set.
+    #[wasm_bindgen(js_name = applyLevelRequests)]
+    pub fn apply_level_requests(
+        &mut self,
+        nodes: JsValue,
+        depths: Uint8Array,
+    ) -> Result<(), JsValue> {
+        let nodes = ids_from_js(&nodes, "levelRequests nodes")?;
+        if nodes.len() != depths.length() as usize {
+            return Err(JsValue::from_str(
+                "levelRequests nodes and depths must have the same length",
+            ));
+        }
+        let requests: Vec<(NodeId, u8)> = nodes.into_iter().zip(depths.to_vec()).collect();
+        let (core, cells) = self.cells_parts()?;
+        cells.level_requests(core.session_mut().dataset_mut(), &requests);
         Ok(())
     }
 
@@ -703,6 +750,43 @@ impl WasmVoxelViewer {
             .map_err(|message| JsValue::from_str(&message))
     }
 
+    /// One entry of `nodeLevels`: the codec bytes of the levels built on demand for a node,
+    /// queued behind the nodes sent before it and applied in order under the same byte cap.
+    #[wasm_bindgen(js_name = addCellLevels)]
+    pub fn add_cell_levels(&mut self, generation: f64, bytes: Uint8Array) -> Result<(), JsValue> {
+        let generation = counter(generation, "generation")?;
+        let cells = self
+            .cells_remote
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("the cells path is not enabled"))?;
+        cells
+            .push_levels(generation, bytes.to_vec())
+            .map_err(|message| JsValue::from_str(&message))
+    }
+
+    /// One `levelsRefused` message: depths the build side cannot serve, as node ids with a
+    /// parallel array of depths. The driver stops wanting them.
+    #[wasm_bindgen(js_name = refuseCellLevels)]
+    pub fn refuse_cell_levels(
+        &mut self,
+        nodes: JsValue,
+        depths: Uint8Array,
+    ) -> Result<(), JsValue> {
+        let nodes = ids_from_js(&nodes, "levelsRefused nodes")?;
+        if nodes.len() != depths.length() as usize {
+            return Err(JsValue::from_str(
+                "levelsRefused nodes and depths must have the same length",
+            ));
+        }
+        let refused: Vec<(NodeId, u8)> = nodes.into_iter().zip(depths.to_vec()).collect();
+        let cells = self
+            .cells_remote
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("the cells path is not enabled"))?;
+        cells.refuse_levels(&refused);
+        Ok(())
+    }
+
     /// One `cellCut` message: `{ cutEpoch, viewEpoch, cut, support, idle, targetPixels }`. The
     /// last wins.
     #[wasm_bindgen(js_name = setCellCut)]
@@ -734,6 +818,7 @@ impl WasmVoxelViewer {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("the cells path is not enabled"))?;
         let messages = cells.take_messages();
+        let level_requests = cells.take_level_requests();
         let result = Object::new();
         set(
             &result,
@@ -753,6 +838,20 @@ impl WasmVoxelViewer {
             &result,
             "driverReplaced",
             &JsValue::from_bool(messages.driver_replaced),
+        )?;
+        set(
+            &result,
+            "levelRequests",
+            &match level_requests {
+                Some(requests) => {
+                    let (nodes, depths): (Vec<NodeId>, Vec<u8>) = requests.into_iter().unzip();
+                    let object = Object::new();
+                    set(&object, "nodes", &ids_to_js(&nodes))?;
+                    set(&object, "depths", &Uint8Array::from(depths.as_slice()))?;
+                    object.into()
+                }
+                None => JsValue::NULL,
+            },
         )?;
         Ok(result.into())
     }

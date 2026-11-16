@@ -304,6 +304,7 @@ fn root_node() -> HashMap<NodeId, PoolNode> {
         PoolNode {
             bounds: cube(ORIGIN, SIDE),
             stored: vec![3, 4, 5],
+            buildable: (3, 5),
             points: 2000,
         },
     )])
@@ -352,8 +353,9 @@ fn regraft_mid_cut_keeps_coverage() {
     assert!(rig.pool.is_resident(wanted));
     assert!(!rig.pool.evict(wanted), "a level the cut draws stays");
     assert!(!rig.pool.evict(coarsest), "the coarsest level is pinned");
-    // Far away the cut draws coarse levels, so the fine one can go.
-    rig.run(3, &cut, &cam, 64.0);
+    // Far away the cut draws coarse levels, so the fine one can go once they are resident (until
+    // then it is the finer level that meets the target, R3-Q21).
+    rig.run(12, &cut, &cam, 64.0);
     assert!(rig.pool.evict(wanted));
     let plan = rig.step(&cut, &cam, 64.0);
     assert_eq!(plan.events, vec![CellPoolEvent::Evict(wanted)]);
@@ -631,6 +633,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
             PoolNode {
                 bounds: cube(ORIGIN, SIDE),
                 stored: vec![3, 4],
+                buildable: (3, 4),
                 points: 2000,
             },
         ),
@@ -639,6 +642,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
             PoolNode {
                 bounds: cube(ORIGIN, SIDE / f64::from(1_u32 << (MAX_MASK_LEVELS + 1))),
                 stored: vec![7, 8],
+                buildable: (7, 8),
                 points: 2000,
             },
         ),
@@ -647,6 +651,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
             PoolNode {
                 bounds: cube(ORIGIN, SIDE / f64::from(1_u32 << MAX_MASK_LEVELS)),
                 stored: vec![6, 7],
+                buildable: (6, 7),
                 points: 2000,
             },
         ),
@@ -858,7 +863,7 @@ fn full_depths(cam: &OrbitCamera, node: &PoolNode, target: f64) -> [u8; 8] {
             ORIGIN,
             node.bounds,
             o,
-            &node.stored,
+            node.buildable,
             target,
         )
     })
@@ -934,17 +939,18 @@ fn the_hinted_search_equals_the_full_search() {
         }
         let target_px = [1.0, 4.0, 16.0][(next(&mut state) * 3.0) as usize % 3];
         let octant = (next(&mut state) * 8.0) as usize % 8;
-        let hint = stored[(next(&mut state) * stored.len() as f64) as usize % stored.len()];
+        let range = (stored[0], *stored.last().unwrap());
+        let width = usize::from(range.1 - range.0) + 1;
+        let hint = range.0 + ((next(&mut state) * width as f64) as usize % width) as u8;
         let v = view(&cam);
-        let full =
-            octant_wanted_depth(&v, &grid(), ORIGIN, node.bounds, octant, &stored, target_px);
+        let full = octant_wanted_depth(&v, &grid(), ORIGIN, node.bounds, octant, range, target_px);
         let near = crate::cell_cut::octant_wanted_depth_near(
             &v,
             &grid(),
             ORIGIN,
             node.bounds,
             octant,
-            &stored,
+            range,
             target_px,
             hint,
         );
@@ -1252,6 +1258,7 @@ fn the_fallback_never_makes_the_real_cut_too_fine() {
         PoolNode {
             bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
             stored: vec![4, 5],
+            buildable: (4, 5),
             points: 2000,
         },
     );
@@ -1300,12 +1307,49 @@ fn a_resident_level_beyond_the_fit_cap_is_not_a_fallback() {
 }
 
 #[test]
+fn a_cap_on_a_dropped_depth_does_not_panic_after_a_recolour() {
+    // A fit cap at depth 5 whose level a recolour dropped: the node now stores 6 and 7 only.
+    let mut nodes = octant_nodes();
+    let node = nodes.get_mut(&NodeId::new(2)).unwrap();
+    node.stored = vec![6, 7];
+    node.buildable = (6, 7);
+    let mut rig = Rig::new(nodes, 128, 8, 0);
+    let id = NodeId::new(2);
+    rig.pool.caps.insert(id, 5);
+    let cam = camera("zoom");
+    let plan = rig.run(6, &ids(&[2]), &cam, 1.0);
+    assert!(
+        plan.entries[0]
+            .drawn
+            .iter()
+            .flatten()
+            .all(|d| [6, 7].contains(d))
+    );
+    // The driver reconciles the cap with what is stored: below every level it clamps to the
+    // coarsest one, so no finer level comes back in.
+    rig.pool.caps.insert(id, 5);
+    rig.pool.reconcile_cap(id, &[6, 7]);
+    assert_eq!(rig.pool.caps.get(&id), Some(&6));
+    assert_eq!(capped(&[6, 7], rig.pool.caps.get(&id)), vec![6]);
+    rig.pool.caps.insert(id, 7);
+    rig.pool.reconcile_cap(id, &[4, 6]);
+    assert_eq!(
+        rig.pool.caps.get(&id),
+        Some(&6),
+        "clamped to the finest stored below it"
+    );
+    assert_eq!(capped(&[6, 7], Some(&5)), vec![6], "never empty");
+}
+
+#[test]
 fn a_far_node_that_draws_nothing_is_not_starved_by_refinements_elsewhere() {
     // Node 8 draws its depth 4 and wants depth 5; node 2 (farther) draws nothing and stores
     // depth 6 and deeper. By absolute depth alone the refinement of node 8 would go first.
     let mut nodes = octant_nodes();
     nodes.get_mut(&NodeId::new(8)).unwrap().stored = vec![4, 5];
+    nodes.get_mut(&NodeId::new(8)).unwrap().buildable = (4, 5);
     nodes.get_mut(&NodeId::new(2)).unwrap().stored = vec![6, 7];
+    nodes.get_mut(&NodeId::new(2)).unwrap().buildable = (6, 7);
     let mut rig = Rig::new(nodes, 128, 1, 0);
     let cam = camera("zoom");
     assert_eq!(by_distance(&cam, &[2, 8]), vec![8, 2], "setup");
@@ -1338,6 +1382,7 @@ fn requests_and_uploads_go_coarse_to_fine() {
     // alone the depth-7 level of node 8 would come first.
     let mut nodes = octant_nodes();
     nodes.get_mut(&NodeId::new(2)).unwrap().stored = vec![4, 5];
+    nodes.get_mut(&NodeId::new(2)).unwrap().buildable = (4, 5);
     let mut rig = Rig::new(nodes, 128, 64, 0);
     let cut = ids(&[8, 2]);
     let cam = camera("zoom");
@@ -1790,8 +1835,10 @@ fn takes_over_at(capacity: u32, target: f64, expect_held: bool, limit: u64) {
 #[test]
 fn a_child_that_wants_less_than_the_ancestor_drew_takes_over_at_its_wanted_level() {
     // At 16 px the children want depth 5 < the 6 the ancestor drew; the ancestor itself wants 4
-    // now and redraws coarser, so the children are not held behind it.
-    takes_over_at(512, 16.0, false, 15);
+    // now. While its level 4 is not resident it keeps drawing 6 (R3-Q21: the image only refines,
+    // a finer level meets the target), so the children whose only level is 4 are held behind it
+    // until their 5 arrives, and then take over at their wanted level.
+    takes_over_at(512, 16.0, true, 15);
 }
 
 #[test]
@@ -1803,8 +1850,8 @@ fn a_child_whose_fit_cap_is_below_the_ancestor_depth_takes_over_at_the_cap() {
 
 #[test]
 fn the_hold_follows_what_would_be_drawn_and_not_mere_residency() {
-    // Node 10 wants 6 (the depth node 2 drew). With 5 and 7 resident the closest level below 6
-    // is 5, so it is held although 7 is resident.
+    // Node 10 wants 6 (the depth node 2 drew). With only 5 resident (the closest level, below
+    // 6) it is held; levels of the node that are not resident do not count.
     let nodes = two_regions();
     let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
     let cam = camera("fit");
@@ -1813,7 +1860,7 @@ fn the_hold_follows_what_would_be_drawn_and_not_mere_residency() {
     let mut cut = ids(&region_children(10));
     cut.push(NodeId::new(3));
     rig.held.insert(NodeId::new(10));
-    seed_resident(&mut rig.pool, 10, &[5, 7]);
+    seed_resident(&mut rig.pool, 10, &[5]);
     let points = sample_points(nodes[&NodeId::new(10)].bounds);
     for frame in 0..12 {
         let resident = resident_levels(&rig);
@@ -1846,7 +1893,7 @@ fn the_closest_resident_level_decides_whether_a_node_is_held() {
     // Node 2 drew 6 and node 10 wants 6.
     for (resident, held) in [
         (vec![5_u8], true),
-        (vec![5, 7], true),
+        (vec![5, 7], false),
         (vec![4, 5], true),
         (vec![6], false),
         (vec![5, 6], false),
@@ -1894,6 +1941,7 @@ fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
             let node = nodes.get(&id)?;
             Some(CellCutNode {
                 bounds: node.bounds,
+                buildable: node.buildable,
                 stored: node.stored.clone(),
                 resident: node
                     .stored
@@ -1949,6 +1997,7 @@ fn only_a_node_with_an_ancestor_the_fallback_would_use_can_be_held() {
         PoolNode {
             bounds: cube([ORIGIN[0] + SIDE / 4.0, ORIGIN[1], ORIGIN[2]], SIDE / 32.0),
             stored: vec![8, 9, 10],
+            buildable: (8, 10),
             points: 2000,
         },
     );
@@ -2437,6 +2486,7 @@ fn a_zone_nothing_can_cover_retains_the_previous_cut_and_counts_the_loss() {
         PoolNode {
             bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
             stored: vec![4, 5],
+            buildable: (4, 5),
             points: 2000,
         },
     );
@@ -2532,6 +2582,7 @@ fn chain_with_extras() -> HashMap<NodeId, PoolNode> {
         PoolNode {
             bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
             stored: vec![4, 5],
+            buildable: (4, 5),
             points: 2000,
         },
     );
@@ -2540,6 +2591,7 @@ fn chain_with_extras() -> HashMap<NodeId, PoolNode> {
         PoolNode {
             bounds: cube(ORIGIN, SIDE / 32.0),
             stored: vec![9, 10],
+            buildable: (9, 10),
             points: 2000,
         },
     );
@@ -2893,10 +2945,11 @@ fn continuity_caps_the_drawn_level_without_a_stage_and_literal_mode_is_unchanged
 }
 
 #[test]
-fn the_continuity_cap_snaps_to_a_stored_level_and_falls_back_to_the_coarsest() {
+fn the_continuity_cap_uses_the_buildable_range() {
     let cut = ids(&[1]);
     let cam = camera("fit");
-    // A minimum between two depths rounds up the side: depth 4 is SIDE / 16, 3 is SIDE / 8.
+    // A minimum between two depths rounds up the side: depth 4 is SIDE / 16, 3 is SIDE / 8. Depth
+    // 4 is not stored (3 and 5 are) but it is buildable, so the cap lands on it.
     for (min, expect) in [
         (SIDE / 16.0, 4),
         (SIDE / 12.0, 3),
@@ -2904,20 +2957,92 @@ fn the_continuity_cap_snaps_to_a_stored_level_and_falls_back_to_the_coarsest() {
         (SIDE, 3),
         (SIDE * 4.0, 3),
         (SIDE / 32.0, 5),
-        (SIDE / 1024.0, 5),
+        (SIDE / 1024.0, 7),
     ] {
-        let mut rig = Rig::new(root_node(), 64, 16, 1);
+        let mut nodes = root_node();
+        let node = nodes.get_mut(&NodeId::new(1)).unwrap();
+        node.stored = vec![3, 5];
+        node.buildable = (3, 7);
+        let mut rig = Rig::new(nodes, 64, 16, 1);
         rig.pool.set_min_side(Some(min));
         let plan = rig.run(12, &cut, &cam, 1.0);
-        assert_eq!(drawn_depth(&plan), expect, "min {min}");
+        assert_eq!(plan.entries[0].wanted, [Some(expect); 8], "min {min}");
+        // Cells at the capped depth are the finest the minimum side admits (RQ-09): what draws is
+        // the stored level that serves it, never finer than the first stored level at or above;
+        // a depth that is not stored is also requested.
+        let served = if expect <= 3 { 3 } else { 5 };
+        assert_eq!(drawn_depth(&plan), served, "min {min}");
+        let stored = [3, 5].contains(&expect);
+        let requested: Vec<u8> = plan.level_requests.iter().map(|key| key.depth).collect();
+        assert_eq!(
+            requested,
+            if stored { vec![] } else { vec![expect] },
+            "min {min}"
+        );
     }
-    // Every stored level is finer than the minimum: the coarsest one draws.
+    // Every buildable depth is finer than the minimum: the coarsest one is wanted.
     let mut fine = root_node();
-    fine.get_mut(&NodeId::new(1)).unwrap().stored = vec![6, 7];
+    let node = fine.get_mut(&NodeId::new(1)).unwrap();
+    node.stored = vec![6, 7];
+    node.buildable = (6, 7);
     let mut rig = Rig::new(fine, 64, 16, 1);
     rig.pool.set_min_side(Some(SIDE / 4.0));
     let plan = rig.run(12, &cut, &cam, 1.0);
     assert_eq!(drawn_depth(&plan), 6);
+    assert_eq!(plan.entries[0].wanted, [Some(6); 8]);
+}
+
+#[test]
+fn a_wanted_depth_outside_the_chain_is_requested_and_residents_keep_drawing() {
+    let cut = ids(&[1]);
+    let mut nodes = root_node();
+    let node = nodes.get_mut(&NodeId::new(1)).unwrap();
+    node.stored = vec![3, 5];
+    node.buildable = (3, 7);
+    let mut rig = Rig::new(nodes, 64, 16, 1);
+    // The finest stored level is resident and drawn.
+    let plan = rig.run(12, &cut, &camera("zoom"), 1.0);
+    let wanted = plan.entries[0].wanted[0].expect("wanted");
+    assert!(
+        wanted > 5,
+        "setup: the view wants a depth that is not stored"
+    );
+    assert_eq!(drawn_depth(&plan), 5);
+    assert!(rig.pool.is_resident(rig.pool.key(NodeId::new(1), 5)));
+    let key = rig.pool.key(NodeId::new(1), wanted);
+    for _ in 0..4 {
+        let plan = rig.step(&cut, &camera("zoom"), 1.0);
+        assert_eq!(plan.level_requests, [key]);
+        assert!(plan.fetch_requests.iter().all(|k| k.depth <= 5));
+        assert_eq!(plan.apply, CutApply::Applied);
+        assert_eq!(drawn_depth(&plan), 5, "the resident level keeps drawing");
+        assert_covers_once(&plan.entries[0]);
+    }
+}
+
+#[test]
+fn a_fit_cap_keeps_the_resident_finer_level_while_the_capped_one_is_pending() {
+    let cut = ids(&[1]);
+    let mut nodes = root_node();
+    let node = nodes.get_mut(&NodeId::new(1)).unwrap();
+    node.stored = vec![3, 5, 7];
+    node.buildable = (3, 9);
+    let mut rig = Rig::new(nodes, 64, 16, 1);
+    let plan = rig.run(14, &cut, &camera("zoom"), 1.0);
+    assert_eq!(drawn_depth(&plan), 7, "setup");
+    assert!(
+        !rig.pool.is_resident(rig.pool.key(NodeId::new(1), 5)),
+        "setup"
+    );
+    // The fit caps the node below the resident level; the capped level is not resident yet.
+    rig.pool.caps.insert(NodeId::new(1), 5);
+    let plan = rig.step(&cut, &camera("zoom"), 1.0);
+    assert!(
+        rig.pool.caps.contains_key(&NodeId::new(1)),
+        "the cap stands"
+    );
+    assert_eq!(drawn_depth(&plan), 7, "the finer resident level stands in");
+    assert_eq!(plan.apply, CutApply::Applied);
 }
 
 #[test]
