@@ -54,6 +54,7 @@ struct GlueSim {
     rest: Option<u64>,
     rng: Rng,
     stats: GlueStats,
+    mode: LodMode,
 }
 
 impl GlueSim {
@@ -82,7 +83,15 @@ impl GlueSim {
             rest: None,
             rng: Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1),
             stats: GlueStats::default(),
+            mode: LodMode::Octant,
         }
+    }
+
+    /// Runs the render side in `mode`, also after the driver is replaced.
+    fn in_mode(mut self, mode: LodMode) -> Self {
+        self.mode = mode;
+        self.viewer.set_lod_mode(mode);
+        self
     }
 
     /// A fresh render-side driver; the view counter lives in the viewer, not the driver.
@@ -95,6 +104,7 @@ impl GlueSim {
             ),
             self.byte_cap,
         );
+        viewer.set_lod_mode(self.mode);
         viewer.camera_changed(self.view_gen);
         viewer
     }
@@ -299,18 +309,22 @@ impl StrictTarget {
 
 const GLUE_SEEDS: [u64; 3] = [1, 7, 42];
 
-fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
-    let full = synthetic_cpu_bytes(&views);
+fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject, mode: LodMode) {
+    let full = synthetic_cpu_bytes(&views, mode);
     let budget = full / 3;
-    let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let expected = in_process_digest(
+        synthetic_harness(1 << 20, 2.0).in_mode(mode),
+        budget,
+        &views,
+    );
     let mut reports = 0;
     for (i, seed) in GLUE_SEEDS.iter().enumerate() {
         // A cap of one byte applies one node per frame; the other seeds apply bursts.
         let cap = if i == 0 { 1 } else { 256 << 10 };
-        let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, *seed, cap);
+        let mut sim =
+            GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, *seed, cap).in_mode(mode);
         let digest = sim.run(&views, inject, 200_000);
-        println!("glue {name} seed {seed}: {:?}", sim.stats);
-        assert_eq!(digest, expected, "{name} seed {seed}");
+        assert_eq!(digest, expected, "{name} seed {seed} {mode:?}");
         assert!(sim.stats.node_messages > 0);
         reports += sim.stats.missing_reports;
     }
@@ -321,26 +335,56 @@ fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
     }
 }
 
-#[test]
-fn glue_synthetic_orbit_reaches_the_in_process_digest() {
-    glue_synthetic_case("orbit", synth_orbit(), Inject::default());
+/// Runs a glue simulation in both pool modes: the octant one keeps its name.
+macro_rules! glue_both_modes {
+    ($body:ident, $octant:ident, $cell:ident) => {
+        #[test]
+        fn $octant() {
+            $body(LodMode::Octant);
+        }
+
+        #[test]
+        fn $cell() {
+            $body(LodMode::Cell);
+        }
+    };
 }
 
-#[test]
-fn glue_synthetic_dolly_reaches_the_in_process_digest() {
-    glue_synthetic_case("dolly", synth_dolly(), Inject::default());
+fn glue_orbit_in(mode: LodMode) {
+    glue_synthetic_case("orbit", synth_orbit(), Inject::default(), mode);
 }
 
-#[test]
-fn glue_synthetic_pool_reset_and_driver_replaced_mid_load_converge() {
+glue_both_modes!(
+    glue_orbit_in,
+    glue_synthetic_orbit_reaches_the_in_process_digest,
+    glue_synthetic_orbit_reaches_the_in_process_digest_in_cell_mode
+);
+
+fn glue_dolly_in(mode: LodMode) {
+    glue_synthetic_case("dolly", synth_dolly(), Inject::default(), mode);
+}
+
+glue_both_modes!(
+    glue_dolly_in,
+    glue_synthetic_dolly_reaches_the_in_process_digest,
+    glue_synthetic_dolly_reaches_the_in_process_digest_in_cell_mode
+);
+
+fn glue_inject_in(mode: LodMode) {
     let inject = Inject {
         pool_reset_at: Some(5),
         driver_replaced_at: Some(10),
         forget_zones_on_loss: true,
         ..Inject::default()
     };
-    glue_synthetic_case("orbit+inject", synth_orbit(), inject);
+    glue_synthetic_case("orbit+inject", synth_orbit(), inject, mode);
 }
+
+glue_both_modes!(
+    glue_inject_in,
+    glue_synthetic_pool_reset_and_driver_replaced_mid_load_converge,
+    glue_synthetic_pool_reset_and_driver_replaced_mid_load_converge_in_cell_mode
+);
 
 #[test]
 fn the_viewer_stats_report_the_cut_apply_and_the_nodes_forgotten_for_the_cpu_budget() {
@@ -349,7 +393,7 @@ fn the_viewer_stats_report_the_cut_apply_and_the_nodes_forgotten_for_the_cpu_bud
     // The at-rest set now carries the levels built on demand (569 112 bytes, 206 200 before them,
     // same nodes): an eighth is the absolute budget a third was (about 70 000 bytes), the one at
     // which this seed forgets a node.
-    let budget = synthetic_cpu_bytes(&views) / 8;
+    let budget = synthetic_cpu_bytes(&views, LodMode::Octant) / 8;
     let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, 7, 256 << 10);
     let before = sim.viewer.stats(&sim.h.target);
     assert_eq!((before.cut_apply, before.forgotten_total), (None, 0));
@@ -484,7 +528,7 @@ fn the_builder_emits_no_scene_while_cells_are_present() {
 #[test]
 fn the_in_process_glue_reaches_the_in_process_digest() {
     let views = synth_orbit();
-    let budget = synthetic_cpu_bytes(&views);
+    let budget = synthetic_cpu_bytes(&views, LodMode::Octant);
     let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
     let mut h = synthetic_harness(1 << 20, 2.0);
     let mut cells = InProcessCells::new(&h.dataset, h.config);
@@ -521,6 +565,107 @@ fn the_in_process_glue_reaches_the_in_process_digest() {
     cells.mark_dirty();
     for _ in 0..3 {
         assert_eq!(cells.stats(&h.dataset, &target).cut_digest_at_rest, None);
+    }
+}
+
+/// Runs `InProcessCells` updates on `view` until the cut is at rest or `max` updates ran.
+fn in_process_updates(
+    h: &mut Harness,
+    cells: &mut InProcessCells,
+    target: &mut StrictTarget,
+    view: &ViewProjection,
+    max: usize,
+) -> usize {
+    for round in 1..=max {
+        target.eye = view.camera().position();
+        let (blocks, pages) = (&mut h.blocks, &mut h.pages);
+        cells
+            .update(
+                &mut h.dataset,
+                view,
+                2.0,
+                true,
+                target,
+                Some(&mut ()),
+                false,
+                &mut |_: &mut (), id| blocks(id),
+                &mut |_: &mut (), anchor| pages(anchor),
+            )
+            .unwrap();
+        if cells.stats(&h.dataset, target).cut_digest_at_rest.is_some() {
+            return round;
+        }
+    }
+    max
+}
+
+#[test]
+fn switching_mode_rewrites_the_page_table() {
+    let views = synth_orbit();
+    let view = views.last().unwrap();
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    let mut cells = InProcessCells::new(&h.dataset, h.config);
+    let mut target = StrictTarget::default();
+    cells.mark_dirty();
+    in_process_updates(&mut h, &mut cells, &mut target, view, 20_000);
+    assert!(!target.table.is_empty(), "octant mode drew nothing");
+    assert!(target.lod_view.is_none(), "octant mode passes no LOD view");
+    for (mode, has_view) in [(LodMode::Cell, true), (LodMode::Octant, false)] {
+        let (records, tables) = (target.records_written, target.tables_written);
+        cells.set_lod_mode(mode);
+        assert!(cells.is_dirty(), "{mode:?}: the switch asks for a frame");
+        let rounds = in_process_updates(&mut h, &mut cells, &mut target, view, 20_000);
+        // The rest probe was reset by the switch: a digest needs two equal reads of post-switch
+        // frames, so a stale one from before the switch cannot be published at once.
+        assert!(rounds >= 2, "{mode:?}: digest at rest after {rounds} round");
+        assert!(
+            target.tables_written > tables,
+            "{mode:?}: no new page table"
+        );
+        assert!(
+            target.records_written > records,
+            "{mode:?}: node records were not rewritten"
+        );
+        assert_eq!(target.lod_view.is_some(), has_view, "{mode:?}");
+        assert!(!target.table.is_empty(), "{mode:?}: the frame drew nothing");
+    }
+}
+
+#[test]
+fn switching_mode_rewrites_the_page_table_through_the_glue() {
+    let views = synth_orbit();
+    let view = views.last().unwrap();
+    let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), u64::MAX, 3, 1 << 20);
+    sim.run(&views, Inject::default(), 200_000);
+    assert!(!sim.h.target.table.is_empty(), "octant mode drew nothing");
+    assert!(
+        sim.h.target.lod_view.is_none(),
+        "octant mode passes no LOD view"
+    );
+    for (mode, has_view) in [(LodMode::Cell, true), (LodMode::Octant, false)] {
+        let (records, tables) = (sim.h.target.records_written, sim.h.target.tables_written);
+        let nodes = sim.stats.node_messages;
+        sim.mode = mode;
+        sim.viewer.set_lod_mode(mode);
+        // `settle` runs StrictTarget's plan checks on every frame drawn after the switch.
+        sim.settle(view, 200_000);
+        assert!(
+            sim.h.target.tables_written > tables,
+            "{mode:?}: no new page table"
+        );
+        assert!(
+            sim.h.target.records_written > records,
+            "{mode:?}: records not rewritten"
+        );
+        assert_eq!(sim.h.target.lod_view.is_some(), has_view, "{mode:?}");
+        assert!(
+            !sim.h.target.table.is_empty(),
+            "{mode:?}: the frame drew nothing"
+        );
+        assert_eq!(
+            sim.stats.node_messages, nodes,
+            "{mode:?}: no node is built again"
+        );
     }
 }
 
@@ -1211,52 +1356,89 @@ fn a_malformed_node_is_refused_at_the_message_and_leaves_the_queue_alone() {
     assert_eq!(pair.viewer.stats(&pair.target).queued_nodes, 1);
 }
 
-fn glue_real_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64], inject: Inject) {
-    let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20);
-    let Some(real) = open() else { return };
+fn glue_real_case(
+    name: &str,
+    orbit: bool,
+    budget_percent: u64,
+    seeds: &[u64],
+    inject: Inject,
+    mode: LodMode,
+) {
+    let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20).map(|real| real.harness);
+    let Some(real) = open_real("belvedere-v7.oct", 4.0, 256 << 20) else {
+        return;
+    };
     let views = real_views(&real, orbit);
-    let mut unlimited = real.harness;
+    let mut unlimited = real.harness.in_mode(mode);
     unlimited.driver = driver_for(&unlimited.dataset, u64::MAX);
     for view in &views {
         unlimited.frame(view);
     }
     unlimited.settle(views.last().unwrap(), 3, 20_000);
     let budget = unlimited.driver.cpu_bytes() * budget_percent / 100;
-    let expected = in_process_digest(open().unwrap().harness, budget, &views);
+    let expected = in_process_digest(open().unwrap().in_mode(mode), budget, &views);
     for seed in seeds {
-        let mut sim = GlueSim::new(open().unwrap().harness, budget, *seed, 4 << 20);
+        let mut sim = GlueSim::new(open().unwrap(), budget, *seed, 4 << 20).in_mode(mode);
         let digest = sim.run(&views, inject, 400_000);
-        println!(
-            "belvedere glue {name} seed {seed}: {digest} in-process {expected} {:?}",
-            sim.stats
+        assert_eq!(
+            digest, expected,
+            "belvedere glue {name} seed {seed} {mode:?}"
         );
-        assert_eq!(digest, expected, "belvedere glue {name} seed {seed}");
     }
 }
 
-#[test]
-#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_glue"]
-fn real_glue_belvedere_orbit_reaches_the_in_process_digest() {
-    glue_real_case("orbit", true, 50, &[1, 7], Inject::default());
+/// Like `glue_both_modes!`, for the real-data runs (ignored: minutes each).
+macro_rules! real_glue_both_modes {
+    ($body:ident, $octant:ident, $cell:ident) => {
+        #[test]
+        #[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_glue"]
+        fn $octant() {
+            $body(LodMode::Octant);
+        }
+
+        #[test]
+        #[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_glue"]
+        fn $cell() {
+            $body(LodMode::Cell);
+        }
+    };
 }
 
-#[test]
-#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_glue"]
-fn real_glue_belvedere_dolly_reaches_the_in_process_digest() {
-    glue_real_case("dolly", false, 90, &[3], Inject::default());
+fn real_glue_orbit_in(mode: LodMode) {
+    glue_real_case("orbit", true, 50, &[1, 7], Inject::default(), mode);
 }
 
-#[test]
-#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_glue"]
-fn real_glue_belvedere_pool_reset_and_driver_replaced_mid_load_converge() {
+real_glue_both_modes!(
+    real_glue_orbit_in,
+    real_glue_belvedere_orbit_reaches_the_in_process_digest,
+    real_glue_belvedere_orbit_reaches_the_in_process_digest_in_cell_mode
+);
+
+fn real_glue_dolly_in(mode: LodMode) {
+    glue_real_case("dolly", false, 90, &[3], Inject::default(), mode);
+}
+
+real_glue_both_modes!(
+    real_glue_dolly_in,
+    real_glue_belvedere_dolly_reaches_the_in_process_digest,
+    real_glue_belvedere_dolly_reaches_the_in_process_digest_in_cell_mode
+);
+
+fn real_glue_inject_in(mode: LodMode) {
     let inject = Inject {
         pool_reset_at: Some(4),
         driver_replaced_at: Some(8),
         forget_zones_on_loss: true,
         ..Inject::default()
     };
-    glue_real_case("orbit+inject", true, 50, &[5], inject);
+    glue_real_case("orbit+inject", true, 50, &[5], inject, mode);
 }
+
+real_glue_both_modes!(
+    real_glue_inject_in,
+    real_glue_belvedere_pool_reset_and_driver_replaced_mid_load_converge,
+    real_glue_belvedere_pool_reset_and_driver_replaced_mid_load_converge_in_cell_mode
+);
 
 #[test]
 fn recolouring_across_the_build_render_split_leaves_no_hole_and_drops_late_old_nodes() {

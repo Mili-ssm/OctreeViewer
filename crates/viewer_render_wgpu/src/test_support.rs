@@ -7,7 +7,7 @@ use viewer_core::{NodeId, SpatialBounds};
 
 use crate::scene_digest_tests::{ORIGIN, SIDE, VIEWPORT, cameras};
 use crate::{
-    CellGrid, CellInstance, CellPool, CellPoolError, CellTarget, FramePlan, LevelKey, MASK_WORDS,
+    CellGrid, CellInstance, CellPool, CellPoolError, CellTarget, FramePlan, LevelKey, NODE_WORDS,
     OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, PoolNode, ViewProjection,
     VoxelBuildLimits,
 };
@@ -75,6 +75,7 @@ pub(crate) fn fake_level(key: LevelKey, pages: usize) -> PackedLevel {
                 cells: 0,
                 box_max: [page as u16, u16::from(key.depth), key.node.get() as u16],
                 flags: 0,
+                rel_origin: [0; 3],
             })
             .collect(),
     }
@@ -82,7 +83,7 @@ pub(crate) fn fake_level(key: LevelKey, pages: usize) -> PackedLevel {
 
 /// The (level, page) a fake entry names (see `fake_level`).
 fn fake_entry_target(entry: &PageEntry) -> (LevelKey, usize) {
-    let [.., word6, word7] = entry.0;
+    let (word6, word7) = (entry.0[6], entry.0[7]);
     (
         LevelKey {
             session: 0,
@@ -92,6 +93,13 @@ fn fake_entry_target(entry: &PageEntry) -> (LevelKey, usize) {
         },
         (word6 & 0xffff) as usize,
     )
+}
+
+/// A node record holding `mask` and nothing else (anchor, depth and mips zero).
+pub(crate) fn mask_record(mask: &[u32; crate::MASK_WORDS]) -> [u32; NODE_WORDS] {
+    let mut record = [0; NODE_WORDS];
+    record[..crate::MASK_WORDS].copy_from_slice(mask);
+    record
 }
 
 /// Executes plans like the GPU would and fails on any hazard: a page written while the current or
@@ -110,9 +118,12 @@ pub(crate) struct FakeGpu {
     pub(crate) eye: [f64; 3],
     /// Slots written since the last page table; they must not be in it or in the previous one.
     pub(crate) frame_writes: Vec<u32>,
-    pub(crate) mask_words: HashMap<u32, [u32; MASK_WORDS]>,
+    /// The last record written to each mask slot.
+    pub(crate) mask_words: HashMap<u32, [u32; NODE_WORDS]>,
+    /// Every record write, in order.
+    pub(crate) record_writes: Vec<(u32, [u32; NODE_WORDS])>,
     pub(crate) next_mask: u32,
-    /// The next `set_node_mask` fails once. The fake keeps its state (slots, masks) as a live
+    /// The next `set_node_record` fails once. The fake keeps its state (slots, masks) as a live
     /// renderer would, until `drop_pool`.
     pub(crate) fail_next_mask: bool,
     /// Pages rewritten in place over the same page (recolours).
@@ -122,6 +133,8 @@ pub(crate) struct FakeGpu {
     pub(crate) page_frame: Option<PageFrame>,
     /// The ranges of the last frame's cut (`CellTarget::set_color_ranges`).
     pub(crate) color_ranges: Option<crate::CellColorRanges>,
+    /// The view of every frame that reached the target (`CellTarget::set_lod_view`).
+    pub(crate) lod_views: Vec<Option<crate::cell_lod::LodView>>,
 }
 
 impl FakeGpu {
@@ -196,7 +209,11 @@ impl CellTarget for FakeGpu {
         Ok(Some(self.next_mask - 1))
     }
 
-    fn set_node_mask(&mut self, slot: u32, mask: &[u32; MASK_WORDS]) -> Result<(), CellPoolError> {
+    fn set_node_record(
+        &mut self,
+        slot: u32,
+        record: &[u32; NODE_WORDS],
+    ) -> Result<(), CellPoolError> {
         if !self.has_pool {
             return Err(CellPoolError::NoPool);
         }
@@ -207,12 +224,17 @@ impl CellTarget for FakeGpu {
         if std::mem::take(&mut self.fail_next_mask) {
             return Err(CellPoolError::NoPool);
         }
-        self.mask_words.insert(slot, *mask);
+        self.mask_words.insert(slot, *record);
+        self.record_writes.push((slot, *record));
         Ok(())
     }
 
     fn set_color_ranges(&mut self, ranges: crate::CellColorRanges) {
         self.color_ranges = Some(ranges);
+    }
+
+    fn set_lod_view(&mut self, view: Option<crate::cell_lod::LodView>) {
+        self.lod_views.push(view);
     }
 
     fn set_active_pages(

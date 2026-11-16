@@ -17,6 +17,7 @@ use crate::cell_render::PageFrameStamp;
 use crate::gpu::{
     PickCopy, PickHit, PickRay, build_pick_chunks, ray_box_interval, resolve_pick_instances,
 };
+use crate::test_support::mask_record;
 
 // ---------------------------------------------------------------------------------------------
 // Crafted pages (no GPU)
@@ -32,6 +33,10 @@ fn crafted_page(origin: [f32; 3], octants: u32) -> PageEntry {
         octants,
         20 | 20 << 16,
         20,
+        0,
+        0,
+        0,
+        0,
     ])
 }
 
@@ -69,6 +74,7 @@ fn plan(ray: PickRay, copies: Vec<PoolCopy>, cutoff: Option<f64>) -> PoolPickPla
         coordinate_origin: [0.0; 3],
         copies,
         cutoff,
+        lod: None,
     }
 }
 
@@ -689,7 +695,8 @@ fn pick_copies_at_most_the_page_limit_and_keeps_the_nearest_hit_safe() {
         assert_eq!(hit.instance_index, nearest);
         assert_eq!(hit.voxel_size, 1.0);
         // Hiding the cell of every copied page leaves hits only in pages that were not copied.
-        pool.set_node_mask(mask_slot, &mask_with(&[0])).unwrap();
+        pool.set_node_record(mask_slot, &mask_record(&mask_with(&[0])))
+            .unwrap();
         assert!(pool_pick(h, &pool, ray).is_err());
         // The budget counts the staging buffer.
         // One byte short of one page: the smallest staging buffer that cannot fit.
@@ -860,4 +867,463 @@ fn ray_box_interval_agrees_with_dense_sampling() {
         }
     }
     assert!(hits > 100 && misses > 100 && inside >= 100 && parallel >= 100);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cell mode: the drawn cell is the one the per-cell decision draws
+// ---------------------------------------------------------------------------------------------
+
+/// `(nearest drawn (distance, global slot, depth), second best drawn distance, nearest cell of any kind)`.
+type TwinPick = (Option<(f64, usize, u8)>, Option<f64>, Option<(f64, usize)>);
+
+/// The nearest cell the twin draws along `ray` and the nearest cell of any kind, as
+/// `(distance, global slot)`, plus the second best drawn distance.
+fn twin_pick(
+    scene: &[super::lod::LodNodeScene],
+    pool: &super::lod::LodPool,
+    lods: &[crate::cell_lod::NodeLod],
+    view: &crate::cell_lod::LodView,
+    eye: [f64; 3],
+    ray: &PickRay,
+) -> TwinPick {
+    let table = crate::cell_pages::srgb_to_linear_table();
+    let ray = PickRay {
+        origin: ray.origin - glam::DVec3::from_array(eye),
+        ..*ray
+    };
+    let (mut best, mut second, mut any): (Option<(f64, usize, u8)>, Option<f64>, _) =
+        (None, None, None::<(f64, usize)>);
+    for placed in &pool.placed {
+        let node = &scene[placed.node];
+        let depth = node.node_depth + node.offsets[placed.level];
+        let side_node = node.grid.root_side / (1_u64 << node.node_depth) as f64;
+        let node_lo: [u64; 3] = std::array::from_fn(|a| {
+            ((node.bounds.min()[a] - node.grid.root_min[a]) / side_node).round() as u64
+        });
+        let frame = PageFrame {
+            grid: node.grid,
+            coordinate_origin: [0.0; 3],
+            visual_scale: 1.0,
+            eye_scaled: eye,
+        };
+        for (page_index, page) in placed.packed.pages.iter().enumerate() {
+            let entry = page.entry(&frame, pool.node_slots[placed.node], 0xff);
+            for local in 0..page.cells as usize {
+                let coord = node.levels[placed.level].cells[page.first_cell + local].coord;
+                let rel: [u32; 3] = std::array::from_fn(|a| {
+                    (coord[a] - (node_lo[a] << node.offsets[placed.level])) as u32
+                });
+                let decoded = decode_cell(
+                    &entry,
+                    &placed.packed.instances[page_index * PAGE_SLOTS + local],
+                    &table,
+                );
+                let Some(distance) =
+                    box_distance(&ray, decoded.lo.map(f64::from), decoded.hi.map(f64::from))
+                else {
+                    continue;
+                };
+                let global = placed.slots[page_index] as usize * PAGE_SLOTS + local;
+                if any.is_none_or(|a| (distance, global) < a) {
+                    any = Some((distance, global));
+                }
+                if !crate::cell_lod::draws(view, &lods[placed.node], depth, rel, entry.side()) {
+                    continue;
+                }
+                if best.is_none_or(|b| (distance, global) < (b.0, b.1)) {
+                    second = best.map(|b| b.0);
+                    best = Some((distance, global, depth));
+                } else if second.is_none_or(|s| distance < s) {
+                    second = Some(distance);
+                }
+            }
+        }
+    }
+    (best, second, any)
+}
+
+#[test]
+fn pick_in_cell_mode_hits_the_drawn_cell() {
+    use super::lod::{LodNodeScene, place_lod, random_pose, set_pose};
+    for_each_adapter(CellLimitMode::Auto, |h| {
+        if !h.runs_test_pool {
+            return false;
+        }
+        let unit = CellGrid {
+            root_min: [0.0; 3],
+            root_side: 1.0,
+        };
+        let mut rng = Rng(0x91c4);
+        let nodes = vec![
+            LodNodeScene::random(&mut rng, unit, 1, [0, 1, 0], &[0, 2, 4, 6], 0, 1500),
+            LodNodeScene::random(&mut rng, unit, 1, [1, 0, 0], &[1, 3, 5], 0, 600),
+        ];
+        let bounds = ([0.0; 3], [1.0; 3]);
+        let (mut compared, mut hits, mut ambiguous, mut mattered) = (0, 0, 0, 0);
+        let mut depths = HashSet::new();
+        let mut mismatches = Vec::new();
+        let mut poses = 0;
+        while poses < 24 {
+            let Some((camera, view)) = random_pose(&mut rng, bounds, (0.5, 12.0)) else {
+                continue;
+            };
+            poses += 1;
+            let mut pool = new_pool(h);
+            let placed = place_lod(&mut pool, &nodes);
+            let lods = set_pose(&mut pool, &nodes, &placed, &camera, view);
+            pool.set_page_frame(stamp(camera.position()));
+            for iy in 0..12 {
+                for ix in 0..16 {
+                    let pixel = [
+                        (ix as f64 + 0.5) / 16.0 * f64::from(WIDTH),
+                        (iy as f64 + 0.5) / 12.0 * f64::from(HEIGHT),
+                    ];
+                    let Some(ray) = camera_ray(&camera, pixel) else {
+                        continue;
+                    };
+                    let (expected, second, any) =
+                        twin_pick(&nodes, &placed, &lods, &view, camera.position(), &ray);
+                    let actual = pool_pick(h, &pool, ray).unwrap();
+                    hits += usize::from(actual.is_some());
+                    if let (Some(e), Some(second)) = (expected, second)
+                        && second - e.0 < 1.0e-5 * e.0
+                    {
+                        ambiguous += 1;
+                        continue;
+                    }
+                    compared += 1;
+                    match (expected, actual) {
+                        (None, None) => {}
+                        (Some((distance, global, depth)), Some(actual)) => {
+                            if actual.instance_index == global
+                                && (actual.distance - distance).abs() <= 1.0e-9 * (1.0 + distance)
+                            {
+                                depths.insert(depth);
+                                // Without the per-cell decision another cell would win here.
+                                mattered += usize::from(
+                                    any.is_some_and(|a| a.1 != global && a.0 < distance),
+                                );
+                            } else {
+                                mismatches.push(format!(
+                                    "pose {poses} pixel {pixel:?}: twin ({distance}, {global}), pick {actual:?}"
+                                ));
+                            }
+                        }
+                        (expected, actual) => mismatches.push(format!(
+                            "pose {poses} pixel {pixel:?}: twin {expected:?}, pick {actual:?}"
+                        )),
+                    }
+                }
+            }
+        }
+        println!(
+            "# adapter {}: cell pick {compared} compared, {hits} hits, {ambiguous} ambiguous, \
+             {mattered} where the decision mattered, depths hit {depths:?}",
+            h.label
+        );
+        assert!(
+            mismatches.is_empty(),
+            "{:#?}",
+            &mismatches[..mismatches.len().min(8)]
+        );
+        assert!(
+            compared > 200 && hits > 100,
+            "too few picks: {compared} {hits}"
+        );
+        assert!(depths.len() >= 2, "only {depths:?} were hit");
+        assert!(mattered > 0, "the cell decision never changed the winner");
+        true
+    });
+}
+
+/// A `CellRenderer` fed by the driver that also remembers the cells of each page slot.
+struct PickTarget<'a> {
+    pool: &'a mut CellRenderer,
+    eye: [f64; 3],
+    held: &'a mut std::collections::HashMap<u32, (NodeId, u8, Vec<[u64; 3]>)>,
+    /// The page slots of the last active table.
+    active: &'a mut HashSet<u32>,
+}
+
+impl crate::cell_driver::CellTarget for PickTarget<'_> {
+    type Error = crate::CellPoolError;
+
+    fn has_pool(&self) -> bool {
+        true
+    }
+
+    fn drop_pool(&mut self) {
+        unreachable!("the target never fails");
+    }
+
+    fn eye(&self) -> [f64; 3] {
+        self.eye
+    }
+
+    fn upload_level(
+        &mut self,
+        level: &PackedLevel,
+        slots: &[u32],
+    ) -> Result<(), crate::CellPoolError> {
+        for (index, (info, slot)) in level.pages.iter().zip(slots).enumerate() {
+            let cells = (0..info.cells as usize)
+                .map(|local| {
+                    let rel = level.instances[index * PAGE_SLOTS + local].rel();
+                    std::array::from_fn(|axis| info.origin[axis] + u64::from(rel[axis]))
+                })
+                .collect();
+            self.held.insert(*slot, (level.node, level.depth, cells));
+        }
+        self.pool.upload_level(level, slots)
+    }
+
+    fn free_pages(&mut self, slots: &[u32]) -> Result<(), crate::CellPoolError> {
+        for slot in slots {
+            self.held.remove(slot);
+        }
+        self.pool.free_pages(slots)
+    }
+
+    fn alloc_mask_slot(&mut self) -> Result<Option<u32>, crate::CellPoolError> {
+        Ok(self.pool.alloc_mask_slot())
+    }
+
+    fn set_node_record(
+        &mut self,
+        slot: u32,
+        record: &[u32; NODE_WORDS],
+    ) -> Result<(), crate::CellPoolError> {
+        self.pool.set_node_record(slot, record)
+    }
+
+    fn set_lod_view(&mut self, view: Option<crate::cell_lod::LodView>) {
+        self.pool.set_lod_view(view);
+    }
+
+    fn set_active_pages(
+        &mut self,
+        pages: &[(u32, PageEntry)],
+        _frame: &PageFrame,
+    ) -> Result<(), crate::CellPoolError> {
+        *self.active = pages.iter().map(|(slot, _)| *slot).collect();
+        self.pool.set_active_pages(pages)
+    }
+}
+
+/// The records the driver writes feed the pick: it equals the twin evaluated on the active depths
+/// the frame emits, also on retained frames (same cut, no `MaskUpdate`) whose active set moved.
+#[test]
+fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
+    use super::lod::{LodNodeScene, random_pose};
+    use crate::cell_driver::{CellDriver, DriverConfig, NodeInput};
+    for_each_adapter(CellLimitMode::Auto, |h| {
+        if !h.runs_test_pool {
+            return false;
+        }
+        let unit = CellGrid {
+            root_min: [0.0; 3],
+            root_side: 1.0,
+        };
+        let mut rng = Rng(0x7a11);
+        let scene = [
+            LodNodeScene::random(&mut rng, unit, 1, [0, 1, 0], &[0, 2, 4, 6], 0, 1200),
+            LodNodeScene::random(&mut rng, unit, 1, [1, 0, 0], &[1, 3, 5], 0, 500),
+        ];
+        let mut driver = CellDriver::new(DriverConfig {
+            pool: crate::PoolConfig {
+                capacity_pages: POOL_PAGES_FOR_TESTS,
+                ..crate::PoolConfig::default()
+            },
+            grid: unit,
+            coordinate_origin: [0.0; 3],
+            cpu_budget_bytes: u64::MAX,
+        });
+        let mut cut = Vec::new();
+        for (index, node) in scene.iter().enumerate() {
+            let id = NodeId::new(index as u64 + 1);
+            let offsets = node.offsets.iter().map(|o| node.node_depth + o);
+            let cells = crate::NodeCells {
+                node: id,
+                levels: node.levels.clone(),
+                buildable: (offsets.clone().min().unwrap(), offsets.max().unwrap()),
+            };
+            driver
+                .add_node(NodeInput {
+                    id,
+                    bounds: node.bounds,
+                    points: node.levels.iter().map(|l| l.cells.len() as u64).sum(),
+                    local_grid: unit,
+                    cells: &cells,
+                })
+                .unwrap();
+            cut.push(id);
+        }
+        driver.set_lod_mode(crate::LodMode::Cell);
+
+        let mut pool = new_pool(h);
+        let mut held = std::collections::HashMap::new();
+        let mut table = HashSet::new();
+        let (mut compared, mut hits, mut retained_changes) = (0, 0, 0);
+        let mut mismatches = Vec::new();
+        let mut previous: Option<Vec<(u32, u64)>> = None;
+        let mut poses = 0;
+        while poses < 60 {
+            let Some((camera, target_px)) =
+                random_pose(&mut rng, ([0.0; 3], [1.0; 3]), (0.5, 12.0))
+            else {
+                continue;
+            };
+            poses += 1;
+            let view = crate::ViewProjection::new(
+                camera,
+                [WIDTH, HEIGHT],
+                1.0,
+                crate::VoxelBuildLimits::default(),
+            );
+            // Two thirds of the poses are judged after one or two frames only: retained frames
+            // with the previous pose's records and pages and the new pose's active set.
+            let frames = [1, 2, 300][poses % 3];
+            let mut report = None;
+            for _ in 0..frames {
+                let mut target = PickTarget {
+                    pool: &mut pool,
+                    eye: camera.position(),
+                    held: &mut held,
+                    active: &mut table,
+                };
+                report = Some(
+                    driver
+                        .frame(&mut target, &cut, &view, f64::from(target_px.target_px))
+                        .unwrap(),
+                );
+                if !driver.needs_frame() {
+                    break;
+                }
+            }
+            let report = report.unwrap();
+            pool.set_page_frame(stamp(camera.position()));
+            let lod_view = pool.lod_view().expect("cell mode sets a view");
+
+            // The active depths per mask slot, as emitted.
+            let mut emitted: std::collections::HashMap<u32, u64> = Default::default();
+            for active in &report.plan.active {
+                let node_depth = pool.node_record(active.mask_slot)[19];
+                *emitted.entry(active.mask_slot).or_default() |=
+                    1 << (u32::from(active.key.depth) - node_depth);
+            }
+            let mut snapshot: Vec<(u32, u64)> = emitted.iter().map(|(k, v)| (*k, *v)).collect();
+            snapshot.sort_unstable();
+            if report.plan.mask_updates.is_empty()
+                && previous.as_ref().is_some_and(|p| *p != snapshot)
+            {
+                retained_changes += 1;
+            }
+            previous = Some(snapshot);
+
+            for iy in 0..10 {
+                for ix in 0..14 {
+                    let pixel = [
+                        (ix as f64 + 0.5) / 14.0 * f64::from(WIDTH),
+                        (iy as f64 + 0.5) / 10.0 * f64::from(HEIGHT),
+                    ];
+                    let Some(ray) = camera_ray(&camera, pixel) else {
+                        continue;
+                    };
+                    // Twin: the cells the active pages draw under the emitted depths.
+                    let mut best: Option<(f64, usize)> = None;
+                    let mut second: Option<f64> = None;
+                    for active in &report.plan.active {
+                        let record = pool.node_record(active.mask_slot);
+                        let mut node = crate::cell_pick::node_of_record(record);
+                        node.active = emitted[&active.mask_slot];
+                        let side = 1.0 / (1_u64 << active.key.depth) as f64;
+                        let (id, _) = scene
+                            .iter()
+                            .enumerate()
+                            .find(|(i, _)| NodeId::new(*i as u64 + 1) == active.key.node)
+                            .unwrap();
+                        let lo: [u64; 3] = std::array::from_fn(|a| {
+                            (scene[id].bounds.min()[a] * f64::from(1u32 << node.node_depth)).round()
+                                as u64
+                        });
+                        for (slot, (held_node, depth, cells)) in &held {
+                            if *held_node != active.key.node || *depth != active.key.depth {
+                                continue;
+                            }
+                            // Only the pages of the active table count.
+                            if !table.contains(slot) {
+                                continue;
+                            }
+                            for (local, coord) in cells.iter().enumerate() {
+                                let min = coord.map(|c| c as f64 * side);
+                                let max = coord.map(|c| (c + 1) as f64 * side);
+                                let Some(distance) = box_distance(&ray, min, max) else {
+                                    continue;
+                                };
+                                let rel: [u32; 3] = std::array::from_fn(|a| {
+                                    (coord[a] - (lo[a] << (*depth - node.node_depth))) as u32
+                                });
+                                if !crate::cell_lod::draws(
+                                    &lod_view,
+                                    &node,
+                                    *depth,
+                                    rel,
+                                    side as f32,
+                                ) {
+                                    continue;
+                                }
+                                let global = *slot as usize * PAGE_SLOTS + local;
+                                if best.is_none_or(|b| (distance, global) < b) {
+                                    second = best.map(|b| b.0);
+                                    best = Some((distance, global));
+                                } else if second.is_none_or(|s| distance < s) {
+                                    second = Some(distance);
+                                }
+                            }
+                        }
+                    }
+                    let actual = pool_pick(h, &pool, ray).unwrap();
+                    hits += usize::from(actual.is_some());
+                    if let (Some(e), Some(second)) = (best, second)
+                        && second - e.0 < 1.0e-5 * e.0
+                    {
+                        continue;
+                    }
+                    compared += 1;
+                    let same = match (best, &actual) {
+                        (None, None) => true,
+                        (Some((distance, global)), Some(actual)) => {
+                            actual.instance_index == global
+                                && (actual.distance - distance).abs() <= 1.0e-6 * (1.0 + distance)
+                        }
+                        _ => false,
+                    };
+                    if !same {
+                        mismatches.push(format!(
+                            "pose {poses} pixel {pixel:?}: twin {best:?}, pick {actual:?}"
+                        ));
+                    }
+                }
+            }
+        }
+        println!(
+            "# adapter {}: driver records pick {compared} compared, {hits} hits, \
+             {retained_changes} retained frames with a moved active set",
+            h.label
+        );
+        assert!(
+            mismatches.is_empty(),
+            "{:#?}",
+            &mismatches[..mismatches.len().min(8)]
+        );
+        assert!(
+            compared > 150 && hits > 50,
+            "too few picks: {compared} {hits}"
+        );
+        assert!(
+            retained_changes > 0,
+            "no retained frame moved the active set"
+        );
+        true
+    });
 }

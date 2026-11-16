@@ -784,7 +784,7 @@ fn mask_slots_follow_the_cut_and_pinned_levels_cover_masked_nodes() {
         .pool
         .mask_slots
         .values()
-        .map(|(slot, _)| *slot)
+        .map(|state| state.slot)
         .collect();
     assert_eq!(slots.len(), 2);
     // The child leaves the cut: its slot is freed and the root's mask is rewritten.
@@ -1952,6 +1952,7 @@ fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
             })
         },
         &grid,
+        LodMode::Octant,
         &|_, _, _| wanted,
     )
     .unwrap();
@@ -2024,6 +2025,32 @@ fn the_hold_threshold_is_the_depth_the_ancestor_drew_over_the_octant_of_the_chil
     let (eval, _) = eval_with(&rig, &ids(&[10, 17]), 7);
     assert!(eval.hold.contains(&NodeId::new(10)));
     assert!(!eval.hold.contains(&NodeId::new(17)));
+}
+
+#[test]
+fn in_cell_mode_the_hold_threshold_is_the_finest_depth_active_in_the_ancestor() {
+    // The GPU picks the depth per cell among the active ones of a node, so node 2 may have drawn
+    // its finest active depth (6) over an octant whose nominal depth is 5. Child 10 stores 5 and
+    // 6, has only 5 resident and wants 6: short of what was really drawn there, held. In octant
+    // mode the nominal depth is the threshold and the child is not held.
+    let nodes = two_regions_with_coarse_children();
+    let mut held = Vec::new();
+    for mode in [LodMode::Octant, LodMode::Cell] {
+        let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
+        rig.pool.set_lod_mode(mode);
+        rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+        let child = nodes[&NodeId::new(10)].clone();
+        seed_resident(&mut rig.pool, 10, &[child.stored[0]]);
+        rig.pool.residency_epoch += 1;
+        let nominal = child.stored[0];
+        rig.pool
+            .applied_drawn
+            .insert(NodeId::new(2), [Some(nominal); 8]);
+        rig.pool.applied_finest.insert(NodeId::new(2), nominal + 1);
+        let (eval, _) = eval_with(&rig, &ids(&[10]), nominal + 1);
+        held.push((mode, eval.hold.contains(&NodeId::new(10))));
+    }
+    assert_eq!(held, [(LodMode::Octant, false), (LodMode::Cell, true)]);
 }
 
 #[test]
@@ -3121,4 +3148,457 @@ fn a_tight_pool_still_reports_its_coarsening_with_continuity_on_and_off() {
     // what is still coarsened is the pool's doing.
     assert_eq!(counts[2].1, 0);
     assert!(counts[2].0 <= counts[0].0, "{counts:?}");
+}
+
+#[test]
+fn mask_updates_carry_active_and_node_depth_in_cell_mode() {
+    let cam = camera("fit");
+    let node_depth = representative_depth(&grid(), cube(ORIGIN, SIDE)).saturating_sub(3);
+    let sent = |plan: &FramePlan| {
+        plan.mask_updates
+            .iter()
+            .map(|u| (u.slot, u.active, u.node_depth))
+            .collect::<Vec<_>>()
+    };
+    let mut rig = Rig::new(root_node(), 64, 8, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    let mut updates = Vec::new();
+    let mut plan = rig.step(&ids(&[1]), &cam, 64.0);
+    for _ in 0..12 {
+        updates.extend(sent(&plan));
+        plan = rig.step(&ids(&[1]), &cam, 64.0);
+    }
+    let entry = &plan.entries[0];
+    let active = entry
+        .required_levels()
+        .into_iter()
+        .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth));
+    assert_ne!(active, 0);
+    let last = updates.last().expect("a node record is sent");
+    assert_eq!((last.1, last.2), (active, node_depth), "{updates:?}");
+    // One active level per active depth, drawn whole by the GPU's per-cell choice.
+    assert!(!plan.active.is_empty());
+    assert!(plan.active.iter().all(|level| level.octant_bits == 0xff));
+    assert_eq!(plan.active.len(), active.count_ones() as usize);
+    // Steady frames send nothing; a mode change sends every node again.
+    assert!(plan.mask_updates.is_empty());
+    rig.pool.set_lod_mode(LodMode::Octant);
+    let again = rig.step(&ids(&[1]), &cam, 64.0);
+    assert_eq!(again.mask_updates.len(), 1);
+    assert!(again.active.iter().all(|level| level.octant_bits != 0));
+}
+
+#[test]
+fn cell_mode_clamps_the_pool_to_the_node_span() {
+    // A leaf of node depth >= 2 whose only stored (and resident) level lies below the node.
+    let bounds = cube(ORIGIN, SIDE / 4.0);
+    let node_depth = representative_depth(&grid(), bounds).saturating_sub(3);
+    assert!(node_depth >= 2);
+    let below = node_depth - 1;
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        PoolNode {
+            bounds,
+            stored: vec![below],
+            buildable: (below, node_depth + 6),
+            points: 500,
+        },
+    )]);
+    let cam = camera("fit");
+    let mut rig = Rig::new(nodes, 64, 8, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[below]);
+    let plan = rig.step(&ids(&[1]), &cam, 64.0);
+    assert!(plan.active.is_empty(), "{:?}", plan.active);
+    assert!(
+        plan.level_requests
+            .contains(&rig.pool.key(NodeId::new(1), node_depth)),
+        "{:?}",
+        plan.level_requests
+    );
+    assert_eq!(
+        plan.level_requests.first().map(|key| key.depth),
+        Some(node_depth)
+    );
+}
+
+/// A leaf whose first stored level lies below its node depth, so only octant mode can draw it.
+fn leaf_below_its_node() -> (HashMap<NodeId, PoolNode>, u8, u8) {
+    let bounds = cube(ORIGIN, SIDE / 4.0);
+    let node_depth = representative_depth(&grid(), bounds).saturating_sub(3);
+    assert!(node_depth >= 2);
+    let below = node_depth - 1;
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        PoolNode {
+            bounds,
+            stored: vec![below, node_depth + 2],
+            buildable: (below, node_depth + 6),
+            points: 500,
+        },
+    )]);
+    (nodes, node_depth, below)
+}
+
+#[test]
+fn a_retained_octant_cut_draws_nothing_outside_the_span_after_switching_to_cell_mode() {
+    let (mut nodes, node_depth, below) = leaf_below_its_node();
+    // Only the level below the node is stored: octant mode draws it, cell mode cannot.
+    nodes.get_mut(&NodeId::new(1)).unwrap().stored = vec![below];
+    let cam = camera("fit");
+    let mut rig = Rig::new(nodes, 64, 8, 0);
+    let mut plan = rig.step(&ids(&[1]), &cam, 64.0);
+    for _ in 0..6 {
+        plan = rig.step(&ids(&[1]), &cam, 64.0);
+    }
+    assert_eq!(plan.apply, CutApply::Applied);
+    assert!(plan.active.iter().any(|level| level.key.depth == below));
+    rig.pool.set_lod_mode(LodMode::Cell);
+    for _ in 0..3 {
+        let plan = rig.step(&ids(&[1]), &cam, 64.0);
+        assert_eq!(plan.apply, CutApply::RetainedPrevious);
+        for level in &plan.active {
+            let depth = level.key.depth;
+            assert!(
+                (node_depth..=node_depth + 31).contains(&depth) && rig.pool.is_resident(level.key),
+                "{depth} outside the span of node depth {node_depth}"
+            );
+        }
+        assert!(plan.active.is_empty(), "{:?}", plan.active);
+    }
+}
+
+#[test]
+fn cell_mode_mask_updates_match_the_emitted_active_levels() {
+    let (nodes, node_depth, below) = leaf_below_its_node();
+    let cam = camera("fit");
+    let mut rig = Rig::new(nodes, 64, 8, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    // A resident level below the node (never drawn) and the requested ones as they arrive.
+    seed_resident(&mut rig.pool, 1, &[below]);
+    let mut checked = 0;
+    for _ in 0..12 {
+        let plan = rig.step(&ids(&[1]), &cam, 64.0);
+        for update in &plan.mask_updates {
+            let bits = plan
+                .active
+                .iter()
+                .filter(|level| level.mask_slot == update.slot)
+                .fold(0_u64, |bits, level| {
+                    bits | 1 << (level.key.depth - node_depth)
+                });
+            assert_eq!(update.active, bits, "{update:?} vs {:?}", plan.active);
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}
+
+#[test]
+fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
+    // A capped leaf drew its resident level `near` (above the cap) and now wants a depth below
+    // the node, which cell mode clamps to the node depth: it lacks the in-span level that serves
+    // it, so `near` keeps drawing. The stored level below the node must not serve the want.
+    let bounds = cube(ORIGIN, SIDE / 4.0);
+    let node_depth = representative_depth(&grid(), bounds).saturating_sub(3);
+    assert!(node_depth >= 2);
+    let (below, cap, near) = (node_depth - 1, node_depth + 1, node_depth + 3);
+    let id = NodeId::new(1);
+    let node = PoolNode {
+        bounds,
+        stored: vec![below, cap, near],
+        buildable: (below, near),
+        points: 500,
+    };
+    let mut pool = CellPool::new(PoolConfig::default());
+    pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut pool, 1, &[below, near]);
+    pool.applied_drawn.insert(id, [Some(near); 8]);
+    let depths = FastMap::from_iter([(
+        id,
+        NodeDepths {
+            node: node.clone(),
+            depths: [below; 8],
+            pose: Pose {
+                eye: [0.0; 3],
+                forward: [0.0, 0.0, 1.0],
+            },
+            depth: 0.0,
+            exact: true,
+            scale: 1.0,
+        },
+    )]);
+    let grid = grid();
+    let ctx = Ctx {
+        grid: &grid,
+        origin: ORIGIN,
+        depths: &depths,
+        evaluations: Cell::new(0),
+    };
+    let cut_node = CellCutNode {
+        bounds,
+        buildable: (below, cap),
+        stored: vec![below, cap],
+        resident: vec![below],
+    };
+    // The level that serves the clamped want (the node depth is not stored: `cap` serves it).
+    let needed = FastSet::from_iter([pool.key(id, cap)]);
+    assert_eq!(
+        pool.finer_drawn(id, cap, &cut_node, &needed, &ctx),
+        Some(vec![near])
+    );
+}
+
+/// A cell-mode rig that never delivers a level (delay far beyond the test), so residency is
+/// exactly what the test seeds.
+fn d5_rig(nodes: HashMap<NodeId, PoolNode>) -> Rig {
+    let mut rig = Rig::new(nodes, 512, 8, 10_000);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    rig
+}
+
+/// One frame of the pool alone: the fake GPU cannot follow levels that were seeded by hand.
+fn d5_step(rig: &mut Rig, cut: &[NodeId], camera: &OrbitCamera) -> FramePlan {
+    d5_step_at(rig, cut, camera, 64.0)
+}
+
+fn d5_step_at(rig: &mut Rig, cut: &[NodeId], camera: &OrbitCamera, target: f64) -> FramePlan {
+    let nodes = &rig.nodes;
+    rig.pool
+        .frame(
+            cut,
+            &|id| nodes.get(&id).cloned(),
+            &view(camera),
+            &grid(),
+            ORIGIN,
+            target,
+        )
+        .expect("frame")
+}
+
+fn d5_node(side: f64, stored: &[u8]) -> PoolNode {
+    PoolNode {
+        bounds: cube(ORIGIN, side),
+        stored: stored.to_vec(),
+        buildable: (stored[0], *stored.last().unwrap()),
+        points: 2000,
+    }
+}
+
+fn seed_more(rig: &mut Rig, node: u64, depths: &[u8]) {
+    seed_resident(&mut rig.pool, node, depths);
+    rig.pool.residency_epoch += 1;
+}
+
+fn mask_of(plan: &FramePlan, node: u64) -> [u64; 8] {
+    plan.entries
+        .iter()
+        .find(|entry| entry.node == NodeId::new(node))
+        .expect("entry")
+        .mask
+}
+
+fn active_depths(plan: &FramePlan, rig: &Rig, node: u64) -> Vec<u8> {
+    let slot = plan
+        .entries
+        .iter()
+        .find(|entry| entry.node == NodeId::new(node))
+        .and_then(|entry| rig.pool.mask_slots.get(&entry.node))
+        .map(|slot| slot.slot);
+    let mut depths: Vec<u8> = plan
+        .active
+        .iter()
+        .filter(|level| Some(level.mask_slot) == slot)
+        .map(|level| level.key.depth)
+        .collect();
+    depths.sort_unstable();
+    depths
+}
+
+/// Parent 1 (node depth 0, rep 3) with a coarse resident level 2 only; child 21 (rep 6) fully
+/// resident. The D5 depth of the parent is 4.
+fn d5_pair() -> Rig {
+    let mut rig = d5_rig(HashMap::from([
+        (NodeId::new(1), d5_node(SIDE, &[2, 4, 5])),
+        (NodeId::new(21), d5_node(SIDE / 8.0, &[6, 7])),
+    ]));
+    seed_resident(&mut rig.pool, 1, &[2]);
+    seed_resident(&mut rig.pool, 21, &[6, 7]);
+    rig
+}
+
+#[test]
+fn children_wait_for_the_parent_d5_level() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21]);
+    let mut rig = d5_pair();
+    let plan = d5_step(&mut rig, &cut, &cam);
+    assert_eq!(plan.apply, CutApply::Applied);
+    // The child is held: it neither draws nor masks the parent, which draws its whole zone.
+    assert_eq!(plan.counters.held_nodes, 1);
+    assert_eq!(mask_of(&plan, 1), [0; 8]);
+    assert!(plan.active.iter().all(|l| l.key.node != NodeId::new(21)));
+    assert!(plan.active.iter().any(|l| l.key.node == NodeId::new(1)));
+    // The parent's D5 depth is requested first.
+    assert_eq!(
+        plan.fetch_requests.first(),
+        Some(&rig.pool.key(NodeId::new(1), 4)),
+        "{:?}",
+        plan.fetch_requests
+    );
+    // It stays so while the level is missing, without oscillating.
+    for _ in 0..3 {
+        let plan = d5_step(&mut rig, &cut, &cam);
+        assert_eq!(plan.counters.held_nodes, 1);
+        assert_eq!(mask_of(&plan, 1), [0; 8]);
+    }
+    seed_more(&mut rig, 1, &[4]);
+    let plan = d5_step(&mut rig, &cut, &cam);
+    assert_eq!(plan.counters.held_nodes, 0);
+    assert_ne!(mask_of(&plan, 1), [0; 8]);
+    assert!(plan.active.iter().any(|l| l.key.node == NodeId::new(21)));
+}
+
+#[test]
+fn the_d5_request_comes_first() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21, 22]);
+    let mut rig = d5_rig(HashMap::from([
+        (NodeId::new(1), d5_node(SIDE, &[2, 4, 5])),
+        (NodeId::new(21), d5_node(SIDE / 8.0, &[6, 7])),
+        // A node that already draws (level 5) and wants its coarser level 3, shallower than the D5
+        // depth (4): by depth alone that request would come before the parent's.
+        (
+            NodeId::new(22),
+            PoolNode {
+                bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
+                stored: vec![3, 5],
+                buildable: (3, 5),
+                points: 2000,
+            },
+        ),
+    ]));
+    seed_resident(&mut rig.pool, 1, &[2]);
+    seed_resident(&mut rig.pool, 21, &[6, 7]);
+    seed_resident(&mut rig.pool, 22, &[5]);
+    let plan = d5_step_at(&mut rig, &cut, &cam, 1.0e6);
+    let d5 = rig.pool.key(NodeId::new(1), 4);
+    let other = rig.pool.key(NodeId::new(22), 3);
+    let position = |key| plan.fetch_requests.iter().position(|k| *k == key);
+    assert!(position(other).is_some(), "{:?}", plan.fetch_requests);
+    assert_eq!(position(d5), Some(0), "{:?}", plan.fetch_requests);
+}
+
+#[test]
+fn the_pool_fit_counts_the_d5_level() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21]);
+    let nodes = HashMap::from([
+        (NodeId::new(1), d5_node(SIDE, &[2, 4, 5])),
+        (NodeId::new(21), d5_node(SIDE / 8.0, &[6, 7])),
+    ]);
+    let mut rig = Rig::new(nodes, 64, 8, 10_000);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2]);
+    seed_resident(&mut rig.pool, 21, &[6, 7]);
+    rig.pool
+        .set_level_sizes(NodeId::new(1), &[(2, 1), (4, 22), (5, 22)]);
+    // A coarse want: node 1 wants level 2 only, so its D5 level 4 is not wanted by the entry.
+    d5_step_at(&mut rig, &cut, &cam, 1.0e6);
+    let memo = rig.pool.wanted_memo.as_ref().expect("fit ran");
+    // The D5 level takes pages (a fetch under pressure), so the fit must count it.
+    let d5 = rig.pool.key(NodeId::new(1), 4);
+    assert!(memo.needed.contains(&d5), "{:?}", memo.needed);
+}
+
+#[test]
+fn the_d5_depth_joins_the_active_set_when_the_mask_is_set() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21]);
+    let mut rig = d5_pair();
+    // A resident level above the D5 depth that nothing else makes active.
+    seed_more(&mut rig, 1, &[4]);
+    // A coarse want: the entry draws level 2 only, so level 4 is active only for the gate.
+    let plan = d5_step_at(&mut rig, &cut, &cam, 1.0e6);
+    assert_ne!(mask_of(&plan, 1), [0; 8]);
+    let entry = plan
+        .entries
+        .iter()
+        .find(|e| e.node == NodeId::new(1))
+        .unwrap();
+    assert!(
+        !entry.required_levels().contains(&4),
+        "{:?}",
+        entry.required_levels()
+    );
+    let active = active_depths(&plan, &rig, 1);
+    assert!(active.contains(&4), "{active:?}");
+    let update = plan
+        .mask_updates
+        .iter()
+        .find(|u| Some(u.slot) == rig.pool.mask_slots.get(&NodeId::new(1)).map(|s| s.slot))
+        .expect("update");
+    assert_ne!(update.active & (1 << 4), 0, "{:?}", update);
+}
+
+#[test]
+fn the_d5_gate_settles_within_hold_passes() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 2, 21]);
+    let mut rig = d5_rig(HashMap::from([
+        (NodeId::new(1), d5_node(SIDE, &[2, 4, 5])),
+        (NodeId::new(2), d5_node(SIDE / 2.0, &[2, 5, 6])),
+        (NodeId::new(21), d5_node(SIDE / 8.0, &[6, 7])),
+    ]));
+    seed_resident(&mut rig.pool, 1, &[2]);
+    seed_resident(&mut rig.pool, 2, &[2]);
+    seed_resident(&mut rig.pool, 21, &[6, 7]);
+    for _ in 0..3 {
+        let plan = d5_step(&mut rig, &cut, &cam);
+        assert_eq!(plan.apply, CutApply::Applied);
+        assert_eq!(plan.counters.hold_unsettled, 0);
+        assert_eq!(plan.counters.held_nodes, 2);
+        assert_eq!(mask_of(&plan, 1), [0; 8]);
+        assert_eq!(mask_of(&plan, 2), [0; 8]);
+    }
+    // The grandparent's D5 releases the parent; the child still waits for the parent's.
+    seed_more(&mut rig, 1, &[4]);
+    let plan = d5_step(&mut rig, &cut, &cam);
+    assert_eq!(plan.counters.hold_unsettled, 0);
+    assert_eq!(plan.counters.held_nodes, 1);
+    assert_ne!(mask_of(&plan, 1), [0; 8]);
+    seed_more(&mut rig, 2, &[5]);
+    let plan = d5_step(&mut rig, &cut, &cam);
+    assert_eq!(plan.counters.held_nodes, 0);
+    assert_eq!(plan.counters.hold_unsettled, 0);
+    assert_ne!(mask_of(&plan, 2), [0; 8]);
+}
+
+#[test]
+fn a_retained_frame_keeps_the_d5_depth_its_record_was_written_with() {
+    let cam = camera("fit");
+    let cut = ids(&[1, 21]);
+    let mut rig = d5_pair();
+    seed_more(&mut rig, 1, &[4]);
+    let plan = d5_step_at(&mut rig, &cut, &cam, 1.0e6);
+    assert_eq!(plan.apply, CutApply::Applied);
+    assert_ne!(mask_of(&plan, 1), [0; 8]);
+    let applied = active_depths(&plan, &rig, 1);
+    assert!(applied.contains(&4), "{applied:?}");
+    // The sizes grow past the pool: the fit caps node 1 below the D5 depth and the frame
+    // overflows, so it retains the previous cut (masks are not rewritten).
+    rig.pool
+        .set_level_sizes(NodeId::new(1), &[(2, 300), (4, 600), (5, 600)]);
+    rig.pool
+        .set_level_sizes(NodeId::new(21), &[(6, 300), (7, 600)]);
+    let plan = d5_step_at(&mut rig, &cut, &cam, 64.0);
+    assert_eq!(
+        plan.apply,
+        CutApply::RetainedPrevious,
+        "setup {:?} {:?}",
+        plan.counters,
+        plan.entries
+    );
+    assert!(plan.mask_updates.is_empty());
+    assert_eq!(active_depths(&plan, &rig, 1), applied);
 }

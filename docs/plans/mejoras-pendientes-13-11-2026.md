@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a, D3b y D3c hechos; siguiente: fusionar la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1), luego D4 ([#11](https://github.com/Mili-ssm/OctreeViewer/issues/11)); ver
+Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a, D3b y D3c hechos; fusionada en `main` por la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1); siguiente: D4 ([#11](https://github.com/Mili-ssm/OctreeViewer/issues/11)); ver
 [Cómo retomar](#cómo-retomar-15-11-2026))
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
@@ -24,7 +24,7 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 **Estado del código:** `feat/r3-v75` con D3c integrada: `v7` final es la salida predeterminada del CLI, el wasm
 y la app web ([ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md)); los datasets de render son
 `target/render-data/belvedere-v7` y `majadas-v7` (los `*-v75` siguen en disco, sin uso). La rama está publicada
-en `origin` y aún no está integrada en `main`. El checkout principal sigue en
+en `origin` y se integró en `main` el 15-11-2026 ([PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1)). El checkout principal sigue en
 `feat/render-r3-node-cells` (`c473c85`, ancestro) con una línea `.superpowers/` sin commit en `.gitignore`
 que no es de esta línea de trabajo.
 

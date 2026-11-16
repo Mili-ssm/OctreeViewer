@@ -1,5 +1,6 @@
 //! Task 6: instance packing, page split, flags, frame, precision and the WGSL decode.
 
+use crate::cell_pages::{is_grid_aligned, pack_level_aligned};
 use std::collections::HashSet;
 
 use glam::{DMat4, DVec3, dcamera};
@@ -369,7 +370,7 @@ fn layout_literals_are_fixed() {
     assert_eq!(CellInstance::EMPTY.0, [0xFFFF_FFFF, 0xFFFF_FFFF, 0, 0]);
     assert_eq!((PAGE_HAS_INTENSITY, PAGE_HAS_CLASS), (1, 2));
     assert_eq!(size_of::<CellInstance>(), 16);
-    assert_eq!(size_of::<PageEntry>(), 32);
+    assert_eq!(size_of::<PageEntry>(), 48);
     let mut cells = line(12, 3, 0, 0).cells;
     cells[1].intensity_sum = 9.0;
     cells[1].intensity_count = 1;
@@ -1017,4 +1018,104 @@ fn the_packed_intensity_word_rounds_half_away_from_zero_and_marks_missing() {
         MAX_INTENSITY,
         "above the u16 range saturates"
     );
+}
+
+/// Words 8-10 of the entry carry the page minimum relative to the node corner at the page depth,
+/// word 11 the depth; `(rel_origin + cell rel) >> (depth - rep)` is the cell's 8^3 mask coordinate.
+#[test]
+fn page_entry_round_trips_the_relative_origin_and_depth() {
+    for (grid, bounds, node_depth) in [small_node(), offset_node()] {
+        check_relative_origin(grid, bounds, node_depth);
+    }
+}
+
+fn check_relative_origin(grid: CellGrid, bounds: SpatialBounds, node_depth: u8) {
+    let rep = representative_depth(&grid, bounds);
+    let frame = PageFrame {
+        grid,
+        coordinate_origin: [0.0; 3],
+        visual_scale: 1.0,
+        eye_scaled: [0.0; 3],
+    };
+    let mut rng = Lcg(5);
+    for depth in [
+        rep,
+        rep + 2,
+        node_depth,
+        node_depth + 31,
+        node_depth + 32,
+        node_depth - 2,
+    ] {
+        let lo: [u64; 3] = std::array::from_fn(|a| node_range(&grid, bounds, depth, a).0);
+        let width = 1_u64 << depth.saturating_sub(node_depth).min(20);
+        let mut cells = vec![cell(lo)];
+        for _ in 0..700 {
+            cells.push(cell(std::array::from_fn(|a| lo[a] + rng.next() % width)));
+        }
+        let level = level(depth, cells);
+        let packed = pack_level(&grid, bounds, NodeId::new(1), &level);
+        for page in &packed.pages {
+            let entry = page.entry(&frame, 3, 0);
+            assert_eq!(entry.0[11], u32::from(depth));
+            let expected: [u32; 3] = if depth < node_depth || depth - node_depth > 31 {
+                [u32::MAX; 3]
+            } else {
+                // Independent of the packer: the node corner in cells at this depth is
+                // `(bounds.min - root_min) / side`, exact in f64 for an aligned node.
+                let side = grid.root_side / (1_u64 << depth) as f64;
+                std::array::from_fn(|a| {
+                    let corner = ((bounds.min()[a] - grid.root_min[a]) / side).round() as u64;
+                    (page.origin[a] - corner) as u32
+                })
+            };
+            assert_eq!(page.rel_origin, expected, "depth {depth}");
+            assert_eq!(entry.0[8..11], expected, "depth {depth}");
+        }
+        if depth >= rep && depth - node_depth <= 31 {
+            for (index, cell) in level.cells.iter().enumerate() {
+                let page =
+                    &packed.pages[packed.pages.partition_point(|p| p.first_cell <= index) - 1];
+                let instance = packed.instances[slot_of(&packed, index)];
+                let rel = instance.rel();
+                let mask = instance.mask_index();
+                for a in 0..3 {
+                    let at_corner = page.rel_origin[a] + u32::from(rel[a]);
+                    assert_eq!(
+                        at_corner >> (depth - rep),
+                        [mask & 7, (mask >> 3) & 7, mask >> 6][a],
+                        "depth {depth} axis {a} cell {:?}",
+                        cell.coord
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Side 1/16 at (7, 11, 13)/16: cell coordinates that are neither zero nor powers of two, so a
+/// shift of the wrong corner cannot match by accident.
+fn offset_node() -> (CellGrid, SpatialBounds, u8) {
+    let grid = CellGrid {
+        root_min: [0.0; 3],
+        root_side: 1.0,
+    };
+    let min = [7.0 / 16.0, 11.0 / 16.0, 13.0 / 16.0];
+    let bounds = SpatialBounds::new(min, min.map(|v| v + 1.0 / 16.0)).unwrap();
+    let node_depth = representative_depth(&grid, bounds) - 3;
+    assert_eq!(node_depth, 4);
+    (grid, bounds, node_depth)
+}
+
+#[test]
+fn an_off_grid_node_gets_no_relative_origin() {
+    let (grid, aligned_bounds, _) = small_node();
+    assert!(is_grid_aligned(&grid, aligned_bounds));
+    // Min at 0.4 node cells past the grid line: same side, so the same depths.
+    let shifted = [3.4 / 16.0, 5.0 / 16.0, 2.0 / 16.0];
+    let bounds = SpatialBounds::new(shifted, shifted.map(|v| v + 1.0 / 16.0)).unwrap();
+    assert!(!is_grid_aligned(&grid, bounds));
+    let lo: [u64; 3] = std::array::from_fn(|a| node_range(&grid, bounds, 7, a).0);
+    let level = level(7, vec![cell(lo)]);
+    let packed = pack_level_aligned(&grid, bounds, NodeId::new(1), &level, false);
+    assert_eq!(packed.pages[0].rel_origin, [u32::MAX; 3]);
 }

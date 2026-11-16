@@ -41,12 +41,13 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RF-02 | Si se carga una nube cuyo CRS difiere del de las nubes abiertas, entonces el visor deberá rechazarla con un mensaje que nombre ambos CRS. | Propietario, ADR 0021 |
 | RF-03 | El visor deberá dibujar cada celda como un **cubo 3D** alineado con la rejilla global. | P1, ADR 0019 |
 | RF-04 | Mientras el modo de huecos sea **literal** (predeterminado), el visor no deberá dibujar cubos donde la fuente no tiene puntos. | P4 |
-| RF-05 | Donde el usuario active la **continuidad** en una nube, el visor deberá aplicar a toda esa nube un tamaño mínimo de cubo derivado de su densidad global (no por región). Pasa a ser el modo «espaciado de la nube» del selector de tamaño mínimo, junto a «solo px» y «longitud» en m/cm/mm ([ADR 0049](adr/0049-tamano-minimo-del-voxel.md), pendiente de implementar). | P4 |
+| RF-05 | Donde el usuario active la **continuidad** en una nube, el visor deberá aplicar a toda esa nube un tamaño mínimo de cubo derivado de su densidad global (no por región). Pasa a ser una opción del filtro de tamaño mínimo en longitud (desactivado, m/cm/mm o espaciado de la nube), que actúa junto al mínimo en px: en cada celda gana el mayor ([ADR 0049](adr/0049-tamano-minimo-del-voxel.md), revisión del 16-11-2026; pendiente de implementar). | P4 |
 | RF-06 | Mientras el modo de px sea **fijo** (predeterminado), el visor deberá refinar de forma progresiva hacia el objetivo elegido, dibujando lo residente sin esperar a completarlo. | P5 |
 | RF-07 | Donde el modo de px **dinámico** esté activo, el visor deberá ajustar el objetivo de px para sostener 16,7 ms por frame, con histéresis. | P5 |
 | RF-08 | Mientras la cámara se mueve, el visor deberá reconstruir con la última vista y dibujar la escena anterior hasta que llegue la nueva. | P7, ADR 0018 |
 | RF-09 | El visor deberá leer datasets locales (`Blob`) y remotos (HTTP Range). | P6, ADR 0023 |
 | RF-10 | El visor deberá ofrecer medición (distancias, alturas, áreas), filtro por clasificación y rangos de atributos, recorte por caja o plano y exportación de la selección a LAS/LAZ. | Propietario |
+| RF-31 | Mientras el visor refina o engrosa una zona, el nivel dibujado en cada punto deberá cambiar como mucho un nivel entre dos frames consecutivos y dos celdas vecinas dibujadas diferir como mucho en uno, construyendo los niveles intermedios que la cadena no guarda; en la cola bajo la separación de la nube, pendiente de revisión ([ADR 0053](adr/0053-transiciones-de-un-nivel.md), pendiente de implementar en la fase 2b). | Propietario |
 
 ### API pública
 
@@ -160,7 +161,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | --- | --- | --- |
 | GPU mínima | GPU o iGPU con ≥ 4 GB disponibles para WebGPU; sustituye a P2. | [ADR 0033](adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), EQ-REF |
 | R3: hojas, claves e instancia | Continuación adaptativa de hojas, clave regional más allá de 21 bits e instancia de 12 B. | ADR 0032, R3-Q7 y R3-Q8 |
-| R3: hoja separada | No se refina más; entra en la excepción «densidad de la fuente» de RQ-09. **Cambia (propietario, 15-11-2026):** el render sigue refinando por debajo del espaciado ([ADR 0048](adr/0048-el-render-dibuja-el-nivel-pedido.md), pendiente de implementar). | R3-Q9 |
+| R3: hoja separada | No se refina más; entra en la excepción «densidad de la fuente» de RQ-09. **Cambia (propietario, 15-11-2026):** el render sigue refinando por debajo del espaciado ([ADR 0048](adr/0048-el-render-dibuja-el-nivel-pedido.md), implementado en la fase 1, 16-11-2026). | R3-Q9 |
 | R3: saltos de pose | Con `DescendantTooFine` se retiene el corte anterior hasta completar el nuevo. | ADR 0033, R3-Q10 |
 | R3: corte mayor que el pool | Los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que el corte quepa. **Con el LOD por celda:** sube el objetivo de px efectivo de toda la nube, para que siga homogénea ([ADR 0052](adr/0052-retencion-y-ajuste-al-pool-por-celda.md)). | ADR 0033, R3-Q11 |
 | R3: error proyectado | Nivel por octante con la arista proyectada real; ≤ 2× la CPU a 2–8 px y ≤ 2,5× a 1 px en la pose rasante. | ADR 0034, R3-Q12 |
@@ -202,6 +203,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RF-08 | Técnico | Blando | Medio para no bloquear el frame (ADR 0018) | Otra estrategia dé la misma fluidez |
 | RF-09 | Funcional | Duro | Nubes locales y remotas (P6) | — |
 | RF-10 | Funcional | Duro | Funciones de producto | — |
+| RF-31 | Funcional | Duro (la cola, blando) | Suavidad visual y tiempo de carga; la cola bajo la separación queda pendiente de medir | La medida de la cola muestre que no cabe o no compensa |
 | RF-11 | Funcional | Duro | Integrador, resolución del propietario (ADR 0026) | — |
 | RF-12–RF-15 | Funcional | Duro | Superficie de la API para el integrador | — |
 | RF-20, RF-21 | Funcional | Duro | Entradas y fusión del conversor | — |

@@ -3,10 +3,11 @@
 //! behaviour; every method forwards. Not a stable API.
 
 use crate::cell_driver::CellTarget;
+use crate::cell_lod::LodView;
 use crate::cell_pages::{PackedLevel, PageEntry, PageFrame};
 use crate::cell_render::{
-    CellFrame, CellLimitMode, CellPoolError, CellRenderer, MASK_WORDS, cells_supported,
-    plan_device_limits,
+    CellFrame, CellLimitMode, CellPoolError, CellRenderer, LodCounters, NODE_WORDS,
+    cells_supported, plan_device_limits,
 };
 
 /// The device limits the production pool needs on `adapter` (what `SurfaceRenderer` requests).
@@ -74,12 +75,12 @@ impl BenchRenderer {
         self.renderer.alloc_mask_slot()
     }
 
-    pub fn set_node_mask(
+    pub fn set_node_record(
         &mut self,
         slot: u32,
-        mask: &[u32; MASK_WORDS],
+        record: &[u32; NODE_WORDS],
     ) -> Result<(), CellPoolError> {
-        self.renderer.set_node_mask(slot, mask)
+        self.renderer.set_node_record(slot, record)
     }
 
     pub fn set_active_pages(&mut self, pages: &[(u32, PageEntry)]) -> Result<(), CellPoolError> {
@@ -106,6 +107,16 @@ impl BenchRenderer {
                 viewport,
             },
         );
+    }
+
+    /// Per-depth drawn-cell counters of the slot pass (cell mode); off by default.
+    pub fn set_counters(&mut self, enabled: bool) {
+        self.renderer.set_counters(enabled);
+    }
+
+    /// The counters of the last frame drawn with `set_counters(true)`; blocks until mapped.
+    pub fn read_lod_counters(&self) -> LodCounters {
+        self.renderer.read_lod_counters(&self.device, &self.queue)
     }
 
     /// Indirect draw arguments (20 bytes per phase); word 1 of phase 1 (or of the plain pass) and
@@ -148,8 +159,16 @@ impl CellTarget for BenchRenderer {
         Ok(self.renderer.alloc_mask_slot())
     }
 
-    fn set_node_mask(&mut self, slot: u32, mask: &[u32; MASK_WORDS]) -> Result<(), CellPoolError> {
-        self.renderer.set_node_mask(slot, mask)
+    fn set_node_record(
+        &mut self,
+        slot: u32,
+        record: &[u32; NODE_WORDS],
+    ) -> Result<(), CellPoolError> {
+        self.renderer.set_node_record(slot, record)
+    }
+
+    fn set_lod_view(&mut self, view: Option<LodView>) {
+        self.renderer.set_lod_view(view);
     }
 
     fn set_active_pages(

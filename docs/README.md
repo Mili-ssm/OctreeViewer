@@ -1,6 +1,6 @@
 # Índice de documentación
 
-Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [estado y prioridades](estado.md); lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues)). Marcas:
+Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [estado y prioridades](estado.md); lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues). Marcas:
 **vivo** = se mantiene con el código; **histórico** = registro fechado, no se edita ([política](../CONTRIBUTING.md#convenciones)).
 
 ## Requisitos
@@ -29,12 +29,13 @@ trabajo nuevo va en un plan nuevo.
 | --- | --- | --- |
 | [Plan V7](plans/format-v7-plan.md) | Contrato, recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | activo |
 | [Render y carga a escala](plans/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | activo |
-| [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho, siguen el PR a `main` y D4) |
+| [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho y fusionado en `main`, sigue D4) |
 | [D3c: congelado de V7 final](plans/d3c-congelado-v7-final.md) | Identidad final V7 sobre v7.5-pre con el escritor híbrido, salida predeterminada y regeneración de datasets y referencias (ADR 0044). | completado |
 | [Publicación del repositorio](plans/publicacion-del-repositorio.md) | Repositorio público: portada, documentación, demo experimental en GitHub Pages y ajustes de GitHub (ADR 0045). | completado |
 | [Muestra de la demo en V7](plans/muestra-de-la-demo-en-v7.md) | La muestra integrada pasa a V7 y a 589.824 puntos; V5 queda como heredado hasta V8 (ADR 0047). | completado |
-| [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050); fase 0a de medida antes de la GPU. | en curso |
-| [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | propuesto |
+| [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050, 0052 y 0053); fase 1 hecha, fase 2a en curso. | en curso |
+| [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
+| [Fase 2a: LOD por celda en la GPU](plans/fase-2a-lod-por-celda-en-gpu.md) | Plan detallado de la fase 2a (#44): gemelo Rust de la decisión por celda, medida de la métrica, corte en modo celda, decisión en el paso de ranuras y opción `cellLod`. | implementado |
 | [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | completado |
 | [R3: anchura de región, layout, máscaras y flags](plans/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | completado |
 | [R4: pirámide densa y rejilla global](plans/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | completado |
@@ -119,6 +120,8 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [R3: opciones para no dibujar celdas ocultas](records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md) | HZB en dos pasadas, raymarching, híbrido o puntos por cómputo; estado actual y qué medir (OQ-08). | evaluación |
 | [R3-T4: celdas por encima del objetivo](records/benchmarks/R3_T4_OFFAXIS_05-11-2026.md) | Protección dentro del octante y factor fuera de eje; el factor global hace fallar Majadas, las demás variantes pasan. | fechado |
 | [R3 fase 0a: LOD por celda en CPU](records/benchmarks/R3_CELL_LOD_0A_15-11-2026.md) | `cell_lod` frente a `octant_tight` y la CPU en Belvedere y Majadas, con zoom; el rango contiguo da 531 MiB en Majadas a 1 px (> 512 MiB); con la residencia R2, 294 MiB; variantes de 3 niveles (16-11-2026). | parada; resuelta con R2 |
+| [R3 fase 2a: métrica de refinado por celda](records/benchmarks/R3_FASE2A_METRICA_16-11-2026.md) | `bound`, `edge` y `distance` frente a los criterios de parada de la fase 2a en Belvedere y Majadas; pasa `edge` (≤ 0,006 % sobre el objetivo dentro), `bound` falla con 0,596 % en Majadas a 8 px (16-11-2026). | fechado |
+| [R3 fase 2a: selección por celda en la GPU](records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-2026.md) | Puerta de partición (0 huecos/0 dobles), defectos del modo `cell` corregidos, contadores por profundidad en bench nativo y probe de navegador `octant`/`cell` en Belvedere y comparación en navegador: bandas sin corte en `cell` (16-11-2026). | cerrado |
 | [R3 fase 1: niveles a demanda](records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md) | Cierre de la fase 1 (#35): escenario de pares cercanos, puerta de engrosamientos, navegador con `fs_e430` y los fallos anteriores arreglados (dos de R3-Q21). | vigente |
 | [R3-T4: alternativas al error proyectado](records/benchmarks/R3_T4_METRIC_05-11-2026.md) | Métrica ajustada y nivel por octante frente a la cota; `octant_tight` casi iguala a la CPU salvo 2,27× a 1 px. | fechado |
 | [R3-T4: spike de cobertura nativo](records/benchmarks/R3_T4_COVERAGE_05-11-2026.md) | Instancias, bytes y `DescendantTooFine` por pose en Belvedere y Majadas; saltan los criterios de parada. | parada |

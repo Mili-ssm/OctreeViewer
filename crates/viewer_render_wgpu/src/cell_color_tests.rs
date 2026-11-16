@@ -8,6 +8,7 @@ use super::*;
 use crate::ColorMode;
 use crate::cell_driver::CellColorRanges;
 use crate::cell_render::CellColor;
+use crate::test_support::mask_record;
 
 const GRID: CellGrid = CellGrid {
     root_min: [0.0, 0.0, 990.0],
@@ -107,7 +108,7 @@ fn run(h: &Harness, pool: &mut CellRenderer, case: &Case) -> ([u8; 4], [u8; 4]) 
     pool.free_pages(&[0]).unwrap();
     pool.upload_level(&packed, &[0]).unwrap();
     let mask = [0_u32; MASK_WORDS];
-    pool.set_node_mask(0, &mask).unwrap();
+    pool.set_node_record(0, &mask_record(&mask)).unwrap();
     let frame = PageFrame {
         grid: GRID,
         coordinate_origin: [0.0; 3],

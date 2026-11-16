@@ -513,6 +513,16 @@ function handleWorkerMessage(event) {
             });
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
+        // The demo draws with per-cell level selection (owner, 16-11-2026); `?cellLod=octant` compares
+        // with the library default. No UI control yet.
+        const requestedCellLod = new URLSearchParams(location.search).get("cellLod");
+        let cellLod = "cell";
+        if (requestedCellLod === "octant" || requestedCellLod === "cell") {
+            cellLod = requestedCellLod;
+        } else if (requestedCellLod !== null) {
+            console.warn(`ignoring ?cellLod=${requestedCellLod}: expected "octant" or "cell"`);
+        }
+        worker.postMessage({ type: "setCellLod", mode: cellLod });
         requestFrameOnce();
         if (reopenAfterRecreate) {
             const { file, name, attributes } = reopenAfterRecreate;
@@ -648,6 +658,8 @@ function handleWorkerMessage(event) {
             ? `GPU device recovered (attempt ${data.attempt})`
             : `GPU device lost: recovering (attempt ${data.attempt})…`;
         if (data.state === "recovered") wakeRendering();
+    } else if (data.type === "warning") {
+        console.warn(`${data.operation}: ${data.message}`);
     } else if (data.type === "error") {
         loadingFile = false;
         observedRefinementId = requestedRefinementId;

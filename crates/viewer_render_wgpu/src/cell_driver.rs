@@ -34,10 +34,11 @@ use std::{
 
 use viewer_core::{NodeId, SpatialBounds};
 
+use crate::cell_lod::{LodView, MAX_NODE_SPAN, NodeLod, node_record};
 use crate::cell_pages::{MISSING_INTENSITY, PAGE_HAS_INTENSITY};
 
 use crate::{
-    CellCutError, CellGrid, CellPool, CellPoolEvent, CutApply, FramePlan, LevelKey, MASK_WORDS,
+    CellCutError, CellGrid, CellPool, CellPoolEvent, CutApply, FramePlan, LevelKey, NODE_WORDS,
     NodeCells, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, PoolConfig, PoolCounters,
     PoolNode, ViewProjection, node_cells::anchor_tolerance, pack_level,
 };
@@ -67,11 +68,17 @@ pub trait CellTarget {
     /// The next mask slot, in order from 0 after a pool is created.
     fn alloc_mask_slot(&mut self) -> Result<Option<u32>, Self::Error>;
 
-    fn set_node_mask(&mut self, slot: u32, mask: &[u32; MASK_WORDS]) -> Result<(), Self::Error>;
+    fn set_node_record(&mut self, slot: u32, record: &[u32; NODE_WORDS])
+    -> Result<(), Self::Error>;
 
     /// The intensity and elevation ranges of the cut drawn this frame, for the shader colour modes
     /// (R3-Q32). Called before `set_active_pages`. A target without shader modes ignores it.
     fn set_color_ranges(&mut self, _ranges: CellColorRanges) {}
+
+    /// The per-cell decision's view of the frame being drawn (`Some` in cell mode, `None` in
+    /// octant mode). Called before `set_active_pages`. A target that cannot draw cell mode
+    /// ignores it.
+    fn set_lod_view(&mut self, _view: Option<LodView>) {}
 
     /// The page table of this frame; `frame` is the one its entries were built with.
     fn set_active_pages(
@@ -344,6 +351,12 @@ pub struct CellDriver {
     /// Pool page slot of each page of a level that is uploading or resident.
     slots: HashMap<LevelKey, Vec<u32>>,
     masks_allocated: u32,
+    /// What each written mask slot needs to rebuild its node record when the eye moves.
+    node_slots: HashMap<u32, NodeSlot>,
+    /// The frame the anchors of `node_slots` were last written with.
+    anchor_frame: Option<([f64; 3], [f64; 3], f64)>,
+    /// The mode the records of `node_slots` were last written in.
+    records_mode: Option<crate::LodMode>,
     /// The target received writes since the last reset, so a missing pool there means loss.
     armed: bool,
     /// A target call failed: the target state is unknown until the next reset.
@@ -364,6 +377,13 @@ pub struct CellDriver {
     /// The newest cell generation any message brought: a node of an older colour generation of
     /// the same dataset is dropped, and one stored with an older one is forgotten first.
     newest_generation: Option<u64>,
+}
+
+/// The last record of a mask slot and the node corner it needs to follow the eye.
+struct NodeSlot {
+    node: NodeLod,
+    /// Node corner in dataset units: `root_min + node_lo * side_at_node_depth`.
+    corner: [f64; 3],
 }
 
 /// Bytes of a packed level on the CPU.
@@ -493,6 +513,9 @@ impl CellDriver {
             cpu_bytes: 0,
             slots: HashMap::new(),
             masks_allocated: 0,
+            node_slots: HashMap::new(),
+            anchor_frame: None,
+            records_mode: None,
             armed: false,
             failed: false,
             dirty: false,
@@ -519,6 +542,15 @@ impl CellDriver {
     pub fn set_min_side(&mut self, min_side: Option<f64>) {
         if self.pool.min_side() != min_side {
             self.pool.set_min_side(min_side);
+            self.dirty = true;
+        }
+    }
+
+    /// Per-octant or per-cell level selection (ADR 0050). Takes effect on the next frame; the
+    /// pool re-plans and re-sends every node's mask record ([`CellPool::set_lod_mode`]).
+    pub fn set_lod_mode(&mut self, mode: crate::LodMode) {
+        if self.pool.lod_mode() != mode {
+            self.pool.set_lod_mode(mode);
             self.dirty = true;
         }
     }
@@ -844,6 +876,9 @@ impl CellDriver {
             node.live = 0;
         }
         self.masks_allocated = 0;
+        self.node_slots.clear();
+        self.anchor_frame = None;
+        self.records_mode = None;
         self.armed = false;
         self.failed = false;
         self.dirty = true;
@@ -1030,7 +1065,7 @@ impl CellDriver {
             self.failed = true;
             return Err(CellDriverError::OfferRefused(key));
         }
-        if let Err(error) = self.execute(target, view, &mut report, mark) {
+        if let Err(error) = self.execute(target, view, target_px, &mut report, mark) {
             // The target kept part of this frame: empty it so the reset of the next frame meets
             // the fresh target it assumes.
             target.drop_pool();
@@ -1059,6 +1094,7 @@ impl CellDriver {
         &mut self,
         target: &mut T,
         view: &ViewProjection,
+        target_px: f64,
         report: &mut FrameReport,
         mark: &mut dyn FnMut(FramePhase),
     ) -> Result<(), CellDriverError<T::Error>> {
@@ -1095,24 +1131,99 @@ impl CellDriver {
             report.uploaded_pages += upload.page_range.len();
             report.uploaded_levels += 1;
         }
-        for update in &plan.mask_updates {
-            self.ensure_mask(target, update.slot)?;
-            let words: [u32; MASK_WORDS] =
-                std::array::from_fn(|i| (update.mask[i / 2] >> (32 * (i % 2))) as u32);
-            target
-                .set_node_mask(update.slot, &words)
-                .map_err(CellDriverError::Target)?;
-        }
-        if let Some(max) = plan.active.iter().map(|active| active.mask_slot).max() {
-            self.ensure_mask(target, max)?;
-        }
-        mark(FramePhase::Written);
         let frame = PageFrame {
             grid: self.config.grid,
             coordinate_origin: self.config.coordinate_origin,
             visual_scale: view.visual_scale(),
             eye_scaled: target.eye(),
         };
+        let stamp = (
+            frame.eye_scaled,
+            frame.coordinate_origin,
+            frame.visual_scale,
+        );
+        // A mode switch rewrites every record: a retained frame sends no `MaskUpdate`, and the
+        // records of the other mode hold other active bits.
+        let mode = self.pool.lod_mode();
+        let mode_changed = self.records_mode != Some(mode);
+        // In cell mode the shader's active bits are the depths this frame emits for the node
+        // (R3-Q21: a retained frame rebuilds the active list without a `MaskUpdate`).
+        let cell_mode = mode == crate::LodMode::Cell;
+        // The anchors of the live slots follow the frame like the page origins do: a changed eye,
+        // origin or scale rewrites them below, after the records of this plan. Only cell mode
+        // reads them (a switch to it is covered by `mode_changed`).
+        let anchors_stale = cell_mode && self.anchor_frame != Some(stamp);
+        let mut emitted: HashMap<u32, Vec<u8>> = HashMap::new();
+        if cell_mode {
+            for active in &plan.active {
+                emitted
+                    .entry(active.mask_slot)
+                    .or_default()
+                    .push(active.key.depth);
+            }
+        }
+        let emitted_bits = |slot: u32, node_depth: u8| {
+            emitted.get(&slot).map_or(0, |depths| {
+                depths
+                    .iter()
+                    .filter(|depth| **depth >= node_depth && **depth - node_depth <= MAX_NODE_SPAN)
+                    .fold(0u64, |bits, depth| bits | 1 << (depth - node_depth))
+            })
+        };
+        // A slot the pool freed holds no node: it needs no anchor until a node takes it again.
+        for slot in self.pool.free_mask_slots() {
+            self.node_slots.remove(&slot);
+        }
+        for update in &plan.mask_updates {
+            self.ensure_mask(target, update.slot)?;
+            let grid = &self.config.grid;
+            let side = grid.root_side / (1_u64 << update.node_depth) as f64;
+            let slot = NodeSlot {
+                node: NodeLod {
+                    anchor: [0.0; 3],
+                    node_depth: update.node_depth,
+                    active: if cell_mode {
+                        emitted_bits(update.slot, update.node_depth)
+                    } else {
+                        update.active
+                    },
+                    mask: update.mask,
+                },
+                corner: std::array::from_fn(|axis| {
+                    grid.root_min[axis] + update.node_lo[axis] as f64 * side
+                }),
+            };
+            self.node_slots.insert(update.slot, slot);
+            self.write_record(target, update.slot, &frame)?;
+        }
+        if anchors_stale || mode_changed || cell_mode {
+            let rewritten: HashSet<u32> = plan.mask_updates.iter().map(|u| u.slot).collect();
+            let mut slots: Vec<u32> = self
+                .node_slots
+                .keys()
+                .copied()
+                .filter(|slot| !rewritten.contains(slot))
+                .collect();
+            slots.sort_unstable();
+            for slot in slots {
+                let state = self.node_slots.get_mut(&slot).expect("a live slot");
+                let active = if cell_mode {
+                    emitted_bits(slot, state.node.node_depth)
+                } else {
+                    state.node.active
+                };
+                if anchors_stale || mode_changed || active != state.node.active {
+                    state.node.active = active;
+                    self.write_record(target, slot, &frame)?;
+                }
+            }
+        }
+        self.records_mode = Some(mode);
+        self.anchor_frame = Some(stamp);
+        if let Some(max) = plan.active.iter().map(|active| active.mask_slot).max() {
+            self.ensure_mask(target, max)?;
+        }
+        mark(FramePhase::Written);
         let mut table: Vec<(u32, PageEntry)> = Vec::new();
         for active in &plan.active {
             let level = self
@@ -1142,12 +1253,45 @@ impl CellDriver {
         // Nothing resident and no pool yet: there is no page table to write.
         if !table.is_empty() || target.has_pool() {
             target.set_color_ranges(colors);
+            target.set_lod_view(cell_mode.then(|| {
+                let min_side = self
+                    .pool
+                    .min_side()
+                    .map_or(0.0, |side| side * view.visual_scale());
+                let [width, height] = view.viewport();
+                LodView::from_camera(
+                    &view.camera(),
+                    [width as f32, height as f32],
+                    target_px as f32,
+                    min_side as f32,
+                )
+            }));
             target
                 .set_active_pages(&table, &frame)
                 .map_err(CellDriverError::Target)?;
         }
         mark(FramePhase::ActivePagesSet);
         Ok(())
+    }
+
+    /// Writes the record of `slot` with its anchor in `frame`, computed like a page origin.
+    fn write_record<T: CellTarget>(
+        &mut self,
+        target: &mut T,
+        slot: u32,
+        frame: &PageFrame,
+    ) -> Result<(), CellDriverError<T::Error>> {
+        let state = self
+            .node_slots
+            .get_mut(&slot)
+            .expect("a slot with a record");
+        state.node.anchor = std::array::from_fn(|axis| {
+            ((state.corner[axis] - frame.coordinate_origin[axis]) * frame.visual_scale
+                - frame.eye_scaled[axis]) as f32
+        });
+        target
+            .set_node_record(slot, &node_record(&state.node))
+            .map_err(CellDriverError::Target)
     }
 
     fn ensure_mask<T: CellTarget>(

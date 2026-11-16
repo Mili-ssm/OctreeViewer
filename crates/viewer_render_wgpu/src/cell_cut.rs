@@ -65,6 +65,36 @@ impl Hasher for FxHasher {
 pub(crate) type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 pub(crate) type FastSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 
+/// How a node's levels are chosen for drawing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LodMode {
+    /// One level per octant; a spanning level (depth <= the node's) is drawn whole and alone.
+    #[default]
+    Octant,
+    /// Several levels per node may draw at once, chosen per cell by the GPU: the active set is
+    /// the closest resident level of each octant, restricted to the depths a node record can
+    /// hold (`cell_depth_range`).
+    Cell,
+}
+
+/// Depths `node_depth..=node_depth + MAX_NODE_SPAN` a node may activate in cell mode (E2).
+pub(crate) fn cell_depth_range(node_depth: u8) -> (u8, u8) {
+    (
+        node_depth,
+        node_depth.saturating_add(crate::cell_lod::MAX_NODE_SPAN),
+    )
+}
+
+/// `depths` restricted to `cell_depth_range(node_depth)`.
+pub(crate) fn in_cell_range(depths: &[u8], node_depth: u8) -> Vec<u8> {
+    let (lo, hi) = cell_depth_range(node_depth);
+    depths
+        .iter()
+        .copied()
+        .filter(|depth| (lo..=hi).contains(depth))
+        .collect()
+}
+
 /// Deepest ancestor-descendant gap (in node levels) a mask can express: 8 cells -> 1 cell.
 pub(crate) const MAX_MASK_LEVELS: u8 = 3;
 
@@ -357,9 +387,28 @@ pub(crate) fn drawn_levels(
     stored: &[u8],
     resident: &[u8],
     node_depth: u8,
+    mode: LodMode,
 ) -> ([Option<u8>; 8], [bool; 8]) {
     let mut drawn = [None; 8];
     let mut stage = [false; 8];
+    if mode == LodMode::Cell {
+        // No level below the node or beyond its span can draw, and no depth is forced on the
+        // others: the node draws the closest resident level of each octant.
+        let stored = in_cell_range(stored, node_depth);
+        let resident = in_cell_range(resident, node_depth);
+        if stored.is_empty() {
+            return (drawn, stage);
+        }
+        for o in 0..8 {
+            if let Some(w) = wanted[o]
+                && let Some((depth, _)) = resident_depth(served_depth(&stored, w), &resident)
+            {
+                drawn[o] = Some(depth);
+                stage[o] = depth < w;
+            }
+        }
+        return (drawn, stage);
+    }
     for o in 0..8 {
         if let Some(w) = wanted[o]
             && let Some((depth, _)) = resident_depth(served_depth(stored, w), resident)
@@ -397,7 +446,7 @@ pub fn cell_cut(
     coordinate_origin: [f64; 3],
     target_px: f64,
 ) -> Result<Vec<CellCutEntry>, CellCutError> {
-    cell_cut_with(cut, node, grid, &|_, octant, data| {
+    cell_cut_with(cut, node, grid, LodMode::Octant, &|_, octant, data| {
         octant_wanted_depth(
             view,
             grid,
@@ -418,6 +467,7 @@ pub(crate) fn cell_cut_with(
     cut: &[NodeId],
     node: &dyn Fn(NodeId) -> Option<CellCutNode>,
     grid: &CellGrid,
+    mode: LodMode,
     wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
 ) -> Result<Vec<CellCutEntry>, CellCutError> {
     let mut entries = Vec::with_capacity(cut.len());
@@ -444,7 +494,13 @@ pub(crate) fn cell_cut_with(
             lo: range.map(|(lo, _)| lo),
             hi: range.map(|(_, hi)| hi),
         });
-        has_resident.push(!data.resident.is_empty());
+        // Cell mode: a node whose resident levels all lie outside its span draws nothing, so it
+        // must not hide its ancestors' cells.
+        has_resident.push(if mode == LodMode::Cell {
+            !in_cell_range(&data.resident, rep.saturating_sub(MAX_MASK_LEVELS)).is_empty()
+        } else {
+            !data.resident.is_empty()
+        });
         nodes.push(data);
     }
 
@@ -498,8 +554,21 @@ pub(crate) fn cell_cut_with(
         // A level at depth <= the node's spans octants and cannot be split; when no finer level is
         // buildable, the whole node uses the finest one.
         let spans_all = finest <= node_depth;
+        // Cell mode: a wanted depth is clamped to the usable range; nothing below the node is
+        // wanted, and a node with no buildable depth inside the range keeps the view's depth
+        // (nothing of it can draw, see `drawn_levels`).
+        let cell_range = {
+            let (lo, hi) = cell_depth_range(node_depth);
+            let (lo, hi) = (lo.max(data.buildable.0), hi.min(data.buildable.1));
+            (mode == LodMode::Cell && lo <= hi).then_some((lo, hi))
+        };
         for o in 0..8 {
             if octant_fully_masked(&entry.mask, o) {
+                continue;
+            }
+            if mode == LodMode::Cell {
+                let w = wanted_depth(entry.node, o, data);
+                entry.wanted[o] = Some(cell_range.map_or(w, |(lo, hi)| w.clamp(lo, hi)));
                 continue;
             }
             let mut wanted = if spans_all {
@@ -514,8 +583,13 @@ pub(crate) fn cell_cut_with(
             }
             entry.wanted[o] = Some(wanted);
         }
-        (entry.drawn, entry.stage) =
-            drawn_levels(&entry.wanted, &data.stored, &data.resident, node_depth);
+        (entry.drawn, entry.stage) = drawn_levels(
+            &entry.wanted,
+            &data.stored,
+            &data.resident,
+            node_depth,
+            mode,
+        );
     }
     Ok(entries)
 }

@@ -526,6 +526,17 @@ impl OrbitCamera {
         maximum
     }
 
+    /// Unit view direction, in the same units as `position`.
+    pub(crate) fn forward(&self) -> [f64; 3] {
+        self.basis().1.to_array()
+    }
+
+    /// Unit `(right, up)` image axes, in the same units as `position`.
+    pub(crate) fn right_up(&self) -> ([f64; 3], [f64; 3]) {
+        let (_, _, right, up) = self.basis();
+        (right.to_array(), up.to_array())
+    }
+
     fn basis(&self) -> (DVec3, DVec3, DVec3, DVec3) {
         let offset = DVec3::new(
             self.yaw.sin() * self.pitch.cos(),

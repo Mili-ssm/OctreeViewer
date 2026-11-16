@@ -21,7 +21,7 @@ Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario (el requisito; el m
   crecer.
 - Siguen RQ-09 (ningún cubo por encima del objetivo, ahora medido por celda), R3-Q21 (la imagen solo se refina) y
   el [ADR 0048](0048-el-render-dibuja-el-nivel-pedido.md) (el nivel pedido se construye si no está guardado).
-- El mecanismo se elige en el plan de #35 con medidas en Majadas y Belvedere. Candidatos: decidir el nivel por
+- El mecanismo se elige en el plan de #44 con medidas en Majadas y Belvedere. Candidatos: decidir el nivel por
   instancia en el shader, con los dos niveles vecinos residentes en la franja de transición, o la rejilla de 512
   celdas por nodo descrita como alternativa en el ADR 0034.
 

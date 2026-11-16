@@ -143,12 +143,12 @@ impl CellTarget for Recording {
     fn alloc_mask_slot(&mut self) -> Result<Option<u32>, CellPoolError> {
         self.gpu.alloc_mask_slot()
     }
-    fn set_node_mask(
+    fn set_node_record(
         &mut self,
         slot: u32,
-        mask: &[u32; crate::MASK_WORDS],
+        record: &[u32; crate::NODE_WORDS],
     ) -> Result<(), CellPoolError> {
-        self.gpu.set_node_mask(slot, mask)
+        self.gpu.set_node_record(slot, record)
     }
     fn set_active_pages(
         &mut self,
@@ -470,5 +470,17 @@ fn a_version_1_buffer_is_refused() {
     assert_eq!(
         decode_node_levels(&old),
         Err(CodecError::UnsupportedVersion(1))
+    );
+}
+
+#[test]
+fn a_version_2_buffer_with_46_byte_page_records_is_refused() {
+    let mut old = small();
+    // Version 2 pages had no `rel_origin`: 12 bytes less per page record.
+    old.drain(PAGE_AT + 46..PAGE_AT + PAGE_RECORD_BYTES);
+    old[4..8].copy_from_slice(&2_u32.to_le_bytes());
+    assert_eq!(
+        decode_node_levels(&old),
+        Err(CodecError::UnsupportedVersion(2))
     );
 }

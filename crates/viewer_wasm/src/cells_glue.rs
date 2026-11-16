@@ -27,9 +27,9 @@ use std::{
 use viewer_core::{BlockId, NodeId, PointBlock};
 use viewer_format::OctreeReader;
 use viewer_render_wgpu::{
-    CellDriver, CellGrid, CellTarget, CutApply, DriverConfig, FrameReport, OrbitCamera, PoolConfig,
-    PoolCounters, ViewProjection, VoxelBuildLimits, cell_cut_digest, decode_node_levels,
-    encode_node_levels,
+    CellDriver, CellGrid, CellTarget, CutApply, DriverConfig, FrameReport, LodMode, OrbitCamera,
+    PoolConfig, PoolCounters, ViewProjection, VoxelBuildLimits, cell_cut_digest,
+    decode_node_levels, encode_node_levels,
 };
 
 use crate::{
@@ -104,6 +104,17 @@ impl Continuity {
         reference_spacing
             .filter(|spacing| self.enabled && spacing.is_finite() && *spacing > 0.0)
             .map(|spacing| spacing * self.factor)
+    }
+}
+
+/// The `setCellLod` argument: exactly `"octant"` or `"cell"` (ADR 0050).
+pub(crate) fn parse_lod_mode(mode: &str) -> Result<LodMode, String> {
+    match mode {
+        "octant" => Ok(LodMode::Octant),
+        "cell" => Ok(LodMode::Cell),
+        other => Err(format!(
+            "unknown cell LOD mode {other:?}: expected \"octant\" or \"cell\""
+        )),
     }
 }
 
@@ -510,6 +521,7 @@ pub(crate) struct ViewerCells {
     level_requests: Option<Vec<(NodeId, u8)>>,
     probe_last: Cell<Option<u64>>,
     continuity: Continuity,
+    lod_mode: LodMode,
     /// Reference spacing of the open cloud (`cellsInfo`), for the continuity minimum.
     reference_spacing: Option<f64>,
 }
@@ -543,6 +555,7 @@ impl ViewerCells {
             level_requests: None,
             probe_last: Cell::new(None),
             continuity: Continuity::default(),
+            lod_mode: LodMode::Octant,
             reference_spacing: None,
         }
     }
@@ -562,6 +575,15 @@ impl ViewerCells {
         self.view_dirty = true;
         self.probe_last.set(None);
         Ok(())
+    }
+
+    /// Per-octant or per-cell level selection. The driver re-plans and rewrites its node records
+    /// and page table on the next frame; no node is built or sent again.
+    pub(crate) fn set_lod_mode(&mut self, mode: LodMode) {
+        self.lod_mode = mode;
+        self.driver.set_lod_mode(mode);
+        self.view_dirty = true;
+        self.probe_last.set(None);
     }
 
     #[cfg(test)]
@@ -812,6 +834,7 @@ pub(crate) struct InProcessCells {
     /// Pages the last update needed and lacked (`pendingPageAnchors`).
     pending_pages: Vec<NodeId>,
     continuity: Continuity,
+    lod_mode: LodMode,
 }
 
 /// Where a block read starts and ends, so the caller can account the browser reads it caused.
@@ -848,6 +871,7 @@ impl InProcessCells {
             probe: RefCell::new(CutRestProbe::default()),
             pending_pages: Vec::new(),
             continuity: Continuity::default(),
+            lod_mode: LodMode::Octant,
         }
     }
 
@@ -862,6 +886,13 @@ impl InProcessCells {
         self.continuity = continuity;
         self.dirty = true;
         Ok(())
+    }
+
+    /// Per-octant or per-cell level selection; the next update applies it to the driver.
+    pub(crate) fn set_lod_mode(&mut self, mode: LodMode) {
+        self.lod_mode = mode;
+        self.dirty = true;
+        *self.probe.get_mut() = CutRestProbe::default();
     }
 
     pub(crate) fn pending_pages(&self) -> &[NodeId] {
@@ -903,6 +934,7 @@ impl InProcessCells {
     ) -> Result<(CellPlanStats, Vec<BlockId>), String> {
         self.driver
             .set_min_side(self.continuity.min_side(dataset.reference_spacing()));
+        self.driver.set_lod_mode(self.lod_mode);
         let mut rounds = 0;
         loop {
             let mut order = Vec::new();

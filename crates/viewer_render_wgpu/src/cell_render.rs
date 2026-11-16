@@ -26,6 +26,7 @@ use std::{mem::size_of, num::NonZeroU64};
 use bytemuck::{Pod, Zeroable};
 
 use crate::cell_cull::{HiZ, HiZBuilder, bits_bytes, clear_page_bits, occlusion_wgsl};
+use crate::cell_lod::LodView;
 use crate::cell_pages::{
     CELL_PAGES_WGSL, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table,
 };
@@ -37,14 +38,15 @@ use crate::{CellColorRanges, ColorMode};
 pub(crate) const fn pool_resource_bytes(pages: u32) -> u64 {
     let pages = pages as u64;
     pages * PAGE_BYTES // instances
-        + pages * 32 // page table
-        + pages * (MASK_WORDS as u64 * 4) // masks
+        + pages * size_of::<PageEntry>() as u64 // page table
+        + pages * (NODE_WORDS as u64 * 4) // node records
         + 1024 // sRGB table
         + size_of::<FrameUniform>() as u64
         + (pages + 1) * 4 // page list
         + pages * PAGE_SLOTS as u64 * 4 // visible indices
         + bits_bytes(pages) // visibility bits
         + 2 * DRAW_ARGS_BYTES // draw arguments, one set per phase
+        + COUNTER_BYTES // per-depth counters
         + 12 // dispatch arguments
         + 72 // cube indices
 }
@@ -63,11 +65,29 @@ pub const MIN_POOL_PAGES: u32 = 32_768;
 /// The page and slot pipelines have one spare; a new buffer in the compute group would break
 /// finalize. `slot_pass_stays_within_eight_storage_buffers` checks every pipeline.
 pub const MIN_STORAGE_BUFFERS: u32 = 8;
-/// `u32` words of the mask of one node (8 x 8 x 8 bits).
+/// `u32` words of the mask of one node (8 x 8 x 8 bits): words `0..MASK_WORDS` of its record.
 pub const MASK_WORDS: usize = 16;
+/// `u32` words of a node record, the per-slot layout of the `masks` buffer (E8): `0..16` the mask;
+/// `16..19` the node corner (f32 bits, eye-relative, scaled units); `19` the node depth; `20..22`
+/// the active depths (low, high); `22..24` the 4^3 mip (low, high); `24` the 2^3 mip in bits
+/// `0..8` and the 1^3 mip at bit 8; `25..32` zero. `cell_lod::node_record` builds it.
+pub const NODE_WORDS: usize = 32;
 
 /// Bytes of the draw arguments of one phase; phase 2 follows phase 1 in the buffer.
 const DRAW_ARGS_BYTES: u64 = 20;
+/// Depths the per-cell counters tell apart.
+pub const COUNTER_DEPTHS: usize = 64;
+/// Bytes of the per-depth counters, appended to the `draw_args` buffer after both phases' arguments.
+const COUNTER_BYTES: u64 = COUNTER_DEPTHS as u64 * 4;
+/// Word of `draw_args` where the counters start.
+const COUNTER_OFFSET: u64 = 2 * DRAW_ARGS_BYTES;
+
+/// Cells drawn by absolute depth (`page.depth`) in the last frame rendered with counters on,
+/// summed over the phases of the frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LodCounters {
+    pub per_depth: [u32; COUNTER_DEPTHS],
+}
 const PAGE_PASS_GROUP: u32 = 64;
 const SLOT_PASS_GROUP: u32 = 256;
 
@@ -337,21 +357,31 @@ impl Default for CellColor {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub(crate) struct FrameUniform {
-    view_projection: [[f32; 4]; 4],
-    num_pages: u32,
-    shading: u32,
+    pub(crate) view_projection: [[f32; 4]; 4],
+    pub(crate) num_pages: u32,
+    pub(crate) shading: u32,
     /// Half of the visibility bits that phase 1 and phase 2 read (0 or 1).
-    prev: u32,
-    capacity: u32,
-    viewport: [f32; 2],
-    mip_count: u32,
-    _padding: u32,
-    color_mode: f32,
-    intensity_min: f32,
-    intensity_max: f32,
-    height_offset: f32,
-    height_span: f32,
-    _padding_end: [u32; 3],
+    pub(crate) prev: u32,
+    pub(crate) capacity: u32,
+    pub(crate) viewport: [f32; 2],
+    pub(crate) mip_count: u32,
+    pub(crate) _padding: u32,
+    pub(crate) color_mode: f32,
+    pub(crate) intensity_min: f32,
+    pub(crate) intensity_max: f32,
+    pub(crate) height_offset: f32,
+    pub(crate) height_span: f32,
+    /// 0 octant mode, 1 cell mode.
+    pub(crate) lod_mode: u32,
+    /// 0 off.
+    pub(crate) counters: u32,
+    pub(crate) target_px: f32,
+    pub(crate) forward: [f32; 3],
+    pub(crate) focal: f32,
+    pub(crate) right: [f32; 3],
+    pub(crate) min_side: f32,
+    pub(crate) up: [f32; 3],
+    pub(crate) _padding_end: u32,
 }
 
 pub(crate) const COMMON_WGSL: &str = r"
@@ -369,6 +399,15 @@ struct CellFrame {
     intensity_max: f32,
     height_offset: f32,
     height_span: f32,
+    lod_mode: u32,
+    counters: u32,
+    target_px: f32,
+    forward: vec3<f32>,
+    focal: f32,
+    right: vec3<f32>,
+    min_side: f32,
+    up: vec3<f32>,
+    pad1: u32,
 };
 
 @group(0) @binding(1)
@@ -428,6 +467,8 @@ fn slot_word_index(half: u32, page: u32, word: u32) -> u32 {
     return 2u * frame.capacity + half * frame.capacity * 16u + page * 16u + word;
 }
 
+const COUNTER_BASE: u32 = 10u;
+
 // Phase 2 writes its draw arguments after those of phase 1.
 fn args_base() -> u32 {
     return select(0u, 5u, PHASE == 2u);
@@ -474,6 +515,95 @@ fn finalize_main() {
     atomicStore(&draw_args[base + 4u], 0u);
 }
 
+// Cell mode (`lod_mode == 1`): the WGSL twin of `cell_lod`. Sums and products are written in the
+// same order as the Rust, with no `fma`. A corner at or behind the eye plane gives a finite value
+// far above any target (3.0e38, just under the f32 maximum of about 3.4e38; WGSL does not guarantee
+// `inf`), which refines like the Rust `+inf`.
+const CELL_NEAR_EDGE: f32 = 3.0e38;
+
+fn cell_dot(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+fn cell_edge_px(lo: vec3<f32>, side: f32) -> f32 {
+    var projected: array<vec2<f32>, 8>;
+    for (var index = 0u; index < 8u; index++) {
+        let corner = vec3<f32>(
+            select(lo.x, lo.x + side, (index & 1u) != 0u),
+            select(lo.y, lo.y + side, (index & 2u) != 0u),
+            select(lo.z, lo.z + side, (index & 4u) != 0u));
+        let depth = cell_dot(corner, frame.forward);
+        if depth <= 0.0 { return CELL_NEAR_EDGE; }
+        projected[index] = vec2<f32>(
+            frame.focal * (cell_dot(corner, frame.right) / depth),
+            frame.focal * (cell_dot(corner, frame.up) / depth));
+    }
+    var maximum = 0.0;
+    for (var index = 0u; index < 8u; index++) {
+        for (var axis = 0u; axis < 3u; axis++) {
+            if ((index >> axis) & 1u) != 0u { continue; }
+            let other = index | (1u << axis);
+            let dx = projected[index].x - projected[other].x;
+            let dy = projected[index].y - projected[other].y;
+            maximum = max(maximum, sqrt(dx * dx + dy * dy));
+        }
+    }
+    return maximum;
+}
+
+fn cell_refines(lo: vec3<f32>, side: f32) -> bool {
+    return side > frame.min_side && cell_edge_px(lo, side) > frame.target_px;
+}
+
+// Is any set mask bit inside the cell `rel` of the node record at word `record`, `level` below the
+// node depth? From level 3 the 8^3 bit; above it the 4^3, 2^3 and 1^3 mips (words 22..25).
+fn cell_masked_any(record: u32, level: u32, rel: vec3<u32>) -> bool {
+    if level >= 3u {
+        let m = rel >> vec3<u32>(level - 3u);
+        let bit = m.x + 8u * m.y + 64u * m.z;
+        return ((masks[record + (bit >> 5u)] >> (bit & 31u)) & 1u) != 0u;
+    }
+    if level == 0u { return ((masks[record + 24u] >> 8u) & 1u) != 0u; }
+    if level == 1u {
+        return ((masks[record + 24u] >> (rel.x + 2u * rel.y + 4u * rel.z)) & 1u) != 0u;
+    }
+    let bit = rel.x + 4u * rel.y + 16u * rel.z;
+    return ((masks[record + 22u + (bit >> 5u)] >> (bit & 31u)) & 1u) != 0u;
+}
+
+// E4/E5: does this cell draw its points? Mirrors `cell_lod::draws`, ancestors from the coarsest.
+fn cell_draws(page: CellPage, cell: vec4<u32>) -> bool {
+    if all(page.rel == vec3<u32>(0xffffffffu)) { return false; }
+    let record = page.node * 32u;
+    let node_depth = masks[record + 19u];
+    if page.depth < node_depth || page.depth - node_depth > 31u { return false; }
+    let level = page.depth - node_depth;
+    let active_depths = masks[record + 20u];
+    if ((active_depths >> level) & 1u) == 0u { return false; }
+    let rel = page.rel + cell_rel(cell);
+    if cell_masked_any(record, level, rel) { return false; }
+    let anchor = vec3<f32>(
+        bitcast<f32>(masks[record + 16u]),
+        bitcast<f32>(masks[record + 17u]),
+        bitcast<f32>(masks[record + 18u]));
+    let finer = ((active_depths >> level) >> 1u) != 0u || masks[record + 21u] != 0u;
+    if finer && cell_refines(anchor + vec3<f32>(rel) * page.side, page.side) { return false; }
+    var coarser = active_depths & ((1u << level) - 1u);
+    while coarser != 0u {
+        let ancestor_level = countTrailingZeros(coarser);
+        coarser &= coarser - 1u;
+        let up = level - ancestor_level;
+        let ancestor_rel = rel >> vec3<u32>(up);
+        let ancestor_side = page.side * bitcast<f32>((127u + up) << 23u);
+        let ancestor_lo = anchor + vec3<f32>(ancestor_rel) * ancestor_side;
+        if !(cell_refines(ancestor_lo, ancestor_side)
+            || cell_masked_any(record, ancestor_level, ancestor_rel)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 var<workgroup> scan: array<u32, 256>;
 var<workgroup> next_words: array<atomic<u32>, 16>;
 var<workgroup> wg_base: u32;
@@ -484,10 +614,12 @@ var<workgroup> wg_base: u32;
 fn slot_state(page: CellPage, page_index: u32, local: u32, page_was_drawn: bool) -> u32 {
     let cell = inst[page_index * 512u + local];
     if cell_is_empty(cell) { return 0u; }
-    if !cell_spans_octants(cell) {
+    if frame.lod_mode == 1u {
+        if !cell_draws(page, cell) { return 0u; }
+    } else if !cell_spans_octants(cell) {
         if ((page.octants >> cell_octant(cell)) & 1u) == 0u { return 0u; }
         let bit = cell_mask_index(cell);
-        if ((masks[page.node * 16u + (bit >> 5u)] >> (bit & 31u)) & 1u) == 1u { return 0u; }
+        if ((masks[page.node * 32u + (bit >> 5u)] >> (bit & 31u)) & 1u) == 1u { return 0u; }
     }
     let lo = cell_lo(page, cell);
     let hi = cell_hi(page, cell);
@@ -530,6 +662,11 @@ fn slot_main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_in
         workgroupBarrier();
     }
     let total = scan[255];
+    if frame.counters != 0u {
+        let counter = COUNTER_BASE + min(page.depth, 63u);
+        if c0 == 1u { atomicAdd(&draw_args[counter], 1u); }
+        if c1 == 1u { atomicAdd(&draw_args[counter], 1u); }
+    }
     let exclusive = scan[lid] - (c0 + c1);
     if lid == 0u && total > 0u { wg_base = atomicAdd(&draw_args[args_base() + 1u], total); }
     workgroupBarrier();
@@ -668,6 +805,10 @@ pub(crate) struct CellRenderer {
     hiz: HiZ,
     /// Two-phase occlusion (`kpc`) when true, plain compaction (`k`) when false.
     occlusion: bool,
+    /// Per-depth counters on (`set_counters`).
+    counters: bool,
+    /// Counters were turned off after counting: the next frame zeroes them once.
+    counters_stale: bool,
     /// Half of `bits` that phase 1 and 2 read this frame; phase 2 writes the other.
     prev_half: u32,
     /// The bits describe the last frame drawn with occlusion; false forces a full clear.
@@ -681,13 +822,18 @@ pub(crate) struct CellRenderer {
     free_masks: Vec<u32>,
     next_mask: u32,
     mask_allocated: Vec<bool>,
-    /// CPU copy of every node mask, kept exactly like the GPU one: zeroed only when the slot is
-    /// taken, set by `set_node_mask`, untouched when the slot is freed. Picking reads it.
-    mask_mirror: Vec<[u32; MASK_WORDS]>,
+    /// CPU copy of every node record, kept exactly like the GPU one: zeroed only when the slot is
+    /// taken, set by `set_node_record`, untouched when the slot is freed. Picking reads its mask.
+    mask_mirror: Vec<[u32; NODE_WORDS]>,
     /// The frame the entries of `shadow` were built with; `None` until the first
     /// `set_page_frame`.
     page_frame: Option<PageFrameStamp>,
     color: CellColor,
+    /// `None` keeps octant mode.
+    lod_view: Option<LodView>,
+    /// For the tests that read the compacted slot ids back.
+    #[cfg(test)]
+    visible: wgpu::Buffer,
 }
 
 impl CellRenderer {
@@ -725,7 +871,7 @@ impl CellRenderer {
         );
         let masks = buffer(
             "cell-masks",
-            pages * (MASK_WORDS * 4) as u64,
+            pages * (NODE_WORDS * 4) as u64,
             U::STORAGE | U::COPY_DST,
         );
         let srgb = buffer(
@@ -739,13 +885,21 @@ impl CellRenderer {
             U::UNIFORM | U::COPY_DST,
         );
         let page_list = buffer("cell-page-list", (pages + 1) * 4, U::STORAGE | U::COPY_DST);
-        let visible = buffer("cell-visible", pages * PAGE_SLOTS as u64 * 4, U::STORAGE);
+        let visible = buffer(
+            "cell-visible",
+            pages * PAGE_SLOTS as u64 * 4,
+            U::STORAGE | U::COPY_SRC,
+        );
         let bits = buffer(
             "cell-visibility-bits",
             bits_bytes(pages),
             U::STORAGE | U::COPY_DST,
         );
-        let draw_args = buffer("cell-draw-args", 40, U::STORAGE | U::INDIRECT | U::COPY_SRC);
+        let draw_args = buffer(
+            "cell-draw-args",
+            2 * DRAW_ARGS_BYTES + COUNTER_BYTES,
+            U::STORAGE | U::INDIRECT | U::COPY_SRC | U::COPY_DST,
+        );
         let dispatch_args = buffer("cell-dispatch-args", 12, U::STORAGE | U::INDIRECT);
         let cube_indices = buffer("cell-cube-indices", 72, U::INDEX | U::COPY_DST);
         queue.write_buffer(&srgb, 0, bytemuck::bytes_of(&srgb_to_linear_table()));
@@ -990,6 +1144,8 @@ impl CellRenderer {
             hiz_builder,
             hiz,
             occlusion: true,
+            counters: false,
+            counters_stale: false,
             prev_half: 0,
             bits_valid: false,
             resource_bytes,
@@ -999,9 +1155,12 @@ impl CellRenderer {
             free_masks: Vec::new(),
             next_mask: 0,
             mask_allocated: vec![false; capacity as usize],
-            mask_mirror: vec![[0; MASK_WORDS]; capacity as usize],
+            mask_mirror: vec![[0; NODE_WORDS]; capacity as usize],
             page_frame: None,
             color: CellColor::default(),
+            lod_view: None,
+            #[cfg(test)]
+            visible: visible.clone(),
         }
     }
 
@@ -1014,6 +1173,66 @@ impl CellRenderer {
     /// it on again starts from empty visibility bits.
     pub fn set_occlusion(&mut self, enabled: bool) {
         self.occlusion = enabled;
+    }
+
+    /// Counts the cells drawn per depth on the GPU in the frames that follow (default off). Off
+    /// costs the slot pass one branch on the frame uniform; the first frame after turning
+    /// them off zeroes them.
+    pub fn set_counters(&mut self, enabled: bool) {
+        self.counters_stale |= self.counters && !enabled;
+        self.counters = enabled;
+    }
+
+    /// The counters of the last frame rendered with [`Self::set_counters`] on. Blocks until the
+    /// copy is mapped: for tests, benches and measurements, not for the frame path.
+    pub fn read_lod_counters(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> LodCounters {
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cell-counters-staging"),
+            size: COUNTER_BYTES,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        encoder.copy_buffer_to_buffer(&self.draw_args, COUNTER_OFFSET, &staging, 0, COUNTER_BYTES);
+        queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        staging.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            let _ = sender.send(r);
+        });
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("poll");
+        receiver.recv().unwrap().expect("map");
+        let view = staging.slice(..).get_mapped_range().expect("mapped range");
+        let words: Vec<u32> = bytemuck::pod_collect_to_vec(&view);
+        let mut per_depth = [0; COUNTER_DEPTHS];
+        per_depth.copy_from_slice(&words);
+        LodCounters { per_depth }
+    }
+
+    /// `Some` switches the slot pass to the per-cell decision of [`crate::cell_lod`] (`lod_mode`
+    /// 1); `None` keeps the octant-bit and mask test. The driver passes `Some` in cell mode and
+    /// `None` in octant mode.
+    pub(crate) fn set_lod_view(&mut self, view: Option<LodView>) {
+        self.lod_view = view;
+    }
+
+    /// The view the slot pass decides with (`None`: octant mode).
+    pub(crate) fn lod_view(&self) -> Option<LodView> {
+        self.lod_view
+    }
+
+    /// The record the GPU holds for `slot` (see `mask_mirror`).
+    pub(crate) fn node_record(&self, slot: u32) -> &[u32; NODE_WORDS] {
+        &self.mask_mirror[slot as usize]
+    }
+
+    /// The compacted slot ids (`page * PAGE_SLOTS + slot`) of the last compaction that drew;
+    /// with occlusion each phase overwrites the previous one. The first `draw_args` word 1 (plain
+    /// or phase 1) or word 6 (phase 2) says how many are valid.
+    #[cfg(test)]
+    pub(crate) fn visible_buffer(&self) -> &wgpu::Buffer {
+        &self.visible
     }
 
     /// Forgets last frame's visibility: the next occlusion frame draws everything in phase 2.
@@ -1151,11 +1370,11 @@ impl CellRenderer {
             })
         })?;
         self.mask_allocated[slot as usize] = true;
-        self.mask_mirror[slot as usize] = [0; MASK_WORDS];
+        self.mask_mirror[slot as usize] = [0; NODE_WORDS];
         self.queue.write_buffer(
             &self.masks,
-            u64::from(slot) * (MASK_WORDS * 4) as u64,
-            bytemuck::cast_slice(&[0_u32; MASK_WORDS]),
+            u64::from(slot) * (NODE_WORDS * 4) as u64,
+            bytemuck::cast_slice(&[0_u32; NODE_WORDS]),
         );
         Some(slot)
     }
@@ -1175,26 +1394,28 @@ impl CellRenderer {
         Ok(())
     }
 
-    /// Sets the mask of an allocated node slot: bit `x + 8y + 64z` set means that cell is replaced
-    /// by finer ones.
-    pub fn set_node_mask(
+    /// Sets the record of an allocated node slot. In its mask (words `0..MASK_WORDS`) bit
+    /// `x + 8y + 64z` set means that cell is replaced by finer ones.
+    pub fn set_node_record(
         &mut self,
         slot: u32,
-        mask: &[u32; MASK_WORDS],
+        record: &[u32; NODE_WORDS],
     ) -> Result<(), CellPoolError> {
         self.check_mask_slot(slot)?;
-        self.mask_mirror[slot as usize] = *mask;
+        self.mask_mirror[slot as usize] = *record;
         self.queue.write_buffer(
             &self.masks,
-            u64::from(slot) * (MASK_WORDS * 4) as u64,
-            bytemuck::cast_slice(mask),
+            u64::from(slot) * (NODE_WORDS * 4) as u64,
+            bytemuck::cast_slice(record),
         );
         Ok(())
     }
 
     /// The mask the GPU holds for `slot` (see `mask_mirror`).
     pub(crate) fn node_mask(&self, slot: u32) -> &[u32; MASK_WORDS] {
-        &self.mask_mirror[slot as usize]
+        self.mask_mirror[slot as usize][..MASK_WORDS]
+            .try_into()
+            .expect("the mask is the first MASK_WORDS words of a record")
     }
 
     /// Records the frame that the page entries are relative to; call it after `set_active_pages`,
@@ -1300,6 +1521,11 @@ impl CellRenderer {
         depth_view: &wgpu::TextureView,
         frame: &CellFrame,
     ) {
+        if self.counters || self.counters_stale {
+            self.counters_stale = false;
+            // Before every compute pass of the frame: the clear is ordered ahead of phase 1.
+            encoder.clear_buffer(&self.draw_args, COUNTER_OFFSET, Some(COUNTER_BYTES));
+        }
         if self.occlusion {
             if self.hiz.size() != frame.viewport.map(|v| v.max(1)) {
                 self.hiz = HiZ::new(&self.device, &self.hiz_builder, frame.viewport);
@@ -1314,6 +1540,14 @@ impl CellRenderer {
             // Bits are only meaningful across consecutive occlusion frames.
             self.bits_valid = false;
         }
+        let lod = self.lod_view.unwrap_or(LodView {
+            forward: [0.0; 3],
+            right: [0.0; 3],
+            up: [0.0; 3],
+            focal: 0.0,
+            target_px: 0.0,
+            min_side: 0.0,
+        });
         self.queue.write_buffer(
             &self.frame_uniform,
             0,
@@ -1331,7 +1565,15 @@ impl CellRenderer {
                 intensity_max: self.color.intensity_range[1],
                 height_offset: self.color.height_offset,
                 height_span: self.color.height_span,
-                _padding_end: [0; 3],
+                lod_mode: u32::from(self.lod_view.is_some()),
+                counters: u32::from(self.counters),
+                target_px: lod.target_px,
+                forward: lod.forward,
+                focal: lod.focal,
+                right: lod.right,
+                min_side: lod.min_side,
+                up: lod.up,
+                _padding_end: 0,
             }),
         );
         if self.occlusion {
@@ -1350,7 +1592,7 @@ impl CellRenderer {
     }
 
     /// Page pass, finalize and slot pass of `phase` (0 plain, 1, 2).
-    fn encode_compaction(&self, encoder: &mut wgpu::CommandEncoder, phase: usize) {
+    pub(crate) fn encode_compaction(&self, encoder: &mut wgpu::CommandEncoder, phase: usize) {
         encoder.clear_buffer(&self.page_list, 0, Some(4));
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

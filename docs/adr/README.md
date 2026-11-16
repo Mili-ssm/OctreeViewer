@@ -52,7 +52,8 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0046](0046-la-poda-de-niveles-no-limita-el-render.md) | La poda de la cadena de niveles es de almacenamiento; el render deriva el nivel que pide la vista (precisa 0031 y 0032) | Aceptada (decisión y revisión sustituidas por 0048) |
 | [0047](0047-v5-heredado-hasta-v8.md) | V5 queda como formato heredado de comparación hasta que empiece V8; la demo usa la última versión estable (precisa 0004) | Aceptada |
 | [0048](0048-el-render-dibuja-el-nivel-pedido.md) | El render dibuja siempre el nivel que pide la vista y lo construye a demanda si no está guardado (sustituye la decisión de 0046) | Aceptada |
-| [0049](0049-tamano-minimo-del-voxel.md) | El tamaño mínimo del cubo se elige en px, en longitud o por el espaciado de la nube (precisa RF-05 y RQ-09) | Aceptada |
+| [0049](0049-tamano-minimo-del-voxel.md) | El tamaño mínimo del cubo se elige en px, en longitud o por el espaciado de la nube (precisa RF-05 y RQ-09) | Aceptada (revisada el 16-11-2026: filtros combinables) |
 | [0050](0050-nivel-por-celda-segun-distancia.md) | El nivel de detalle sigue la distancia de cada celda, no la de su octante, y las transiciones son graduales (sustituye la regla por octante de 0034) | Aceptada |
 | [0051](0051-granularidad-de-hojas-configurable.md) | La granularidad de las hojas es configurable: puntos máximos, lado mínimo y distancia de fusión (precisa 0044) | Aceptada (pendiente) |
 | [0052](0052-retencion-y-ajuste-al-pool-por-celda.md) | Retención por zona, hijos provisionales con el color del padre y ajuste homogéneo al pool (precisa R3-Q19, R3-Q21 y R3-Q11) | Aceptada (hijos provisionales opcionales, revisión 15-11) |
+| [0053](0053-transiciones-de-un-nivel.md) | Las transiciones de nivel avanzan de un nivel en un nivel, en el espacio y en el tiempo (precisa ADR 0050 y R3-Q21) | Aceptada (cola bajo la separación pendiente de revisión) |

@@ -1,7 +1,10 @@
 //! R3 Task 7c: native measurement of the production cell path (`CellPool` residency + `CellRenderer`
 //! with Hi-Z occlusion) on a real GPU. Throwaway like `coverage_spike`; not part of `check.sh`.
 //!
-//! Usage: cell_pool_bench [--out FILE.json] CASE_DIR|ROOT_DIR...
+//! Usage: cell_pool_bench [--out FILE.json] [--cell-lod] [--counters] CASE_DIR|ROOT_DIR...
+//! `--cell-lod` runs the pool in per-cell mode (`LodMode::Cell`, default octant). `--counters` only converges
+//! the still pose, then draws once with the per-depth counters on and reports them with the instances
+//! drawn (plain pass), skipping the timing rounds and the moving run (R3 phase 2a record).
 //! A case directory is one written by `coverage_spike --export-pool` (format in that file's header);
 //! a root directory is expanded to its case subdirectories. Run it with `--profile perf`. It needs a
 //! real adapter with `timestamp-query` and refuses software ones (llvmpipe).
@@ -181,6 +184,15 @@ impl Case {
     fn load(&self, node: NodeId, depth: u8) -> PackedLevel {
         let file = &self.nodes[&node].levels[&depth];
         let mut at = file.offset;
+        // The fixture predates `rel_origin` (cell mode needs it): rebuild it from the node corner
+        // on the grid at the node depth, as `pack_level` does.
+        let bounds = self.nodes[&node].pool.bounds;
+        let node_depth = representative_depth(&self.grid, bounds).saturating_sub(3);
+        let node_side = self.grid.root_side / (1_u64 << node_depth) as f64;
+        let node_lo: [u64; 3] = std::array::from_fn(|a| {
+            ((bounds.min()[a] - self.grid.root_min[a]) / node_side).round() as u64
+        });
+        let span = depth.saturating_sub(node_depth);
         let instances = (0..file.pages * PAGE_SLOTS)
             .map(|i| {
                 let base = at + i * 16;
@@ -192,15 +204,21 @@ impl Case {
             .map(|p| {
                 let base = at + p * PAGE_RECORD;
                 let b = &self.bin;
+                let origin: [u64; 3] = std::array::from_fn(|a| u64_at(b, base + a * 8));
                 PageInfo {
                     node,
                     depth,
-                    origin: std::array::from_fn(|a| u64_at(b, base + a * 8)),
+                    origin,
                     first_cell: u64_at(b, base + 24) as usize,
                     cells: u32_at(b, base + 32),
                     flags: u32_at(b, base + 36),
                     box_max: std::array::from_fn(|a| {
                         u16::from_le_bytes([b[base + 40 + a * 2], b[base + 41 + a * 2]])
+                    }),
+                    rel_origin: std::array::from_fn(|a| {
+                        let corner = u128::from(node_lo[a]) << span;
+                        u32::try_from(u128::from(origin[a]).saturating_sub(corner))
+                            .unwrap_or(u32::MAX)
                     }),
                 }
             })
@@ -562,8 +580,11 @@ fn num(value: &Value, key: &str) -> f64 {
 
 // ---- One case ----
 
-fn run_case(case: &Case, gpu: &Gpu) -> Result<Value> {
+fn run_case(case: &Case, gpu: &Gpu, cell_lod: bool, counters_only: bool) -> Result<Value> {
     let mut rig = Rig::new(case, gpu)?;
+    if cell_lod {
+        rig.driver.set_lod_mode(viewer_render_wgpu::LodMode::Cell);
+    }
     let camera = case.camera;
 
     // d. Convergence with a still camera.
@@ -615,6 +636,31 @@ fn run_case(case: &Case, gpu: &Gpu) -> Result<Value> {
         "resident_pages": counters.resident_pages,
         "apply_applied": last.apply,
     });
+
+    if counters_only {
+        rig.renderer.set_occlusion(false);
+        rig.renderer.set_counters(true);
+        let instances = rig.draw(camera, true)?.1.ok_or("no counts")?[0];
+        let per_depth = rig.renderer.read_lod_counters().per_depth;
+        let drawn: Vec<Value> = per_depth
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| **n > 0)
+            .map(|(depth, n)| json!([depth, n]))
+            .collect();
+        return Ok(json!({
+            "case": case.name,
+            "target_px": case.target_px,
+            "lod_mode": if cell_lod { "cell" } else { "octant" },
+            "cut_nodes": case.cut.len(),
+            "active_levels": plan.active.len(),
+            "converged": converge["converged"],
+            "convergence_frames": last_noisy,
+            "instances_drawn": instances,
+            "counter_cells_total": per_depth.iter().map(|n| u64::from(*n)).sum::<u64>(),
+            "counter_per_depth": drawn,
+        }));
+    }
 
     // Cut and size diagnostics at the still pose: uncapped wanted cut, estimated vs exact pages.
     let diagnostics = size_diagnostics(case, &rig, &plan, camera);
@@ -853,8 +899,14 @@ fn main() -> Result<()> {
         out_path = args.remove(at + 1);
         args.remove(at);
     }
+    let mut flag = |name: &str| {
+        let at = args.iter().position(|a| a == name);
+        at.map(|at| args.remove(at)).is_some()
+    };
+    let cell_lod = flag("--cell-lod");
+    let counters_only = flag("--counters");
     if args.is_empty() {
-        return Err("usage: cell_pool_bench [--out FILE.json] CASE_DIR|ROOT_DIR...".into());
+        return Err("usage: cell_pool_bench [--out FILE.json] [--cell-lod] [--counters] CASE_DIR|ROOT_DIR...".into());
     }
     if cfg!(debug_assertions) {
         eprintln!("# warning: debug build; run with --profile perf for the numbers");
@@ -890,7 +942,12 @@ fn main() -> Result<()> {
     let mut results = Vec::new();
     for dir in &dirs {
         let case = load_case(dir)?;
-        let result = run_case(&case, &gpu)?;
+        let result = run_case(&case, &gpu, cell_lod, counters_only)?;
+        if counters_only {
+            println!("{}", serde_json::to_string(&result)?);
+            results.push(result);
+            continue;
+        }
         let s = &result["static"];
         let m = &result["moving"];
         let cpu = &m["cpu"]["cut_fit_plus_table_ms"];

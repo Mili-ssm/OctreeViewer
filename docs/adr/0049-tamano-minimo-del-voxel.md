@@ -1,6 +1,6 @@
 # 0049 El tamaño mínimo del cubo se elige en px, en longitud o por el espaciado de la nube
 
-Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Precisa RF-05, RQ-09 y el [ADR 0019](0019-cubos-por-nodo-residentes-en-gpu.md)
+Estado: Aceptada (revisada el 16-11-2026: filtros combinables, ver «Revisión») · Fecha: 15-11-2026 · Decide: propietario · Precisa RF-05, RQ-09 y el [ADR 0019](0019-cubos-por-nodo-residentes-en-gpu.md)
 
 ## Contexto
 - Hoy el detalle se controla con el objetivo de px. La continuidad (RF-05) es una casilla que fija el lado mínimo del cubo
@@ -38,3 +38,15 @@ Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Precisa RF-05, R
 
 ## Revisar si
 Aparece una nube con CRS geográfico (grados) que necesite tamaño mínimo en longitud.
+
+## Revisión 16-11-2026: dos filtros combinables, gana el más grande
+- El propietario (16-11-2026): «poder elegir tanto mínimo en px como mínimo en m y que en cada frame/vóxel gane el
+  filtro más grande». El selector de tres modos exclusivos se sustituye por **dos filtros que actúan a la vez**:
+  - **Mínimo en px**: el objetivo de px de siempre; siempre activo.
+  - **Mínimo en longitud**: desactivado (predeterminado), un valor con unidad (m, cm, mm) o el espaciado de la nube
+    (la continuidad de RF-05).
+- En cada celda y cada frame el lado dibujado no baja de `max(lado_mín, lado cuya arista proyectada cumple el
+  objetivo de px)`: es la regla D3 del [plan](../plans/nivel-pedido-y-lod-por-celda.md), que ya toma el máximo. «Solo px»
+  es el filtro de longitud desactivado.
+- Sigue todo lo demás: unidades del CRS, modo longitud desactivado con un CRS geográfico, RQ-09 admite cubos por
+  encima del objetivo cuando gana el filtro de longitud, y `setContinuity` queda para el espaciado.

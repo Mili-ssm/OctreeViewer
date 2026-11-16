@@ -5,6 +5,7 @@
 //! next to an identity boundary of the reference, with depth inside a tolerance derived from the
 //! projection and the f32 resolution of the scene.
 
+use crate::test_support::mask_record;
 use std::collections::HashSet;
 
 use viewer_core::{ColorRgb, NodeId, SpatialBounds};
@@ -13,9 +14,9 @@ use wgpu::util::DeviceExt;
 use crate::cell_pages::{CellInstance, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table};
 use crate::cell_render::{
     CellFrame, CellLimitMode, CellRenderer, DEFAULT_CELL_POOL_BUDGET_BYTES, DeviceLimits,
-    MASK_WORDS, MIN_POOL_PAGES, PAGE_BYTES, POOL_BYTES, cells_supported, cells_supported_for,
-    plan_device_limits, pool_pages_for_limits, pool_pages_within_budget, pool_resource_bytes,
-    shader_sources,
+    MASK_WORDS, MIN_POOL_PAGES, NODE_WORDS, PAGE_BYTES, POOL_BYTES, cells_supported,
+    cells_supported_for, plan_device_limits, pool_pages_for_limits, pool_pages_within_budget,
+    pool_resource_bytes, shader_sources,
 };
 use crate::gpu::{CUBE_INDICES, ViewProjection, create_pipeline_resources};
 use crate::{
@@ -27,6 +28,10 @@ const WIDTH: u32 = 256;
 const HEIGHT: u32 = 192;
 const POOL_PAGES_FOR_TESTS: u32 = 64;
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+/// Task 7a: the per-cell decision of the slot pass against its Rust twin.
+#[path = "cell_lod_gpu_tests.rs"]
+mod lod;
 
 /// Task 7b2: two-phase occlusion against the compaction-only path.
 #[path = "cell_cull_tests.rs"]
@@ -770,7 +775,8 @@ fn place(
             assert_eq!(slots.len(), packed.pages.len(), "test pool is large enough");
             pool.upload_level(&packed, &slots).unwrap();
             let mask_slot = pool.alloc_mask_slot().expect("mask slot");
-            pool.set_node_mask(mask_slot, &level.mask).unwrap();
+            pool.set_node_record(mask_slot, &mask_record(&level.mask))
+                .unwrap();
             Placed {
                 packed,
                 slots,
@@ -1029,6 +1035,101 @@ fn cell_shaders_validate_with_naga() {
         .validate(&module)
         .unwrap();
     }
+}
+
+/// Byte offset of every member of the WGSL struct `name`, and its size, from naga's layout.
+fn wgsl_struct_layout(name: &str) -> (Vec<(String, u32)>, u32) {
+    for source in shader_sources() {
+        let module = naga::front::wgsl::parse_str(&source).unwrap();
+        for (_, ty) in module.types.iter() {
+            if let (Some(n), naga::TypeInner::Struct { members, span }) = (&ty.name, &ty.inner)
+                && n == name
+            {
+                let members = members
+                    .iter()
+                    .map(|m| (m.name.clone().unwrap(), m.offset))
+                    .collect();
+                return (members, *span);
+            }
+        }
+    }
+    panic!("no WGSL struct {name}");
+}
+
+#[test]
+fn frame_uniform_is_176_bytes_and_matches_the_wgsl_layout() {
+    assert_eq!(size_of::<crate::cell_render::FrameUniform>(), 176);
+    let (members, span) = wgsl_struct_layout("CellFrame");
+    assert_eq!(span, 176);
+    let expected = [
+        ("view_proj", 0),
+        ("num_pages", 64),
+        ("shading", 68),
+        ("prev", 72),
+        ("capacity", 76),
+        ("viewport", 80),
+        ("mip_count", 88),
+        ("pad0", 92),
+        ("color_mode", 96),
+        ("intensity_min", 100),
+        ("intensity_max", 104),
+        ("height_offset", 108),
+        ("height_span", 112),
+        ("lod_mode", 116),
+        ("counters", 120),
+        ("target_px", 124),
+        ("forward", 128),
+        ("focal", 140),
+        ("right", 144),
+        ("min_side", 156),
+        ("up", 160),
+        ("pad1", 172),
+    ];
+    let found: Vec<(&str, u32)> = members.iter().map(|(n, o)| (n.as_str(), *o)).collect();
+    assert_eq!(found, expected);
+    use crate::cell_render::FrameUniform as F;
+    use core::mem::offset_of;
+    let rust: [(&str, usize); 22] = [
+        ("view_proj", offset_of!(F, view_projection)),
+        ("num_pages", offset_of!(F, num_pages)),
+        ("shading", offset_of!(F, shading)),
+        ("prev", offset_of!(F, prev)),
+        ("capacity", offset_of!(F, capacity)),
+        ("viewport", offset_of!(F, viewport)),
+        ("mip_count", offset_of!(F, mip_count)),
+        ("pad0", offset_of!(F, _padding)),
+        ("color_mode", offset_of!(F, color_mode)),
+        ("intensity_min", offset_of!(F, intensity_min)),
+        ("intensity_max", offset_of!(F, intensity_max)),
+        ("height_offset", offset_of!(F, height_offset)),
+        ("height_span", offset_of!(F, height_span)),
+        ("lod_mode", offset_of!(F, lod_mode)),
+        ("counters", offset_of!(F, counters)),
+        ("target_px", offset_of!(F, target_px)),
+        ("forward", offset_of!(F, forward)),
+        ("focal", offset_of!(F, focal)),
+        ("right", offset_of!(F, right)),
+        ("min_side", offset_of!(F, min_side)),
+        ("up", offset_of!(F, up)),
+        ("pad1", offset_of!(F, _padding_end)),
+    ];
+    for ((name, offset), (want, wgsl)) in rust.iter().zip(expected) {
+        assert_eq!(
+            (*name, *offset as u32),
+            (want, wgsl),
+            "Rust offset of {name}"
+        );
+    }
+}
+
+#[test]
+fn cell_page_is_48_bytes_in_wgsl() {
+    assert_eq!(size_of::<PageEntry>(), 48);
+    let (members, span) = wgsl_struct_layout("CellPage");
+    assert_eq!(span, 48);
+    let rel = members.iter().find(|(n, _)| n == "rel").unwrap();
+    let depth = members.iter().find(|(n, _)| n == "depth").unwrap();
+    assert_eq!((rel.1, depth.1), (32, 44));
 }
 
 #[test]
@@ -1480,7 +1581,7 @@ fn pool_calls_reject_bad_input() {
         pool.free_mask_slot(slot).unwrap();
         assert!(pool.free_mask_slot(slot).is_err(), "double free");
         assert!(pool.free_mask_slot(61).is_err(), "never allocated");
-        assert!(pool.set_node_mask(slot, &[0; MASK_WORDS]).is_err());
+        assert!(pool.set_node_record(slot, &[0; NODE_WORDS]).is_err());
         assert!(
             pool.set_active_pages(&page_entries).is_err(),
             "freed mask slot"

@@ -6,20 +6,22 @@
 //! | Part | Bytes | Content |
 //! | --- | --- | --- |
 //! | header | 4 | magic `R3NC` |
-//! | | 4 | `u32` format version (1) |
+//! | | 4 | `u32` format version (3) |
 //! | | 8 | `u64` node id |
 //! | | 8 | `u64` point count |
 //! | | 48 | `f64` bounds min x y z, max x y z (world frame) |
 //! | | 4 | `u32` level count |
 //! | level | 4 | `u32` depth |
 //! | | 4 | `u32` page count (at least 1) |
-//! | page ×N | 46 | origin 3×`u64`, `first_cell` `u64`, `cells` `u32`, `box_max` 3×`u16`, `flags` `u32` |
+//! | page ×N | 58 | origin 3×`u64`, `first_cell` `u64`, `cells` `u32`, `box_max` 3×`u16`, `flags` `u32`, `rel_origin` 3×`u32` |
 //! | | 512 × 16 | the page's instance slots, 4×`u32` each |
 //!
 //! Levels are in strictly increasing depth. The node and depth of a page are the ones of its
 //! header and level, so they cannot disagree. Decoding validates everything it can see (lengths,
 //! counts, depth ranges, `first_cell` continuity, the sentinel padding, relative coordinates
-//! inside the page box) and never panics. Every count is checked against the bytes left before
+//! inside the page box) and never panics. `rel_origin` is not cross-checked against `origin` and
+//! the node corner: the blob comes from the build worker and is trusted like the rest of the
+//! geometry. Every count is checked against the bytes left before
 //! anything is allocated, so a hostile length cannot reserve more than the input holds.
 
 use std::fmt;
@@ -32,10 +34,10 @@ use crate::{
 
 const MAGIC: [u8; 4] = *b"R3NC";
 /// Version of the byte format.
-pub const CODEC_VERSION: u32 = 2;
+pub const CODEC_VERSION: u32 = 3;
 const HEADER_BYTES: usize = 4 + 4 + 8 + 8 + 48 + 2 + 4;
 const LEVEL_BYTES: usize = 8;
-const PAGE_RECORD_BYTES: usize = 46;
+const PAGE_RECORD_BYTES: usize = 58;
 const INSTANCE_BYTES: usize = size_of::<CellInstance>();
 const PAGE_BYTES: usize = PAGE_RECORD_BYTES + PAGE_SLOTS * INSTANCE_BYTES;
 /// Deepest level a cell coordinate (`u64`) can address.
@@ -190,6 +192,9 @@ pub fn encode_node_levels(node: &PackedNode) -> Result<Vec<u8>, CodecError> {
                 out.extend_from_slice(&value.to_le_bytes());
             }
             out.extend_from_slice(&page.flags.to_le_bytes());
+            for value in page.rel_origin {
+                out.extend_from_slice(&value.to_le_bytes());
+            }
             for instance in slots {
                 for word in instance.0 {
                     out.extend_from_slice(&word.to_le_bytes());
@@ -299,6 +304,7 @@ pub fn decode_node_levels(bytes: &[u8]) -> Result<PackedNode, CodecError> {
             let cells = reader.u32()?;
             let box_max = [reader.u16()?, reader.u16()?, reader.u16()?];
             let flags = reader.u32()?;
+            let rel_origin = [reader.u32()?, reader.u32()?, reader.u32()?];
             for _ in 0..PAGE_SLOTS {
                 instances.push(CellInstance([
                     reader.u32()?,
@@ -315,6 +321,7 @@ pub fn decode_node_levels(bytes: &[u8]) -> Result<PackedNode, CodecError> {
                 cells,
                 box_max,
                 flags,
+                rel_origin,
             });
         }
         validate_level(id, depth, &pages, &instances)?;

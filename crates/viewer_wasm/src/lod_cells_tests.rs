@@ -10,7 +10,7 @@ use viewer_format::{
 };
 use viewer_render_wgpu::PackedNode;
 use viewer_render_wgpu::{
-    CellDriver, CellPoolError, CellTarget, DriverConfig, MASK_WORDS, OrbitCamera, PackedLevel,
+    CellDriver, CellPoolError, CellTarget, DriverConfig, NODE_WORDS, OrbitCamera, PackedLevel,
     PageEntry, PageFrame, PoolConfig, SceneBounds, ViewProjection, VoxelBuildLimits,
 };
 
@@ -173,7 +173,7 @@ impl CellTarget for NullTarget {
         self.masks += 1;
         Ok(Some(self.masks - 1))
     }
-    fn set_node_mask(&mut self, _: u32, _: &[u32; MASK_WORDS]) -> Result<(), CellPoolError> {
+    fn set_node_record(&mut self, _: u32, _: &[u32; NODE_WORDS]) -> Result<(), CellPoolError> {
         Ok(())
     }
     fn set_active_pages(
@@ -1674,4 +1674,15 @@ fn an_exempt_cut_request_is_retried_while_blocked() {
     let second = plan_levels(&mut dataset, &view, tight);
     assert_eq!(shipped_depths(&second).len(), 1);
     assert!(!dataset.has_pending_level_requests(true));
+}
+
+#[test]
+fn set_cell_lod_rejects_unknown_modes() {
+    use crate::cells_glue::parse_lod_mode;
+    use viewer_render_wgpu::LodMode;
+    assert_eq!(parse_lod_mode("octant"), Ok(LodMode::Octant));
+    assert_eq!(parse_lod_mode("cell"), Ok(LodMode::Cell));
+    for bad in ["", "Cell", "OCTANT", " cell", "cells", "per-cell"] {
+        assert!(parse_lod_mode(bad).is_err(), "{bad:?} was accepted");
+    }
 }
