@@ -207,10 +207,10 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - Consumes: Tasks 3, 5–7.
 - Produces: `CellDriver::set_lod_mode` already exists (forwards to the pool, e13e54b); this task makes a mode switch rewrite every node record, and derives each record's `active` bits from the `ActiveLevel`s emitted that frame (retained frames rebuild the active list but send no `MaskUpdate`, so the two can drift).
 
-- [ ] **Step 1: Write the failing tests:** `driver_in_cell_mode_writes_records_and_uniform`; `pick_in_cell_mode_hits_the_drawn_cell` (GPU, against the twin).
-- [ ] **Step 2:** `--lib cell_driver`, `--lib cell_pick` → FAIL.
-- [ ] **Step 3:** implement → PASS; all lib tests pass.
-- [ ] **Step 4:** commit `feat(render): drive cell mode on the GPU`.
+- [x] **Step 1: Write the failing tests:** `driver_in_cell_mode_writes_records_and_uniform`; `pick_in_cell_mode_hits_the_drawn_cell` (GPU, against the twin).
+- [x] **Step 2:** `--lib cell_driver`, `--lib cell_pick` → FAIL.
+- [x] **Step 3:** implement → PASS; all lib tests pass.
+- [x] **Step 4:** commit `feat(render): drive cell mode on the GPU`.
 
 ### Task 10: The `cellLod` option end to end
 
