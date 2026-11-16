@@ -1367,13 +1367,11 @@ impl CellPool {
         if stored.contains(&cap) {
             return;
         }
-        match stored.iter().copied().filter(|depth| *depth < cap).max() {
-            Some(depth) => {
-                self.caps.insert(id, depth);
-            }
-            None => {
-                self.caps.remove(&id);
-            }
+        // Keep the cap: removing it would let finer levels back in and undo the fit. With no
+        // stored depth below it, it clamps to the coarsest one (the node draws that and no finer).
+        let below = stored.iter().copied().filter(|depth| *depth < cap).max();
+        if let Some(depth) = below.or_else(|| stored.iter().copied().min()) {
+            self.caps.insert(id, depth);
         }
         self.size_epoch += 1;
     }

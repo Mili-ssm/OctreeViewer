@@ -50,7 +50,7 @@ in-process path wires the same calls without workers. Per-octant selection (ADR 
 - Test: `crates/viewer_render_wgpu/src/node_cells_tests.rs`
 
 **Interfaces:**
-- Produces: `NodeCells { node, levels, buildable: (u8, u8) }` (inclusive min, max depth); `pub fn node_cell_level(grid: &CellGrid, node: NodeId, bounds: SpatialBounds, spacing: Option<f64>, is_leaf: bool, blocks: &[PointBlock], depth: u8) -> Result<NodeCellLevel, NodeCellError>` (same cells and `octant_offsets` as the chain builds at that depth; `Err(AbsoluteDepthExceeded)` outside the buildable range).
+- Produces: `NodeCells { node, levels, buildable: (u8, u8) }` (inclusive min, max depth); `pub fn node_cell_level(grid: &CellGrid, bounds: SpatialBounds, spacing: Option<f64>, is_leaf: bool, blocks: &[PointBlock], depth: u8) -> Result<NodeCellLevel, NodeCellError>` (same cells and `octant_offsets` as the chain builds at that depth; `Err(AbsoluteDepthExceeded)` outside the buildable range).
 
 - [x] **Step 1: Write the failing tests** in `node_cells_tests.rs`:
   - `single_level_matches_the_unpruned_chain`: with `PointNodeCellSource { min_growth: 1.0 }` on the existing leaf fixture, for every level `l` of `node_cells(..)`, `node_cell_level(.., l.depth) == l`.

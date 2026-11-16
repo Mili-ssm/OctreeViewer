@@ -1023,7 +1023,7 @@ fn a_refused_depth_stops_being_wanted_and_the_view_settles() {
             break None;
         };
         rounds += 1;
-        // Stop injecting at the first depth the lowering did not remove: it is buildable.
+        // Stop injecting after three rounds or once nothing more is wanted; what is left is served.
         if next.is_empty() || rounds == 3 {
             break Some(next);
         }
@@ -1049,6 +1049,41 @@ fn a_refused_depth_stops_being_wanted_and_the_view_settles() {
         "the view never settled (levels still wanted or work held)"
     );
     assert!(!pair.viewer.cells_busy(&pair.target), "a node stays held");
+}
+
+/// The producer side of a refusal: a request for a depth `node_cell_level` rejects
+/// (`AbsoluteDepthExceeded`) leaves the builder as `BuilderOutput.refused` on the next plan, once.
+#[test]
+fn an_unservable_request_is_reported_as_refused_on_the_next_update() {
+    let mut pair = Pair::with_harness(close_pair_leaf());
+    let leaf = NodeId::new(1);
+    pair.send_round(0, false);
+    // Two distinct positions closer than a depth-63 cell, next to the origin where f32
+    // resolves them: in range, but merged at the deepest depth.
+    let block = BlockId::new(101);
+    let at = |value: f32| [value; 3];
+    let merged = PointBlock::new(
+        block,
+        PointBatch::new(vec![
+            Point::new(at(1.0e-19), ColorRgb::new(1, 2, 3)),
+            Point::new(at(2.0e-19), ColorRgb::new(4, 5, 6)),
+        ]),
+        Vec::new(),
+    );
+    pair.h.dataset.cache.remove(block);
+    pair.h.dataset.insert_block(merged).unwrap();
+    let depth = viewer_render_wgpu::MAX_CELL_DEPTH;
+    pair.builder
+        .level_requests(&mut pair.h.dataset, &[(leaf, depth)]);
+    pair.builder.mark_dirty();
+    let first = pair.plan();
+    assert_eq!(first.refused, [(leaf, depth)]);
+    assert!(first.levels.is_empty());
+    // Reported once: later updates do not repeat it (a request asked again is answered again,
+    // without a rebuild).
+    pair.builder.mark_dirty();
+    let second = pair.plan();
+    assert!(second.refused.is_empty() && second.levels.is_empty());
 }
 
 /// Negative control: this is the #35 bug, a leaf drawing its fine levels from far.

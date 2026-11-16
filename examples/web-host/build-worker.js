@@ -22,8 +22,8 @@ import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./h
 //                  nodeCells of the same batch, transferred, in order, never coalesced),
 //                  levelsRefused{gen,nodes,depths} (BigUint64Array ids and a parallel Uint8Array of depths the
 //                  builder cannot serve, e.g. a leaf already at the deepest cell depth; the driver stops wanting
-//                  them, so the view can settle; sent after nodeLevels, before cellCut, and not queued behind
-//                  the nodes), cellCut{gen,cutEpoch,viewEpoch,cut,support,idle,targetPixels} (latest wins),
+//                  them, so the view can settle; sent after nodeLevels, before cellCut, through the same
+//                  messageQueue as the node messages), cellCut{gen,cutEpoch,viewEpoch,cut,support,idle,targetPixels} (latest wins),
 //                  cellLod{gen,cutEpoch,viewEpoch,lod} (stats for the LOD panel).
 // render -> build: poolAck{gen,cutEpoch,drawn,missing} (latest wins), evict{gen,nodes} (ordered, never
 //                  coalesced), poolReset{gen}, driverReplaced{gen},

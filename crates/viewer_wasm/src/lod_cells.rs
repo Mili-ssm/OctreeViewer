@@ -725,6 +725,9 @@ impl LodDataset {
                 continue;
             }
             match self.level_node_state(id) {
+                // No cells for the node: evicted or being rebuilt, so the request is stale, not
+                // unservable. Dropped without a refusal: the render side asks again for what
+                // it still wants once it holds the node, and a refusal would end that for good.
                 None => continue,
                 Some(false) => {
                     keep.push(request);

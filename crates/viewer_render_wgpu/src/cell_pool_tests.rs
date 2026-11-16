@@ -1325,9 +1325,12 @@ fn a_cap_on_a_dropped_depth_does_not_panic_after_a_recolour() {
             .flatten()
             .all(|d| [6, 7].contains(d))
     );
-    // The driver reconciles the cap with what is stored: below every level it goes.
+    // The driver reconciles the cap with what is stored: below every level it clamps to the
+    // coarsest one, so no finer level comes back in.
+    rig.pool.caps.insert(id, 5);
     rig.pool.reconcile_cap(id, &[6, 7]);
-    assert_eq!(rig.pool.caps.get(&id), None);
+    assert_eq!(rig.pool.caps.get(&id), Some(&6));
+    assert_eq!(capped(&[6, 7], rig.pool.caps.get(&id)), vec![6]);
     rig.pool.caps.insert(id, 7);
     rig.pool.reconcile_cap(id, &[4, 6]);
     assert_eq!(
