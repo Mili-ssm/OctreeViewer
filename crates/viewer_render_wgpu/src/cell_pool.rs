@@ -885,6 +885,15 @@ impl CellPool {
         }
     }
 
+    /// Cell mode: the drawn depths of `entry` that are resident and inside the node's span, the
+    /// ones emitted as active levels (a retained cut may hold depths of another mode or span).
+    fn cell_active_depths(&self, entry: &CellCutEntry, node_depth: u8) -> Vec<u8> {
+        in_cell_range(&entry.required_levels(), node_depth)
+            .into_iter()
+            .filter(|depth| self.is_resident(self.key(entry.node, *depth)))
+            .collect()
+    }
+
     /// The coarsest buildable depth inside the node's span, which cell mode requests (and pins)
     /// when no stored level of the node can draw.
     fn coarsest_in_span(
@@ -1246,8 +1255,12 @@ impl CellPool {
             // Cell mode only sees the stored levels inside the node's span.
             let stored = capped(&node.stored, caps.get(&entry.node));
             let stored = self.drawable_stored(&stored, grid, node.bounds);
-            if let Some(coarsest) = stored.first() {
-                set.insert(self.key(entry.node, *coarsest));
+            let coarsest = match self.lod_mode {
+                LodMode::Octant => coarsest(&node.stored, caps.get(&entry.node)),
+                LodMode::Cell => stored.first().copied(),
+            };
+            if let Some(coarsest) = coarsest {
+                set.insert(self.key(entry.node, coarsest));
             }
             // A wanted depth is fetched as the stored one that serves it; when it is not stored
             // itself it is also requested on demand (`requested_levels`).
@@ -1437,8 +1450,26 @@ impl CellPool {
         if old.is_empty() {
             return None;
         }
+        // Cell mode reasons about the depths it can use: stored levels and wanted depth are
+        // restricted to the node's span, as `cell_cut_with` does.
+        let (stored, span) = match self.lod_mode {
+            LodMode::Octant => (node.stored.clone(), None),
+            LodMode::Cell => {
+                let (lo, hi) = cell_depth_range(Self::node_depth(ctx.grid, node.bounds));
+                let (lo, hi) = (lo.max(node.buildable.0), hi.min(node.buildable.1));
+                (
+                    in_cell_range(&node.stored, Self::node_depth(ctx.grid, node.bounds)),
+                    (lo <= hi).then_some((lo, hi)),
+                )
+            }
+        };
+        if stored.is_empty() {
+            return None;
+        }
         let lacks = (0..8).any(|octant| {
-            let wanted = served_depth(&node.stored, ctx.depth(id, octant, node));
+            let depth = ctx.depth(id, octant, node);
+            let depth = span.map_or(depth, |(lo, hi)| depth.clamp(lo, hi));
+            let wanted = served_depth(&stored, depth);
             needed.contains(&self.key(id, wanted)) && !node.resident.iter().any(|d| *d >= wanted)
         });
         lacks.then_some(old)
@@ -2746,12 +2777,25 @@ impl CellPool {
                     .get(&id)
                     .or_else(|| self.applied_index.nodes.get(&id))
                     .map(|node| node.bounds);
-                let node_depth = bounds.map_or(0, |bounds| Self::node_depth(grid, bounds));
-                let active_bits = self.applied[index]
-                    .required_levels()
-                    .into_iter()
-                    .filter(|depth| (node_depth..=node_depth.saturating_add(63)).contains(depth))
-                    .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth));
+                debug_assert!(bounds.is_some(), "a node of the applied cut has bounds");
+                let Some(bounds) = bounds else {
+                    continue;
+                };
+                let node_depth = Self::node_depth(grid, bounds);
+                let active_bits = if self.lod_mode == LodMode::Cell {
+                    // Exactly the depths emitted below as `ActiveLevel`s of this node.
+                    self.cell_active_depths(&self.applied[index], node_depth)
+                        .into_iter()
+                        .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth))
+                } else {
+                    self.applied[index]
+                        .required_levels()
+                        .into_iter()
+                        .filter(|depth| {
+                            (node_depth..=node_depth.saturating_add(63)).contains(depth)
+                        })
+                        .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth))
+                };
                 let next = |slot: u32| MaskSlot {
                     slot,
                     mask,
@@ -2791,7 +2835,20 @@ impl CellPool {
             let Some(MaskSlot { slot, .. }) = self.mask_slots.get(&entry.node) else {
                 continue;
             };
+            let cell_depths = (self.lod_mode == LodMode::Cell).then(|| {
+                let node_depth = nodes
+                    .get(&entry.node)
+                    .or_else(|| self.applied_index.nodes.get(&entry.node))
+                    .map(|node| Self::node_depth(grid, node.bounds));
+                node_depth.map_or_else(Vec::new, |d| self.cell_active_depths(entry, d))
+            });
             for (depth, bits) in entry.draws() {
+                if cell_depths
+                    .as_ref()
+                    .is_some_and(|depths| !depths.contains(&depth))
+                {
+                    continue;
+                }
                 let key = self.key(entry.node, depth);
                 if !self.is_resident(key) {
                     continue;

@@ -3195,3 +3195,130 @@ fn cell_mode_clamps_the_pool_to_the_node_span() {
         Some(node_depth)
     );
 }
+
+/// A leaf whose first stored level lies below its node depth, so only octant mode can draw it.
+fn leaf_below_its_node() -> (HashMap<NodeId, PoolNode>, u8, u8) {
+    let bounds = cube(ORIGIN, SIDE / 4.0);
+    let node_depth = representative_depth(&grid(), bounds).saturating_sub(3);
+    assert!(node_depth >= 2);
+    let below = node_depth - 1;
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        PoolNode {
+            bounds,
+            stored: vec![below, node_depth + 2],
+            buildable: (below, node_depth + 6),
+            points: 500,
+        },
+    )]);
+    (nodes, node_depth, below)
+}
+
+#[test]
+fn a_retained_octant_cut_draws_nothing_outside_the_span_after_switching_to_cell_mode() {
+    let (mut nodes, node_depth, below) = leaf_below_its_node();
+    // Only the level below the node is stored: octant mode draws it, cell mode cannot.
+    nodes.get_mut(&NodeId::new(1)).unwrap().stored = vec![below];
+    let cam = camera("fit");
+    let mut rig = Rig::new(nodes, 64, 8, 0);
+    let mut plan = rig.step(&ids(&[1]), &cam, 64.0);
+    for _ in 0..6 {
+        plan = rig.step(&ids(&[1]), &cam, 64.0);
+    }
+    assert_eq!(plan.apply, CutApply::Applied);
+    assert!(plan.active.iter().any(|level| level.key.depth == below));
+    rig.pool.set_lod_mode(LodMode::Cell);
+    for _ in 0..3 {
+        let plan = rig.step(&ids(&[1]), &cam, 64.0);
+        assert_eq!(plan.apply, CutApply::RetainedPrevious);
+        for level in &plan.active {
+            let depth = level.key.depth;
+            assert!(
+                (node_depth..=node_depth + 31).contains(&depth) && rig.pool.is_resident(level.key),
+                "{depth} outside the span of node depth {node_depth}"
+            );
+        }
+        assert!(plan.active.is_empty(), "{:?}", plan.active);
+    }
+}
+
+#[test]
+fn cell_mode_mask_updates_match_the_emitted_active_levels() {
+    let (nodes, node_depth, below) = leaf_below_its_node();
+    let cam = camera("fit");
+    let mut rig = Rig::new(nodes, 64, 8, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    // A resident level below the node (never drawn) and the requested ones as they arrive.
+    seed_resident(&mut rig.pool, 1, &[below]);
+    let mut checked = 0;
+    for _ in 0..12 {
+        let plan = rig.step(&ids(&[1]), &cam, 64.0);
+        for update in &plan.mask_updates {
+            let bits = plan
+                .active
+                .iter()
+                .filter(|level| level.mask_slot == update.slot)
+                .fold(0_u64, |bits, level| {
+                    bits | 1 << (level.key.depth - node_depth)
+                });
+            assert_eq!(update.active, bits, "{update:?} vs {:?}", plan.active);
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}
+
+#[test]
+fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
+    // A capped leaf drew its resident level `near` (above the cap) and now wants a depth below
+    // the node, which cell mode clamps to the node depth: it lacks the in-span level that serves
+    // it, so `near` keeps drawing. The stored level below the node must not serve the want.
+    let bounds = cube(ORIGIN, SIDE / 4.0);
+    let node_depth = representative_depth(&grid(), bounds).saturating_sub(3);
+    assert!(node_depth >= 2);
+    let (below, cap, near) = (node_depth - 1, node_depth + 1, node_depth + 3);
+    let id = NodeId::new(1);
+    let node = PoolNode {
+        bounds,
+        stored: vec![below, cap, near],
+        buildable: (below, near),
+        points: 500,
+    };
+    let mut pool = CellPool::new(PoolConfig::default());
+    pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut pool, 1, &[below, near]);
+    pool.applied_drawn.insert(id, [Some(near); 8]);
+    let depths = FastMap::from_iter([(
+        id,
+        NodeDepths {
+            node: node.clone(),
+            depths: [below; 8],
+            pose: Pose {
+                eye: [0.0; 3],
+                forward: [0.0, 0.0, 1.0],
+            },
+            depth: 0.0,
+            exact: true,
+            scale: 1.0,
+        },
+    )]);
+    let grid = grid();
+    let ctx = Ctx {
+        grid: &grid,
+        origin: ORIGIN,
+        depths: &depths,
+        evaluations: Cell::new(0),
+    };
+    let cut_node = CellCutNode {
+        bounds,
+        buildable: (below, cap),
+        stored: vec![below, cap],
+        resident: vec![below],
+    };
+    // The level that serves the clamped want (the node depth is not stored: `cap` serves it).
+    let needed = FastSet::from_iter([pool.key(id, cap)]);
+    assert_eq!(
+        pool.finer_drawn(id, cap, &cut_node, &needed, &ctx),
+        Some(vec![near])
+    );
+}

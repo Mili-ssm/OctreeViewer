@@ -494,7 +494,13 @@ pub(crate) fn cell_cut_with(
             lo: range.map(|(lo, _)| lo),
             hi: range.map(|(_, hi)| hi),
         });
-        has_resident.push(!data.resident.is_empty());
+        // Cell mode: a node whose resident levels all lie outside its span draws nothing, so it
+        // must not hide its ancestors' cells.
+        has_resident.push(if mode == LodMode::Cell {
+            !in_cell_range(&data.resident, rep.saturating_sub(MAX_MASK_LEVELS)).is_empty()
+        } else {
+            !data.resident.is_empty()
+        });
         nodes.push(data);
     }
 

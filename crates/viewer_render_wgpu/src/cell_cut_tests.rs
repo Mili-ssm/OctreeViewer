@@ -1373,6 +1373,36 @@ fn cell_mode_clamps_active_depths_to_the_node_span() {
     assert_eq!(octant[0].drawn, [Some(below); 8]);
 }
 
+#[test]
+fn cell_mode_ignores_children_resident_only_outside_their_span() {
+    // Node 2 sits at node depth 1 and node 5 at 4; their only resident level (0) lies below the
+    // node, so in cell mode they draw nothing and hide nothing, nor are they too fine.
+    let grid = dataset_grid(ORIGIN);
+    let mut nodes = chain(ORIGIN, 5, 0);
+    for id in [2, 5] {
+        let node = nodes.get_mut(&NodeId::new(id)).unwrap();
+        node.stored.insert(0, 0);
+        node.resident = vec![0];
+    }
+    let run_cell = |cut: &[u64]| {
+        cell_cut_with(
+            &ids(cut),
+            &|id| nodes.get(&id).cloned(),
+            &grid,
+            LodMode::Cell,
+            &|_, _, data| data.buildable.1,
+        )
+    };
+    let entries = run_cell(&[1, 2]).unwrap();
+    assert_eq!(entries[0].mask, [0; 8]);
+    assert_eq!(entries[1].drawn, [None; 8]);
+    assert!(run_cell(&[1, 5]).is_ok());
+    // Octant mode still sees the level as resident.
+    let camera = cameras().remove(0).1;
+    let entries = run(&ids(&[1, 2]), &nodes, &camera, &grid, ORIGIN, 4.0).unwrap();
+    assert_ne!(entries[0].mask, [0; 8]);
+}
+
 fn root_bounds() -> SpatialBounds {
     SpatialBounds::new(ORIGIN, ORIGIN.map(|v| v + SIDE)).unwrap()
 }
