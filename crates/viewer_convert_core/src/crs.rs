@@ -8,7 +8,7 @@ use viewer_format::{CrsRaw, CrsRecord};
 const PROJECTED_CS_TYPE_KEY: u16 = 3072;
 const GEOGRAPHIC_TYPE_KEY: u16 = 2048;
 
-/// Reads the CRS of `header` from its VLRs and EVLRs; a WKT record wins over GeoTIFF keys.
+/// Reads the CRS of `header` from its VLRs and EVLRs; a WKT record wins over `GeoTIFF` keys.
 pub fn read_crs(header: &las::Header) -> CrsRecord {
     let mut wkt = None;
     let mut key_directory = None;
@@ -32,9 +32,8 @@ pub fn read_crs(header: &las::Header) -> CrsRecord {
             .unwrap_or_else(|_| CrsRecord::local());
     }
     if let Some(key_directory) = key_directory.filter(|bytes| !bytes.is_empty()) {
-        let (authority, code) = geotiff_code(&key_directory)
-            .map(|code| ("EPSG".to_owned(), code))
-            .unwrap_or_default();
+        let (authority, code) =
+            geotiff_code(&key_directory).map_or_default(|code| ("EPSG".to_owned(), code));
         let raw = CrsRaw::GeoTiff {
             key_directory,
             doubles: doubles.unwrap_or_default(),
@@ -79,7 +78,7 @@ fn parse_authority(rest: &str) -> Option<(String, u32)> {
     (code != 0 && !authority.is_empty()).then_some((authority, code))
 }
 
-/// EPSG code from GeoKey 3072, else 2048, stored inline; 0 and 32767 are no code.
+/// EPSG code from `GeoKey` 3072, else 2048, stored inline; 0 and 32767 are no code.
 pub fn geotiff_code(directory: &[u8]) -> Option<u32> {
     let words: Vec<u16> = directory
         .as_chunks::<2>()

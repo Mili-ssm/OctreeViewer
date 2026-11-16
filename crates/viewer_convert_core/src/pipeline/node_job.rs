@@ -39,6 +39,7 @@ const LEAF_PLATEAU_MIN_CELLS: usize = 8;
 pub struct NodePath(pub Vec<u16>); // child keys from the root; Ord = preorder
 
 impl NodePath {
+    #[must_use]
     pub fn child(&self, key: u16) -> Self {
         let mut keys = self.0.clone();
         keys.push(key);
@@ -272,6 +273,10 @@ impl SampleGrid {
         }
     }
 
+    #[expect(
+        clippy::iter_without_into_iter,
+        reason = "private helper that returns a boxed iterator over either cell layout"
+    )]
     fn iter(&self) -> Box<dyn Iterator<Item = (usize, &SampleAccumulator)> + '_> {
         match &self.cells {
             SampleCells::Dense(slots) => Box::new(
@@ -287,6 +292,10 @@ impl SampleGrid {
     }
 
     // Hot loop: `inline(always)` saves ~0.55% Ir over `inline` (M1_R7 record, diagnosis).
+    #[expect(
+        clippy::inline_always,
+        reason = "hot loop: measured gain over `inline` (see the comment above)"
+    )]
     #[inline(always)]
     fn add(&mut self, record: &[u8], position: [f64; 3], bounds: SpatialBounds) {
         let (voxel_key, center) = if self.global {
@@ -504,7 +513,10 @@ struct RootScan {
 
 /// Reads `source.range()` into child spools `first_child + key`. Each `fill` is cut at a global
 /// multiple of `batch`, so every range issues the calls the serial scan issues in that stretch.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
+)]
 fn scan_root_range<P: PointSource, S: SpoolStore, C: Clock>(
     ctx: &JobContext,
     info: &SourceInfo,
@@ -578,7 +590,10 @@ fn scan_root_range<P: PointSource, S: SpoolStore, C: Clock>(
 /// every point is equal the created children are closed without flushing and returned in
 /// `release` (and `children` is empty); the host then spools the source and runs the root as a
 /// `NodeJob`, which rescans it and becomes a leaf.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
+)]
 pub fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(
     ctx: &JobContext,
     info: &SourceInfo,
@@ -810,7 +825,7 @@ pub fn join_segments<S: SpoolStore>(
     target: SpoolId,
     segments: &[SpoolId],
 ) -> Result<u64, ConvertError> {
-    debug_assert!(!segments.is_empty());
+    debug_assert_ne!(segments, []);
     store.create(target)?;
     let mut buffer = vec![0_u8; SPOOL_IO_BUFFER_BYTES];
     let mut total = 0_u64;
@@ -1055,7 +1070,7 @@ fn morton_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32)
     for pair in codes.windows(2) {
         let differing = pair[0] ^ pair[1];
         if differing != 0 {
-            let top_group = (63 - differing.leading_zeros()) / 3;
+            let top_group = differing.ilog2() / 3;
             first_split[(code_depth - top_group) as usize] += 1;
         }
     }
@@ -1191,6 +1206,10 @@ fn child_payload_bytes(children: &[Option<ChildSpool>]) -> Vec<u64> {
         .collect()
 }
 
+#[expect(
+    clippy::ref_option,
+    reason = "callers keep the metrics in an `Option` field and pass it by reference"
+)]
 fn start_phase<C: Clock>(clock: &C, metrics: &Option<JobMetrics>) -> Option<C::Instant> {
     metrics.as_ref().map(|_| clock.now())
 }
