@@ -104,7 +104,7 @@ risk in [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2
 - [x] **Step 2:** write the record (facts, inferences) and a verdict: the metric that passes the kill criteria with the fewest instances; `edge` qualifies only with 0 non-monotone pairs. If none passes → stop (kill criteria).
 - [x] **Step 3:** if the verdict is not `bound`, amend E1 and Task 1's twin in a follow-up commit before Task 3.
 - [x] **Step 4:** commit `docs: measure the per-cell LOD metric (phase 2a gate)`.
-- [ ] **Amendment (verdict `edge`, 16-11-2026):** the twin of Task 1 switches to E1 `edge_px` (`LodView` gets `right` and `up`, loses `near`; `edge_bound` becomes `edge_px`) and to the E4 all-ancestors rule; `the_bound_covers_the_projected_edge` becomes `edge_px_matches_the_camera` (relative 1e-4 against `projected_voxel_edge_pixels` in f64) and the partition test runs unchanged. Commit `feat(render): use the actual projected edge in the per-cell LOD twin`.
+- [x] **Amendment (verdict `edge`, 16-11-2026):** the twin of Task 1 switches to E1 `edge_px` (`LodView` gets `right` and `up`, loses `near`; `edge_bound` becomes `edge_px`) and to the E4 all-ancestors rule; `the_bound_covers_the_projected_edge` becomes `edge_px_matches_the_camera` (relative 1e-4 against `projected_voxel_edge_pixels` in f64) and the partition test runs unchanged. Commit `feat(render): use the actual projected edge in the per-cell LOD twin`.
 
 ### Task 3: The cut and the pool in cell mode (CPU only)
 
