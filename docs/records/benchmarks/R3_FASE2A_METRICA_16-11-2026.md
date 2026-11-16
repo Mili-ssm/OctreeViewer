@@ -20,7 +20,13 @@ Si ninguna pasa, la fase 2a se detiene y se replantea la métrica con el propiet
 | `edge` | 2,27 / 1,00 / 1,00 / 1,00 | 0,000 % (4 celdas de 16,9 M, Majadas 1 px; Belvedere 0,006 %) | 0 | 0 | **Pasa** |
 | `distance` | 2,27 / 1,00 / 1,00 / 1,00 | 14,8 % (Majadas, 8 px) | 0 en Majadas; 4,6–5,1 % en la rasante de Belvedere | 0 | **Falla** (criterio 2) |
 
-**Elegida: `edge`.** Es la única que pasa y, además, da menos instancias que `bound` en todos los casos medidos (0,85–0,99× `octant_tight` dentro de Majadas frente a 0,995–1,08×).
+**Elegida: `edge`.** Es la única que pasa y da menos instancias que `bound` o las mismas (empates en la órbita 0° y la rasante a 1 px de Majadas) (0,85–0,99× `octant_tight` dentro de Majadas frente a 0,995–1,08×).
+
+### Alcance del veredicto (revisión del controlador, 16-11-2026)
+
+- El criterio 2 lo cumple `edge` **por construcción**: refina mientras la misma arista proyectada supera el objetivo, así que solo quedan por encima las celdas que no pueden refinar (varios puntos en S o la profundidad máxima) y las que tienen una esquina detrás del ojo (`+inf`). Lo que decide entre `edge` y `bound` es el número de instancias y de bytes, no ese criterio.
+- Los pares no monótonos se cuentan solo por encima de la profundidad de separación S; por debajo, la cola de un punto por celda (hasta el 2,4 % de las instancias de `edge` dentro de Majadas a 8 px) no se comprobó.
+- `bound` y `edge` dependen de `cell_lod.rs` y `camera.rs` del commit medido (`c3091fb`), que `identity.txt` no resume; el spike de commits posteriores calcula `bound` con el plano cercano del frustum y no es idéntico bit a bit.
 
 ## Hechos
 
