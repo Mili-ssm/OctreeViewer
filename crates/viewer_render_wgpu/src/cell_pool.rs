@@ -729,6 +729,9 @@ pub struct CellPool {
     applied_pins: FastSet<LevelKey>,
     pinned: FastSet<LevelKey>,
     mask_slots: FastMap<NodeId, MaskSlot>,
+    /// Levels whose upload completed in the current plan: a level is first drawn one frame after
+    /// its last page is written, so cell mode does not activate them yet (the D5 depth included).
+    fresh: FastSet<LevelKey>,
     lod_mode: LodMode,
     free_masks: BTreeSet<u32>,
     next_mask: u32,
@@ -844,6 +847,7 @@ impl CellPool {
             applied_pins: FastSet::default(),
             pinned: FastSet::default(),
             mask_slots: FastMap::default(),
+            fresh: FastSet::default(),
             lod_mode: LodMode::Octant,
             free_masks: BTreeSet::new(),
             next_mask: 0,
@@ -899,7 +903,10 @@ impl CellPool {
     fn cell_active_depths(&self, entry: &CellCutEntry, node_depth: u8) -> Vec<u8> {
         let mut depths: Vec<u8> = in_cell_range(&entry.required_levels(), node_depth)
             .into_iter()
-            .filter(|depth| self.is_resident(self.key(entry.node, *depth)))
+            .filter(|depth| {
+                let key = self.key(entry.node, *depth);
+                self.is_resident(key) && !self.fresh.contains(&key)
+            })
             .collect();
         // D5 (E7): a node whose mask is set also has its D5 depth active, which covers the
         // unmasked part of its coarse cells.
@@ -907,6 +914,7 @@ impl CellPool {
             && let Some(node) = self.applied_index.nodes.get(&entry.node)
             && let Some(grid) = &self.applied_index.grid
             && let Some(d5) = self.d5_resident(entry.node, node, grid)
+            && !self.fresh.contains(&self.key(entry.node, d5))
             && !depths.contains(&d5)
         {
             depths.push(d5);
@@ -2381,6 +2389,7 @@ impl CellPool {
                 .retain(|key, _| nodes.contains_key(&key.node) || levels.contains_key(key));
             self.sizes_prune_at = (self.sizes.len() * 2).max(1024);
         }
+        self.fresh.clear();
         let mut page_frees = std::mem::take(&mut self.carry.page_frees);
         self.release(frame, &mut page_frees);
 
@@ -2928,6 +2937,7 @@ impl CellPool {
                 let slots = std::mem::take(slots);
                 level.state = LevelState::Resident { slots };
                 self.residency_epoch += 1;
+                self.fresh.insert(*key);
             }
         }
 
