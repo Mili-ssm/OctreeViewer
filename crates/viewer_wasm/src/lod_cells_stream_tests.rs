@@ -621,6 +621,8 @@ struct CellCtx {
     /// Viewport size in pixels and render clip distances (scaled units) for the visibility test.
     viewport: [f64; 2],
     clip: (f64, f64),
+    /// `lod_near_depth` (scaled units); `ViewFrustum`'s near plane is `max(near, clip.0)`.
+    near: f64,
 }
 
 impl CellCtx {
@@ -1035,6 +1037,7 @@ impl Harness {
             root_side: grid.root_side,
             viewport: viewport.map(f64::from),
             clip: view.camera().clip_distances(),
+            near: lod_near_depth_scaled(&view.camera()),
         });
     }
 
@@ -4550,13 +4553,28 @@ struct LagFrame {
     /// excess.
     over_bound: u32,
     over_bound_max: i32,
+    /// The judged samples and their lags split by the full view frustum of
+    /// `ViewFrustum` (sides plus the near/far planes, see `in_clip`).
+    in_clip: LagSplit,
+    out_clip: LagSplit,
     /// Size of the last level-request set and the pool's resident pages.
     requests: u32,
     pages: u32,
 }
 
+/// Judged samples and lag counts (at least 1, 2 and 3 levels) of one part of the samples.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct LagSplit {
+    judged: u32,
+    b: [u32; 3],
+    r: [u32; 3],
+}
+
 #[derive(Default)]
 struct LagLog {
+    /// Description of the in-clip sample with the largest lag against the resident reference
+    /// (then the buildable one), over all frames.
+    worst_in_clip: Option<((i32, i32), String)>,
     on: bool,
     /// About this many hash-picked samples per node (0: `LAG_SAMPLES_PER_NODE`).
     per_node: usize,
@@ -4629,6 +4647,13 @@ fn in_frustum(ctx: &CellCtx, rel: [f64; 3]) -> bool {
     depth > 0.0
         && dot(ctx.lod.right).abs() * focal <= depth * ctx.viewport[0] * 0.5
         && dot(ctx.lod.up).abs() * focal <= depth * ctx.viewport[1] * 0.5
+}
+
+/// `in_frustum` plus the render clip, as `ViewFrustum` (production, crate-private) tests a point:
+/// view depth within `[max(lod_near_depth, clip near), clip far]` (restated, scaled units).
+fn in_clip(ctx: &CellCtx, rel: [f64; 3]) -> bool {
+    let depth: f64 = (0..3).map(|a| rel[a] * f64::from(ctx.lod.forward[a])).sum();
+    in_frustum(ctx, rel) && depth >= ctx.near.max(ctx.clip.0) && depth <= ctx.clip.1
 }
 
 impl Harness {
@@ -4725,6 +4750,60 @@ impl Harness {
                     i32::from(ideal_b) - i32::from(drawn),
                     i32::from(ideal_r) - i32::from(drawn),
                 );
+                let clipped = in_clip(ctx, rel);
+                let part = if clipped {
+                    &mut f.in_clip
+                } else {
+                    &mut f.out_clip
+                };
+                part.judged += 1;
+                for k in 0..3 {
+                    part.b[k] += u32::from(lag_b > k as i32);
+                    part.r[k] += u32::from(lag_r > k as i32);
+                }
+                if clipped
+                    && lag_b > 0
+                    && log
+                        .worst_in_clip
+                        .as_ref()
+                        .is_none_or(|(key, _)| (lag_r, lag_b) > *key)
+                {
+                    let depth: f64 = (0..3).map(|a| rel[a] * f64::from(ctx.lod.forward[a])).sum();
+                    let half = grid.root_side / 2.0_f64.powi(i32::from(finest)) * ctx.scale / 2.0;
+                    let reach: f64 = (0..3).map(|a| f64::from(ctx.lod.forward[a]).abs()).sum();
+                    let active: Vec<u8> = (0..64_u8)
+                        .filter(|b| node.lod.active >> b & 1 == 1)
+                        .map(|b| b + node.lod.node_depth)
+                        .collect();
+                    let resident: Vec<u8> = levels.iter().map(|(d, _)| *d).collect();
+                    let text = format!(
+                        "node={} node_depth={} lo={:?} side={:?}\n\
+                         sample finest_depth={finest} rel_eye={rel:?} view_depth={depth:.6}\n\
+                         clip near_eff={:.6} (lod_near={:.6} clip_near={:.6}) far={:.6}\n\
+                         cell cube depth range=[{:.6}, {:.6}] (centre +- {:.6}); centre in clip={clipped}; \
+                         whole cube inside depth clip={}; cube touches clip={}\n\
+                         resident={resident:?} active={active:?} span={span:?} hi_d={:?}\n\
+                         drawn={drawn} ideal_r={ideal_r} ideal_b={ideal_b} lag_r={lag_r} lag_b={lag_b}",
+                        node.id.get(),
+                        node.lod.node_depth,
+                        node.lo,
+                        node.side,
+                        ctx.near.max(ctx.clip.0),
+                        ctx.near,
+                        ctx.clip.0,
+                        ctx.clip.1,
+                        depth - half * reach,
+                        depth + half * reach,
+                        half * reach,
+                        depth - half * reach >= ctx.near.max(ctx.clip.0)
+                            && depth + half * reach <= ctx.clip.1,
+                        depth + half * reach >= ctx.near.max(ctx.clip.0)
+                            && depth - half * reach <= ctx.clip.1,
+                        hi_d_of(self, view, j),
+                    );
+                    log.worst_in_clip =
+                        Some(((lag_r, lag_b), format!("frame_gen={} {text}", log.view_gen)));
+                }
                 for k in 0..3 {
                     f.b[k] += u32::from(lag_b > k as i32);
                     f.r[k] += u32::from(lag_r > k as i32);
@@ -4798,7 +4877,9 @@ fn print_lag(label: &str, frames: &[LagFrame]) {
         "LAGSUM {label} | frames={} judged_sum={} | settle_b={} settle_r={} | \
          sample_frames_b1={} b2={} b3={} | sample_frames_r1={} r2={} r3={} | \
          worst_b={} at f={} worst_r={} at f={} | over_bound_sample_frames={} over_max={} | \
-         requests min={} med={} max={} | pages_end={}",
+         requests min={} med={} max={} | pages_end={}\n\
+         LAGSPLIT {label} | in_clip: judged={} b1={} b2={} b3={} r1={} r2={} r3={} | \
+         out_clip: judged={} b1={} b2={} b3={} r1={} r2={} r3={}",
         frames.len(),
         sum(&|f| f.judged),
         frames_to_settle(frames, |f| (f.judged, f.b, f.b_max)),
@@ -4819,6 +4900,20 @@ fn print_lag(label: &str, frames: &[LagFrame]) {
         at(requests.len() / 2),
         requests.last().copied().unwrap_or(0),
         frames.last().map_or(0, |f| f.pages),
+        sum(&|f| f.in_clip.judged),
+        sum(&|f| f.in_clip.b[0]),
+        sum(&|f| f.in_clip.b[1]),
+        sum(&|f| f.in_clip.b[2]),
+        sum(&|f| f.in_clip.r[0]),
+        sum(&|f| f.in_clip.r[1]),
+        sum(&|f| f.in_clip.r[2]),
+        sum(&|f| f.out_clip.judged),
+        sum(&|f| f.out_clip.b[0]),
+        sum(&|f| f.out_clip.b[1]),
+        sum(&|f| f.out_clip.b[2]),
+        sum(&|f| f.out_clip.r[0]),
+        sum(&|f| f.out_clip.r[1]),
+        sum(&|f| f.out_clip.r[2]),
     );
 }
 

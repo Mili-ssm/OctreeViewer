@@ -1395,6 +1395,9 @@ fn real_lag_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64]) {
                 &format!("belvedere {name} {rule:?} seed {seed}"),
                 &sim.h.lag.frames,
             );
+            if let Some((_, text)) = &sim.h.lag.worst_in_clip {
+                println!("IN_CLIP_SAMPLE belvedere {name} {rule:?} seed {seed}: {text}");
+            }
         }
     }
 }
