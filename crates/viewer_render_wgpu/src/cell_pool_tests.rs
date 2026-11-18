@@ -4171,10 +4171,11 @@ fn retained_frames_advance_the_step_wait() {
 }
 
 #[test]
-fn a_node_entering_the_cut_widens_its_window_one_level_per_frame() {
+fn a_node_activates_the_contiguous_resident_run_of_its_range() {
     // Only depth 9 serves the node when it enters the cut (range 7..=11), so it draws 9 alone.
-    // The other depths of the range become resident afterwards: the active span takes one level
-    // at each end per frame, not the whole range at once (ADR 0053).
+    // A range depth beyond a residency gap stays inactive (ADR 0055, proposed): with 10 missing,
+    // 11 would make the per-cell rule jump over it. Once the range is resident it is all
+    // active at once: no window of one level per frame.
     let nodes = HashMap::from([(
         NodeId::new(1),
         d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
@@ -4187,13 +4188,12 @@ fn a_node_entering_the_cut_widens_its_window_one_level_per_frame() {
     let plan = d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
     assert_eq!(plan.entries[0].range, Some((7, 11)), "setup");
     assert_eq!(active_depths(&plan, &rig, 1), [9], "entering the cut");
-    seed_more(&mut rig, 1, &[7, 8, 10, 11]);
-    let spans: Vec<Vec<u8>> = (0..3)
-        .map(|_| active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1))
-        .collect();
-    assert_eq!(spans[0], [8, 9, 10], "one level either side");
-    assert_eq!(spans[1], [7, 8, 9, 10, 11], "one more level either side");
-    assert_eq!(spans[2], spans[1], "the range is covered");
+    seed_more(&mut rig, 1, &[11]);
+    let gapped = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
+    assert_eq!(gapped, [9], "11 lies beyond the gap at 10");
+    seed_more(&mut rig, 1, &[7, 8, 10]);
+    let full = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
+    assert_eq!(full, [7, 8, 9, 10, 11], "the whole range is resident");
 }
 
 /// Children of node 2 (ids 10..=17) that store depths 4..=10, with node 2 drawing depth 6 under

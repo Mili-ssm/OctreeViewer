@@ -749,9 +749,6 @@ pub struct CellPool {
     /// drawing depth per cell among the active ones, so it can exceed the octant's `applied_drawn`
     /// depth wherever a finer active depth (another octant's, or D5) still refines.
     applied_finest: FastMap<NodeId, u8>,
-    /// Cell mode: the `(min, max)` active depths of each node of the applied cut, as last
-    /// written to the records.
-    applied_span: FastMap<NodeId, (u8, u8)>,
     /// Per `(node, octant)` stepping towards its wanted depth: `((drawn depth, wanted depth is
     /// finer, adjacent depth awaited), frames waited)`. Every planned frame counts, applied or
     /// retained; the key ignores the exact wanted depth, so a wanted depth flipping within the
@@ -759,9 +756,6 @@ pub struct CellPool {
     /// `STEP_WAIT_FRAMES` the octant hops to the resident level closest to its drawn depth
     /// (ADR 0053).
     step_waits: FastMap<(NodeId, usize), StepWait>,
-    /// Cell mode: per node of the applied cut that was already active in the previous cut, the
-    /// depths its range residents may take: that span widened by one level at each end.
-    applied_window: FastMap<NodeId, (u8, u8)>,
     /// Cell mode: the D5 depth each masked node had active at the last applied frame. Retained
     /// frames keep it (the caps may drop below it, but the GPU record still holds the mask).
     applied_d5: FastMap<NodeId, u8>,
@@ -1003,9 +997,7 @@ impl CellPool {
             wait_ages: FastMap::default(),
             applied_drawn: FastMap::default(),
             applied_finest: FastMap::default(),
-            applied_span: FastMap::default(),
             step_waits: FastMap::default(),
-            applied_window: FastMap::default(),
             applied_d5: FastMap::default(),
             applied_digest: 0,
             applied_cover: FastSet::default(),
@@ -1081,42 +1073,32 @@ impl CellPool {
         node_depth: u8,
         new_d5: Option<u8>,
     ) -> Vec<u8> {
-        // Every depth inside the node's range `[lo, hi]` that is already resident is
-        // active too (no request or build): the GPU picks per cell among them.
-        let mut wanted = entry.required_levels();
-        // A node that draws nothing (held, nothing resident in its span) stays out entirely.
-        // The span of active depths moves at most one level per applied cut at each end (ADR
-        // 0053): the range residents are only taken inside the window `applied_window` of a node
-        // that was already active (the drawn depths are always active).
-        if let Some((lo, hi)) = entry.range
-            && !wanted.is_empty()
+        // The depths the GPU may pick from are the ones the octants draw plus the resident depths
+        // of the node's range that reach a drawn one without a residency gap (ADR 0055,
+        // proposed). A range depth beyond a gap is never active: the per-cell rule would jump
+        // to it, drawing far cells below the pixel target (a finer one) or coarsening what is
+        // on screen (a coarser one). `range_depths` requests the missing depths, so the set
+        // grows as they arrive.
+        let drawn = entry.required_levels();
+        let usable = |depth: u8| {
+            let key = self.key(entry.node, depth);
+            self.is_resident(key) && !self.fresh.contains(&key)
+        };
+        let mut wanted = drawn.clone();
+        if let (Some((lo, hi)), Some(first), Some(last)) =
+            (entry.range, drawn.first(), drawn.last())
         {
-            // A node entering the cut has no window: it starts from the depths it draws, one
-            // level either side, and widens from there one level per frame.
-            let (wlo, whi) = self
-                .applied_window
-                .get(&entry.node)
-                .copied()
-                .unwrap_or_else(|| {
-                    let drawn = entry.required_levels();
-                    let first = drawn.first().copied().unwrap_or(u8::MAX);
-                    let last = drawn.last().copied().unwrap_or(0);
-                    (first.saturating_sub(1), last.saturating_add(1))
-                });
-            // The active set stays contiguous up to the finest drawn depth (ADR 0053): an octant
-            // that holds the eye draws beyond `hi`, and a gap makes the per-cell rule jump from
-            // the range to that depth, whose far cells measure a fraction of a pixel.
-            let hi = hi.max(wanted.last().copied().unwrap_or(hi));
-            wanted.extend(lo.max(wlo)..=hi.min(whi));
+            let (lo, hi) = (lo.min(*first), hi.max(*last));
+            for anchor in &drawn {
+                wanted.extend((lo..*anchor).rev().take_while(|depth| usable(*depth)));
+                wanted.extend((*anchor + 1..=hi).take_while(|depth| usable(*depth)));
+            }
             wanted.sort_unstable();
             wanted.dedup();
         }
         let mut depths: Vec<u8> = in_cell_range(&wanted, node_depth)
             .into_iter()
-            .filter(|depth| {
-                let key = self.key(entry.node, *depth);
-                self.is_resident(key) && !self.fresh.contains(&key)
-            })
+            .filter(|depth| usable(*depth))
             .collect();
         if let Some(d5) = new_d5
             && !depths.contains(&d5)
@@ -1420,9 +1402,7 @@ impl CellPool {
         self.overflow_frame = 0;
         self.applied_drawn.clear();
         self.applied_finest.clear();
-        self.applied_span.clear();
         self.step_waits.clear();
-        self.applied_window.clear();
         self.applied_d5.clear();
         self.old_released.clear();
         self.applied_digest = 0;
@@ -3146,14 +3126,6 @@ impl CellPool {
                     .iter()
                     .map(|entry| (entry.node, entry.drawn))
                     .collect();
-                self.applied_window = self
-                    .applied
-                    .iter()
-                    .filter_map(|entry| {
-                        let (lo, hi) = self.applied_span.get(&entry.node)?;
-                        Some((entry.node, (lo.saturating_sub(1), hi.saturating_add(1))))
-                    })
-                    .collect();
                 self.applied_digest = drawn_digest(&self.applied);
                 self.applied_cover.clone_from(&memo.hold_ancestors);
                 self.index_applied(nodes, grid);
@@ -3535,7 +3507,6 @@ impl CellPool {
                 }
             }
             let mut finest = FastMap::default();
-            let mut spans = FastMap::default();
             let mut d5_depths = FastMap::default();
             for index in 0..self.applied.len() {
                 let (id, mask) = (self.applied[index].node, self.applied[index].mask);
@@ -3565,7 +3536,6 @@ impl CellPool {
                     if active_bits != 0 {
                         let top = node_depth + (63 - active_bits.leading_zeros()) as u8;
                         finest.insert(id, top);
-                        spans.insert(id, (node_depth + active_bits.trailing_zeros() as u8, top));
                     }
                 }
                 let next = |slot: u32| MaskSlot {
@@ -3619,7 +3589,6 @@ impl CellPool {
             }
             self.applied_d5 = d5_depths;
             self.applied_finest = finest;
-            self.applied_span = spans;
         }
         let mut applied_levels = FastSet::default();
         for entry in &self.applied {
