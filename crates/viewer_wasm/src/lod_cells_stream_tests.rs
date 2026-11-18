@@ -19,12 +19,15 @@ use viewer_core::{
 };
 use viewer_format::{FormatReader, FormatReaderLimits, OctreeReader};
 use viewer_render_wgpu::cell_lod::{
-    LodView, MAX_NODE_SPAN, NodeLod, cell_lo, drawn_depth_at, edge_px, refines,
+    LodView, MAX_NODE_SPAN, NodeLod, cell_lo, drawn_depth_at, edge_px, min_child_edge_px, refines,
 };
 use viewer_render_wgpu::{
     ActiveRule, CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan, LodMode,
     MASK_WORDS, NODE_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo,
     SceneBounds, ViewProjection, VoxelBuildLimits, cell_cut_digest, representative_depth,
+};
+use viewer_render_wgpu::{
+    CellGrid, MAX_CELL_DEPTH, node_cell_level, representative_depth_for_spacing,
 };
 
 /// Longest run of `RetainedPrevious` frames the pool may take while blocks stream in.
@@ -2701,6 +2704,7 @@ fn p4_border_levels_under(rule: ActiveRule) {
     h.settle(&initial, 3, 5000);
     h.camera_moved();
     h.settle(&p4, 3, 5000);
+    far_diagnosis(&h, &p4, &[14, 8]);
 
     let ctx = h.cell_ctx.as_ref().expect("cell mode context");
     let grid = h.dataset.cell_grid();
@@ -2868,4 +2872,821 @@ fn p4_border_levels_under(rule: ActiveRule) {
             hi[1]
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// ADR 0055 plan, task 2: what the twin wants per node against the node range (diagnostics)
+// ---------------------------------------------------------------------------------------------
+
+const DEMO_VIEWPORT: [u32; 2] = [870, 750];
+/// Frames of the wheel and drag deltas of the web demo: a wheel step is -0.3 of zoom, a pointer
+/// drag is normalised by the canvas height.
+const WHEEL_STEP: f64 = -0.3;
+
+/// The camera of a pose of the web demo, from the initial fit: P1 = right drag 150 px upward then
+/// 3 wheel steps; P2 = P1 + 6 wheel steps + right drag 80; P3 = P2 + 4 wheel steps; P4 = 8 wheel
+/// steps + right drag 120; P5 = P2 + 6 half wheel steps. The drag direction (upward, as in P4) and
+/// the order inside a pose are assumptions: zoom and orbit commute except at the pitch clamp.
+fn demo_pose_camera(fit: OrbitCamera, pose: &str) -> OrbitCamera {
+    let mut camera = fit;
+    let drag = |camera: &mut OrbitCamera, px: f64| assert!(camera.orbit(0.0, -px / 750.0));
+    let wheel = |camera: &mut OrbitCamera, steps: usize, k: f64| {
+        (0..steps).for_each(|_| assert!(camera.zoom(WHEEL_STEP * k)))
+    };
+    match pose {
+        "P1" => {
+            drag(&mut camera, 150.0);
+            wheel(&mut camera, 3, 1.0);
+        }
+        "P2" | "P3" | "P5" => {
+            drag(&mut camera, 150.0);
+            wheel(&mut camera, 9, 1.0);
+            drag(&mut camera, 80.0);
+            match pose {
+                "P3" => wheel(&mut camera, 4, 1.0),
+                "P5" => wheel(&mut camera, 6, 0.5),
+                _ => {}
+            }
+        }
+        "P4" => {
+            wheel(&mut camera, 8, 1.0);
+            drag(&mut camera, 120.0);
+        }
+        other => panic!("unknown pose {other}"),
+    }
+    camera
+}
+
+/// The sample settled at `pose` (from the initial fit, like `p4_border_levels`).
+fn settled_sample_pose(pose: &str, rule: ActiveRule) -> (Harness, ViewProjection) {
+    let (mut h, origin, scale) = sample_harness(LodMode::Cell);
+    h.rule = rule;
+    let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
+    let data = h.dataset.metadata.hierarchy().stats().data_bounds;
+    let mut fit = OrbitCamera::default();
+    assert!(fit.fit(
+        SceneBounds {
+            min: local(data.min()),
+            max: local(data.max())
+        },
+        DEMO_VIEWPORT
+    ));
+    let initial = ViewProjection::new(fit, DEMO_VIEWPORT, scale, VoxelBuildLimits::default());
+    let view = ViewProjection::new(
+        demo_pose_camera(fit, pose),
+        DEMO_VIEWPORT,
+        scale,
+        VoxelBuildLimits::default(),
+    );
+    h.settle(&initial, 3, 5000);
+    h.camera_moved();
+    h.settle(&view, 3, 5000);
+    (h, view)
+}
+
+fn unit(v: [f64; 3]) -> [f64; 3] {
+    let n = v.iter().map(|c| c * c).sum::<f64>().sqrt();
+    v.map(|c| c / n)
+}
+
+/// `lod_near_depth` of the camera, scaled units (`OrbitCamera::lod_near_depth` is crate-private:
+/// this restates it from the public f64 array `[target, distance, yaw, pitch, radius, centre, ..]`).
+fn lod_near_depth_scaled(camera: &OrbitCamera) -> f64 {
+    let a = camera.to_f64_array();
+    let position = camera.position();
+    let forward = unit(std::array::from_fn(|i| a[i] - position[i]));
+    let centre_depth: f64 = (0..3).map(|i| (a[7 + i] - position[i]) * forward[i]).sum();
+    (centre_depth - a[6] * 1.2).max(a[6] * 0.001).max(0.001)
+}
+
+/// The cell `OctantProbe::at` places at `anchor` (relative frame: dataset minus origin) inside the
+/// box `[bmin, bmax]` for the branch without `on_axis`: `(cell px, smallest child px, cell min)`.
+#[allow(clippy::too_many_arguments)]
+fn probe_cell(
+    view: &ViewProjection,
+    root_side: f64,
+    bmin: [f64; 3],
+    bmax: [f64; 3],
+    anchor: [f64; 3],
+    depth: u8,
+) -> (f64, f64, [f64; 3]) {
+    let side = root_side / 2.0_f64.powi(i32::from(depth));
+    let min: [f64; 3] = std::array::from_fn(|a| {
+        let low = bmin[a];
+        let high = (bmax[a] - side).max(low);
+        anchor[a].clamp(bmin[a], bmax[a]).clamp(low, high)
+    });
+    let edge = |lo: [f64; 3], s: f64| {
+        view.projected_voxel_edge_pixels(
+            SpatialBounds::new(lo, lo.map(|v| v + s)).unwrap(),
+            [0.0; 3],
+        )
+    };
+    let half = side / 2.0;
+    let smallest = (0..8_usize)
+        .map(|c| {
+            edge(
+                std::array::from_fn(|a| min[a] + half * ((c >> a & 1) as f64)),
+                half,
+            )
+        })
+        .fold(f64::INFINITY, f64::min);
+    (edge(min, side), smallest, min)
+}
+
+/// Deliverable A: why `node_far_depth` answers what it does for the nodes `ids`: the far corner,
+/// then at that corner and at the centre of the 8|14 border on the ground, per depth, the px of
+/// the cell and of its smallest child as the probe measures them (`OctantProbe::at_anchor`,
+/// restated: the type is crate-private) and as the twin measures the lattice cell actually there.
+fn far_diagnosis(h: &Harness, view: &ViewProjection, ids: &[u64]) {
+    let ctx = h.cell_ctx.as_ref().expect("cell mode context");
+    let grid = h.dataset.cell_grid();
+    let hierarchy = h.dataset.metadata.hierarchy();
+    let camera = view.camera();
+    let scale = ctx.scale;
+    let eye_rel = camera.position().map(|v| v / scale);
+    let forward = unit(std::array::from_fn(|a| {
+        camera.target()[a] - camera.position()[a]
+    }));
+    let data = hierarchy.stats().data_bounds;
+    let target = f64::from(ctx.lod.target_px);
+    println!(
+        "-- far diagnosis: forward {forward:.4?} eye (relative, dataset units) {eye_rel:.3?} \
+         origin {:?} target_px {target} min_side {} (scaled)",
+        ctx.origin, ctx.lod.min_side
+    );
+    for id in ids {
+        let Some(node) = h.cell_nodes.iter().find(|n| n.id.get() == *id) else {
+            println!("node {id}: not in the cut");
+            continue;
+        };
+        let j = h.cell_nodes.iter().position(|n| n.id == node.id).unwrap();
+        let bounds = hierarchy.node(node.id).unwrap().bounds();
+        let rep = representative_depth(&grid, bounds);
+        let resident: Vec<u8> = (rep.saturating_sub(3)..=rep + 20)
+            .filter(|d| {
+                h.driver
+                    .pool()
+                    .is_resident(h.driver.pool().key(node.id, *d))
+            })
+            .collect();
+        let is_leaf = hierarchy.is_leaf(node.id) && !hierarchy.is_unloaded(node.id);
+        let rmin: [f64; 3] = std::array::from_fn(|a| bounds.min()[a] - ctx.origin[a]);
+        let rmax: [f64; 3] = std::array::from_fn(|a| bounds.max()[a] - ctx.origin[a]);
+        let corner: [f64; 3] =
+            std::array::from_fn(|a| if forward[a] > 0.0 { rmax[a] } else { rmin[a] });
+        let corner_depth: f64 = (0..3).map(|a| (corner[a] - eye_rel[a]) * forward[a]).sum();
+        // The centre of the border between nodes 8 and 14 (y = 32) on the ground (z = 0).
+        let border = [
+            (rmin[0] + rmax[0]) / 2.0,
+            32.0 - ctx.origin[1],
+            0.0 - ctx.origin[2],
+        ];
+        println!(
+            "node {id}: node_depth {} rep {rep} leaf {is_leaf} buildable.0 {rep} (derived: rep; the \
+             pool does not expose it; buildable.1 not exposed, resident {resident:?}) range {:?} \
+             wanted {:?}",
+            node.lod.node_depth, h.last_levels[j].2, h.last_entries[j].1
+        );
+        let rel_of =
+            |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| p[a] * scale - ctx.eye[a]) };
+        let screen = |rel: [f64; 3]| {
+            let dot = |v: [f32; 3]| (0..3).map(|a| rel[a] * f64::from(v[a])).sum::<f64>();
+            let d = dot(ctx.lod.forward);
+            [
+                ctx.viewport[0] * 0.5 + dot(ctx.lod.right) * f64::from(ctx.lod.focal) / d,
+                ctx.viewport[1] * 0.5 - dot(ctx.lod.up) * f64::from(ctx.lod.focal) / d,
+            ]
+        };
+        for (name, anchor) in [
+            ("far corner", corner),
+            ("border centre on the ground", border),
+        ] {
+            let in_data = (0..3).all(|a| {
+                let p = anchor[a] + ctx.origin[a];
+                p >= data.min()[a] && p <= data.max()[a]
+            });
+            let rel = rel_of(anchor);
+            println!(
+                "  anchor {name}: relative {anchor:.3?} view depth {:.3} in data bounds {in_data} \
+                 on screen {} screen px {:.0?}",
+                (0..3)
+                    .map(|a| rel[a] * f64::from(ctx.lod.forward[a]))
+                    .sum::<f64>(),
+                ctx.on_screen(rel),
+                screen(rel)
+            );
+            // The lattice cell actually there: the point nudged inside the node box.
+            let inside: [f64; 3] = std::array::from_fn(|a| {
+                let eps = (rmax[a] - rmin[a]) * 1e-6;
+                anchor[a].clamp(rmin[a] + eps, rmax[a] - eps)
+            });
+            let inside_rel = rel_of(inside);
+            let mut far = None;
+            for depth in rep..=rep + 8 {
+                let (cell, child, _) = probe_cell(view, grid.root_side, rmin, rmax, anchor, depth);
+                let meets = child < target;
+                if meets && far.is_none() {
+                    far = Some(depth);
+                }
+                let level = depth - node.lod.node_depth;
+                let cells = (1_u64 << level) as f64;
+                let side = node.side / cells;
+                let cell_idx: [u32; 3] = std::array::from_fn(|a| {
+                    ((inside_rel[a] - node.lo[a]) / side)
+                        .floor()
+                        .clamp(0.0, cells - 1.0) as u32
+                });
+                let lo = cell_lo(&node.lod, cell_idx, side as f32);
+                println!(
+                    "    depth {depth:>2}: probe cell {cell:7.2} px, smallest child {child:7.2} px \
+                     (meets = child < target: {meets}) | twin lattice cell {:7.2} px, smallest \
+                     child {:7.2} px, refines {}",
+                    edge_px(&ctx.lod, lo, side as f32),
+                    min_child_edge_px(&ctx.lod, lo, side as f32),
+                    refines(&ctx.lod, lo, side as f32)
+                );
+            }
+            println!("    first depth that meets (linear search of node_far_depth): {far:?}");
+        }
+        // Sweep along the node's border at y = 32 (its face towards the eye side) from the far
+        // corner to the other end, on the ground: view depth, screen position and the smallest
+        // child of the depths `rep + 4 ..= rep + 6` as the probe measures it.
+        println!(
+            "  sweep along x at y = 32, z = 0 (probe, depths {}..={}):",
+            rep + 4,
+            rep + 6
+        );
+        for step in 0..=8 {
+            let x = rmin[0] + (rmax[0] - rmin[0]) * f64::from(step) / 8.0;
+            let anchor = [x, 32.0 - ctx.origin[1], 0.0 - ctx.origin[2]];
+            let rel = rel_of(anchor);
+            let children: Vec<String> = (rep + 4..=rep + 6)
+                .map(|d| {
+                    format!(
+                        "d{d} {:.2}",
+                        probe_cell(view, grid.root_side, rmin, rmax, anchor, d).1
+                    )
+                })
+                .collect();
+            println!(
+                "    x {x:6.2}: view depth {:.3} screen x {:6.0} on screen {:5} child px {children:?}",
+                (0..3)
+                    .map(|a| rel[a] * f64::from(ctx.lod.forward[a]))
+                    .sum::<f64>(),
+                screen(rel)[0],
+                ctx.on_screen(rel)
+            );
+        }
+        println!(
+            "  far corner view depth {corner_depth:.3} (eye plane crossed: {})",
+            corner_depth <= 0.0
+        );
+    }
+}
+
+// --- B/C/D: the twin-wanted depth range of every node of the cut -----------------------------
+
+/// Screen lattice step in px of the samples (a drawn cell is at least ~4 px wide).
+const LATTICE_PX: usize = 6;
+/// Geometric step of the samples along each ray (a cell changes by one depth per doubling).
+const DEPTH_RATIO: f64 = 1.1;
+/// px tolerance for f32 (twin) against f64 (probes) in the containment property.
+const PX_EPSILON: f32 = 0.05;
+
+/// The depths the twin draws at `rel` (eye-relative, scaled) for each px target of `targets`, if
+/// every depth from `first` to `last` (the node's buildable span) were resident: the first depth
+/// whose cell holding the point does not refine (`refines`, min-side rule included), else `last`.
+/// The second value says whether the cell at the first target's depth crosses the eye plane
+/// (`edge_px` is `+inf`). One descent serves all targets: the smallest-child measure does not
+/// depend on the target.
+fn twin_depths(
+    view: &LodView,
+    node: &CellNode,
+    rel: [f64; 3],
+    (first, last): (u8, u8),
+    targets: [f32; 3],
+) -> ([u8; 3], bool) {
+    let (mut out, mut done, mut crosses) = ([last; 3], [false; 3], false);
+    for depth in first..=last {
+        let level = depth - node.lod.node_depth;
+        let cells = (1_u64 << level) as f64;
+        let side = node.side / cells;
+        let cell: [u32; 3] = std::array::from_fn(|a| {
+            ((rel[a] - node.lo[a]) / side)
+                .floor()
+                .clamp(0.0, cells - 1.0) as u32
+        });
+        let lo = cell_lo(&node.lod, cell, side as f32);
+        let min_side_ok = side as f32 * 0.5 >= view.min_side;
+        let smallest = if min_side_ok {
+            min_child_edge_px(view, lo, side as f32)
+        } else {
+            0.0
+        };
+        for i in 0..3 {
+            if !done[i] && !(min_side_ok && smallest >= targets[i]) {
+                (out[i], done[i]) = (depth, true);
+                if i == 0 {
+                    crosses = edge_px(view, lo, side as f32).is_infinite();
+                }
+            }
+        }
+        if done.iter().all(|d| *d) {
+            break;
+        }
+    }
+    (out, crosses)
+}
+
+/// The depth an ON-AXIS cube whose nearest corner is at view depth `z` would be drawn at: the
+/// first depth of the span that does not refine (the `on_axis` branch of `OctantProbe::at`).
+fn on_axis_depth(
+    view: &LodView,
+    node: &CellNode,
+    forward: [f64; 3],
+    (first, last): (u8, u8),
+    z: f64,
+) -> u8 {
+    for depth in first..=last {
+        let side = node.side / (1_u64 << (depth - node.lod.node_depth)) as f64;
+        let extent = forward.iter().map(|v| v.abs()).sum::<f64>() * side;
+        let lo: [f32; 3] =
+            std::array::from_fn(|a| (forward[a] * (z + extent / 2.0) - side / 2.0) as f32);
+        if !refines(view, lo, side as f32) {
+            return depth;
+        }
+    }
+    last
+}
+
+/// The buildable span of a node as the dataset builds it: `NodeSetup` (first depth = the
+/// representative depth, or the spacing's for a leaf with one; last = 5 deeper for an internal
+/// node, `MAX_CELL_DEPTH` for a leaf), cut where `node_cell_level` first refuses a depth as too
+/// sparse (the dataset's own refusal, found by bisection, as `build_node_levels` does). The pool
+/// does not expose `PoolNode::buildable`, so this restates it; `None` when a block is not cached.
+fn buildable_span(h: &Harness, id: NodeId) -> Option<(u8, u8)> {
+    let hierarchy = h.dataset.metadata.hierarchy();
+    let node = hierarchy.node(id)?;
+    let blocks: Vec<PointBlock> = node
+        .blocks()
+        .iter()
+        .map(|b| h.dataset.cache.peek(*b).cloned())
+        .collect::<Option<_>>()?;
+    let origin = h.dataset.coordinate_origin();
+    let world = h.dataset.cell_grid();
+    let grid = CellGrid {
+        root_min: std::array::from_fn(|a| world.root_min[a] - origin[a]),
+        root_side: world.root_side,
+    };
+    let local = SpatialBounds::new(
+        std::array::from_fn(|a| node.bounds().min()[a] - origin[a]),
+        std::array::from_fn(|a| node.bounds().max()[a] - origin[a]),
+    )
+    .ok()?;
+    let is_leaf = hierarchy.is_leaf(id) && !hierarchy.is_unloaded(id);
+    let rep = representative_depth(&grid, local);
+    let first = match node.spacing().filter(|_| is_leaf) {
+        Some(spacing) => rep.min(representative_depth_for_spacing(&grid, spacing)),
+        None => rep,
+    };
+    let mut last = if is_leaf {
+        MAX_CELL_DEPTH
+    } else {
+        first.saturating_add(5)
+    };
+    let ok =
+        |depth: u8| node_cell_level(&grid, local, node.spacing(), is_leaf, &blocks, depth).is_ok();
+    if !ok(last) {
+        let (mut good, mut bad) = (first, last);
+        while bad - good > 1 {
+            let middle = good + (bad - good) / 2;
+            if ok(middle) {
+                good = middle;
+            } else {
+                bad = middle;
+            }
+        }
+        last = good;
+    }
+    Some((first, last))
+}
+
+/// Everything measured for one node of the applied cut.
+#[derive(Clone, Debug, Default)]
+struct NodeRow {
+    id: u64,
+    node_depth: u8,
+    /// Buildable span (`buildable_span`).
+    span: (u8, u8),
+    points: u64,
+    eye_inside: bool,
+    samples: usize,
+    excluded_near: usize,
+    excluded_cross: usize,
+    /// Twin minimum and maximum wanted depth at the nominal target.
+    twin: Option<(u8, u8)>,
+    /// Twin minimum at `target + eps` and maximum at `target - eps` (the containment property).
+    twin_eps: Option<(u8, u8)>,
+    /// Today's `range`.
+    range: Option<(u8, u8)>,
+    /// The fit truncated the node this frame (`FramePlan::coarsened_nodes`), and the largest
+    /// depth any octant wanted (already clamped to the capped buildable range).
+    capped: bool,
+    wanted_max: Option<u8>,
+    /// First sample (view depth, screen px) that reached the twin minimum and maximum.
+    at_min: Option<(f64, [usize; 2])>,
+    at_max: Option<(f64, [usize; 2])>,
+    /// Candidate closed form, with and without the off-axis stretch divided out of `hi`.
+    candidate: Option<(u8, u8)>,
+    candidate_plain: Option<(u8, u8)>,
+}
+
+/// Slab of the ray `d * t` inside the box `[min, max]` (eye-relative): `(t_in, t_out)`.
+fn ray_slab(d: [f64; 3], min: [f64; 3], max: [f64; 3]) -> Option<(f64, f64)> {
+    let (mut lo, mut hi) = (1e-4_f64, f64::INFINITY);
+    for a in 0..3 {
+        if d[a].abs() < 1e-12 {
+            if min[a] > 0.0 || max[a] < 0.0 {
+                return None;
+            }
+            continue;
+        }
+        let (t1, t2) = (min[a] / d[a], max[a] / d[a]);
+        lo = lo.max(t1.min(t2));
+        hi = hi.min(t1.max(t2));
+    }
+    (lo <= hi).then_some((lo, hi))
+}
+
+/// Measures every node of the settled cell cut at `view` (see the section header for the rules).
+fn twin_rows(h: &Harness, view: &ViewProjection, lattice_px: usize) -> Vec<NodeRow> {
+    let ctx = h.cell_ctx.as_ref().expect("cell mode context");
+    let hierarchy = h.dataset.metadata.hierarchy();
+    let camera = view.camera();
+    let scale = ctx.scale;
+    let near = lod_near_depth_scaled(&camera);
+    let data = hierarchy.stats().data_bounds;
+    let eye_ds: [f64; 3] = std::array::from_fn(|a| ctx.eye[a] / scale + ctx.origin[a]);
+    let [w, hgt] = ctx.viewport;
+    let focal = f64::from(ctx.lod.focal);
+    let f64v = |v: [f32; 3]| v.map(f64::from);
+    let (forward, right, up) = (f64v(ctx.lod.forward), f64v(ctx.lod.right), f64v(ctx.lod.up));
+    // Worst stretch of a projected edge over the frustum: at a point at angle `a` off the axis the
+    // perspective map stretches a segment by up to 1 / cos(a) against the same segment on the
+    // axis at the same view depth (singular values f/z and f/(z cos a)); the widest angle is the
+    // frustum corner.
+    let tan_corner = (w * w + hgt * hgt).sqrt() * 0.5 / focal;
+    let stretch = (1.0 + tan_corner * tan_corner).sqrt();
+    let targets = [
+        ctx.lod.target_px,
+        ctx.lod.target_px + PX_EPSILON,
+        ctx.lod.target_px - PX_EPSILON,
+    ];
+    let stretched = LodView {
+        target_px: ctx.lod.target_px / stretch as f32,
+        ..ctx.lod
+    };
+    let mut rows = Vec::new();
+    for (j, node) in h.cell_nodes.iter().enumerate() {
+        let span = buildable_span(h, node.id).expect("blocks of the cut are cached");
+        let mut row = NodeRow {
+            id: node.id.get(),
+            node_depth: node.lod.node_depth,
+            span,
+            points: hierarchy.node(node.id).unwrap().point_count(),
+            eye_inside: (0..3).all(|a| eye_ds[a] >= node.min[a] && eye_ds[a] <= node.max[a]),
+            range: h.last_levels[j].2,
+            capped: h.frame_capped.contains(&node.id),
+            wanted_max: h.last_entries[j].1.iter().flatten().copied().max(),
+            ..NodeRow::default()
+        };
+        // node ∩ data, eye-relative scaled.
+        let lo_ds: [f64; 3] = std::array::from_fn(|a| node.min[a].max(data.min()[a]));
+        let hi_ds: [f64; 3] = std::array::from_fn(|a| node.max[a].min(data.max()[a]));
+        if (0..3).any(|a| lo_ds[a] >= hi_ds[a]) {
+            rows.push(row);
+            continue;
+        }
+        let rmin: [f64; 3] =
+            std::array::from_fn(|a| (lo_ds[a] - ctx.origin[a]) * scale - ctx.eye[a]);
+        let rmax: [f64; 3] =
+            std::array::from_fn(|a| (hi_ds[a] - ctx.origin[a]) * scale - ctx.eye[a]);
+        let (mut tmin, mut tmax) = (u8::MAX, 0_u8);
+        let (mut emin, mut emax) = (u8::MAX, 0_u8);
+        let mut visit = |t: f64, d: [f64; 3], at: [usize; 2], row: &mut NodeRow| {
+            if t < near {
+                row.excluded_near += 1;
+                return;
+            }
+            let rel: [f64; 3] = std::array::from_fn(|a| d[a] * t);
+            if !ctx.on_screen(rel) {
+                return;
+            }
+            let (found, crosses) = twin_depths(&ctx.lod, node, rel, span, targets);
+            let depth = found[0];
+            if crosses {
+                row.excluded_cross += 1;
+                return;
+            }
+            row.samples += 1;
+            if depth < tmin {
+                row.at_min = Some((t, at));
+            }
+            if depth > tmax || row.at_max.is_none() {
+                row.at_max = Some((t, at));
+            }
+            tmin = tmin.min(depth);
+            tmax = tmax.max(depth);
+            emin = emin.min(found[1]);
+            emax = emax.max(found[2]);
+        };
+        let columns: Vec<usize> = (0..w as usize)
+            .step_by(lattice_px)
+            .chain([w as usize - 1])
+            .collect();
+        let rows_px: Vec<usize> = (0..hgt as usize)
+            .step_by(lattice_px)
+            .chain([hgt as usize - 1])
+            .collect();
+        for &py in &rows_px {
+            for &px in &columns {
+                let (u, v) = (
+                    (px as f64 - w / 2.0) / focal,
+                    (hgt / 2.0 - py as f64) / focal,
+                );
+                let d: [f64; 3] = std::array::from_fn(|a| forward[a] + right[a] * u + up[a] * v);
+                let Some((t_in, t_out)) = ray_slab(d, rmin, rmax) else {
+                    continue;
+                };
+                let t_out = t_out.min(ctx.clip.1);
+                let mut t = t_in;
+                while t <= t_out {
+                    visit(t, d, [px, py], &mut row);
+                    t *= DEPTH_RATIO;
+                }
+                visit(t_out, d, [px, py], &mut row);
+            }
+        }
+        if row.samples > 0 {
+            row.twin = Some((tmin, tmax));
+            row.twin_eps = Some((emin, emax));
+        }
+        // Candidate closed form: coarsest at the farthest view depth of the region, finest at the
+        // nearest one (not nearer than `lod_near_depth`), both on the axis.
+        let corners_far = (0..8_usize)
+            .map(|c| {
+                (0..3)
+                    .map(|a| (if c >> a & 1 == 0 { rmin[a] } else { rmax[a] }) * forward[a])
+                    .sum::<f64>()
+            })
+            .fold(f64::NEG_INFINITY, f64::max)
+            .min(ctx.clip.1);
+        let distance = (0..3)
+            .map(|a| 0.0_f64.clamp(rmin[a], rmax[a]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let nearest = near.max(distance / stretch);
+        if corners_far > nearest {
+            let lo_c = on_axis_depth(&ctx.lod, node, forward, span, corners_far);
+            let hi_c = on_axis_depth(&stretched, node, forward, span, nearest);
+            let hi_plain = on_axis_depth(&ctx.lod, node, forward, span, nearest);
+            row.candidate = Some((lo_c, hi_c.max(lo_c)));
+            row.candidate_plain = Some((lo_c, hi_plain.max(lo_c)));
+        }
+        rows.push(row);
+    }
+    rows
+}
+
+/// `ceil(min(points, 8^(depth - node_depth)) / 512)` pages, at least one: the formula of the
+/// pool's `estimate_pages` (`cell_pool/residency.rs`, private), restated.
+fn estimate_pages_like_the_pool(points: u64, depth: u8, node_depth: u8) -> usize {
+    let gap = u32::from(depth.saturating_sub(node_depth));
+    let cells = if gap >= 21 {
+        u64::MAX
+    } else {
+        1_u64 << (3 * gap)
+    };
+    (points.min(cells).div_ceil(PAGE_SLOTS as u64)).max(1) as usize
+}
+
+fn pages_of(row: &NodeRow, depths: std::ops::RangeInclusive<u8>) -> usize {
+    depths
+        .map(|d| estimate_pages_like_the_pool(row.points, d, row.node_depth))
+        .sum()
+}
+
+fn histogram(values: impl Iterator<Item = i32>) -> std::collections::BTreeMap<i32, usize> {
+    let mut map = std::collections::BTreeMap::new();
+    for v in values {
+        *map.entry(v).or_insert(0) += 1;
+    }
+    map
+}
+
+fn print_twin_rows(label: &str, rows: &[NodeRow]) {
+    println!("== {label}");
+    println!(
+        "node  nd buildable eye samples excl_near excl_cross | twin [min,max] | range [lo,hi] | \
+         lo-twin_min twin_max-hi | candidate [lo_c,hi_c] (no stretch hi) twin_min-lo_c hi_c-twin_max"
+    );
+    for r in rows {
+        let slack = |a: Option<(u8, u8)>, b: Option<(u8, u8)>| -> String {
+            match (a, b) {
+                (Some(t), Some(x)) => format!(
+                    "{:>3} {:>3}",
+                    i32::from(x.0) - i32::from(t.0),
+                    i32::from(t.1) - i32::from(x.1)
+                ),
+                _ => "  -   -".into(),
+            }
+        };
+        let cand = match (r.twin, r.candidate) {
+            (Some(t), Some(c)) => format!(
+                "{:>3} {:>3}",
+                i32::from(t.0) - i32::from(c.0),
+                i32::from(c.1) - i32::from(t.1)
+            ),
+            _ => "  -   -".into(),
+        };
+        println!(
+            "{:>4} {:>3} {:>6} {:>3} {:>7} {:>9} {:>10} | {:?} | {:?} wmax {:?}{} | {} | {:?} ({:?}) {}",
+            r.id,
+            r.node_depth,
+            format!("{}..{}", r.span.0, r.span.1),
+            if r.eye_inside { "EYE" } else { "" },
+            r.samples,
+            r.excluded_near,
+            r.excluded_cross,
+            r.twin,
+            r.range,
+            r.wanted_max,
+            if r.capped { " CAPPED" } else { "" },
+            slack(r.twin, r.range),
+            r.candidate,
+            r.candidate_plain.map(|c| c.1),
+            cand
+        );
+        if let (Some(a), Some(b)) = (r.at_min, r.at_max) {
+            println!(
+                "      twin min first reached at view depth {:.3} screen px {:?}; twin max at view depth {:.3} screen px {:?}",
+                a.0, a.1, b.0, b.1
+            );
+        }
+    }
+}
+
+fn summarise_twin_rows(label: &str, rows: &[NodeRow]) {
+    for (scope, keep) in [("all nodes", false), ("nodes holding the eye", true)] {
+        let set: Vec<&NodeRow> = rows
+            .iter()
+            .filter(|r| r.twin.is_some() && r.range.is_some() && (!keep || r.eye_inside))
+            .collect();
+        let t = |r: &&NodeRow| r.twin.unwrap();
+        let g = |r: &&NodeRow| r.range.unwrap();
+        let lo_defect = set.iter().filter(|r| g(r).0 > t(r).0).count();
+        let hi_defect = set.iter().filter(|r| g(r).1 < t(r).1).count();
+        println!(
+            "-- {label} / {scope}: {} nodes with samples and a range; lo > twin_min: {lo_defect}; \
+             hi < twin_max: {hi_defect}",
+            set.len()
+        );
+        println!(
+            "   lo - twin_min {:?} | twin_max - hi {:?}",
+            histogram(set.iter().map(|r| i32::from(g(r).0) - i32::from(t(r).0))),
+            histogram(set.iter().map(|r| i32::from(t(r).1) - i32::from(g(r).1)))
+        );
+        let cs: Vec<&&NodeRow> = set.iter().filter(|r| r.candidate.is_some()).collect();
+        let c = |r: &&&NodeRow| r.candidate.unwrap();
+        let contained = cs
+            .iter()
+            .filter(|r| c(r).0 <= t(r).0 && c(r).1 >= t(r).1)
+            .count();
+        let hi_within_one = cs
+            .iter()
+            .filter(|r| (0..=1).contains(&(i32::from(c(r).1) - i32::from(t(r).1))))
+            .count();
+        println!(
+            "   candidate: contains the twin range in {contained}/{}; hi_c - twin_max in 0..=1 in \
+             {hi_within_one}/{}",
+            cs.len(),
+            cs.len()
+        );
+        println!(
+            "   twin_min - lo_c {:?} | hi_c - twin_max {:?} | (no stretch) hi - twin_max {:?}",
+            histogram(cs.iter().map(|r| i32::from(t(r).0) - i32::from(c(r).0))),
+            histogram(cs.iter().map(|r| i32::from(c(r).1) - i32::from(t(r).1))),
+            histogram(
+                cs.iter()
+                    .map(|r| i32::from(r.candidate_plain.unwrap().1) - i32::from(t(r).1))
+            )
+        );
+        // Pages: the depths a range holds beyond the twin's span, and the totals.
+        let (mut twin_pages, mut today_pages, mut cand_pages, mut extra_pages) = (0, 0, 0, 0);
+        for r in &cs {
+            let (tl, th) = t(r);
+            let (cl, ch) = c(r);
+            twin_pages += pages_of(r, tl..=th);
+            cand_pages += pages_of(r, cl.min(tl)..=ch.max(th));
+            let (gl, gh) = g(r);
+            today_pages += pages_of(r, gl.min(tl)..=gh.max(th));
+            if cl < tl {
+                extra_pages += pages_of(r, cl..=tl - 1);
+            }
+            if ch > th {
+                extra_pages += pages_of(r, th + 1..=ch);
+            }
+        }
+        println!(
+            "   pages (upper-bound estimate, nodes with a candidate): twin span {twin_pages}; \
+             today's range (union with the twin span) {today_pages}; candidate (union) \
+             {cand_pages}; extra of the candidate slack {extra_pages}"
+        );
+    }
+}
+
+/// Diagnostic (prints, asserts nothing): per node of the applied cut at the poses P1-P5 of the
+/// web demo on the built-in sample, the depth range the twin of the GPU rule wants over
+/// node ∩ data bounds ∩ view frustum if every buildable depth were resident, against today's
+/// `range`, and against a closed-form candidate (`lo_c`, `hi_c`: on-axis cells at the farthest and
+/// nearest view depth of the region, the nearest with the px target divided by the worst
+/// off-axis stretch of the frustum, 1 / cos of its corner half angle).
+///
+/// Sampling: a screen lattice of `LATTICE_PX` px (`TWIN_LATTICE_PX` overrides it) with a ray per
+/// node; along each ray a point every `DEPTH_RATIO` in view depth plus both ends of the slab.
+/// Excluded: points nearer than `lod_near_depth` (`excl_near`), and points whose twin cell at the
+/// wanted depth crosses the eye plane (`excl_cross`, `edge_px == +inf`).
+/// Run: `cargo test --offline --profile fast -p viewer_wasm --lib twin_wanted_range_vs_node_range -- --ignored --nocapture`.
+#[test]
+#[ignore = "diagnostic: prints the twin-wanted depth range per node against the node range"]
+fn twin_wanted_range_vs_node_range() {
+    let lattice = std::env::var("TWIN_LATTICE_PX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(LATTICE_PX);
+    let poses = std::env::var("TWIN_POSES").unwrap_or_else(|_| "P1,P2,P3,P4,P5".into());
+    for pose in poses.split(',') {
+        let (h, view) = settled_sample_pose(pose, ActiveRule::default());
+        let camera = view.camera();
+        println!(
+            "######## {pose}: eye {:.3?} target {:.3?} lattice {lattice} px, depth ratio {DEPTH_RATIO}, \
+             lod_near_depth {:.4} (scaled)",
+            camera.position(),
+            camera.target(),
+            lod_near_depth_scaled(&camera)
+        );
+        let rows = twin_rows(&h, &view, lattice);
+        print_twin_rows(pose, &rows);
+        summarise_twin_rows(pose, &rows);
+    }
+}
+
+/// The property of the node range (ADR 0055, D2): over node ∩ data ∩ frustum, excluding points
+/// nearer than `lod_near_depth` and cells that cross the eye plane, `range = [lo, hi]` contains
+/// every depth the twin wants (with a `PX_EPSILON` tolerance on the px target for f32 against
+/// f64), and is at most one level wider than the twin's span on each side.
+///
+/// Fails today: `lo` comes from `node_far_depth`, which anchors at the far corner of the node box
+/// (see `p4_border_levels`). Un-ignore it in plan task 3 (`node_view_range`, ADR 0055 plan
+/// `docs/plans/adr-0055-rango-por-nodo.md`), where it must pass over the new function, for `lo`
+/// (and for `hi` too, only if the task 2 measurement gave a closed form for it).
+#[test]
+#[ignore = "fails today: the node range does not contain what the twin wants (plan task 3 un-ignores it)"]
+fn the_node_range_contains_what_the_twin_wants_within_one_level() {
+    let mut violations = Vec::new();
+    for pose in ["P1", "P2", "P3", "P4", "P5"] {
+        let (h, view) = settled_sample_pose(pose, ActiveRule::default());
+        for r in twin_rows(&h, &view, LATTICE_PX) {
+            let (Some((emin, emax)), Some((lo, hi)), Some((tmin, tmax))) =
+                (r.twin_eps, r.range, r.twin)
+            else {
+                continue;
+            };
+            if lo > emin {
+                violations.push(format!("{pose} node {}: lo {lo} > twin min {emin}", r.id));
+            }
+            if hi < emax {
+                violations.push(format!("{pose} node {}: hi {hi} < twin max {emax}", r.id));
+            }
+            if tmin > lo + 1 {
+                violations.push(format!(
+                    "{pose} node {}: lo {lo} is >1 below twin min {tmin}",
+                    r.id
+                ));
+            }
+            if hi > tmax + 1 {
+                violations.push(format!(
+                    "{pose} node {}: hi {hi} is >1 above twin max {tmax}",
+                    r.id
+                ));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "{} violations:\n{}",
+        violations.len(),
+        violations.join("\n")
+    );
 }
