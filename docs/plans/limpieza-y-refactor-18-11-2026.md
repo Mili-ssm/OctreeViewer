@@ -21,42 +21,56 @@ deshacer la limpieza. Nada se publica ni se fusiona sin el visto bueno del propi
   conversión sin I/O).
 - Los ejemplos y datos que citan los registros de `docs/records/` no se borran.
 
+## Cómo se ejecuta (pre-mortem aplicado, 18-11-2026)
+
+- **Forma de las divisiones:** el fichero padre se queda (`gpu.rs`) y gana una carpeta hermana (`gpu/`), como ya
+  hace `camera.rs` con `camera/`. Así no cambian las rutas de `#[path]`, el historial ni los enlaces de los documentos.
+- **Mover, no reescribir:** los elementos se trasladan por rangos de líneas con un script. La comprobación de
+  «solo líneas movidas» compara el fichero original con la unión de los nuevos y solo admite diferencias
+  estructurales (`mod`, `use`, `impl … {`, llaves, `pub(super)`).
+- **Puerta por tarea:** `fmt --check`; clippy con `-D warnings` (por defecto, con todas las features y en wasm32
+  para `viewer_wasm` y `viewer_convert_core`); `cargo doc` con `-D warnings`; enlaces e índice de documentos;
+  literales de versión; la lista de tests del workspace igual que la línea base; y los tests de los crates tocados.
+  Un commit por tarea, solo con la puerta en verde; antes de cada tarea, una etiqueta `pre-<tarea>` a la que volver.
+- **Se para y se revierte la tarea** si un test, dorado o aserción tendría que cambiar, si cambia una línea que no
+  es estructural, si hay que ampliar la visibilidad de un campo, o tras tres puertas fallidas.
+- Las herramientas de la puerta están en `.superpowers/sdd/limpieza/gate/` del checkout principal (ignorado por git).
+
 ## Tareas
 
-Comprobación común de las tareas de código: `cargo clippy --workspace --all-targets --offline --profile fast`
-sin avisos nuevos y `cargo test -p <crates tocados> --profile fast --offline` con el mismo número de tests en
-verde que la línea base.
-
 - [x] **L1 Disco y git.** Borradas las cachés de compilación sin uso (`target/debug`, `o3`, `o3wasm`, `swasm`:
-  21 GB), el worktree de la rama ya fusionada `chore/clippy-lints` (8 GB), tres carpetas vacías (`src/`, `256/`,
-  `64000/`) y cuatro ramas locales fusionadas. Lo que no es caché queda en «Decisiones del propietario».
+  21 GB; `target/debug` se regenera más pequeña con el siguiente clippy), el worktree de la rama ya fusionada
+  `chore/clippy-lints` (8 GB), tres carpetas vacías (`src/`, `256/`, `64000/`) y cuatro ramas locales fusionadas.
+  Lo que no es caché queda en «Decisiones del propietario».
 - [x] **L2 Documentos vivos.** Estados de planes, página de estado, índice y notas de cambio de R3-Q13 y R3-Q18
   puestos al día (commit efafa3e). Comprobado con `check_docs_links.py` y `check_docs_index.py`.
 - [x] **L3 Integrar `origin/main`.** Fusión sin conflictos (93 ficheros).
-- [ ] **L4 Línea base.** `scripts/check.sh` completo sobre la rama tras la fusión.
-- [ ] **R2 `SpatialBounds::max_side()`.** La misma expresión (lado mayor de una caja) está copiada en 11 sitios
-  de 4 crates; pasa a un método de `viewer_core` con el cuerpo idéntico.
+- [ ] **L4 Línea base.** `scripts/check.sh` completo sobre la rama tras la fusión y lista de tests del workspace.
+- [ ] **R2 `SpatialBounds::max_side()`.** La misma expresión `f64` (lado mayor de una caja) está copiada en varios
+  sitios de 4 crates; pasa a un método de `viewer_core` con el cuerpo idéntico. Solo las copias exactas en `f64`
+  del código de producción; ni ejemplos ni variantes en `f32`.
 - [ ] **R3 `ViewUniform`.** El uniforme de GPU de `gpu.rs` se llama igual que la `ViewProjection` pública de la
-  cámara; se renombra el uniforme.
-- [ ] **R4 WGSL a ficheros.** Unas 650 líneas de sombreadores viven en cadenas de Rust; pasan tal cual a
-  `crates/viewer_render_wgpu/src/shaders/*.wgsl` con `include_str!`.
-- [ ] **R5 Partir `gpu.rs`** (2188 líneas) en `gpu/{mod,error,init,pipeline,blocks,cells,occlusion,view,pick,stats,render}.rs`.
-- [ ] **R6 Partir `viewer_convert_core/src/spatial.rs`** (2644 líneas) en `spatial/{mod,spool,block,plan,builder,sample,source_points,geometry,memory}.rs`.
-- [ ] **R8 Módulos de `viewer_wasm` con ruta previsible.** `lod_dataset::cells` vive en `lod_cells.rs` por un
-  `#[path]`; pasa a `lod_dataset/{mod,cells}.rs`. Los ficheros solo de test `*_sim.rs` y `*_bench.rs` pasan a
-  llamarse `*_tests.rs`.
+  cámara; se renombra el uniforme. `camera.rs` no puede aparecer en el diff.
+- [ ] **R4 WGSL a ficheros.** Los sombreadores que son literales simples pasan tal cual a
+  `crates/viewer_render_wgpu/src/shaders/*.wgsl` con `include_str!`. Se queda en Rust el que se construye con
+  `format!` y constantes compartidas con el gemelo de CPU (`occlusion_wgsl`). Comprobación extra: el hash de cada
+  fuente ensamblada es idéntico antes y después.
+- [ ] **R5 Partir `gpu.rs`** (2380 líneas con sus tests) en `gpu.rs` más `gpu/{error,init,pipeline,blocks,cells,occlusion,view,pick,stats,render}.rs`,
+  en dos pasos: tipos y funciones libres, luego métodos.
+- [ ] **R6 Partir `viewer_convert_core/src/spatial.rs`** (3035 líneas con sus tests) en `spatial.rs` más
+  `spatial/{spool,block,plan,builder,sample,source_points,geometry,memory,partition_tests}.rs`, en dos pasos.
+- [ ] **R8 Ficheros solo de test con nombre de test** en `viewer_wasm`: `lod_cells_sim.rs`, `lod_cells_glue_sim.rs`
+  y `lod_cells_bench.rs` pasan a terminar en `_tests.rs`.
 - [ ] **R1 Quitar los módulos puente de `viewer_convert`** que solo reexportan `viewer_convert_core` bajo la ruta
   antigua.
-- [ ] **R7 Partir `cell_pool.rs`** (3990 líneas) en `cell_pool/{mod,cache,residency,fit,fallback,hold,active,step,plan}.rs`,
-  moviendo los elementos tal cual. Las costuras `active`, `step` y `hold` coinciden con lo que el ADR 0055
-  borraría. Va la última.
-- [ ] **L5 Cierre.** `scripts/check.sh` completo, simulaciones reales, revisión, y portar el experimento E-B1
-  sobre la rama partida si R7 se hizo.
+- [ ] **L5 Cierre.** `scripts/check.sh` completo, simulaciones reales con `R3_REQUIRE_REAL_DATA=1`, revisión.
 
 ## Propuesto, sin hacer en esta sesión
 
 | Qué | Por qué se deja |
 | --- | --- |
+| Partir `cell_pool.rs` (3990 líneas) en `cell_pool/{cache,residency,fit,fallback,hold,active,step,plan}.rs` y portar encima el experimento E-B1 | Es el fichero que más cambia y el que el ADR 0055 reescribiría; tres ramas lo tocan. Se hace con el propietario delante, tras decidir el ADR 0055. Las costuras `active`, `step` y `hold` coinciden con lo que ese ADR borraría |
+| `lod_dataset::cells` vive en `lod_cells.rs` por un `#[path]` | Moverlo a una carpeta cambia las rutas de otros cuatro `#[path]`; va junto con la división de `lod_cells.rs` |
 | Trocear `CellPool::plan` (967 líneas) y `plan_cell_update` (499) | El ADR 0055 borraría parte de ese código; trocearlo antes es trabajo que se tiraría |
 | Trocear `parse_index`, `decode_page` y `ept.rs::convert` (736) | Riesgo medio en lectores de formato; `ept.rs` solo escribe la línea heredada |
 | Unificar ayudantes de test duplicados | Bajo valor frente al riesgo de tocar muchos tests |
