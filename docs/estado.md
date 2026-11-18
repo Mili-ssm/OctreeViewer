@@ -55,7 +55,7 @@ pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) (lis
 
 ### Estado (18-11-2026)
 
-**Punto de entrada para retomar:** [Cómo retomar tras la sesión del 18-11-2026](plans/retomar-18-11-2026.md): ramas locales sin publicar, preguntas abiertas para el propietario y siguiente trabajo en orden.
+**Punto de entrada para retomar:** [Cómo retomar tras la sesión del 18-11-2026](plans/retomar-18-11-2026.md): PR apiladas #60 a #65 sin fusionar, respuestas del propietario del 18-11-2026 y siguiente trabajo en orden.
 
 Activo (D3c completado el 15-11-2026; PR #1 y #29 fusionadas en `main`); siguiente trabajo en [Cómo retomar](plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026).
 Lo pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) y las ramas en [PRs](https://github.com/Mili-ssm/OctreeViewer/pulls) ([reglas](../CONTRIBUTING.md#issues-y-prs)): `feat/r3-v75` se integró con la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1) y los experimentos son PRs en borrador con la etiqueta `experimento` (#2–#10).
