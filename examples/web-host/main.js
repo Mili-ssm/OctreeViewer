@@ -917,9 +917,11 @@ function updateSpacingInfo() {
     } else if (typeof side !== "number") {
         spacingInfo.textContent = "No minimum side: pixels only.";
     } else {
-        const spacingOff = minLengthMode.value === "spacing" && !latestLodStats.continuity;
-        spacingInfo.textContent = `Effective minimum side: ${side.toPrecision(3)} (dataset units, metres assumed; the larger of the length and the spacing side).`
-            + (spacingOff ? " This cloud has no reference spacing: the spacing mode has no effect." : "");
+        // In spacing mode the length still applies when it is the larger side (also for a cloud
+        // without a reference spacing, which the stats do not tell apart).
+        const lengthWins = minLengthMode.value === "spacing" && Math.abs(side - lastValid.side) <= 1e-9 * side;
+        spacingInfo.textContent = `Effective minimum side: ${side.toPrecision(3)} (dataset units, metres assumed).`
+            + (lengthWins ? " The length applies: the spacing side is smaller, or this cloud has no reference spacing." : "");
     }
 }
 

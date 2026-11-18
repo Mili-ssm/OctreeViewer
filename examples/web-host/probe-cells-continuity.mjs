@@ -3,7 +3,7 @@
 //   node examples/web-host/probe-cells-continuity.mjs DATASET.oct OUT.json [--shots=target/r3-b3] [--px=4]
 //        [--poses=fitted,leaf] [--url=URL] [--timeout-s=120] [--chrome-bin=PATH]
 // Per pose: settles literal (repeated non-null cutDigestAtRest), screenshots, turns continuity on through
-// the demo checkbox, settles again, screenshots and records the effective minimum side, the nodes the
+// the demo's minimum-size selector (spacing mode), settles again, screenshots and records the effective minimum side, the nodes the
 // render side received across the toggle (must be 0: cells hold every level) and the stats of both modes.
 // Not a unit test and not part of scripts/check.sh.
 import fs from "node:fs";
