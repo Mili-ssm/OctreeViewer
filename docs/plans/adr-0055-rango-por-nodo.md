@@ -137,7 +137,8 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
   memorizadas. Tres tests de pool; quitar la histéresis o el disparador los hace fallar. Nada observable cambia:
   goldens intactos y simulaciones reales idénticas. Un nivel residente siempre tiene sus cajas en producción.
   Sin medir: páginas por nodo y coste del recorte por frame. El test de «200 frames sin repetir petición» pasa a la
-  tarea 7a, que es donde `hi` se conecta.
+  tarea 7a, que es donde `hi` se conecta. **La histéresis y el disparador por nivel más fino de este punto se
+  sustituyeron en la tarea 7a**, que redefine la cota.
 
 ### Task 6: The sim oracle checks the node range, not per-octant fields
 
@@ -163,13 +164,20 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 7a: Cap the per-octant wish at the data bound (R)
 
-- [ ] Antes de tocar nada, se fija lo de hoy: niveles residentes del nodo del ojo en P2, y frames hasta el nivel
-  más fino dibujado en el acercamiento de la simulación de dolly (semilla 3).
-- [ ] `cell_cut_ranged` limita el deseo por octante a `max(lo, hi_d)`: peticiones, pasos, `stage` y `fit` lo
-  siguen sin más cambios. Hoy los octantes que cruzan el plano del ojo piden el último nivel y los pasos lo traen
-  aunque `range.hi` sea menor. Test que falla antes: con el ojo dentro de los datos, el nodo del ojo no pide niveles
-  más finos que `hi_d`.
-  Puertas: residencia real en Majadas a 1 y 4 px frente a 45 806 y 16 214 páginas; dolly s3 y zoom en el navegador.
+- [x] (d8e49d8) Fijado lo de hoy: residencia del nodo del ojo en P1 a P5, retraso en dolly, órbitas y zoom
+  sintético, y Majadas. Los niveles más finos que la cota no se dibujaban en ninguna muestra ocupada.
+- [x] (66f7ac6, 5d46959) `Ctx::depth` limita el deseo por octante a `max(lo, hi_d)`; peticiones, pasos, `stage` y
+  `fit` lo siguen sin más cambios ([registro](../records/benchmarks/R3_TOPE_POR_DATOS_19-11-2026.md)).
+  **La cota de la tarea 5 no servía conectada**: al depender del nivel residente más fino, el corte final dependía
+  del orden de llegada. Ahora es el mínimo, entre los niveles residentes `L`, de `max(b(L), L)`, y un nivel sin
+  cajas a la vista aporta `L`; sin histéresis. Tests que fallan antes: el nodo del ojo no pide niveles sobre la cota,
+  la cota no depende de los niveles sobre ella, un nivel sin cajas a la vista acota el nodo (por mutación).
+  Puertas: Majadas 45 806 → 45 734 y 16 214 → 16 059 páginas; simulaciones reales con contadores a 0; navegador sin
+  huecos en zoom y giro, P1 a P4 a ≤ 0,119 % de la compilación anterior.
+  **El criterio de parada del dolly saltó y se descartó con evidencia**: las 267 779 muestras más gruesas están
+  fuera del recorte de la vista (no se dibujan); dentro, 0 de 703. El medidor las separa ahora (`LAGSPLIT`).
+  Sin arreglar, anotado en el registro: la cota de un nodo se queda en la pose anterior mientras la cámara se mueve
+  dentro de su margen de deriva, y cada llegada de nivel recalcula la cota de todo el corte.
 
 ### Task 7b: Requests come from the node range (R)
 
