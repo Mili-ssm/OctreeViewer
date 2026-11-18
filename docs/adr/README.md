@@ -37,7 +37,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0031](0031-celdas-por-nodo-en-v7-5.md) | Celdas por nodo en v7.5: pirámide por nodo, coordenadas por página del pool, claves de 64 bits (sustituye en parte a 0027) | Aceptada (enmendada por 0032; precisada por 0046) |
 | [0032](0032-hojas-adaptativas-e-instancia-de-12-b.md) | Hojas hasta separar posiciones, clave regional más allá de 21 bits e instancia de 12 B (enmienda a 0031) | Aceptada (instancia enmendada por 0035; poda precisada por 0046) |
 | [0033](0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) | GPU mínima de 4 GB y corte ajustado al pool (sustituye P2) | Aceptada (enmendada por 0040) |
-| [0034](0034-nivel-por-octante-con-arista-real.md) | Nivel por octante con la arista proyectada real y tolerancia de RQ-09 dentro del dataset (enmienda a 0031) | Aceptada (regla por octante sustituida por 0050) |
+| [0034](0034-nivel-por-octante-con-arista-real.md) | Nivel por octante con la arista proyectada real y tolerancia de RQ-09 dentro del dataset (enmienda a 0031) | Sustituida por [0056](0056-se-retira-el-modo-octante.md) (la regla por octante ya la sustituyó 0050) |
 | [0035](0035-instancia-de-16-b-con-w-16.md) | Instancia de 16 B con W = 16 y compactación con Hi-Z antes de la Tarea 6 (enmienda a 0032) | Aceptada (oclusión enmendada por 0036) |
 | [0036](0036-hi-z-por-celda.md) | Hi-Z por celda en dos fases sobre el pool (enmienda a 0035) | Aceptada |
 | [0037](0037-corte-ajustado-al-presupuesto-de-cpu.md) | Corte de celdas ajustado al presupuesto de CPU (extiende 0033) | Aceptada (enmendada por 0038 y 0039) |
@@ -59,3 +59,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0053](0053-transiciones-de-un-nivel.md) | Las transiciones de nivel avanzan de un nivel en un nivel, en el espacio y en el tiempo (precisa ADR 0050 y R3-Q21) | Aceptada (cola bajo la separación pendiente de revisión) |
 | [0054](0054-el-objetivo-de-px-es-el-tamano-minimo.md) | El objetivo de px es el tamaño mínimo del vóxel y el mínimo en longitud está activo por defecto (0,1 mm) (cambia RQ-09) | Aceptada |
 | [0055](0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) | En modo celda la GPU decide el nivel dibujado y la CPU solo la residencia: conjunto activo contiguo (precisa ADR 0050 y 0053; cambia la lectura de RF-31 y R3-Q21) | Aceptada |
+| [0056](0056-se-retira-el-modo-octante.md) | Se retira el modo octante: el modo celda es el único y el predeterminado; se borra `setCellLod` (sustituye a 0034; precisa 0050 y 0055) | Aceptada |
