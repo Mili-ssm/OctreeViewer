@@ -129,7 +129,7 @@ screenshots, the P4 and P2/P3 diagnoses and the browser script `run.js`).
 - [x] (4083d8c; browser: graded cubes in nodes with residents, a near node without them still drew its finest level) **1b** activate every already-resident depth inside the range (cell mode); browser screenshot of the owner's pose (kill criterion: no bands → stop).
 - [x] (462196a) **1c** fetch stored depths inside the range.
 - [x] (b17e61d; contiguous fill also below spacing ae5a254; browser measurements of queue and heap still pending) **1d** build missing depths on demand down to the spacing/separation depth only; the fit counts requested depths; measure the uncapped need, `levels.bin` coverage, request queue and build-worker heap in the browser.
-- [ ] (known case 18-11-2026: at P4 node 14 draws depth 11 at 3.39 px because its `range.lo` comes from an off-screen corner, [record](../records/benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md); belongs to step 1 of ADR 0055) Test: no drawn cell finer than its parent cell needed (`refines()` of the parent), exempting the buildable minimum, caps and the span floor; the sims' `finer_than_wanted` counter drops.
+- [ ] (known case 18-11-2026: at P4 node 14 draws depth 11 at 3.2–4.0 px (target 4 px) because its `range.lo` comes from an off-screen corner, [record](../records/benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md); belongs to step 1 of ADR 0055) Test: no drawn cell finer than its parent cell needed (`refines()` of the parent), exempting the buildable minimum, caps and the span floor; the sims' `finer_than_wanted` counter drops.
 
 ### Task 2: Node hand-offs within one level (re-planned 16-11-2026 from measurements)
 

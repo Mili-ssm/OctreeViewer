@@ -17,7 +17,7 @@ unmeasured»).
 | Perfil y toolchain | `fast` · rustc 1.101.0-nightly (2026-10-27) |
 | Equipo | AMD Ryzen AI 9 365 (la medida no depende del tiempo) |
 | Dataset | Muestra integrada de la demo; `data_bounds` (0, 0, −0,06)..(63,9, 63,9, 4,06) |
-| Pose P4 | Encuadre inicial, 8 pasos de rueda en (400, 500) y arrastre derecho de 120 px; ojo (31,96, 38,76, 6,18) |
+| Pose P4 | Encuadre inicial, 8 pasos de rueda en (400, 500) y arrastre derecho de 120 px; derivada como la demo (encuadre, `zoom`, `orbit`), equivale a la de la prueba de pose cercana (ojo ≈ (31,96, 38,76, 6,12)) |
 | Lienzo | 870 × 750 px (el que informa la demo con la ventana de 1280 × 800); objetivo 4 px |
 | Comando | `cargo test --offline --profile fast -p viewer_wasm p4_border_levels -- --ignored --nocapture` |
 
@@ -34,27 +34,29 @@ vuelca cada par. Muestrea las caras entre nodos dentro de `data_bounds` y cuenta
 
 El histograma es idéntico con `Window` y con `Contiguous`. Los pares con diferencia 1 están en dos bordes:
 
-| Borde | Niveles dibujados | Pares | Filas de pantalla |
-| --- | --- | --- | --- |
-| Nodo 8 (lejano) con nodo 14 (contiene el ojo) | 10 frente a 11 | 128 | 222–542 |
-| Nodo 14 con nodo 17 | 11 frente a 10 | 37 | 269–695 (costura vertical en x ≈ 440) |
-
-| Nodo | Activos | Residentes | Rango `[lo, hi]` | Arista de la celda dibujada en el borde |
+| Borde | Niveles dibujados | Pares | Filas de pantalla | Arista proyectada de las celdas |
 | --- | --- | --- | --- | --- |
-| 8 | 9, 10, 11 | 5, 9, 10, 11 | 9–11 | nivel 10: 6,76 px |
-| 14 | 11, 12, 13 | 5, 7–13 | 11–13 | nivel 11: 3,39 px |
-| 17 | 10–13 | 5, 9–13 | 10–13 | nivel 10: 6,81 px |
+| Nodo 8 (lejano) con nodo 14 (contiene el ojo) | 10 frente a 11 | 128 | 222–542 | 6,4–7,9 px (media 7,1) frente a 3,2–4,0 px (media 3,5) |
+| Nodo 14 con nodo 17 | 11 frente a 10 | 37 | 269–695 (costura vertical en x ≈ 440) | media 3,7 px frente a 7,4 px |
+
+Las aristas salen del volcado `P4_DUMP` (columnas `pxA` y `pxB` de los pares con diferencia 1).
+
+| Nodo | Activos | Residentes | Rango `[lo, hi]` |
+| --- | --- | --- | --- |
+| 8 | 9, 10, 11 | 5, 9, 10, 11 | 9–11 |
+| 14 | 11, 12, 13 | 5, 7–13 | 11–13 |
+| 17 | 10–13 | 5, 9–13 | 10–13 |
 
 ## Causa
 
-- La regla de refinado deja cada celda entre el objetivo y su doble: la celda de nivel 10 del borde mide 6,76 px y
-  sus hijas medirían 3,4 px, por debajo de los 4 px, así que no debe refinarse.
+- La regla de refinado deja cada celda entre el objetivo y su doble: las celdas de nivel 10 del borde miden entre
+  6,4 y 7,9 px y sus hijas medirían entre 3,2 y 4,0 px, por debajo de los 4 px, así que no deben refinarse.
 - El nodo 14 no puede dibujar el nivel 10: no está en su rango. Su nivel activo más grueso es `lo` = 11, y dibuja
-  celdas de 3,39 px, por debajo del objetivo.
+  celdas de 3,2 a 4,0 px, por debajo del objetivo.
 - `lo` sale de `node_far_depth` (`crates/viewer_render_wgpu/src/cell_cut.rs`): toma la esquina de la caja del nodo
   más lejana según la vista, aquí (16, 32, −0,1), que queda fuera de pantalla a la izquierda, donde las celdas
   proyectan más grande y piden nivel 11. El suelo visible junto al borde pide nivel 10.
-- El salto de 6,8 px a 3,4 px coincide con la cara del nodo. Además, las celdas de 3,4 px son más finas que la
+- El salto de unos 7 px a unos 3,5 px coincide con la cara del nodo. Además, las celdas de 3,5 px son más finas que la
   separación de los puntos del suelo (unas 0,13 unidades) y se ven como puntos sueltos: por eso parece una línea.
 
 ## Consecuencias
