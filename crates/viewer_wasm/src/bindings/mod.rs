@@ -158,7 +158,7 @@ impl WasmVoxelViewer {
             cells_remote: None,
             cell_node_cap: DEFAULT_NODE_BYTES_PER_FRAME,
             continuity: Continuity::default(),
-            lod_mode: viewer_render_wgpu::LodMode::Octant,
+            lod_mode: viewer_render_wgpu::LodMode::Cell,
             active_rule: viewer_render_wgpu::ActiveRule::Window,
             view_epoch: 0,
         })

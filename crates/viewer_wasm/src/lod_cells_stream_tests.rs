@@ -774,7 +774,7 @@ impl Harness {
             last_stage: None,
             totals: Totals::default(),
             check_zones: true,
-            mode: LodMode::Octant,
+            mode: LodMode::Cell,
             rule: ActiveRule::Window,
             cell_ctx: None,
             cell_signature: None,
@@ -789,7 +789,7 @@ impl Harness {
         }
     }
 
-    /// Runs the harness in `mode` (the default is `Octant`).
+    /// Runs the harness in `mode` (the default is `Cell`).
     fn in_mode(mut self, mode: LodMode) -> Self {
         self.mode = mode;
         self
@@ -1624,7 +1624,7 @@ both_modes!(
 
 #[test]
 fn the_oracle_reports_a_hidden_cell_whose_refinement_does_not_draw() {
-    let mut h = synthetic_harness(1 << 20, 2.0);
+    let mut h = synthetic_harness(1 << 20, 2.0).in_mode(LodMode::Octant);
     let view = synthetic_views().0;
     // Along the ladder some cut has a node hidden under a refinement.
     let (mut cut, hider) = (0..400)

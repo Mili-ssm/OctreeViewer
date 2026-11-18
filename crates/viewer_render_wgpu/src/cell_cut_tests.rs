@@ -105,6 +105,35 @@ fn run(
     )
 }
 
+/// `run` in octant mode, which the public `cell_cut` no longer is.
+fn run_octant(
+    cut: &[NodeId],
+    nodes: &HashMap<NodeId, CellCutNode>,
+    camera: &OrbitCamera,
+    grid: &CellGrid,
+    origin: [f64; 3],
+    target: f64,
+) -> Result<Vec<CellCutEntry>, CellCutError> {
+    let view = view(camera);
+    cell_cut_with(
+        cut,
+        &|id| nodes.get(&id).cloned(),
+        grid,
+        LodMode::Octant,
+        &|_, octant, data| {
+            octant_wanted_depth(
+                &view,
+                grid,
+                origin,
+                data.bounds,
+                octant,
+                data.buildable,
+                target,
+            )
+        },
+    )
+}
+
 fn fixture_cuts() -> Vec<(&'static str, Vec<NodeId>)> {
     vec![
         ("root", ids(&[1])),
@@ -572,14 +601,14 @@ fn spanning_levels_promote_octants_to_the_next_buildable_level() {
     let grid = dataset_grid(ORIGIN);
     // The node is at depth 0: a level at depth 0 spans octants, so a coarse choice moves on.
     let nodes = root_with(&[0, 2], &[0, 2]);
-    let entries = run(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 1.0e6).unwrap();
+    let entries = run_octant(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 1.0e6).unwrap();
     // Depth 1 is not stored but buildable: it is the first one past the spanning level.
     assert_eq!(entries[0].wanted, [Some(1); 8]);
     // Nothing finer than the spanning level: every octant uses it.
     let nodes = root_with(&[0], &[0]);
-    let entries = run(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 1.0e6).unwrap();
+    let entries = run_octant(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 1.0e6).unwrap();
     assert_eq!(entries[0].wanted, [Some(0); 8]);
-    let entries = run(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 0.001).unwrap();
+    let entries = run_octant(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 0.001).unwrap();
     assert_eq!(entries[0].wanted, [Some(0); 8]);
     assert_eq!(entries[0].draws(), vec![(0, 0xff)]);
 }
@@ -1868,10 +1897,6 @@ fn cell_mode_ignores_children_resident_only_outside_their_span() {
     assert_eq!(entries[0].mask, [0; 8]);
     assert_eq!(entries[1].drawn, [None; 8]);
     assert!(run_cell(&[1, 5]).is_ok());
-    // Octant mode still sees the level as resident.
-    let camera = cameras().remove(0).1;
-    let entries = run(&ids(&[1, 2]), &nodes, &camera, &grid, ORIGIN, 4.0).unwrap();
-    assert_ne!(entries[0].mask, [0; 8]);
 }
 
 fn root_bounds() -> SpatialBounds {

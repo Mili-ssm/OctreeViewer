@@ -794,7 +794,7 @@ impl WasmVoxelViewer {
         Ok(())
     }
 
-    /// Per-octant (`"octant"`, the default) or per-cell (`"cell"`) level selection of the cells
+    /// Per-octant (`"octant"`) or per-cell (`"cell"`, the default) level selection of the cells
     /// path (ADR 0050). Any other string is an error and the mode stays as it was. It survives
     /// `beginRemoteCells` and dataset changes, takes effect on the next frame and rebuilds
     /// nothing.

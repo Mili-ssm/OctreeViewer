@@ -2,7 +2,7 @@
 //! with Hi-Z occlusion) on a real GPU. Throwaway like `coverage_spike`; not part of `check.sh`.
 //!
 //! Usage: cell_pool_bench [--out FILE.json] [--cell-lod] [--counters] CASE_DIR|ROOT_DIR...
-//! `--cell-lod` runs the pool in per-cell mode (`LodMode::Cell`, default octant). `--counters` only converges
+//! `--cell-lod` runs the pool in per-cell mode (`LodMode::Cell`; without it, octant). `--counters` only converges
 //! the still pose, then draws once with the per-depth counters on and reports them with the instances
 //! drawn (plain pass), skipping the timing rounds and the moving run (R3 phase 2a record).
 //! A case directory is one written by `coverage_spike --export-pool` (format in that file's header);
@@ -583,9 +583,12 @@ fn num(value: &Value, key: &str) -> f64 {
 
 fn run_case(case: &Case, gpu: &Gpu, cell_lod: bool, counters_only: bool) -> Result<Value> {
     let mut rig = Rig::new(case, gpu)?;
-    if cell_lod {
-        rig.driver.set_lod_mode(viewer_render_wgpu::LodMode::Cell);
-    }
+    // The library default is per-cell; without the flag the bench still measures octant mode.
+    rig.driver.set_lod_mode(if cell_lod {
+        viewer_render_wgpu::LodMode::Cell
+    } else {
+        viewer_render_wgpu::LodMode::Octant
+    });
     let camera = case.camera;
 
     // d. Convergence with a still camera.

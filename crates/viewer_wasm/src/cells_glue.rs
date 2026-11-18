@@ -606,7 +606,7 @@ impl ViewerCells {
             level_requests: None,
             probe_last: Cell::new(None),
             continuity: Continuity::default(),
-            lod_mode: LodMode::Octant,
+            lod_mode: LodMode::Cell,
             active_rule: ActiveRule::Window,
             reference_spacing: None,
         }
@@ -946,7 +946,7 @@ impl InProcessCells {
             probe: RefCell::new(CutRestProbe::default()),
             pending_pages: Vec::new(),
             continuity: Continuity::default(),
-            lod_mode: LodMode::Octant,
+            lod_mode: LodMode::Cell,
             active_rule: ActiveRule::Window,
         }
     }

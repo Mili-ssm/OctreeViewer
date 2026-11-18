@@ -668,7 +668,7 @@ impl CellPool {
             pinned: FastSet::default(),
             mask_slots: FastMap::default(),
             fresh: FastSet::default(),
-            lod_mode: LodMode::Octant,
+            lod_mode: LodMode::Cell,
             active_rule: ActiveRule::Window,
             free_masks: BTreeSet::new(),
             next_mask: 0,

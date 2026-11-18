@@ -1392,7 +1392,13 @@ fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours
         .unwrap();
     assert_eq!(stored_depths(&fx.driver, 2), [4]);
     fx.run(2, &cut, &cam, 1.0);
-    assert_eq!(fx.driver.take_level_requests(), Some(vec![(id, wanted)]));
+    // Cell mode: the wanted depth first, then the depths between it and the stored one. The
+    // dropped wanted depth is still resident (old colours), so it counts as active next to the
+    // stored 4 and the span between them is requested whole (ADR 0053); on a cold start only 4
+    // is active and just the wanted depth is asked for.
+    let mut expected = vec![(id, wanted)];
+    expected.extend((5..wanted).map(|depth| (id, depth)));
+    assert_eq!(fx.driver.take_level_requests(), Some(expected));
     fx.driver
         .add_packed_levels(g1, on_demand_node(&(5..=wanted).collect::<Vec<u8>>(), 9))
         .unwrap();
@@ -1528,6 +1534,7 @@ fn assert_anchors(fx: &Fixture, report: &FrameReport, origin: [f64; 3], eye: [f6
 #[test]
 fn octant_mode_writes_no_record_when_only_the_eye_moves() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    fx.driver.set_lod_mode(crate::LodMode::Octant);
     let cam = camera("zoom");
     let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
     assert!(!report.plan.active.is_empty());
@@ -1771,6 +1778,7 @@ fn record_active(words: &[u32; NODE_WORDS]) -> u64 {
 #[test]
 fn driver_in_cell_mode_writes_records_and_uniform() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    fx.driver.set_lod_mode(crate::LodMode::Octant);
     let cam = camera("zoom");
     let cut = ids(&CHILDREN);
     let viewport = [VIEWPORT[0] as f32, VIEWPORT[1] as f32];

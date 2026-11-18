@@ -151,12 +151,14 @@ fn cells_bench() {
     let h = &mut real.harness;
     h.count_octant_coarsenings = true;
     h.soft_checks = true;
-    // `BENCH_MODE=cell` and `BENCH_RULE=contiguous` (defaults octant, window) for the residency
+    // `BENCH_MODE=cell` and `BENCH_RULE=contiguous` (defaults cell, window) for the residency
     // measurements of OQ-14; the pool is the production one (65 536 pages = 512 MiB).
-    let cell_mode = env_or("BENCH_MODE", "octant") == "cell";
-    if cell_mode {
-        h.mode = LodMode::Cell;
-    }
+    let cell_mode = env_or("BENCH_MODE", "cell") == "cell";
+    h.mode = if cell_mode {
+        LodMode::Cell
+    } else {
+        LodMode::Octant
+    };
     let contiguous = env_or("BENCH_RULE", "window") == "contiguous";
     if contiguous {
         h.rule = ActiveRule::Contiguous;

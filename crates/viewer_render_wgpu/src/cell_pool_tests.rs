@@ -2189,7 +2189,7 @@ fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
             })
         },
         &grid,
-        LodMode::Octant,
+        LodMode::Cell,
         &|_, _, _| wanted,
     )
     .unwrap();
@@ -2257,6 +2257,7 @@ fn the_hold_threshold_is_the_depth_the_ancestor_drew_over_the_octant_of_the_chil
     // level 5 and wants 7: short of the 6 drawn there, held. Child 17 (octant 7) is not: 5 is
     // what node 2 drew there.
     let mut rig = rig_with_coarse_children(None);
+    rig.pool.set_lod_mode(LodMode::Octant);
     let mut drawn = [Some(6); 8];
     drawn[7] = Some(5);
     rig.pool.applied_drawn.insert(NodeId::new(2), drawn);
@@ -3493,6 +3494,7 @@ fn a_retained_octant_cut_draws_nothing_outside_the_span_after_switching_to_cell_
     nodes.get_mut(&NodeId::new(1)).unwrap().stored = vec![below];
     let cam = camera("fit");
     let mut rig = Rig::new(nodes, 64, 8, 0);
+    rig.pool.set_lod_mode(LodMode::Octant);
     let mut plan = rig.step(&ids(&[1]), &cam, 64.0);
     for _ in 0..6 {
         plan = rig.step(&ids(&[1]), &cam, 64.0);
