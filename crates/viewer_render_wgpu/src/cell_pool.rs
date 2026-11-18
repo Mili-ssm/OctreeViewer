@@ -77,7 +77,7 @@ use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc, sync::Arc};
 
 use viewer_core::{NodeId, SpatialBounds};
 
-pub use crate::cell_cut::LodMode;
+pub use crate::cell_cut::{ActiveRule, LodMode};
 
 use crate::camera::VERTICAL_FOV;
 use crate::node_cells::{node_range, representative_depth_for_spacing};
@@ -784,6 +784,7 @@ pub struct CellPool {
     /// its last page is written, so cell mode does not activate them yet (the D5 depth included).
     fresh: FastSet<LevelKey>,
     lod_mode: LodMode,
+    active_rule: ActiveRule,
     free_masks: BTreeSet<u32>,
     next_mask: u32,
     events: Vec<CellPoolEvent>,
@@ -1021,6 +1022,7 @@ impl CellPool {
             mask_slots: FastMap::default(),
             fresh: FastSet::default(),
             lod_mode: LodMode::Octant,
+            active_rule: ActiveRule::Window,
             free_masks: BTreeSet::new(),
             next_mask: 0,
             events: Vec::new(),
@@ -1058,6 +1060,25 @@ impl CellPool {
         self.lod_mode
     }
 
+    /// Cell mode: chooses which range depths are active (`ActiveRule`). Invalidates like
+    /// `set_lod_mode`: the next plan re-derives the active depths and re-sends every record.
+    pub fn set_active_rule(&mut self, rule: ActiveRule) {
+        if self.active_rule == rule {
+            return;
+        }
+        self.active_rule = rule;
+        self.wanted_memo = None;
+        self.real_memo = None;
+        self.depths.clear();
+        for slot in self.mask_slots.values_mut() {
+            slot.stale = true;
+        }
+    }
+
+    pub fn active_rule(&self) -> ActiveRule {
+        self.active_rule
+    }
+
     /// Node depth of `bounds`: the depth whose levels span its octants.
     fn node_depth(grid: &CellGrid, bounds: SpatialBounds) -> u8 {
         representative_depth(grid, bounds).saturating_sub(3)
@@ -1081,42 +1102,59 @@ impl CellPool {
         node_depth: u8,
         new_d5: Option<u8>,
     ) -> Vec<u8> {
-        // Every depth inside the node's range `[lo, hi]` that is already resident is
-        // active too (no request or build): the GPU picks per cell among them.
+        let usable = |depth: u8| {
+            let key = self.key(entry.node, depth);
+            self.is_resident(key) && !self.fresh.contains(&key)
+        };
         let mut wanted = entry.required_levels();
-        // A node that draws nothing (held, nothing resident in its span) stays out entirely.
-        // The span of active depths moves at most one level per applied cut at each end (ADR
-        // 0053): the range residents are only taken inside the window `applied_window` of a node
-        // that was already active (the drawn depths are always active).
-        if let Some((lo, hi)) = entry.range
-            && !wanted.is_empty()
-        {
-            // A node entering the cut has no window: it starts from the depths it draws, one
-            // level either side, and widens from there one level per frame.
-            let (wlo, whi) = self
-                .applied_window
-                .get(&entry.node)
-                .copied()
-                .unwrap_or_else(|| {
-                    let drawn = entry.required_levels();
-                    let first = drawn.first().copied().unwrap_or(u8::MAX);
-                    let last = drawn.last().copied().unwrap_or(0);
-                    (first.saturating_sub(1), last.saturating_add(1))
-                });
-            // The active set stays contiguous up to the finest drawn depth (ADR 0053): an octant
-            // that holds the eye draws beyond `hi`, and a gap makes the per-cell rule jump from
-            // the range to that depth, whose far cells measure a fraction of a pixel.
-            let hi = hi.max(wanted.last().copied().unwrap_or(hi));
-            wanted.extend(lo.max(wlo)..=hi.min(whi));
-            wanted.sort_unstable();
-            wanted.dedup();
+        if self.active_rule == ActiveRule::Contiguous {
+            // The resident depths of the range that reach a drawn one without a residency gap
+            // (ADR 0055, proposed): a range depth beyond a gap would make the per-cell rule jump
+            // to it. A drawn depth that is not usable yet (fresh) anchors no run.
+            let drawn = wanted.clone();
+            if let (Some((lo, hi)), Some(first), Some(last)) =
+                (entry.range, drawn.first(), drawn.last())
+            {
+                let (lo, hi) = (lo.min(*first), hi.max(*last));
+                for anchor in drawn.iter().filter(|depth| usable(**depth)) {
+                    wanted.extend((lo..*anchor).rev().take_while(|depth| usable(*depth)));
+                    wanted.extend((*anchor + 1..=hi).take_while(|depth| usable(*depth)));
+                }
+                wanted.sort_unstable();
+                wanted.dedup();
+            }
+        } else {
+            // A node that draws nothing (held, nothing resident in its span) stays out entirely.
+            // The span of active depths moves at most one level per applied cut at each end (ADR
+            // 0053): the range residents are only taken inside the window `applied_window` of a node
+            // that was already active (the drawn depths are always active).
+            if let Some((lo, hi)) = entry.range
+                && !wanted.is_empty()
+            {
+                // A node entering the cut has no window: it starts from the depths it draws, one
+                // level either side, and widens from there one level per frame.
+                let (wlo, whi) = self
+                    .applied_window
+                    .get(&entry.node)
+                    .copied()
+                    .unwrap_or_else(|| {
+                        let drawn = entry.required_levels();
+                        let first = drawn.first().copied().unwrap_or(u8::MAX);
+                        let last = drawn.last().copied().unwrap_or(0);
+                        (first.saturating_sub(1), last.saturating_add(1))
+                    });
+                // The active set stays contiguous up to the finest drawn depth (ADR 0053): an octant
+                // that holds the eye draws beyond `hi`, and a gap makes the per-cell rule jump from
+                // the range to that depth, whose far cells measure a fraction of a pixel.
+                let hi = hi.max(wanted.last().copied().unwrap_or(hi));
+                wanted.extend(lo.max(wlo)..=hi.min(whi));
+                wanted.sort_unstable();
+                wanted.dedup();
+            }
         }
         let mut depths: Vec<u8> = in_cell_range(&wanted, node_depth)
             .into_iter()
-            .filter(|depth| {
-                let key = self.key(entry.node, *depth);
-                self.is_resident(key) && !self.fresh.contains(&key)
-            })
+            .filter(|depth| usable(*depth))
             .collect();
         if let Some(d5) = new_d5
             && !depths.contains(&d5)
