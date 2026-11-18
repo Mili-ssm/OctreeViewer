@@ -1,6 +1,6 @@
 # ADR 0055 en modo celda: rango por nodo y puerta de residencia
 
-Estado: en curso · 18-11-2026 · tramo A hecho y fusionado (#79); tramos B y C replanteados el 18-11-2026 tras retirar el modo octante ([ADR 0056](../adr/0056-se-retira-el-modo-octante.md)) y resolver OQ-16; pre-mortem del replanteo pendiente antes de la tarea 5
+Estado: en curso · 18-11-2026 · tramo A hecho y fusionado (#79); tramos B y C replanteados el 18-11-2026 tras retirar el modo octante ([ADR 0056](../adr/0056-se-retira-el-modo-octante.md)) y resolver OQ-16; pre-mortem del replanteo aplicado el 18-11-2026
 
 **Conclusión.** Tres tramos, cada uno entregable por separado. El **A** está hecho: `cell_pool.rs` dividido y el
 extremo grueso `lo` del rango calculado con una cota por nodo. El **B** hace que el rango por nodo mande de verdad:
@@ -51,6 +51,12 @@ Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 - Una simulación real necesita cambiar un umbral o una excusa del oráculo para pasar: parar.
 - `poolStages > 0` en reposo en una simulación de celdas: parar la tarea en curso.
 - La residencia medida en Majadas a 1 px dentro de una hoja pasa del 90 % de lo usable (51 610 de 57 344 páginas; hoy 45 806): parar y replantear `hi` con el propietario.
+- Tarea 5a: la cota con la fuente elegida queda más de un nivel sobre la cota celda a celda en el nodo del ojo:
+  cambiar de fuente a las cajas de datos por octante; si tampoco, parar.
+- Una clave se pide y se cancela, o se expulsa y se vuelve a pedir, más de dos veces con la pose fija: parar.
+- En la simulación de dolly (semilla 3), los frames hasta asentarse o los frames más gruesos que la línea base
+  superan 1,5 × los de hoy: parar y enseñárselo al propietario en el navegador.
+- Una subtarea de la 10 no termina en dos intentos de un trabajador: entregar hasta la 7a y replantear.
 - El encargo de una tarea necesita más de unas 20 llamadas antes de empezar a escribir: dividirla.
 
 ## Tareas
@@ -105,62 +111,88 @@ la cámara en movimiento, y el recorte por el plano lejano (hoy `lo` puede queda
 
 ### Tramo B: el rango por nodo manda
 
-### Task 5: `hi` bounded by data, measured before it is wired (R)
+**Salida menor (decisión del propietario si se llega a ella).** Tareas 5a, 5, 6 y 7a, y parar: `hi` por datos como
+tope de lo que se pide junto al ojo, con la maquinaria por octante intacta. Captura las páginas junto al ojo y la
+respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (el estado final que pide el ADR 0055).
 
-- [ ] `node_view_range` recibe la profundidad de vista de la celda ocupada más cercana (cajas de página del nivel
-  residente más fino, D9) y calcula `hi` ahí. Sin conectar todavía: el test ignorado `data_bounded_hi_vs_node_range`
-  compara la cota con cajas de página con la cota celda a celda del
-  [registro](../records/benchmarks/R3_EXTREMO_FINO_POR_DATOS_18-11-2026.md) y con lo que pide el gemelo donde hay
-  puntos. Criterio: 0 infracciones y como mucho un nivel más de holgura que la cota celda a celda.
-- [ ] Se comprueba que la cota no oscila: con el mismo punto de vista, la llegada o la expulsión de un nivel no
-  hace que `hi` suba y baje en frames alternos (test con un nivel que entra y sale).
+### Task 5a: Measure the sources of the data bound (no wiring)
+
+- [ ] Los tests ignorados `data_bounded_hi_vs_node_range` y `print_data_bound_totals` comparan cuatro fuentes de
+  la celda ocupada más cercana, cada una con y sin recorte a la vista: (a) cajas de página del nivel residente más
+  fino, (b) cajas de página del nivel `hi_d`, (c) el nivel más grueso fijado del nodo, (d) las cajas de datos por
+  octante (`octant_data_bounds`). En la muestra (P1 a P5) y en Majadas dentro de una hoja a 1 px.
+  Criterio: como mucho un nivel sobre la cota celda a celda en el nodo del ojo y proyección ≤ 90 % de lo usable.
+  La medida anterior dependía de un filtro «en pantalla» y de que el nivel 18 fuera residente: hay que repetirla
+  sin esas dos ayudas.
+
+### Task 5: `hi` bounded by data, from a source that does not depend on residency
+
+- [ ] `node_view_range` calcula `hi` con la fuente elegida en 5a, recortada a la vista. Si la fuente depende de la
+  residencia, `hi` solo baja cuando cambia la pose (histéresis). Sin conectar a las peticiones todavía.
+  Tests: 0 infracciones frente a lo que pide el gemelo donde hay puntos; con pose fija y el pool por encima del
+  umbral de expulsión, 200 frames sin que ninguna clave se pida dos veces.
+- [ ] La caché de profundidades por nodo (`refresh_depths`) se invalida cuando cambia el dato del que sale `hi`.
 
 ### Task 6: The sim oracle checks the node range, not per-octant fields
 
-- [ ] El oráculo de celdas (`lod_cells_stream_tests.rs`) deja de leer `wanted` y `stage` por octante: tope, el
-  tramo construible; excusa específica (el nivel que falta está entre el dibujado y el pedido, y el `fit` lo limitó
-  o lo expulsó en ese frame). Comprobación: una mutación que deja de proteger los niveles aplicados da
+- [ ] El oráculo de celdas muestrea solo celdas ocupadas (o la rejilla cortada con las cajas de página), para que
+  un `hi` que se ajusta con la cámara quieta no cuente como caída en puntos de aire. Deja de leer `wanted` y
+  `stage` por octante. Comprobación: la mutación que deja de proteger los niveles aplicados da
   `unexcused_drops > 0`.
 - [ ] Regla de contigüidad del conjunto activo escrita y comprobada
   ([#83](https://github.com/Mili-ssm/OctreeViewer/issues/83)): contiguo respecto de los niveles residentes, con la
   excepción del nivel D5. Se activa `the_cell_oracle_reports_a_middle_depth_missing_from_a_run`.
 
-### Task 7: Requests and residency come from the node range (R)
+### Task 7a: Cap the per-octant wish at the data bound (R)
 
-- [ ] `needed_levels`, las peticiones y el `fit` salen de `[lo, hi]` y no del deseo máximo por octante: hoy el
-  pool retiene junto al ojo hasta el último nivel aunque `range.hi` sea menor. Los niveles se piden de grueso a
-  fino (D7). Test que falla antes: con el ojo dentro de los datos, el nodo del ojo no retiene niveles más finos que
-  `hi`.
-  Comprobación: residencia real en Majadas, dentro de una hoja, a 1 y 4 px (`cells_bench`), frente a 45 806 y
-  16 214 páginas; frames hasta completar en las simulaciones s1 y s7.
+- [ ] Antes de tocar nada, se fija lo de hoy: niveles residentes del nodo del ojo en P2, y frames hasta el nivel
+  más fino dibujado en el acercamiento de la simulación de dolly (semilla 3).
+- [ ] `cell_cut_ranged` limita el deseo por octante a `max(lo, hi_d)`: peticiones, pasos, `stage` y `fit` lo
+  siguen sin más cambios. Hoy los octantes que cruzan el plano del ojo piden el último nivel y los pasos lo traen
+  aunque `range.hi` sea menor. Test que falla antes: con el ojo dentro de los datos, el nodo del ojo no pide niveles
+  más finos que `hi_d`.
+  Puertas: residencia real en Majadas a 1 y 4 px frente a 45 806 y 16 214 páginas; dolly s3 y zoom en el navegador.
 
-### Task 8: Node-level range and anchor replace the per-octant fields (R)
+### Task 7b: Requests come from the node range (R)
 
-- [ ] `CellCutEntry` pasa a llevar rango y ancla por nodo (D4). El encargo lista cada lector y cómo se adapta:
-  `finer_drawn`, la ruta en solitario de `eval_refine_hold`, `lost_zones`, el resumen del corte (`applied_digest`),
-  `stages` (la demo necesita `stages == 0` en reposo), el `busy` del driver, `MaskUpdate.active` (ya sin lector).
-  `plan` deja de usar `steps` y `step_waits`. El oráculo de pasos de `cell_pool_tests` se sustituye por uno del
-  tramo activo. Test que falla antes: «en modo celda no hay paso por octante».
-  Puerta añadida: `stages == 0` en reposo en una simulación; P2 y P4 con las dos reglas de activos.
+- [ ] `needed_levels` y las peticiones salen de `[lo, hi]`, de grueso a fino (D7), sin el rango `range_only`
+  aparte. Comprobación: frames hasta completar en s1, s7 y s3 frente a la tarea 7a.
 
-### Tramo C: puerta de residencia y borrado
+### Tramo C: puerta de residencia, campos por nodo y borrado
 
-### Task 9: `run_covers`, a pure residency gate
+### Task 8: `run_covers`, a pure residency gate for both directions
 
-- [ ] `run_covers(tramo del hijo, nivel más fino del antepasado)`: verdadero cuando el tramo del hijo alcanza ese
-  nivel más uno (el nombre evita `covers_in` y `CoverRule::cover`, que ya existen en `fallback.rs`). Tests unitarios.
+- [ ] Test de caracterización que fija `eval_refine_hold` en un borde al acercarse (hijo frente a antepasado) y en
+  uno al alejarse (nodo frente a descendientes aplicados, la rama `below`).
+- [ ] `run_covers` cubre los dos casos: el tramo del hijo alcanza el nivel más fino del antepasado más uno; y, al
+  alejarse, el nodo no sustituye a descendientes cuyo tramo dibuja más fino de lo que él alcanza. Tests unitarios.
+  (El nombre evita `covers_in` y `CoverRule::cover`, que ya existen en `fallback.rs`.)
 
-### Task 10: The residency gate replaces the per-node hold (R)
+### Task 9: The residency gate replaces the per-node hold (R)
 
-- [ ] `eval_hold` y `add_d5_gate` usan `run_covers` en lugar de `eval_refine_hold` (R3-Q21). Test que falla antes:
-  en un borde, un hijo no tapa a su antepasado antes de que su tramo sea contiguo. Va antes del borrado (D6).
+- [ ] `eval_hold` y `add_d5_gate` usan `run_covers` en lugar de `eval_refine_hold` (R3-Q21). Los tramos ya existen
+  hoy en `cell_active_depths`, así que esta tarea no espera a la 10. Comprobación: el test de caracterización de la
+  tarea 8 y `zone_coarsenings` a 0 en la simulación de dolly.
+
+### Task 10: Node-level range and anchor replace the per-octant fields (R)
+
+- [ ] **10a, en este plan.** Se definen «ancla» y `stage` por nodo. `stage` se mide sobre
+  `[lo, min(hi, separación, tope del fit)]`, lo que de verdad se puede pedir: si no, `stages` no llega a 0 en reposo.
+- [ ] **10b.** `CellCutEntry` gana los campos por nodo junto a los viejos y los lectores se pasan de uno en uno,
+  un commit cada uno: `busy` del driver, `stages`, el tope de `fit`, `lost_zones`, el resumen del corte.
+- [ ] **10c.** Se quitan los campos por octante; los goldens y resúmenes que cambian se rehacen comprobando a mano
+  una muestra de entradas, con el motivo escrito.
+- [ ] **10d.** Los tests se migran (unas 290 referencias en más de diez ficheros) y el oráculo de pasos de
+  `cell_pool_tests` se sustituye por uno del tramo activo.
+- [ ] Test de la regla `Window`: con la cámara quieta, el tramo activo llega a `[lo, hi]` en como mucho `hi − lo`
+  frames y el driver sigue ocupado mientras tanto.
 
 ### Task 11: Delete the per-octant machinery (R)
 
 - [ ] Se borran `cell_pool/seed.rs`, `stepped_depth`, `STEP_WAIT_FRAMES`, `step_waits`, `prev_state`, `step_hops`,
-  `finer_drawn`, `eval_refine_hold`, las sondas por octante y la búsqueda con pista, `behind_*`, los campos por
-  octante que queden, `MaskUpdate.active` y el `busy` por paso del driver, con sus tests. Guiado por el compilador,
-  como la retirada de `LodMode`. Comprobación: mismas cifras de las simulaciones reales que tras la tarea 10.
+  `finer_drawn`, `eval_refine_hold`, las sondas por octante y la búsqueda con pista, `behind_*`,
+  `MaskUpdate.active` y el `busy` por paso del driver, con sus tests. Guiado por el compilador, como la retirada de
+  `LodMode`. Comprobación: mismas cifras de las simulaciones reales que tras la tarea 10.
 
 ### Task 12: Whole-change verification
 
