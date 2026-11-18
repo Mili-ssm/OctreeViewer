@@ -1,6 +1,6 @@
 # Limpieza y refactor del proyecto
 
-Estado: completado · 18-11-2026 · encargo del propietario (18-11-2026); rama local `refactor/limpieza`, sin publicar; quedan las decisiones del propietario
+Estado: completado · 18-11-2026 · encargo del propietario (18-11-2026); rama `refactor/limpieza`, PR [#61](https://github.com/Mili-ssm/OctreeViewer/pull/61) sin fusionar; decisiones del propietario respondidas
 
 **Objetivo.** Dejar el repositorio y el código más fáciles de mantener sin cambiar su comportamiento: quitar
 basura, poner al día los documentos vivos y partir los módulos más grandes en submódulos cohesivos. Cada tarea
@@ -92,7 +92,7 @@ el módulo original.
 
 | Qué | Por qué se deja |
 | --- | --- |
-| Partir `cell_pool.rs` (3990 líneas) en `cell_pool/{cache,residency,fit,fallback,hold,active,step,plan}.rs` y portar encima el experimento E-B1 | Es el fichero que más cambia y el que el ADR 0055 reescribiría; tres ramas lo tocan. Se hace con el propietario delante, tras decidir el ADR 0055. Las costuras `active`, `step` y `hold` coinciden con lo que ese ADR borraría |
+| Partir `cell_pool.rs` (3989 líneas) en `cell_pool/{cache,residency,fit,fallback,hold,active,step,plan}.rs` y portar encima el experimento E-B1 | Es el fichero que más cambia y el que el ADR 0055 reescribiría; tres ramas lo tocan. Se hace con el propietario delante, tras decidir el ADR 0055. Las costuras `active`, `step` y `hold` coinciden con lo que ese ADR borraría |
 | `lod_dataset::cells` vive en `lod_cells.rs` por un `#[path]` | Moverlo a una carpeta cambia las rutas de otros cuatro `#[path]`; va junto con la división de `lod_cells.rs` |
 | Trocear `CellPool::plan` (967 líneas) y `plan_cell_update` (499) | El ADR 0055 borraría parte de ese código; trocearlo antes es trabajo que se tiraría |
 | Trocear `parse_index`, `decode_page` y `ept.rs::convert` (736) | Riesgo medio en lectores de formato; `ept.rs` solo escribe la línea heredada |
@@ -102,6 +102,9 @@ el módulo original.
 | Tope de tamaño en `check.sh` (fichero ≤ 1500 líneas, función ≤ 300) | Regla nueva del proyecto: decide el propietario |
 
 ## Decisiones del propietario
+
+Respondidas el 18-11-2026: las respuestas y su estado están en
+[Cómo retomar](retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026).
 
 | # | Decisión | Datos |
 | --- | --- | --- |
