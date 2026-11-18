@@ -1142,6 +1142,8 @@ fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
             coordinate_origin: [0.0; 3],
             cpu_budget_bytes: u64::MAX,
         });
+        // Only the window rule produces retained frames with a moved active set (the seed above).
+        driver.set_active_rule(crate::ActiveRule::Window);
         let mut cut = Vec::new();
         for (index, node) in scene.iter().enumerate() {
             let id = NodeId::new(index as u64 + 1);

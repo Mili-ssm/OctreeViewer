@@ -687,7 +687,7 @@ impl CellPool {
             pinned: FastSet::default(),
             mask_slots: FastMap::default(),
             fresh: FastSet::default(),
-            active_rule: ActiveRule::Window,
+            active_rule: ActiveRule::Contiguous,
             free_masks: BTreeSet::new(),
             next_mask: 0,
             events: Vec::new(),

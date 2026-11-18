@@ -665,7 +665,7 @@ impl Harness {
             last_plan: None,
             last_stage: None,
             totals: Totals::default(),
-            rule: ActiveRule::Window,
+            rule: ActiveRule::default(),
             cell_ctx: None,
             cell_signature: None,
             cell_memory: HashMap::new(),

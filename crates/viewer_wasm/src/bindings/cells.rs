@@ -792,8 +792,9 @@ impl WasmVoxelViewer {
         Ok(())
     }
 
-    /// Experimental: which range depths a node activates in cell mode, `"window"` (the default,
-    /// one level per frame, ADR 0053) or `"contiguous"` (the resident run at once). Any other
+    /// Experimental: which range depths a node activates in cell mode, `"contiguous"` (the default
+    /// since 18-11-2026: the resident run at once) or `"window"` (one level per frame, ADR 0053,
+    /// kept for comparison). Any other
     /// string is an error and the rule stays as it was. A temporary comparison option (OQ-11,
     /// issue #66); it survives `beginRemoteCells`, takes effect on the next frame and rebuilds
     /// nothing.

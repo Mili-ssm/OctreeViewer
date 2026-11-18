@@ -4174,6 +4174,7 @@ fn a_node_entering_the_cut_widens_its_window_one_level_per_frame() {
         d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
     )]);
     let mut rig = Rig::new(nodes, 4096, 64, 10_000);
+    rig.pool.set_active_rule(ActiveRule::Window);
     seed_resident(&mut rig.pool, 1, &[2, 9]);
     rig.pool.residency_epoch += 1;
     let cam = camera("zoom");
@@ -4222,6 +4223,7 @@ fn switching_the_active_rule_replans_without_a_camera_change() {
         d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
     )]);
     let mut rig = Rig::new(nodes, 4096, 64, 10_000);
+    rig.pool.set_active_rule(ActiveRule::Window);
     seed_resident(&mut rig.pool, 1, &[2, 9]);
     rig.pool.residency_epoch += 1;
     let cam = camera("zoom");
@@ -4354,6 +4356,7 @@ fn cell_reset_restarts_the_active_window() {
     let stored: Vec<u8> = (2..=12).collect();
     let nodes = HashMap::from([(NodeId::new(1), d5_node(SIDE, &stored))]);
     let mut rig = Rig::new(nodes, 4096, 64, 10_000);
+    rig.pool.set_active_rule(ActiveRule::Window);
     seed_resident(&mut rig.pool, 1, &[2, 9]);
     rig.pool.residency_epoch += 1;
     let cam = camera("zoom");

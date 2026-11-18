@@ -156,7 +156,7 @@ impl WasmVoxelViewer {
             cells_remote: None,
             cell_node_cap: DEFAULT_NODE_BYTES_PER_FRAME,
             continuity: Continuity::default(),
-            active_rule: viewer_render_wgpu::ActiveRule::Window,
+            active_rule: viewer_render_wgpu::ActiveRule::Contiguous,
             view_epoch: 0,
         })
     }

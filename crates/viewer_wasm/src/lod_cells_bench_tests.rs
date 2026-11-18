@@ -150,11 +150,10 @@ fn cells_bench() {
     let view = ViewProjection::new(camera, VIEWPORT, real.scale, VoxelBuildLimits::default());
     let h = &mut real.harness;
     h.soft_checks = true;
-    // `BENCH_RULE=contiguous` (default window) for the residency measurements of OQ-14; the pool
-    // is the production one (65 536 pages = 512 MiB).
-    let contiguous = env_or("BENCH_RULE", "window") == "contiguous";
-    if contiguous {
-        h.rule = ActiveRule::Contiguous;
+    // `BENCH_RULE=window` (default contiguous, the library default) for the residency measurements
+    // of OQ-14; the pool is the production one (65 536 pages = 512 MiB).
+    if env_or("BENCH_RULE", "contiguous") == "window" {
+        h.rule = ActiveRule::Window;
     }
     let (mut overflow_peak, mut coarsened_peak, mut gpu_coarsened_peak) = (0u32, 0u32, 0usize);
     let mut cpu_coarsened_peak = 0usize;
@@ -316,7 +315,11 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
         fm[1],
         fm[2],
         last.cpu_cell_bytes,
-        if contiguous { "contiguous" } else { "window" },
+        if h.rule == ActiveRule::Contiguous {
+            "contiguous"
+        } else {
+            "window"
+        },
         viewer_render_wgpu::DEFAULT_POOL_PAGES,
         f64::from(last.resident_pages) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1048576.0,
         f64::from(t.resident_peak) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1048576.0,

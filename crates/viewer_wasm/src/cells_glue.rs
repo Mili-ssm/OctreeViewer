@@ -594,7 +594,7 @@ impl ViewerCells {
             level_requests: None,
             probe_last: Cell::new(None),
             continuity: Continuity::default(),
-            active_rule: ActiveRule::Window,
+            active_rule: ActiveRule::Contiguous,
             reference_spacing: None,
         }
     }
@@ -923,7 +923,7 @@ impl InProcessCells {
             probe: RefCell::new(CutRestProbe::default()),
             pending_pages: Vec::new(),
             continuity: Continuity::default(),
-            active_rule: ActiveRule::Window,
+            active_rule: ActiveRule::Contiguous,
         }
     }
 
