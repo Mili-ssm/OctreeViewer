@@ -1109,7 +1109,7 @@ impl CellPool {
         let mut wanted = entry.required_levels();
         if self.active_rule == ActiveRule::Contiguous {
             // The resident depths of the range that reach a drawn one without a residency gap
-            // (ADR 0055, proposed): a range depth beyond a gap would make the per-cell rule jump
+            // (ADR 0055): a range depth beyond a gap would make the per-cell rule jump
             // to it. A drawn depth that is not usable yet (fresh) anchors no run.
             let drawn = wanted.clone();
             if let (Some((lo, hi)), Some(first), Some(last)) =
