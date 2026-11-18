@@ -909,16 +909,17 @@ function syncMinLengthMode() {
     updateSpacingInfo();
 }
 
+// The side the renderer applies (stats), whatever the mode: the larger of the length and the spacing side.
 function updateSpacingInfo() {
-    spacingInfo.hidden = minLengthMode.value !== "spacing";
-    if (spacingInfo.hidden) return;
     const side = latestLodStats?.continuityMinSide;
     if (!ready || !latestLodStats) {
-        spacingInfo.textContent = "The resulting side shows once a cloud is open.";
-    } else if (!latestLodStats.continuity || typeof side !== "number") {
-        spacingInfo.textContent = "This cloud has no reference spacing: the mode has no effect.";
+        spacingInfo.textContent = "The effective minimum side shows once a cloud is open.";
+    } else if (typeof side !== "number") {
+        spacingInfo.textContent = "No minimum side: pixels only.";
     } else {
-        spacingInfo.textContent = `Resulting minimum side: ${side.toPrecision(3)} (dataset units, metres assumed).`;
+        const spacingOff = minLengthMode.value === "spacing" && !latestLodStats.continuity;
+        spacingInfo.textContent = `Effective minimum side: ${side.toPrecision(3)} (dataset units, metres assumed; the larger of the length and the spacing side).`
+            + (spacingOff ? " This cloud has no reference spacing: the spacing mode has no effect." : "");
     }
 }
 
