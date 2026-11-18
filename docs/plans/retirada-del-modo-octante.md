@@ -239,4 +239,6 @@ nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
   modo octante como vigente (commit `0838b22`).
 - [ ] Al fusionar, se cierran #59 y #67.
 - [ ] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4.
-- [ ] El plan del ADR 0055 se reescribe sin la restricción del modo octante: su D4 deja de hacer falta.
+- [x] El [plan del ADR 0055](adr-0055-rango-por-nodo.md) queda reescrito sin la restricción del modo octante: su D4
+  pasa de «rellenar» a «sustituir», el borrado que esperaba a la retirada entra en su tramo C y `hi` se limita por
+  datos (OQ-16).

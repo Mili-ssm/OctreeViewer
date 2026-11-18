@@ -1,15 +1,13 @@
 # ADR 0055 en modo celda: rango por nodo y puerta de residencia
 
-Estado: en curso · 18-11-2026 · plan del agente a partir del mapa de arquitectura; pre-mortem aplicado el 18-11-2026; tramo A hecho (tareas 1 a 4) y fusionado (#79); tramo B a replantear: `hi` se limita por datos (OQ-16 resuelta) y el modo octante se retira antes (#67)
+Estado: en curso · 18-11-2026 · tramo A hecho y fusionado (#79); tramos B y C replanteados el 18-11-2026 tras retirar el modo octante ([ADR 0056](../adr/0056-se-retira-el-modo-octante.md)) y resolver OQ-16; pre-mortem del replanteo pendiente antes de la tarea 5
 
-**Conclusión.** Doce tareas pequeñas en tres tramos, cada tramo entregable por separado: (A) dividir `cell_pool.rs`,
-medir y corregir el extremo grueso `lo` del rango; (B) rango por nodo completo y campos a nivel de nodo; (C) puerta
-de residencia en lugar de la retención por nodo, y solo entonces borrar lo que queda sin uso. El modo octante no
-cambia: está congelado hasta su retirada ([#67](https://github.com/Mili-ssm/OctreeViewer/issues/67)), y por eso
-casi toda la maquinaria por octante compartida se queda; aquí solo se borra lo que usa únicamente el modo celda
-(unas 400 líneas). **Salida pequeña:** si la medida de la tarea 2 no da una cota ajustada del extremo fino `hi`, se
-entrega solo el tramo A y el resto espera a la validación del propietario en el navegador y a la medida de Majadas
-([#69](https://github.com/Mili-ssm/OctreeViewer/issues/69)).
+**Conclusión.** Tres tramos, cada uno entregable por separado. El **A** está hecho: `cell_pool.rs` dividido y el
+extremo grueso `lo` del rango calculado con una cota por nodo. El **B** hace que el rango por nodo mande de verdad:
+`hi` limitado por datos, peticiones y residencia desde el rango, y los campos por octante sustituidos por rango y
+ancla por nodo. El **C** sustituye la retención por nodo por una puerta de residencia y borra la maquinaria por
+octante que queda sin uso. Desde el 18-11-2026 no hay modo octante: ya no existe código compartido que mantener
+alimentado, y lo que antes solo se podía borrar «tras retirar el modo octante» entra en el tramo C.
 
 Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md#tareas), que desarrollan el
@@ -23,21 +21,26 @@ Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 | D1 | Dividir `cell_pool.rs` antes de cambiar comportamiento | El paso 1 borra unas 230 de sus 4028 líneas; el resto compartido sigue hasta #67. La puerta «solo se mueve» funciona mejor sin cambios en vuelo, y un trabajador no edita con seguridad un fichero de 4000 líneas |
 | D2 | El rango `[lo, hi]` es una cota: contiene todo nivel que el gemelo de la GPU pide dentro de nodo ∩ datos ∩ vista | Es lo que exige el ADR 0055 (rango conservador). El `lo` actual no lo cumple en P4 ([registro](../records/benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md)) |
 | D3 | El oráculo de las simulaciones se independiza de `wanted`/`stage` antes de cambiar lo que significan | Si no, el cambio aflojaría el oráculo sin que nadie lo note (ya pasó: [replanteamiento, «Por qué se atascó»](replanteamiento-lod-por-celda-18-11-2026.md#por-qué-se-atascó)) |
-| D4 | En modo celda los campos por octante se rellenan a nivel de nodo: `wanted = hi`; `drawn = ancla`, el nivel residente más fino que no pasa de `hi` (nunca el más grueso: anclar ahí engrosó la imagen en el experimento E-B1); sin `step`; `stage` = «falta por residir algún nivel del tramo `lo..hi`» | Deja funcionar el código compartido con el modo octante, pero **no sin tocarlo**: `finer_drawn` lee la sonda por octante, la ruta en solitario de `eval_refine_hold` corta sin rango y la demo da por alcanzado el objetivo con `poolStages === 0` (`viewer-worker.js`). La tarea 7 lista cada lector |
+| D4 | Los campos por octante de `CellCutEntry` (`wanted`, `drawn`, `stage`, `step`) se **sustituyen** por rango y ancla por nodo; no se rellenan a nivel de nodo (replanteada el 18-11-2026) | Rellenarlos era para no tocar el código compartido con el modo octante, que ya no existe. Queda vigente lo que el pre-mortem encontró: cada lector hay que adaptarlo (`finer_drawn`, la ruta en solitario de `eval_refine_hold`, el tope de `fit`, `needed_levels`, `lost_zones`, el resumen del corte, el `busy` del driver) y la demo da por alcanzado el objetivo con `poolStages === 0` |
 | D5 | La regla de activos (`ActiveRule`) no se toca aquí | La elige el propietario ([#66](https://github.com/Mili-ssm/OctreeViewer/issues/66)); las tareas valen para las dos |
 | D6 | La puerta de residencia (tareas 9 y 10) va antes de borrar semillas y `drawn_ceiling` (tarea 11) | `eval_refine_hold` usa las dos: borrarlas antes deja un estado intermedio que congela al hijo o engrosa la imagen (pre-mortem) |
 | D7 | Los niveles del tramo se piden de grueso a fino | Con la regla contigua, `hi` no se activa hasta que llegan los intermedios; pedirlo primero retrasa el refinado visible |
+| D8 | `hi` se limita por datos: se calcula a la distancia de la celda ocupada más cercana del nodo, no en el recorte cercano del LOD (propietario, OQ-16, 18-11-2026) | La cota fiel a la regla pide el último nivel en puntos sin datos. Medido: la cota por datos contiene lo pedido en 44 de 44 casos con 0 o 1 niveles de holgura ([registro](../records/benchmarks/R3_EXTREMO_FINO_POR_DATOS_18-11-2026.md)) |
+| D9 | La celda ocupada más cercana se estima con las cajas de página del nivel residente más fino, no recorriendo celdas | Recorrer celdas son millones de operaciones por frame. Cuánto afloja la cota hay que medirlo (tarea 5) |
 
 ## Restricciones
 
-- El modo octante no cambia de comportamiento: sus tests no se editan y siguen en verde.
-- No se añaden reglas por octante al modo celda.
+- No se añaden reglas por octante.
+- La regla de activos (`ActiveRule`) sigue con sus dos valores hasta que el propietario elija (#66); cada tarea vale
+  para los dos.
 - Puertas de todas las tareas: `cargo test -p viewer_render_wgpu -p viewer_wasm --profile fast --offline --lib`,
-  clippy nativo y wasm32, y el test de pose P2 `a_node_holding_the_eye_keeps_contiguous_active_depths_and_no_sub_pixel_cells`.
+  clippy nativo y wasm32, los goldens de corte en modo celda y los tests de pose P2 y P4.
 - Las tareas marcadas **R** añaden las simulaciones reales
-  (`R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast --offline --lib -- --ignored real_sim`) con
-  `unexcused_drops`, `zone_coarsenings` y `lost_samples` a 0, y `p4_border_levels`.
-- Antes de fusionar: `FUZZ_CHECK=0 scripts/check.sh` y navegador en las poses P1 a P5.
+  (`R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast --offline --lib -- --ignored real_sim --nocapture`)
+  con `unexcused_drops`, `zone_coarsenings` y `lost_samples` a 0. Sus líneas `SimStats` ordenadas se comparan con la
+  [línea base](../records/benchmarks/R3_LINEA_BASE_CELDA_18-11-2026.md): un cambio se explica en la tarea o se para.
+- Antes de fusionar: `FUZZ_CHECK=0 scripts/check.sh` y navegador en las poses P1 a P4.
+- Un trabajo en un worktree aparte compila con su propio `CARGO_TARGET_DIR`.
 
 ## Criterios de parada
 
@@ -47,7 +50,7 @@ Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 - Las simulaciones reales piden más de 2 × los niveles por frame de hoy o agotan el pool donde hoy no: parar.
 - Una simulación real necesita cambiar un umbral o una excusa del oráculo para pasar: parar.
 - `poolStages > 0` en reposo en una simulación de celdas: parar la tarea en curso.
-- Una tarea necesita cambiar un test del modo octante: parar; la costura compartida está mal elegida.
+- La residencia medida en Majadas a 1 px dentro de una hoja pasa del 90 % de lo usable (51 610 de 57 344 páginas; hoy 45 806): parar y replantear `hi` con el propietario.
 - El encargo de una tarea necesita más de unas 20 llamadas antes de empezar a escribir: dividirla.
 
 ## Tareas
@@ -100,78 +103,83 @@ línea recta de P4 desaparece; queda la transición normal entre dos niveles (cu
 etapas quedan a 0 en reposo y no hay errores de consola. Sin medir: el coste por frame de la búsqueda de `lo` con
 la cámara en movimiento, y el recorte por el plano lejano (hoy `lo` puede quedar algo más grueso de lo necesario).
 
-### Tramo B: rango por nodo completo
+### Tramo B: el rango por nodo manda
 
-### Task 5: Cell mode takes `hi` from `node_view_range` (R)
+### Task 5: `hi` bounded by data, measured before it is wired (R)
 
-- [ ] Solo si la tarea 2 dio una cota ajustada. `behind_*` deja de usarse en modo celda.
-  Test que falla antes: el test de pose P2 sigue pasando sin la regla de octantes detrás del ojo.
-  Comprobación: páginas residentes y peticiones por frame de las simulaciones reales frente a hoy.
+- [ ] `node_view_range` recibe la profundidad de vista de la celda ocupada más cercana (cajas de página del nivel
+  residente más fino, D9) y calcula `hi` ahí. Sin conectar todavía: el test ignorado `data_bounded_hi_vs_node_range`
+  compara la cota con cajas de página con la cota celda a celda del
+  [registro](../records/benchmarks/R3_EXTREMO_FINO_POR_DATOS_18-11-2026.md) y con lo que pide el gemelo donde hay
+  puntos. Criterio: 0 infracciones y como mucho un nivel más de holgura que la cota celda a celda.
+- [ ] Se comprueba que la cota no oscila: con el mismo punto de vista, la llegada o la expulsión de un nivel no
+  hace que `hi` suba y baje en frames alternos (test con un nivel que entra y sale).
 
-### Task 6: The sim oracle stops reading `wanted` and `stage`
+### Task 6: The sim oracle checks the node range, not per-octant fields
 
-- [ ] El oráculo de celdas (`lod_cells_stream_tests.rs`) usa como tope el tramo construible. La excusa es
-  específica: el nivel que falta está entre el dibujado y el pedido, y el `fit` lo limitó o lo expulsó en ese
-  frame. `stage_excuses`, que comparte el oráculo de octantes, no se toca.
-  Comprobación: una mutación que deja de proteger los niveles aplicados da `unexcused_drops > 0`.
+- [ ] El oráculo de celdas (`lod_cells_stream_tests.rs`) deja de leer `wanted` y `stage` por octante: tope, el
+  tramo construible; excusa específica (el nivel que falta está entre el dibujado y el pedido, y el `fit` lo limitó
+  o lo expulsó en ese frame). Comprobación: una mutación que deja de proteger los niveles aplicados da
+  `unexcused_drops > 0`.
+- [ ] Regla de contigüidad del conjunto activo escrita y comprobada
+  ([#83](https://github.com/Mili-ssm/OctreeViewer/issues/83)): contiguo respecto de los niveles residentes, con la
+  excepción del nivel D5. Se activa `the_cell_oracle_reports_a_middle_depth_missing_from_a_run`.
 
-### Task 7: Node-level `wanted`/`drawn`/`stage` in cell mode (R)
+### Task 7: Requests and residency come from the node range (R)
 
-- [ ] `drawn_levels` y `cell_pool` rellenan los campos según D4. El encargo lista cada lector por octante y qué
-  hace con él: `finer_drawn`, la ruta en solitario de `eval_refine_hold`, el tope de `fit`, `range_only`,
-  `needed_levels`, `lost_zones`, `stages`, el resumen del corte y el `busy` del driver. No se borra nada todavía.
-  Test que falla antes: `cell_mode_keeps_the_stepped_depth_active` reescrito como «en modo celda no hay paso».
-  Puerta añadida: `stages == 0` en reposo en una simulación de celdas; P2 y P4 con las dos reglas de activos y un
-  caso de alejamiento con `Window`.
+- [ ] `needed_levels`, las peticiones y el `fit` salen de `[lo, hi]` y no del deseo máximo por octante: hoy el
+  pool retiene junto al ojo hasta el último nivel aunque `range.hi` sea menor. Los niveles se piden de grueso a
+  fino (D7). Test que falla antes: con el ojo dentro de los datos, el nodo del ojo no retiene niveles más finos que
+  `hi`.
+  Comprobación: residencia real en Majadas, dentro de una hoja, a 1 y 4 px (`cells_bench`), frente a 45 806 y
+  16 214 páginas; frames hasta completar en las simulaciones s1 y s7.
 
-### Task 8: Requests from coarse to fine, and no steps in `plan` and `fit` (R)
+### Task 8: Node-level range and anchor replace the per-octant fields (R)
 
-- [ ] El orden de peticiones recorre `lo..hi` de grueso a fino (D7); `plan` no usa `steps`/`step_waits` en modo
-  celda; `fit` limita desde `hi`. Test que falla antes: un test de pool donde el rango cabe bajo el tope sin clave
-  de paso. Comprobación: frames hasta completar en s1 y s7, `level_requests` por frame y `pool_coarsened`, frente a hoy.
+- [ ] `CellCutEntry` pasa a llevar rango y ancla por nodo (D4). El encargo lista cada lector y cómo se adapta:
+  `finer_drawn`, la ruta en solitario de `eval_refine_hold`, `lost_zones`, el resumen del corte (`applied_digest`),
+  `stages` (la demo necesita `stages == 0` en reposo), el `busy` del driver, `MaskUpdate.active` (ya sin lector).
+  `plan` deja de usar `steps` y `step_waits`. El oráculo de pasos de `cell_pool_tests` se sustituye por uno del
+  tramo activo. Test que falla antes: «en modo celda no hay paso por octante».
+  Puerta añadida: `stages == 0` en reposo en una simulación; P2 y P4 con las dos reglas de activos.
 
-### Tramo C: puerta de residencia
+### Tramo C: puerta de residencia y borrado
 
 ### Task 9: `run_covers`, a pure residency gate
 
 - [ ] `run_covers(tramo del hijo, nivel más fino del antepasado)`: verdadero cuando el tramo del hijo alcanza ese
   nivel más uno (el nombre evita `covers_in` y `CoverRule::cover`, que ya existen en `fallback.rs`). Tests unitarios.
 
-### Task 10: Cell mode uses the residency gate instead of the per-node hold (R)
+### Task 10: The residency gate replaces the per-node hold (R)
 
-- [ ] `eval_hold`/`add_d5_gate` usan `run_covers` en modo celda en lugar de `eval_refine_hold` (R3-Q21).
-  Test que falla antes: en un borde, un hijo no tapa a su antepasado antes de que su tramo sea contiguo.
+- [ ] `eval_hold` y `add_d5_gate` usan `run_covers` en lugar de `eval_refine_hold` (R3-Q21). Test que falla antes:
+  en un borde, un hijo no tapa a su antepasado antes de que su tramo sea contiguo. Va antes del borrado (D6).
 
-### Task 11: Delete what cell mode no longer uses (R)
+### Task 11: Delete the per-octant machinery (R)
 
-- [ ] Se borran `cell_pool/seed.rs` entero, la parte de celda de `drawn_ceiling`, las ramas de sonda de celda,
-  `behind_*` y `node_far_depth`, con sus tests. Comprobación: mismas cifras de las simulaciones reales que tras la
-  tarea 10.
+- [ ] Se borran `cell_pool/seed.rs`, `stepped_depth`, `STEP_WAIT_FRAMES`, `step_waits`, `prev_state`, `step_hops`,
+  `finer_drawn`, `eval_refine_hold`, las sondas por octante y la búsqueda con pista, `behind_*`, los campos por
+  octante que queden, `MaskUpdate.active` y el `busy` por paso del driver, con sus tests. Guiado por el compilador,
+  como la retirada de `LodMode`. Comprobación: mismas cifras de las simulaciones reales que tras la tarea 10.
 
 ### Task 12: Whole-change verification
 
-- [ ] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P5 y zoom en movimiento, con «objetivo alcanzado» en
-  reposo; registro fechado con los contadores de las simulaciones antes y después; `docs/reference/` y el ADR 0055
-  enlazados donde cambie el contrato.
-
-## Solo tras retirar el modo octante (#67)
-
-Borrar `stepped_depth`, `STEP_WAIT_FRAMES`, `step_waits`, `prev_state`, `step_hops`, `finer_drawn`,
-`eval_refine_hold`, las sondas por octante y la búsqueda con pista; los campos `CellCutEntry.{wanted,drawn,stage,step}`
-(públicos en `lib.rs`); el `busy` por paso del driver y las ramas `LodMode`.
+- [ ] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4 y zoom en movimiento, con «objetivo alcanzado» en
+  reposo; registro fechado con las simulaciones y la residencia en Majadas antes y después; `docs/reference/`,
+  `docs/explanation/REGIONAL_VOXEL_LOD.md` (su regla E6) y el ADR 0055 enlazados donde cambie el contrato.
 
 ## Riesgos y su comprobación
 
-Del pre-mortem del 18-11-2026; cada uno tiene su enmienda en las tareas.
+Del pre-mortem del 18-11-2026 (anterior al replanteo) y de las medidas posteriores.
 
 | Riesgo | Comprobación más barata | Tarea |
 | --- | --- | --- |
-| `hi` se va al último nivel en los nodos que contienen el ojo: el gemelo da `+inf` a un cubo con una esquina detrás del plano del ojo | Medida de la tarea 2 antes de diseñar la 3 | 2, 5 |
-| La retención congela al hijo o engrosa la imagen si se borran las semillas antes de sustituirla | Orden D6; simulaciones reales en cada tarea R | 10, 11 |
-| `poolStages` no llega a 0 en reposo y la demo nunca da el objetivo por alcanzado | Aserción `stages == 0` en reposo | 7 |
+| La cota de `hi` con cajas de página afloja demasiado o depende de qué nivel es residente y oscila | Comparación con la cota celda a celda; test con un nivel que entra y sale | 5 |
+| Al mandar el rango sobre las peticiones, el pool retiene más de lo que cabe en nubes grandes | Residencia real en Majadas a 1 px; criterio de parada del 90 % de lo usable | 7 |
+| Todos los niveles de `lo` a `hi` se piden a la vez y el refinado visible se retrasa | Frames hasta completar en s1 y s7; orden de grueso a fino | 7 |
 | El oráculo se excusa a sí mismo con «el nivel pedido no es residente» | Excusa específica y mutación por expulsión | 6 |
-| `hi` se pide antes que los niveles intermedios y el refinado visible se retrasa | Frames hasta completar en s1 y s7 | 8 |
-| Quedan lectores por octante sin adaptar | Lista de lectores en el encargo de la tarea 7 | 7 |
-| La regla `Window` abre un hueco al separar el ancla de la ventana | P2 y P4 con las dos reglas y un alejamiento | 7 |
-| Conflictos al rebasar la pila de PR sobre la división | `git log main..HEAD -- crates/viewer_render_wgpu/src/cell_pool.rs` antes de cada rebase; un arreglo de revisión de la #74 se aplica en el submódulo correspondiente | 1 |
-| La propiedad de la tarea 2 falla de forma intermitente por f32 frente a f64 | Tolerancia en px | 2 |
+| `stages` no llega a 0 en reposo y la demo nunca da el objetivo por alcanzado | Aserción `stages == 0` en reposo | 8 |
+| Quedan lectores por octante sin adaptar | Lista de lectores en el encargo | 8 |
+| La regla `Window` abre un hueco al separar el ancla de la ventana | P2 y P4 con las dos reglas y un alejamiento | 8 |
+| La retención congela al hijo o engrosa la imagen si se borra antes de sustituirla | Orden D6; simulaciones reales en cada tarea R | 10, 11 |
+| Los tests de pool y driver pasan con rangos de un solo nivel y no ven el cambio | Los ocho tests de rangos anchos de la [retirada del modo octante](retirada-del-modo-octante.md), ampliados en cada tarea | 7, 8 |
