@@ -13,13 +13,15 @@ Estado: Propuesta · Fecha: 18-11-2026 · Decide: propietario (propone el agente
 - El propietario (18-11-2026) pide seguir la intención de los requisitos antes que su literalidad.
 
 ## Decisión (propuesta)
-- **Activo = tramo contiguo.** Los niveles activos de un nodo son un tramo contiguo de niveles residentes. Nunca
-  se activa un nivel al otro lado de un hueco de residencia.
+- **Activo = tramo contiguo.** Los niveles activos de un nodo son un tramo contiguo de niveles residentes: un
+  nivel no se activa si entre él y lo que ya se dibuja falta un nivel residente. Lo que ya se dibuja no se suelta
+  para cerrar un hueco (engrosaría la imagen).
 - **La CPU decide la residencia.** Por nodo calcula un rango conservador `[lo, hi]` (lado lejano y lado cercano,
   este limitado a la distancia cercana del LOD) y con él pide, retiene y suelta niveles, dentro del presupuesto.
 - **La GPU decide el dibujo** con E4, sin cambios.
-- **Transiciones:** dos celdas vecinas del mismo nodo difieren como mucho en un nivel por construcción; en el
-  tiempo, los niveles entran de grueso a fino conforme se hacen residentes. No hay estado de pasos por octante.
+- **Transiciones:** con el tramo sin huecos, dos celdas vecinas del mismo nodo difieren como mucho en un nivel;
+  en el tiempo, los niveles entran conforme se hacen residentes. No hay ventana de un nivel por frame ni, al
+  completar la propuesta, estado de pasos por octante.
 - El modo octante queda congelado y no condiciona el modo celda.
 
 ## Alternativas
@@ -33,7 +35,10 @@ Estado: Propuesta · Fecha: 18-11-2026 · Decide: propietario (propone el agente
 - Se pueden borrar del modo celda `wanted`/`drawn`/`stage`/`step`, las reglas de octantes detrás del ojo,
   `node_far_depth` y las semillas de entrada (estimación: 600–900 líneas más sus tests, sin medir).
 - Los oráculos temporales pasan de (nodo, octante) a muestras de la rejilla; el gemelo y los tests de GPU no cambian.
-- Con movimientos rápidos de cámara un punto puede cambiar más de un nivel entre dos frames.
+- Con movimientos rápidos de cámara un punto puede cambiar más de un nivel entre dos frames: 280 saltos dentro del
+  nodo en una órbita simulada de Belvedere, frente a 0 con la ventana
+  ([experimento E-B1](../plans/replanteamiento-lod-por-celda-18-11-2026.md#experimentos)). Es el punto que el
+  propietario debe aceptar o rechazar.
 - Más niveles activos por nodo cerca del ojo: E4 evalúa cada antepasado activo; hay que medir el paso de celdas.
 
 ## Revisar si

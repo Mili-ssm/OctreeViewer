@@ -45,6 +45,11 @@ As in phase 2a (English code/commits, Spanish docs, no AI attribution; octant mo
 
 ## Status at pause (16-11-2026, late) — resume here
 
+> **Update 18-11-2026:** step 1 of "Next" (contiguous active set, P2 test) is done on the local branch
+> `explore/2b-contiguous-active` (39a9c33), and the black quadrant at P2 is gone in the browser. A rethink of the
+> requirements behind this phase, a second experiment and the questions for the owner are in
+> [Replanteamiento del LOD por celda](replanteamiento-lod-por-celda-18-11-2026.md). Read it before continuing here.
+
 Branch `feat/cell-lod-2b` (worktree `~/.cache/codex-worktrees/octree-publicar`), HEAD 6da8f79, tree clean, **not
 pushed, no PR**. Evidence and agent reports: `.superpowers/sdd/fase-2b/` (git-ignored; `evidence/` holds the
 screenshots, the P4 and P2/P3 diagnoses and the browser script `run.js`).
