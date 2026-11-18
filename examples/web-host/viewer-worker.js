@@ -1316,12 +1316,19 @@ async function recoverFromDeviceLoss(loss) {
     return false;
 }
 
+// A render setting changes the live stats without touching the lodProgress key, so the key is reset to
+// make the next frame re-post them (otherwise they stay stale until the camera moves).
+function renderSettingChanged() {
+    advanceSceneGeneration();
+    lastLodProgressKey = "";
+}
+
 // The viewer refuses an unknown mode and keeps its own, so the stored setting only changes after it
 // accepted the new one.
 function applyCellLod(mode) {
     viewer.setCellLod(mode);
     cellLodSetting = mode;
-    advanceSceneGeneration();
+    renderSettingChanged();
     return mode;
 }
 
@@ -1329,7 +1336,7 @@ function applyCellLod(mode) {
 function applyContinuity(enabled, factor) {
     viewer.setContinuity(enabled, factor);
     continuitySetting = [enabled, factor];
-    advanceSceneGeneration();
+    renderSettingChanged();
     return true;
 }
 
@@ -1337,14 +1344,14 @@ function applyContinuity(enabled, factor) {
 function applyMinLength(side) {
     viewer.setMinLength(side);
     minLengthSetting = [side];
-    advanceSceneGeneration();
+    renderSettingChanged();
     return side;
 }
 
 function applyCellActiveRule(rule) {
     viewer.setCellActiveRule(rule);
     cellActiveRuleSetting = rule;
-    advanceSceneGeneration();
+    renderSettingChanged();
     return rule;
 }
 
