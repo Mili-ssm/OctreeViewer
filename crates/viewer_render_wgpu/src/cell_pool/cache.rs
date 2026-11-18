@@ -177,8 +177,8 @@ impl CellPool {
                 Some(limit) => depths.map(|depth| continuity_depth(data.buildable, depth, limit)),
                 None => depths,
             };
+            let probes = std::array::from_fn(|octant| data.probe_box(octant));
             let far = {
-                let probes = std::array::from_fn(|octant| data.probe_box(octant));
                 // `lo` of the node's range: the on-axis bound of `node_view_range` (ADR 0055
                 // plan, task 4); a node wholly behind the eye or without data wants the coarsest
                 // depth. Its `hi_c` is not used yet (task 5), so only `lo` is searched. It is
@@ -195,17 +195,32 @@ impl CellPool {
                 .unwrap_or(data.buildable.0);
                 (far, octants_in_front(view, origin, data.bounds, probes))
             };
-            let (finest, mut hi_d) = Self::data_bound_of(
-                &self.levels,
-                self.config,
-                id,
-                data,
-                (view, grid, origin, target_px, self.min_side),
-                far.0,
-            );
-            if was.is_some_and(|cached| cached.pose == pose) {
-                hi_d = hi_d.max(was.and_then(|cached| cached.hi_d));
-            }
+            // The data bound depends on the pose, the node and its finest resident level only:
+            // at an unchanged pose with the same finest level the cached one stands.
+            let resident = Self::finest_resident(&self.levels, self.config, id, data.buildable);
+            let finest = resident.map(|(depth, _)| depth);
+            let (finest, hi_d) = match was {
+                Some(cached) if cached.pose == pose && cached.finest == finest => {
+                    (cached.finest, cached.hi_d)
+                }
+                _ => {
+                    #[cfg(test)]
+                    {
+                        self.bound_evaluations += u32::from(resident.is_some());
+                    }
+                    let mut hi_d = Self::data_bound_of(
+                        resident,
+                        data,
+                        probes,
+                        (view, grid, origin, target_px, self.min_side),
+                        far.0,
+                    );
+                    if was.is_some_and(|cached| cached.pose == pose) {
+                        hi_d = hi_d.max(was.and_then(|cached| cached.hi_d));
+                    }
+                    (finest, hi_d)
+                }
+            };
             let differs = was.is_none_or(|cached| cached.depths != depths || cached.far != far);
             if extra_set.contains(&id) {
                 extra_changed |= differs;
@@ -242,14 +257,19 @@ impl CellPool {
                 }
                 cached.epoch = self.residency_epoch;
                 let data = &nodes[id];
-                let finest = Self::finest_resident(&self.levels, self.config, *id, data.buildable)
-                    .map(|(depth, _)| depth);
+                let resident =
+                    Self::finest_resident(&self.levels, self.config, *id, data.buildable);
+                let finest = resident.map(|(depth, _)| depth);
                 if finest != cached.finest {
-                    let (finest, hi_d) = Self::data_bound_of(
-                        &self.levels,
-                        self.config,
-                        *id,
+                    #[cfg(test)]
+                    {
+                        self.bound_evaluations += u32::from(resident.is_some());
+                    }
+                    let probes = std::array::from_fn(|octant| data.probe_box(octant));
+                    let hi_d = Self::data_bound_of(
+                        resident,
                         data,
+                        probes,
                         (view, grid, origin, target_px, self.min_side),
                         cached.far.0,
                     );
@@ -280,13 +300,13 @@ impl CellPool {
         })
     }
 
-    /// The finest resident depth of a node and its data bound (`NodeDepths::hi_d`) from that
-    /// level's page boxes; `lo` is the node's `lo`, which the bound is not below.
+    /// The data bound (`NodeDepths::hi_d`) from the page boxes of the node's finest resident
+    /// level `resident` (`None`: no resident level); `lo` is the node's `lo`, which the bound is
+    /// not below.
     fn data_bound_of(
-        levels: &FastMap<LevelKey, Level>,
-        config: PoolConfig,
-        id: NodeId,
+        resident: Option<(u8, &PackedLevel)>,
         data: &PoolNode,
+        probes: [ProbeBox; 8],
         (view, grid, origin, target_px, min_side): (
             &ViewProjection,
             &CellGrid,
@@ -295,28 +315,23 @@ impl CellPool {
             Option<f64>,
         ),
         lo: u8,
-    ) -> (Option<u8>, Option<u8>) {
-        let Some((depth, level)) = Self::finest_resident(levels, config, id, data.buildable) else {
-            return (None, None);
-        };
-        let occupied = nearest_occupied_depth(view, grid, origin, depth, &level.pages);
-        let probes = std::array::from_fn(|octant| data.probe_box(octant));
-        let hi = occupied.and_then(|occupied| {
-            view_range_hi_at(
-                view,
-                grid,
-                origin,
-                probe_region(data.bounds, probes),
-                data.buildable,
-                target_px,
-                min_side,
-                Some(occupied),
-            )
-        });
-        (Some(depth), hi.map(|hi| hi.max(lo)))
+    ) -> Option<u8> {
+        let (depth, level) = resident?;
+        let occupied = nearest_occupied_depth(view, grid, origin, depth, &level.pages)?;
+        view_range_hi_at(
+            view,
+            grid,
+            origin,
+            probe_region(data.bounds, probes),
+            data.buildable,
+            target_px,
+            min_side,
+            Some(occupied),
+        )
+        .map(|hi| hi.max(lo))
     }
 
-    /// `NodeDepths::hi_d` of a node of the cut.
+    /// `NodeDepths::hi_d` of a node of the cut (see there for the meaning of `None`).
     #[cfg(test)]
     pub(crate) fn data_bound(&self, node: NodeId) -> Option<u8> {
         self.depths.get(&node)?.hi_d

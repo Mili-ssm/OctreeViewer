@@ -2323,6 +2323,181 @@ fn clipped(view: &ViewProjection, min: [f64; 3], max: [f64; 3]) -> Option<f64> {
         .min_depth(min, max)
 }
 
+/// Brute-force oracle of `ViewFrustum::min_depth`: boxes of every relation to the frustum
+/// (inside, outside, straddling, thin slabs, touching, nearly parallel to a side plane, around
+/// the eye) against the least view depth of a dense grid of the box (corners, edges and faces
+/// included) filtered by the same half-space test.
+#[test]
+fn the_clipped_depth_is_conservative_and_tight_against_a_sampled_oracle() {
+    const N: usize = 13;
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1_u64 << 53) as f64
+    };
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let (tan_h, tan_v) = half_tangents();
+    let (mut with_samples, mut outside) = (0, 0);
+    for pose in 0..60 {
+        let view = if pose == 0 {
+            along_x()
+        } else {
+            let eye: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1600.0);
+            let at: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1000.0);
+            let mut camera = cameras().remove(0).1;
+            if !camera.set_pose(eye, at) {
+                continue;
+            }
+            view(&camera)
+        };
+        let frustum = crate::cell_range::ViewFrustum::new(&view).expect("frustum");
+        let eye = view_eye(&view);
+        let forward = view.camera().forward();
+        let (right, up) = view.camera().right_up();
+        let scale = view.visual_scale();
+        let near = near_of(&view) / scale;
+        let far = view.camera().clip_distances().1 / scale;
+        let inside = |p: [f64; 3]| {
+            let q: [f64; 3] = std::array::from_fn(|a| p[a] - eye[a]);
+            let d = dot(q, forward);
+            d >= near
+                && d <= far
+                && dot(q, right).abs() <= d * tan_h
+                && dot(q, up).abs() <= d * tan_v
+        };
+        // Signed distance of a point beyond each of the six planes (positive: outside).
+        let beyond = |p: [f64; 3]| -> [f64; 6] {
+            let q: [f64; 3] = std::array::from_fn(|a| p[a] - eye[a]);
+            let d = dot(q, forward);
+            let side = |s: f64, axis: [f64; 3], tan: f64| {
+                let n: [f64; 3] = std::array::from_fn(|a| s * axis[a] - tan * forward[a]);
+                dot(n, q) / dot(n, n).sqrt()
+            };
+            [
+                near - d,
+                d - far,
+                side(1.0, right, tan_h),
+                side(-1.0, right, tan_h),
+                side(1.0, up, tan_v),
+                side(-1.0, up, tan_v),
+            ]
+        };
+        let mut boxes: Vec<([f64; 3], [f64; 3])> = Vec::new();
+        for _ in 0..120 {
+            let size: [f64; 3] = std::array::from_fn(|_| match (next() * 6.0) as u32 {
+                0 => 0.0,
+                _ => 1.0 + next() * 600.0,
+            });
+            let around = next() < 0.5;
+            let min: [f64; 3] = if around {
+                // Near the view axis, at a depth that reaches before and beyond the near plane.
+                let along = next() * 2500.0 - 200.0;
+                let lateral = [(next() * 2.0 - 1.0) * 900.0, (next() * 2.0 - 1.0) * 900.0];
+                std::array::from_fn(|a| {
+                    eye[a] + forward[a] * along + right[a] * lateral[0] + up[a] * lateral[1]
+                        - size[a] / 2.0
+                })
+            } else {
+                std::array::from_fn(|a| eye[a] + (next() * 2.0 - 1.0) * 1500.0 - size[a] / 2.0)
+            };
+            boxes.push((min, std::array::from_fn(|a| min[a] + size[a])));
+        }
+        // A box around the eye, and boxes whose face or edge only touches a plane: placed on the
+        // plane of the first pose, whose axes are the coordinate ones.
+        boxes.push((eye.map(|v| v - 5.0), eye.map(|v| v + 5.0)));
+        boxes.push((eye.map(|v| v - 500.0), eye.map(|v| v + 500.0)));
+        if pose == 0 {
+            for x0 in [-800.0, -500.0, 0.0, 300.0] {
+                let d0 = x0 - eye[0];
+                // Edge touching the right and the top planes (the box lies outside them).
+                boxes.push((
+                    [x0, tan_h * d0, -5.0],
+                    [x0 + 200.0, tan_h * d0 + 300.0, 5.0],
+                ));
+                boxes.push((
+                    [x0, -5.0, tan_v * d0],
+                    [x0 + 200.0, 5.0, tan_v * d0 + 300.0],
+                ));
+                // Corner touching two side planes.
+                boxes.push((
+                    [x0, tan_h * d0, tan_v * d0],
+                    [x0 + 100.0, tan_h * d0 + 100.0, tan_v * d0 + 100.0],
+                ));
+                // Nearly parallel to the right plane: a thin slab along it, just inside and out.
+                for shift in [-1e-7, 0.0, 1e-7] {
+                    let y = |d: f64| tan_h * d + shift;
+                    boxes.push(([x0, y(d0) - 1e-3, -5.0], [x0 + 400.0, y(d0 + 400.0), 5.0]));
+                }
+            }
+            // The near plane touched by a face and by an edge.
+            let at_near = eye[0] + near;
+            boxes.push(([at_near - 100.0, -5.0, -5.0], [at_near, 5.0, 5.0]));
+            boxes.push((
+                [at_near - 100.0, -5.0, tan_v * near],
+                [at_near, 5.0, tan_v * near + 50.0],
+            ));
+        }
+        for (min, max) in boxes {
+            let sample = |n: usize| -> (usize, Option<f64>, f64) {
+                let mut sampled: Option<f64> = None;
+                let mut hits = 0;
+                let step: [f64; 3] = std::array::from_fn(|a| (max[a] - min[a]) / (n - 1) as f64);
+                for i in 0..n * n * n {
+                    let p: [f64; 3] = std::array::from_fn(|a| {
+                        let k = (i / n.pow(a as u32)) % n;
+                        if k == n - 1 {
+                            max[a]
+                        } else {
+                            min[a] + k as f64 * step[a]
+                        }
+                    });
+                    if inside(p) {
+                        hits += 1;
+                        let d = dot(p, forward) - dot(eye, forward);
+                        sampled = Some(sampled.map_or(d, |s: f64| s.min(d)));
+                    }
+                }
+                let slack = (0..3).map(|a| forward[a].abs() * step[a]).sum::<f64>() + 1e-6;
+                (hits, sampled, slack)
+            };
+            let (hits, sampled, slack) = sample(N);
+            let got = frustum.min_depth(min, max);
+            let corners: Vec<[f64; 3]> = (0..8)
+                .map(|k| std::array::from_fn(|a| if k >> a & 1 == 1 { max[a] } else { min[a] }))
+                .collect();
+            let apart = (0..6).any(|plane| corners.iter().all(|c| beyond(*c)[plane] > 1e-6));
+            if let Some(sampled) = sampled {
+                with_samples += 1;
+                let Some(got) = got else {
+                    panic!("None for a box with samples inside: {min:?} {max:?} pose {pose}");
+                };
+                assert!(
+                    got <= sampled + 1e-6,
+                    "not conservative: {got} > {sampled}: {min:?} {max:?} pose {pose}"
+                );
+                // A sliver of the intersection may fall between the samples of the coarse grid:
+                // a gap is only a failure if a much finer grid sees no point near `got` either.
+                if hits >= N * N && got < sampled - slack {
+                    let (_, fine, fine_slack) = sample(81);
+                    assert!(
+                        fine.is_some_and(|fine| got >= fine - fine_slack),
+                        "not tight: {got} < {sampled:?}: {min:?} {max:?} pose {pose}"
+                    );
+                }
+            } else if apart {
+                outside += 1;
+                assert_eq!(got, None, "{min:?} {max:?} pose {pose}");
+            }
+        }
+    }
+    assert!(
+        with_samples > 1000 && outside > 500,
+        "{with_samples} {outside}"
+    );
+}
+
 #[test]
 fn a_box_inside_the_frustum_gives_the_depth_of_its_nearest_vertex() {
     // The eye is at x = -900 looking along +x: x = 0 lies at depth 900.
@@ -2422,6 +2597,29 @@ fn the_nearest_occupied_depth_is_the_least_over_the_pages_and_none_without_any_i
         None
     );
     assert_eq!(nearest_occupied_depth(&view, &grid, [0.0; 3], 6, &[]), None);
+}
+
+#[test]
+fn the_nearest_occupied_depth_uses_the_far_edge_of_the_tight_box() {
+    use crate::cell_range::nearest_occupied_depth;
+    // Looking along -x from x = 1100: the page's nearest face is its max side. `box_max` is the
+    // last cell offset, so the far edge is at `origin + box_max + 1` cells.
+    let (view, grid) = (posed([1100.0, 0.0, 0.0], [0.0, 0.0, 0.0]), huge_grid());
+    let page = crate::PageInfo {
+        node: NodeId::new(1),
+        depth: 6,
+        origin: [28, 32, 32],
+        first_cell: 0,
+        cells: 1,
+        box_max: [3, 3, 3],
+        flags: 0,
+        rel_origin: [0; 3],
+    };
+    // Cells 28..=31 of 31.25: x from -125 to 0 (not -31.25), so the face at x = 0 is at depth
+    // 1100, past the near plane (about 1001).
+    assert!(near_of(&view) < 1100.0);
+    let depth = nearest_occupied_depth(&view, &grid, [0.0; 3], 6, &[page]).expect("in view");
+    assert!((depth - 1100.0).abs() < 1e-9, "{depth}");
 }
 
 #[test]

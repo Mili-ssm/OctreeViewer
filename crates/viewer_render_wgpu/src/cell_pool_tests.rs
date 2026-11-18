@@ -4916,6 +4916,22 @@ fn the_data_bound_never_falls_at_a_fixed_pose_and_is_recomputed_when_the_pose_mo
 }
 
 #[test]
+fn a_still_camera_at_rest_computes_no_data_bound_and_a_moved_one_does() {
+    let (cut, zoom) = (ids(&CHILDREN), camera("zoom"));
+    let mut rig = bound_rig(NEAR_NODE, NEAR_POINT);
+    rig.run(6, &cut, &zoom, BOUND_TARGET);
+    let settled = rig.pool.bound_evaluations;
+    assert!(settled > 0, "the bound was computed while settling");
+    rig.run(8, &cut, &zoom, BOUND_TARGET);
+    assert_eq!(rig.pool.bound_evaluations, settled, "no work at rest");
+    rig.step(&cut, &camera("fit"), BOUND_TARGET);
+    assert!(
+        rig.pool.bound_evaluations > settled,
+        "a pose change computes it again"
+    );
+}
+
+#[test]
 fn the_cached_depths_look_at_the_data_bound_again_when_the_finest_resident_level_changes() {
     let (cut, zoom) = (ids(&CHILDREN), camera("zoom"));
     let id = NodeId::new(NEAR_NODE);

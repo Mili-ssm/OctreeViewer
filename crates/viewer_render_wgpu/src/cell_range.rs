@@ -185,6 +185,10 @@ pub fn nearest_occupied_page(
     let base: [f64; 3] = std::array::from_fn(|a| grid.root_min[a] - coordinate_origin[a]);
     let mut best: Option<(f64, usize)> = None;
     for (index, page) in pages.iter().enumerate() {
+        // A page of another depth has other cell sides: its box is not placed by this `side`.
+        if page.depth != depth {
+            continue;
+        }
         let min: [f64; 3] = std::array::from_fn(|a| base[a] + page.origin[a] as f64 * side);
         let max: [f64; 3] =
             std::array::from_fn(|a| min[a] + (f64::from(page.box_max[a]) + 1.0) * side);

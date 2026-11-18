@@ -321,9 +321,13 @@ struct NodeDepths {
     /// (`node_view_range`, `octants_in_front`).
     far: (u8, u8),
     /// Data bound of the node (ADR 0055 plan, task 5): `hi` of its range at the view depth of
-    /// the nearest page box of `finest`, inside the frustum. Not used in any decision yet. At a
-    /// fixed pose it only rises (a level leaving or arriving cannot make it oscillate); a pose
-    /// change recomputes it freely. `None`: no resident level, or none of its pages in view.
+    /// the nearest page box of `finest` inside the frustum. Not used in any decision yet.
+    /// `None` is "no bound known for this pose" (no resident level with a page in view was seen
+    /// since the pose last changed): a consumer falls back to the unbounded `hi`, the
+    /// conservative side, never to the coarsest depth. `Some(d)` may come from an earlier, finer
+    /// residency at the same pose (it only rises there, so a level leaving or arriving cannot
+    /// make it oscillate) and stays a valid bound because occupied data does not move; a pose
+    /// change recomputes it freely.
     hi_d: Option<u8>,
     /// Finest resident depth of the node when `hi_d` was computed, and the pool's
     /// `residency_epoch` it was read at: `hi_d` is looked at again when the epoch moved and the
@@ -554,6 +558,9 @@ pub struct CellPool {
     /// Bumped when a level becomes resident or leaves residency.
     residency_epoch: u64,
     depths: FastMap<NodeId, NodeDepths>,
+    /// Test-only: data bounds computed from a resident level's page boxes.
+    #[cfg(test)]
+    bound_evaluations: u32,
     last_pose: Option<Pose>,
     depth_key: Option<ViewKey>,
     wanted_memo: Option<WantedMemo>,
@@ -642,6 +649,8 @@ impl CellPool {
             size_epoch: 0,
             residency_epoch: 0,
             depths: FastMap::default(),
+            #[cfg(test)]
+            bound_evaluations: 0,
             last_pose: None,
             depth_key: None,
             wanted_memo: None,
