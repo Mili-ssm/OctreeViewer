@@ -22,7 +22,7 @@ Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [est
 ## Planes y specs
 
 Cada plan lleva en la línea 3 `Estado: activo | en curso | aprobado | pendiente | en pausa | completado | cerrado · dd-mm-aaaa`
-(`grep -n '^Estado:' docs/plans/*.md` da el estado de todos). Un plan cerrado (`cerrado` o `completado`)
+(`grep -n '^Estado:' docs/plans/*.md` da el estado de todos). Un plan cerrado (`cerrado` o `completado`; uno «completado salvo…» sigue aquí hasta cerrar lo que le falta)
 pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos en el mismo cambio
 (decisión del propietario, 18-11-2026); no se reescribe: el trabajo nuevo va en un plan nuevo.
 
