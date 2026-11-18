@@ -93,8 +93,8 @@ describen la residencia real y no sirven para decidir si cabe.
 
 - **Fuente elegida para la tarea 5**: cajas de página del nivel residente más fino, recortadas a la vista.
 - El recorte a la vista es obligatorio: `nearest_visible_depth` no lo hace hoy.
-- La holgura del nodo contiguo al ojo cuesta, en la muestra, de 216 a 288 páginas estimadas sobre la referencia por
-  pose. Un envolvente más ajustado por página (por ejemplo, varias cajas por página) la reduciría; no se midió.
+- La holgura del nodo contiguo al ojo cuesta, en la muestra, de 72 a 288 páginas estimadas sobre la referencia por
+  pose (P2: 1656 frente a 1368; P3: 1872 frente a 1656; P4: 1080 frente a 1008; P5: 1728 frente a 1512). Un envolvente más ajustado por página (por ejemplo, varias cajas por página) la reduciría; no se midió.
 - Si el margen en Majadas resiste solo lo dirá la residencia medida con la cota conectada (tarea 7a del plan).
 
 ## Límites
