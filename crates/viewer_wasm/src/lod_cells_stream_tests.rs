@@ -2728,8 +2728,11 @@ fn p4_border_levels_under(rule: ActiveRule) {
         let cells = (1_u64 << level) as f64;
         let side = node.side / cells;
         let min: [f32; 3] = std::array::from_fn(|a| {
-            (node.lo[a] + ((rel[a] - node.lo[a]) / side).floor().clamp(0.0, cells - 1.0) * side)
-                as f32
+            (node.lo[a]
+                + ((rel[a] - node.lo[a]) / side)
+                    .floor()
+                    .clamp(0.0, cells - 1.0)
+                    * side) as f32
         });
         edge_px(&ctx.lod, min, side as f32)
     };
@@ -2750,7 +2753,11 @@ fn p4_border_levels_under(rule: ActiveRule) {
         let mut depths = depths.clone();
         depths.sort_unstable();
         let resident: Vec<u8> = (node.lod.node_depth..=node.lod.node_depth + MAX_NODE_SPAN)
-            .filter(|d| h.driver.pool().is_resident(h.driver.pool().key(node.id, *d)))
+            .filter(|d| {
+                h.driver
+                    .pool()
+                    .is_resident(h.driver.pool().key(node.id, *d))
+            })
             .collect();
         let bounds = hierarchy.node(node.id).unwrap().bounds();
         println!(
@@ -2802,9 +2809,8 @@ fn p4_border_levels_under(rule: ActiveRule) {
                         if ja == jb {
                             continue;
                         }
-                        if !(0..3).all(|a| {
-                            inside[a] >= data.min()[a] && inside[a] <= data.max()[a]
-                        }) {
+                        if !(0..3).all(|a| inside[a] >= data.min()[a] && inside[a] <= data.max()[a])
+                        {
                             continue;
                         }
                         let (ra, rb) = (to_eye(inside), to_eye(outside));
@@ -2847,7 +2853,9 @@ fn p4_border_levels_under(rule: ActiveRule) {
     }
     println!("-- level differences per 50 px screen row band: {bands:?}");
     let mut worst: Vec<_> = groups.iter().collect();
-    worst.sort_by_key(|((_, da, _, db), (n, ..))| (std::cmp::Reverse(da.abs_diff(*db)), std::cmp::Reverse(*n)));
+    worst.sort_by_key(|((_, da, _, db), (n, ..))| {
+        (std::cmp::Reverse(da.abs_diff(*db)), std::cmp::Reverse(*n))
+    });
     for ((a, da, b, db), (n, lo, hi)) in worst.into_iter().take(25) {
         println!(
             "diff {} : node {a} @ depth {da} | node {b} @ depth {db} : {n} pairs, screen x {:.0}..{:.0} y {:.0}..{:.0}",

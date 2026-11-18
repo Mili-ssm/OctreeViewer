@@ -129,7 +129,7 @@ screenshots, the P4 and P2/P3 diagnoses and the browser script `run.js`).
 - [x] (4083d8c; browser: graded cubes in nodes with residents, a near node without them still drew its finest level) **1b** activate every already-resident depth inside the range (cell mode); browser screenshot of the owner's pose (kill criterion: no bands → stop).
 - [x] (462196a) **1c** fetch stored depths inside the range.
 - [x] (b17e61d; contiguous fill also below spacing ae5a254; browser measurements of queue and heap still pending) **1d** build missing depths on demand down to the spacing/separation depth only; the fit counts requested depths; measure the uncapped need, `levels.bin` coverage, request queue and build-worker heap in the browser.
-- [ ] Test: no drawn cell finer than its parent cell needed (`refines()` of the parent), exempting the buildable minimum, caps and the span floor; the sims' `finer_than_wanted` counter drops.
+- [ ] (known case 18-11-2026: at P4 node 14 draws depth 11 at 3.39 px because its `range.lo` comes from an off-screen corner, [record](../records/benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md); belongs to step 1 of ADR 0055) Test: no drawn cell finer than its parent cell needed (`refines()` of the parent), exempting the buildable minimum, caps and the span floor; the sims' `finer_than_wanted` counter drops.
 
 ### Task 2: Node hand-offs within one level (re-planned 16-11-2026 from measurements)
 
@@ -137,7 +137,7 @@ Measured (cell-mode sims on Belvedere V7, per-frame gate of Task 3a): 96 % of ju
 
 - [x] (dd37e9b) **2a (B)** leaves build cell levels from `rep = node_depth + 3` like internal nodes (their coarse levels aggregate many points; the spacing depth stays the start of the single-point tail), in both modes; goldens updated with the reason.
 - [x] (4e427e2) **2b (D)** a node entering the cut seeds its active window at its drawing ancestor's finest active depth + 1 (and a node leaving hands back one level per frame), then widens one level per frame.
-- [ ] (gate 7556ddc, visible count 6da8f79; numbers in "Status at pause"; P4 straight border unmeasured) **2c** measure: the temporal gate's node-change jumps (baseline: dolly 13 066, orbit 17 300–19 500) and a new spatial gate — neighbouring lattice samples across a node border differ by ≤ 1 level; if the spatial gate still fails, plan the cross-node chain.
+- [x] (gate 7556ddc, visible count 6da8f79; numbers in "Status at pause"; P4 straight border measured 18-11-2026: 0 visible pairs over one level, so no cross-node chain — [record](../records/benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md)) **2c** measure: the temporal gate's node-change jumps (baseline: dolly 13 066, orbit 17 300–19 500) and a new spatial gate — neighbouring lattice samples across a node border differ by ≤ 1 level; if the spatial gate still fails, plan the cross-node chain.
 
 ### Task 3: One level per frame (ADR 0053, temporal) — 3a (stepping rule) moved ahead of Task 2 because the closest-resident jump blocks 1d
 
