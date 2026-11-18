@@ -85,9 +85,7 @@ fn scaled(viewport: [u32; 2], spacing: f64) -> f64 {
 }
 
 fn side(bounds: SpatialBounds) -> f64 {
-    (0..3)
-        .map(|a| bounds.max()[a] - bounds.min()[a])
-        .fold(0.0, f64::max)
+    bounds.max_side()
 }
 
 fn local(bounds: SpatialBounds, (origin, vs): ([f64; 3], f64)) -> SpatialBounds {

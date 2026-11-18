@@ -616,9 +616,7 @@ impl LodDataset {
         let root = self.metadata.hierarchy().stats().root_bounds;
         CellGrid {
             root_min: root.min(),
-            root_side: (0..3)
-                .map(|axis| root.max()[axis] - root.min()[axis])
-                .fold(0.0, f64::max),
+            root_side: root.max_side(),
         }
     }
 

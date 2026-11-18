@@ -2339,9 +2339,7 @@ fn read_f64(bytes: &[u8], offset: &mut usize) -> f64 {
 }
 
 fn cube_bounds(bounds: SpatialBounds) -> SpatialBounds {
-    let side = (0..3)
-        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-        .fold(0.0, f64::max);
+    let side = bounds.max_side();
     if side == 0.0 {
         return bounds;
     }
@@ -2352,9 +2350,7 @@ fn cube_bounds(bounds: SpatialBounds) -> SpatialBounds {
 
 #[inline]
 pub fn cube_side(bounds: SpatialBounds) -> f64 {
-    (0..3)
-        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-        .fold(0.0, f64::max)
+    bounds.max_side()
 }
 
 #[cfg(test)]

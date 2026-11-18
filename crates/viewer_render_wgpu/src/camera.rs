@@ -1234,9 +1234,7 @@ mod tests {
         hierarchy
             .select_lod(&frustum, config, |node| {
                 let bounds = node.bounds();
-                let side = (0..3)
-                    .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-                    .fold(0.0, f64::max);
+                let side = bounds.max_side();
                 if legacy {
                     legacy_projected_error_pixels(camera, bounds, side / 8.0, viewport)
                 } else {

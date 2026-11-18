@@ -901,9 +901,7 @@ fn representatives_per_axis_log2(node: &viewer_core::SpatialNode) -> u8 {
         return 3;
     };
     let bounds = node.bounds();
-    let side = (0..3)
-        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-        .fold(0.0, f64::max);
+    let side = bounds.max_side();
     (side / spacing).log2().round().clamp(0.0, 24.0) as u8
 }
 
@@ -1087,9 +1085,7 @@ fn safe_render_cell_size(center: [f64; 3], cell_size: f64) -> Option<([f32; 3], 
 }
 
 fn bounds_side(bounds: SpatialBounds) -> f64 {
-    (0..3)
-        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-        .fold(0.0, f64::max)
+    bounds.max_side()
 }
 
 #[cfg(test)]
