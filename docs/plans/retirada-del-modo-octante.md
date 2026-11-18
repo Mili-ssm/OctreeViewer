@@ -1,6 +1,6 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 8 hechas
+Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 9 hechas
 
 **Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
 clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
@@ -219,12 +219,16 @@ nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
   de en medio **no** (no hay comprobación de contigüidad): test ignorado e issue
   [#83](https://github.com/Mili-ssm/OctreeViewer/issues/83).
 
-### Task 9: Delete the branches and `LodMode`, file by file (R)
+### Task 9: Delete the branches and `LodMode` (R)
 
-- [ ] Un commit por fichero (`cell_cut`, cada `cell_pool/*`, `cell_driver`, `cells_glue`, `cell_pool_bench`), con
-  los goldens de las tareas 1 y 4 y las simulaciones reales tras cada uno; al final, el enum. Atención a los
-  guardas `!= Cell → return` de `seed.rs` y `hold.rs` y a `drawn_levels`, donde el código de octante va detrás del
-  `return` del bloque de celda.
+- [x] (75bc1ff) `LodMode`, sus setters y parámetros y todas las ramas de octante desaparecen de producción (15
+  ficheros, 427 líneas menos). Fue un solo commit y no uno por fichero: quitar la variante, plegar las condiciones
+  y borrar el enum tocan las mismas líneas, y un estado intermedio no pasa clippy. Puertas sobre el estado final:
+  414 y 168 tests con la misma lista de nombres, los cuatro goldens con sus tablas intactas, simulaciones reales
+  idénticas, `scripts/check.sh` con sus 23 pasos, navegador en P1 a P4 (P2 a P4 por debajo del 0,03 % de píxeles
+  distintos; P1 en 0,108 % frente a una captura de dos compilaciones atrás) y una revisión de las 39 condiciones
+  simplificadas (38 correctas; la restante es el comentario del banco, que la tarea 10 corrige).
+  Sin comprobar en navegador: la recuperación tras perder el pool (la demo no tiene cómo provocarla).
 
 ### Task 10: Shader path without a LOD view, docs, and closing
 
