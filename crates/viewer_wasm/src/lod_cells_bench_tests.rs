@@ -262,7 +262,12 @@ fn cells_bench() {
         let (mut cells, mut levels) = (0u64, 0usize);
         for (node, depths, _) in &h.last_levels {
             for depth in depths {
-                let key = viewer_render_wgpu::LevelKey { session: 0, node: *node, depth: *depth, color_gen: 0 };
+                let key = viewer_render_wgpu::LevelKey {
+                    session: 0,
+                    node: *node,
+                    depth: *depth,
+                    color_gen: 0,
+                };
                 if let Some(level) = h.driver.pool().level(key) {
                     levels += 1;
                     cells += level.pages.iter().map(|p| u64::from(p.cells)).sum::<u64>();
