@@ -1252,6 +1252,172 @@ fn cell_cut_digest_golden() {
     }
 }
 
+/// `run` through the cell-mode path with the range inputs the cell pool passes (no `prev`: every
+/// octant draws its closest resident level).
+fn run_cell_mode(
+    cut: &[NodeId],
+    nodes: &HashMap<NodeId, CellCutNode>,
+    camera: &OrbitCamera,
+    grid: &CellGrid,
+    origin: [f64; 3],
+    target: f64,
+) -> Vec<CellCutEntry> {
+    let view = view(camera);
+    cell_cut_ranged(
+        cut,
+        &|id| nodes.get(&id).cloned(),
+        grid,
+        LodMode::Cell,
+        &|_, octant, data| {
+            octant_wanted_depth(
+                &view,
+                grid,
+                origin,
+                data.bounds,
+                octant,
+                data.buildable,
+                target,
+            )
+        },
+        Some(&|_, data| {
+            (
+                view_range_lo(
+                    &view,
+                    grid,
+                    origin,
+                    Some(data.bounds),
+                    data.buildable,
+                    target,
+                    None,
+                )
+                .unwrap_or(data.buildable.0),
+                octants_in_front(&view, origin, data.bounds, [ProbeBox::Geometric; 8]),
+            )
+        }),
+        None,
+    )
+    .unwrap()
+}
+
+/// FNV-1a of `cell_cut_digest` (wanted, drawn, stage, mask) plus the fields it leaves out: `step`
+/// and `range`.
+fn cell_mode_digest(entries: &[CellCutEntry]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let mut feed = |bytes: &[u8]| {
+        for byte in bytes {
+            hash = (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    feed(&cell_cut_digest(entries).to_le_bytes());
+    for entry in entries {
+        for step in entry.step {
+            feed(&step.map_or([0, 0], |depth| [1, depth]));
+        }
+        feed(&entry.range.map_or([0, 0, 0], |(lo, hi)| [1, lo, hi]));
+    }
+    hash
+}
+
+const CELL_MODE_GOLDEN: &[(&str, u64)] = &[
+    ("root/fit/2px", 0xb7a6108de90de984),
+    ("root/fit/4px", 0xd2299d92d9d7c4f8),
+    ("root/fit/8px", 0x75547f15b3e6b04d),
+    ("root/orbit/2px", 0xafbbad41b3073b15),
+    ("root/orbit/4px", 0x68fbbe553bc0df38),
+    ("root/orbit/8px", 0x95373c17ce63458c),
+    ("root/zoom/2px", 0xac3f07980f6807b6),
+    ("root/zoom/4px", 0x601f4a2add672d4a),
+    ("root/zoom/8px", 0x34132421ab97fce2),
+    ("root/pan/2px", 0xc29416bf891a7071),
+    ("root/pan/4px", 0x685de424d4ecc74d),
+    ("root/pan/8px", 0x32c6e06d86751818),
+    ("children/fit/2px", 0x13bde445aeb00213),
+    ("children/fit/4px", 0x13bde445aeb00213),
+    ("children/fit/8px", 0x13bde445aeb00213),
+    ("children/orbit/2px", 0x13bde445aeb00213),
+    ("children/orbit/4px", 0x13bde445aeb00213),
+    ("children/orbit/8px", 0x13bde445aeb00213),
+    ("children/zoom/2px", 0x13bde445aeb00213),
+    ("children/zoom/4px", 0x13bde445aeb00213),
+    ("children/zoom/8px", 0x13bde445aeb00213),
+    ("children/pan/2px", 0x13bde445aeb00213),
+    ("children/pan/4px", 0x13bde445aeb00213),
+    ("children/pan/8px", 0x13bde445aeb00213),
+    ("mixed/fit/2px", 0x694d8cc7c5da4624),
+    ("mixed/fit/4px", 0x1f4de304ed6044aa),
+    ("mixed/fit/8px", 0xab84b87227b8b910),
+    ("mixed/orbit/2px", 0xfc02a455261eb685),
+    ("mixed/orbit/4px", 0x3210ab3c09ebb2c1),
+    ("mixed/orbit/8px", 0xa3e5ba3f2093d275),
+    ("mixed/zoom/2px", 0x8324526e8e5a7e4a),
+    ("mixed/zoom/4px", 0xe77a3a919ae1de0f),
+    ("mixed/zoom/8px", 0xeab80e4d1b711be2),
+    ("mixed/pan/2px", 0xc7742bad8a78b466),
+    ("mixed/pan/4px", 0x897ca9ee55c730a7),
+    ("mixed/pan/8px", 0x59bd7b46b6b800c8),
+    ("wide_chain/fit/2px", 0x0ea8f8bb1d4784b0),
+    ("wide_chain/fit/4px", 0x44ccb8b4c6c48b69),
+    ("wide_chain/fit/8px", 0x33d7fc184ec5f146),
+    ("wide_chain/orbit/2px", 0x1bd3f5495a1e53d2),
+    ("wide_chain/orbit/4px", 0xbd97125d9fc8eaa3),
+    ("wide_chain/orbit/8px", 0x826477681b53cdda),
+    ("wide_chain/zoom/2px", 0xae847aca4bfc48a0),
+    ("wide_chain/zoom/4px", 0xda8655a91500bd9d),
+    ("wide_chain/zoom/8px", 0x56237d61360ab14a),
+    ("wide_chain/pan/2px", 0x4a6f77f53469c8c1),
+    ("wide_chain/pan/4px", 0x2ad6c97ab3882a7b),
+    ("wide_chain/pan/8px", 0x2891f51d489f0cbe),
+];
+
+/// The golden fixtures of `cell_cut_digest_golden`, through the cell-mode path. Deleting octant
+/// mode must leave this table unchanged.
+#[test]
+fn cell_cut_digest_golden_in_cell_mode() {
+    let nodes = fixture_nodes(&fixture(HierarchySemantics::Replacement));
+    let grid = dataset_grid(ORIGIN);
+    let mut actual = Vec::new();
+    for (name, cut) in fixture_cuts() {
+        for (camera_name, camera) in cameras() {
+            for target in TARGETS {
+                let entries = run_cell_mode(&cut, &nodes, &camera, &grid, ORIGIN, target);
+                actual.push((
+                    format!("{name}/{camera_name}/{target}px"),
+                    cell_mode_digest(&entries),
+                ));
+            }
+        }
+    }
+    let mut wide = chain(ORIGIN, 3, 0);
+    for node in wide.values_mut() {
+        let first = node.stored[0];
+        node.stored = (first..first + 8).collect();
+        node.buildable = (first, first + 7);
+        node.resident = node.stored.clone();
+    }
+    let cut = ids(&[1, 2, 3]);
+    for (camera_name, camera) in cameras() {
+        for target in TARGETS {
+            let entries = run_cell_mode(&cut, &wide, &camera, &grid, ORIGIN, target);
+            actual.push((
+                format!("wide_chain/{camera_name}/{target}px"),
+                cell_mode_digest(&entries),
+            ));
+        }
+    }
+    let matches = actual.len() == CELL_MODE_GOLDEN.len()
+        && actual
+            .iter()
+            .zip(CELL_MODE_GOLDEN)
+            .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
+    if !matches {
+        let table: String = actual
+            .iter()
+            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
+            .collect();
+        panic!("cell-mode digest table changed; actual:\n{table}");
+    }
+}
+
 fn level_with_offsets(offsets: [u32; 9]) -> NodeCellLevel {
     NodeCellLevel {
         depth: 4,
