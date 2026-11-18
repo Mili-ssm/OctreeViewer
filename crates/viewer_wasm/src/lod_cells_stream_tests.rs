@@ -610,6 +610,8 @@ struct Harness {
     last_cut_digest: Option<u64>,
     /// The cut of the last frame that changed it.
     last_cut: Option<CutView>,
+    /// The plan of the last frame (cell oracle self-test: it is corrupted and checked again).
+    last_plan: Option<FramePlan>,
     last_stage: Option<f64>,
     totals: Totals,
     check_zones: bool,
@@ -768,6 +770,7 @@ impl Harness {
             octant_lowered: 0,
             last_cut_digest: None,
             last_cut: None,
+            last_plan: None,
             last_stage: None,
             totals: Totals::default(),
             check_zones: true,
@@ -1315,6 +1318,7 @@ impl Harness {
             // The driver draws with the final target; the ladder rung only picks the nodes.
             self.set_cell_ctx(view, self.target_px);
         }
+        self.last_plan = Some(plan.clone());
         self.check_drawn_cut(number, plan, digest);
         if let Some(last) = self.last_stage
             && out.stage_pixels > last
@@ -1652,6 +1656,46 @@ fn the_oracle_reports_a_hidden_cell_whose_refinement_does_not_draw() {
         cut.holes().iter().any(|hole| hole.contains("hidden true")),
         "a hidden cell under a refinement that draws nothing is a hole"
     );
+}
+
+#[test]
+fn the_cell_oracle_reports_a_node_whose_active_depths_are_missing() {
+    let mut h = synthetic_harness(1 << 20, 2.0).in_mode(LodMode::Cell);
+    let view = synthetic_views().0;
+    h.settle(&view, 3, 400);
+    let plan = h.last_plan.clone().expect("a frame ran");
+    let digest = cell_cut_digest(&plan.entries);
+    // The state the harness checked passes when it is checked again.
+    h.cell_signature = None;
+    h.check_cell_cut(0, &plan, digest);
+    assert!(h.cell_ctx.is_some(), "the check ran to its end");
+    // A node that wants its octants, alone in its footprint, loses every active depth: the
+    // samples inside it are drawn by no node.
+    let lone = (0..h.cell_nodes.len())
+        .find(|&j| {
+            let a = &h.cell_nodes[j];
+            plan.entries[j].wanted.iter().any(Option::is_some)
+                && plan.active.iter().any(|level| level.key.node == a.id)
+                && h.cell_nodes.iter().enumerate().all(|(k, b)| {
+                    k == j
+                        || (0..3)
+                            .any(|axis| a.max[axis] <= b.min[axis] || b.max[axis] <= a.min[axis])
+                })
+        })
+        .expect("a node of the cut that overlaps no other");
+    let mut broken = plan.clone();
+    let lost = h.cell_nodes[lone].id;
+    broken.active.retain(|level| level.key.node != lost);
+    h.cell_signature = None;
+    let reported = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        h.check_cell_cut(0, &broken, digest);
+    }))
+    .expect_err("the oracle reports the missing active depths");
+    let message = reported
+        .downcast_ref::<String>()
+        .cloned()
+        .unwrap_or_default();
+    assert!(message.contains("is drawn by no node"), "{message}");
 }
 
 fn synthetic_build_cap_defers_without_waiting_for_the_camera_in(mode: LodMode) {

@@ -29,6 +29,9 @@ struct Rig {
     frame: u64,
     /// The stepping oracle's wait per `(node, octant)` (see `Rig::check_stepping`).
     waits: HashMap<(NodeId, usize), StepWait>,
+    /// `(node, octant)` pairs the cell-mode branch of the stepping oracle checked against a
+    /// drawn depth: proves that branch ran.
+    cell_checked: usize,
 }
 
 impl Rig {
@@ -54,6 +57,7 @@ impl Rig {
             refused: HashSet::new(),
             frame: 0,
             waits: HashMap::new(),
+            cell_checked: 0,
         }
     }
 
@@ -147,6 +151,15 @@ impl Rig {
                 })
                 .collect(),
             waits: self.waits.clone(),
+            seeds: if self.pool.lod_mode == LodMode::Cell {
+                self.nodes
+                    .iter()
+                    .filter(|(id, _)| !self.pool.drew_in_applied(**id))
+                    .map(|(id, node)| (*id, self.pool.entering_seed(node.bounds, &grid())))
+                    .collect()
+            } else {
+                HashMap::new()
+            },
         }
     }
 
@@ -158,25 +171,43 @@ impl Rig {
     /// level only in a hop the pool counts in `step_hops`. Nodes under a fit cap, held, or
     /// spanning (`drawn_levels` forces one level on them) are not checked. Every planned frame,
     /// applied or retained, advances the waits of what is on screen.
+    ///
+    /// In cell mode the same rule runs over the levels inside the node's span
+    /// (`in_cell_range`, buildable clamped to `cell_depth_range`) and no octant is exempt for
+    /// spanning, as `drawn_levels` forces no depth there; caps and holds still exempt.
     fn check_stepping(&mut self, plan: &FramePlan, before: SteppingBefore) {
-        if self.pool.lod_mode != LodMode::Octant {
-            return;
-        }
+        let cell = self.pool.lod_mode == LodMode::Cell;
         let (mut hops, mut waits) = (0, HashMap::new());
         for entry in &plan.entries {
             let node = &self.nodes[&entry.node];
-            let stored = capped(&node.stored, self.pool.caps.get(&entry.node));
+            let mut stored = capped(&node.stored, self.pool.caps.get(&entry.node));
+            let mut buildable = capped_range(node.buildable, self.pool.caps.get(&entry.node));
+            let node_depth = CellPool::node_depth(&grid(), node.bounds);
+            if cell {
+                stored = in_cell_range(&stored, node_depth);
+                let (lo, hi) = cell_depth_range(node_depth);
+                buildable = (buildable.0.max(lo), buildable.1.min(hi));
+                if stored.is_empty() {
+                    continue;
+                }
+            }
             let resident: Vec<u8> = stored
                 .iter()
                 .copied()
                 .filter(|d| before.resident[&entry.node].contains(d))
                 .collect();
-            let buildable = capped_range(node.buildable, self.pool.caps.get(&entry.node));
-            let node_depth = CellPool::node_depth(&grid(), node.bounds);
             let exempt = self.pool.caps.contains_key(&entry.node)
                 || self.pool.hold.contains(&entry.node)
-                || entry.drawn.iter().flatten().any(|d| *d <= node_depth);
-            let prev = before.drawn.get(&entry.node).copied().unwrap_or([None; 8]);
+                || (!cell && entry.drawn.iter().flatten().any(|d| *d <= node_depth));
+            let mut prev = before.drawn.get(&entry.node).copied().unwrap_or([None; 8]);
+            if let Some(seed) = before.seeds.get(&entry.node) {
+                // An entering node starts from the depth its ancestor or descendants drew,
+                // clamped to its buildable depths inside the span.
+                let (lo, hi) = (buildable.0, buildable.1);
+                if lo <= hi {
+                    prev = seed.map(|depth| depth.map(|d| d.clamp(lo, hi)));
+                }
+            }
             for o in 0..8 {
                 let Some(wanted) = entry.wanted[o] else {
                     continue;
@@ -188,6 +219,9 @@ impl Rig {
                     let waited = before.waits.get(&(entry.node, o)).map_or(0, |(_, f)| *f);
                     let timed_out = waited >= STEP_WAIT_FRAMES;
                     let expected = spec_depth(prev[o], w, buildable, &resident, timed_out);
+                    if cell && drawn.is_some() {
+                        self.cell_checked += 1;
+                    }
                     assert_eq!(
                         drawn, expected,
                         "node {:?} octant {o}: prev {:?} wanted {w} resident {resident:?} \
@@ -244,6 +278,9 @@ struct SteppingBefore {
     drawn: FastMap<NodeId, [Option<u8>; 8]>,
     resident: HashMap<NodeId, Vec<u8>>,
     waits: HashMap<(NodeId, usize), StepWait>,
+    /// Cell mode: where a node that drew nothing in the applied cut starts stepping from
+    /// (`CellPool::entering_seed`, read before the frame because it depends on the applied cut).
+    seeds: HashMap<NodeId, [Option<u8>; 8]>,
 }
 
 /// The depths strictly after `from` up to `w`, in the order of the walk from `from` to `w`.
@@ -4288,6 +4325,37 @@ fn first_drawn_children(rig: &mut Rig, cut: &[NodeId], target: f64) -> (FramePla
         }
     }
     panic!("the children never drew");
+}
+
+#[test]
+fn the_stepping_oracle_runs_in_cell_mode() {
+    // The children enter at 6 or 7 and want 10 through resident levels: they step one level per
+    // frame, and the cell branch of the oracle checks every one of those frames.
+    let (mut rig, cut) = children_entering_below_node_2();
+    assert_eq!(rig.pool.lod_mode, LodMode::Cell, "setup");
+    let before = rig.cell_checked;
+    let (_, first) = first_drawn_children(&mut rig, &cut, 0.25);
+    let mut deepest = first.into_iter().max().expect("children draw");
+    let mut steps = 0;
+    for _ in 0..30 {
+        let plan = rig.step(&cut, &camera("fit"), 0.25);
+        let now = region_children(10)
+            .into_iter()
+            .flat_map(|child| depth_of(&plan, child))
+            .flatten()
+            .max()
+            .expect("children draw");
+        if now > deepest {
+            assert_eq!(now, deepest + 1, "one level per frame");
+            steps += 1;
+        }
+        deepest = deepest.max(now);
+    }
+    assert!(steps > 0, "no drawn depth stepped towards the wanted one");
+    assert!(
+        rig.cell_checked > before,
+        "the cell branch of the oracle checked nothing"
+    );
 }
 
 #[test]
