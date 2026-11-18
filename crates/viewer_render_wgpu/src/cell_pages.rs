@@ -136,16 +136,20 @@ impl PageInfo {
         grid.root_side / (1_u64 << self.depth) as f64
     }
 
-    /// Writes the GPU entry. Precision contract: the origin is computed in f64, so placement is
-    /// exact to the f64 resolution of the frame (about `root_side * 2^-52`); from depth 53 on that
-    /// is coarser than a cell (the deepest level in real data is 29). The cast to f32 then rounds
-    /// to half an ulp of the eye-relative origin.
+    /// Writes the GPU entry. Precision contract: the page corner is measured from the frame's
+    /// coordinate origin with `CellGrid::cell_edge_from`, so it is exact to the cell on a
+    /// power-of-two grid at any depth, also far from the root corner. The cast to f32 then
+    /// rounds to half an ulp of the eye-relative origin.
     pub fn entry(&self, frame: &PageFrame, mask_slot: u32, octant_bits: u32) -> PageEntry {
         let side = self.cell_side(&frame.grid);
         let origin: [f32; 3] = std::array::from_fn(|axis| {
-            let corner = frame.grid.root_min[axis] + self.origin[axis] as f64 * side;
-            ((corner - frame.coordinate_origin[axis]) * frame.visual_scale - frame.eye_scaled[axis])
-                as f32
+            let corner = frame.grid.cell_edge_from(
+                axis,
+                self.origin[axis],
+                side,
+                frame.coordinate_origin[axis],
+            );
+            (corner * frame.visual_scale - frame.eye_scaled[axis]) as f32
         });
         PageEntry([
             origin[0].to_bits(),

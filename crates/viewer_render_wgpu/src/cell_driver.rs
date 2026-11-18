@@ -131,7 +131,7 @@ impl CellColorRanges {
                 let rel_z = cells.iter().map(|cell| cell.rel()[2]);
                 let (lo, hi) = rel_z.fold((u16::MAX, 0), |(lo, hi), z| (lo.min(z), hi.max(z)));
                 let center = |rel: u16| {
-                    grid.root_min[2] + ((page.origin[2] + u64::from(rel)) as f64 + 0.5) * side
+                    grid.cell_edge_from(2, page.origin[2] + u64::from(rel), side, 0.0) + 0.5 * side
                 };
                 ranges.z = merge_range(ranges.z, Some([center(lo), center(hi)]));
                 if page.flags & PAGE_HAS_INTENSITY != 0 {
