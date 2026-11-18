@@ -94,12 +94,18 @@ Quedan aparte unos 28 tests explícitamente de octante (15 mitades de las macros
 
 ### Task 3: A stepping oracle for cell mode
 
-- [ ] `check_stepping` deja de apagarse: versión para modo celda (pasos de un nivel dentro del tramo del nodo,
+- [x] `check_stepping` deja de apagarse: versión para modo celda (pasos de un nivel dentro del tramo del nodo,
   con el filtro `in_cell_range` y sin la excepción de octantes que abarcan), activa en todos los arneses de celda.
   Debe pasar en todos los tests que ya corren en modo celda y, con el modo cambiado, en
   `a_leaving_node_hands_back_one_level`. Si falla en alguno, es un posible defecto: criterio de parada.
-- [ ] Autotest de `check_cell_cut`: una mutación del corte de celda (un nivel activo quitado) hace que el oráculo
+  Hecho en `e56ff17`: el oráculo filtra por tramo (`in_cell_range`, `buildable` acotado) y parte de `entering_seed`
+  para los nodos que no dibujaban (la causa del fallo de `a_leaving_node_hands_back_one_level` era esa semilla, no
+  el filtro de tramo); `the_stepping_oracle_runs_in_cell_mode` comprueba 2264 pares (nodo, octante) con 3 pasos; con
+  el modo celda por defecto solo fallan los 2 tests conocidos, ninguno en `check_stepping`.
+- [x] Autotest de `check_cell_cut`: una mutación del corte de celda (un nivel activo quitado) hace que el oráculo
   informe; sustituye a `the_oracle_reports_a_hidden_cell_whose_refinement_does_not_draw`.
+  Hecho en `e56ff17`: `the_cell_oracle_reports_a_node_whose_active_depths_are_missing` pasa el plan intacto y luego
+  uno sin los niveles activos de un nodo aislado: el oráculo informa «is drawn by no node».
 
 ### Task 4: Goldens of the paths the deletions will touch
 
