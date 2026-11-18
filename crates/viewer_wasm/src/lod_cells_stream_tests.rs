@@ -24,7 +24,8 @@ use viewer_render_wgpu::cell_lod::{
 use viewer_render_wgpu::{
     ActiveRule, CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan, LodMode,
     MASK_WORDS, NODE_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo,
-    SceneBounds, ViewProjection, VoxelBuildLimits, cell_cut_digest, representative_depth,
+    SceneBounds, ViewProjection, VoxelBuildLimits, cell_cut_digest, node_view_range,
+    representative_depth,
 };
 use viewer_render_wgpu::{
     CellGrid, MAX_CELL_DEPTH, node_cell_level, representative_depth_for_spacing,
@@ -2669,11 +2670,28 @@ fn a_node_holding_the_eye_keeps_contiguous_active_depths_under(rule: ActiveRule)
 #[ignore = "diagnostic: prints the level difference across the P4 node borders"]
 fn p4_border_levels() {
     for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        p4_border_levels_under(rule);
+        let _ = p4_border_levels_under(rule);
     }
 }
 
-fn p4_border_levels_under(rule: ActiveRule) {
+/// ADR 0055 plan, task 4: at P4 node 14 (beside node 8, which draws level 10 across their border)
+/// can draw level 10 because its `lo` comes from `node_view_range`, and no visible border pair
+/// differs by more than one level. `node_far_depth` gave node 14 the range 11..13.
+#[test]
+fn at_p4_node_14_can_draw_the_level_its_border_needs() {
+    let (histogram, node_14) = p4_border_levels_under(ActiveRule::default());
+    let (lo, _) = node_14.expect("node 14 has a range at P4");
+    assert!(lo <= 10, "node 14 range.lo {lo} > 10");
+    assert!(
+        histogram.keys().all(|diff| *diff <= 1),
+        "border pairs by level difference: {histogram:?}"
+    );
+}
+
+/// Returns the histogram of the visible border pairs by level difference, and the range of node 14.
+fn p4_border_levels_under(
+    rule: ActiveRule,
+) -> (std::collections::BTreeMap<u8, usize>, Option<(u8, u8)>) {
     let (mut h, origin, scale) = sample_harness(LodMode::Cell);
     h.rule = rule;
     let viewport = [870, 750];
@@ -2872,6 +2890,11 @@ fn p4_border_levels_under(rule: ActiveRule) {
             hi[1]
         );
     }
+    let node_14 = nodes
+        .iter()
+        .position(|node| node.id.get() == 14)
+        .and_then(|j| h.last_levels[j].2);
+    (histogram, node_14)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -3199,27 +3222,6 @@ fn twin_depths(
     (out, crosses)
 }
 
-/// The depth an ON-AXIS cube whose nearest corner is at view depth `z` would be drawn at: the
-/// first depth of the span that does not refine (the `on_axis` branch of `OctantProbe::at`).
-fn on_axis_depth(
-    view: &LodView,
-    node: &CellNode,
-    forward: [f64; 3],
-    (first, last): (u8, u8),
-    z: f64,
-) -> u8 {
-    for depth in first..=last {
-        let side = node.side / (1_u64 << (depth - node.lod.node_depth)) as f64;
-        let extent = forward.iter().map(|v| v.abs()).sum::<f64>() * side;
-        let lo: [f32; 3] =
-            std::array::from_fn(|a| (forward[a] * (z + extent / 2.0) - side / 2.0) as f32);
-        if !refines(view, lo, side as f32) {
-            return depth;
-        }
-    }
-    last
-}
-
 /// The buildable span of a node as the dataset builds it: `NodeSetup` (first depth = the
 /// representative depth, or the spacing's for a leaf with one; last = 5 deeper for an internal
 /// node, `MAX_CELL_DEPTH` for a leaf), cut where `node_cell_level` first refuses a depth as too
@@ -3297,9 +3299,8 @@ struct NodeRow {
     /// First sample (view depth, screen px) that reached the twin minimum and maximum.
     at_min: Option<(f64, [usize; 2])>,
     at_max: Option<(f64, [usize; 2])>,
-    /// Candidate closed form, with and without the off-axis stretch divided out of `hi`.
+    /// The shipped candidate range (`node_view_range`).
     candidate: Option<(u8, u8)>,
-    candidate_plain: Option<(u8, u8)>,
 }
 
 /// Slab of the ray `d * t` inside the box `[min, max]` (eye-relative): `(t_in, t_out)`.
@@ -3332,21 +3333,11 @@ fn twin_rows(h: &Harness, view: &ViewProjection, lattice_px: usize) -> Vec<NodeR
     let focal = f64::from(ctx.lod.focal);
     let f64v = |v: [f32; 3]| v.map(f64::from);
     let (forward, right, up) = (f64v(ctx.lod.forward), f64v(ctx.lod.right), f64v(ctx.lod.up));
-    // Worst stretch of a projected edge over the frustum: at a point at angle `a` off the axis the
-    // perspective map stretches a segment by up to 1 / cos(a) against the same segment on the
-    // axis at the same view depth (singular values f/z and f/(z cos a)); the widest angle is the
-    // frustum corner.
-    let tan_corner = (w * w + hgt * hgt).sqrt() * 0.5 / focal;
-    let stretch = (1.0 + tan_corner * tan_corner).sqrt();
     let targets = [
         ctx.lod.target_px,
         ctx.lod.target_px + PX_EPSILON,
         ctx.lod.target_px - PX_EPSILON,
     ];
-    let stretched = LodView {
-        target_px: ctx.lod.target_px / stretch as f32,
-        ..ctx.lod
-    };
     let mut rows = Vec::new();
     for (j, node) in h.cell_nodes.iter().enumerate() {
         let span = buildable_span(h, node.id).expect("blocks of the cut are cached");
@@ -3432,28 +3423,16 @@ fn twin_rows(h: &Harness, view: &ViewProjection, lattice_px: usize) -> Vec<NodeR
             row.twin = Some((tmin, tmax));
             row.twin_eps = Some((emin, emax));
         }
-        // Candidate closed form: coarsest at the farthest view depth of the region, finest at the
-        // nearest one (not nearer than `lod_near_depth`), both on the axis.
-        let corners_far = (0..8_usize)
-            .map(|c| {
-                (0..3)
-                    .map(|a| (if c >> a & 1 == 0 { rmin[a] } else { rmax[a] }) * forward[a])
-                    .sum::<f64>()
-            })
-            .fold(f64::NEG_INFINITY, f64::max)
-            .min(ctx.clip.1);
-        let distance = (0..3)
-            .map(|a| 0.0_f64.clamp(rmin[a], rmax[a]).powi(2))
-            .sum::<f64>()
-            .sqrt();
-        let nearest = near.max(distance / stretch);
-        if corners_far > nearest {
-            let lo_c = on_axis_depth(&ctx.lod, node, forward, span, corners_far);
-            let hi_c = on_axis_depth(&stretched, node, forward, span, nearest);
-            let hi_plain = on_axis_depth(&ctx.lod, node, forward, span, nearest);
-            row.candidate = Some((lo_c, hi_c.max(lo_c)));
-            row.candidate_plain = Some((lo_c, hi_plain.max(lo_c)));
-        }
+        // The shipped candidate range (`node_view_range`, ADR 0055 plan task 3) over node ∩ data.
+        row.candidate = node_view_range(
+            view,
+            &h.dataset.cell_grid(),
+            h.dataset.coordinate_origin(),
+            SpatialBounds::new(lo_ds, hi_ds).ok(),
+            span,
+            f64::from(ctx.lod.target_px),
+            h.driver.pool().min_side(),
+        );
         rows.push(row);
     }
     rows
@@ -3489,7 +3468,7 @@ fn print_twin_rows(label: &str, rows: &[NodeRow]) {
     println!("== {label}");
     println!(
         "node  nd buildable eye samples excl_near excl_cross | twin [min,max] | range [lo,hi] | \
-         lo-twin_min twin_max-hi | candidate [lo_c,hi_c] (no stretch hi) twin_min-lo_c hi_c-twin_max"
+         lo-twin_min twin_max-hi | candidate [lo_c,hi_c] twin_min-lo_c hi_c-twin_max"
     );
     for r in rows {
         let slack = |a: Option<(u8, u8)>, b: Option<(u8, u8)>| -> String {
@@ -3511,7 +3490,7 @@ fn print_twin_rows(label: &str, rows: &[NodeRow]) {
             _ => "  -   -".into(),
         };
         println!(
-            "{:>4} {:>3} {:>6} {:>3} {:>7} {:>9} {:>10} | {:?} | {:?} wmax {:?}{} | {} | {:?} ({:?}) {}",
+            "{:>4} {:>3} {:>6} {:>3} {:>7} {:>9} {:>10} | {:?} | {:?} wmax {:?}{} | {} | {:?} {}",
             r.id,
             r.node_depth,
             format!("{}..{}", r.span.0, r.span.1),
@@ -3525,7 +3504,6 @@ fn print_twin_rows(label: &str, rows: &[NodeRow]) {
             if r.capped { " CAPPED" } else { "" },
             slack(r.twin, r.range),
             r.candidate,
-            r.candidate_plain.map(|c| c.1),
             cand
         );
         if let (Some(a), Some(b)) = (r.at_min, r.at_max) {
@@ -3574,13 +3552,9 @@ fn summarise_twin_rows(label: &str, rows: &[NodeRow]) {
             cs.len()
         );
         println!(
-            "   twin_min - lo_c {:?} | hi_c - twin_max {:?} | (no stretch) hi - twin_max {:?}",
+            "   twin_min - lo_c {:?} | hi_c - twin_max {:?}",
             histogram(cs.iter().map(|r| i32::from(t(r).0) - i32::from(c(r).0))),
-            histogram(cs.iter().map(|r| i32::from(c(r).1) - i32::from(t(r).1))),
-            histogram(
-                cs.iter()
-                    .map(|r| i32::from(r.candidate_plain.unwrap().1) - i32::from(t(r).1))
-            )
+            histogram(cs.iter().map(|r| i32::from(c(r).1) - i32::from(t(r).1)))
         );
         // Pages: the depths a range holds beyond the twin's span, and the totals.
         let (mut twin_pages, mut today_pages, mut cand_pages, mut extra_pages) = (0, 0, 0, 0);
@@ -3609,9 +3583,9 @@ fn summarise_twin_rows(label: &str, rows: &[NodeRow]) {
 /// Diagnostic (prints, asserts nothing): per node of the applied cut at the poses P1-P5 of the
 /// web demo on the built-in sample, the depth range the twin of the GPU rule wants over
 /// node ∩ data bounds ∩ view frustum if every buildable depth were resident, against today's
-/// `range`, and against a closed-form candidate (`lo_c`, `hi_c`: on-axis cells at the farthest and
-/// nearest view depth of the region, the nearest with the px target divided by the worst
-/// off-axis stretch of the frustum, 1 / cos of its corner half angle).
+/// `range`, and against the shipped candidate `node_view_range` (`lo_c`, `hi_c`: on-axis cells at
+/// the farthest and nearest view depth of the region, the nearest with the px target divided by
+/// the worst off-axis stretch of the frustum).
 ///
 /// Sampling: a screen lattice of `LATTICE_PX` px (`TWIN_LATTICE_PX` overrides it) with a ray per
 /// node; along each ray a point every `DEPTH_RATIO` in view depth plus both ends of the slab.
@@ -3642,20 +3616,14 @@ fn twin_wanted_range_vs_node_range() {
     }
 }
 
-/// The property of the node range (ADR 0055, D2): over node ∩ data ∩ frustum, excluding points
-/// nearer than `lod_near_depth` and cells that cross the eye plane, `range = [lo, hi]` contains
-/// every depth the twin wants (with a `PX_EPSILON` tolerance on the px target for f32 against
-/// f64), and is at most one level wider than the twin's span on each side.
-///
-/// Fails today: `lo` comes from `node_far_depth`, which anchors at the far corner of the node box
-/// (see `p4_border_levels`). Un-ignore it in plan task 3 (`node_view_range`, ADR 0055 plan
-/// `docs/plans/adr-0055-rango-por-nodo.md`), where it must pass over the new function, for `lo`
-/// (and for `hi` too, only if the task 2 measurement gave a closed form for it).
-#[test]
-#[ignore = "fails today: the node range does not contain what the twin wants (plan task 3 un-ignores it)"]
-fn the_node_range_contains_what_the_twin_wants_within_one_level() {
+/// Violations of the node range property (ADR 0055, D2) at the poses `poses`, over node ∩ data ∩
+/// frustum, excluding points nearer than `lod_near_depth` and cells that cross the eye plane:
+/// `lo` side (`lo <= twin min` with a `PX_EPSILON` tolerance on the px target for f32 against f64,
+/// and at most one level above `lo`) when `lo_side`, `hi` side (`hi >= twin max`, at most one level
+/// below it) when not.
+fn range_violations(poses: &[&str], lo_side: bool) -> Vec<String> {
     let mut violations = Vec::new();
-    for pose in ["P1", "P2", "P3", "P4", "P5"] {
+    for pose in poses {
         let (h, view) = settled_sample_pose(pose, ActiveRule::default());
         for r in twin_rows(&h, &view, LATTICE_PX) {
             let (Some((emin, emax)), Some((lo, hi)), Some((tmin, tmax))) =
@@ -3663,19 +3631,19 @@ fn the_node_range_contains_what_the_twin_wants_within_one_level() {
             else {
                 continue;
             };
-            if lo > emin {
+            if lo_side && lo > emin {
                 violations.push(format!("{pose} node {}: lo {lo} > twin min {emin}", r.id));
             }
-            if hi < emax {
+            if !lo_side && hi < emax {
                 violations.push(format!("{pose} node {}: hi {hi} < twin max {emax}", r.id));
             }
-            if tmin > lo + 1 {
+            if lo_side && tmin > lo + 1 {
                 violations.push(format!(
                     "{pose} node {}: lo {lo} is >1 below twin min {tmin}",
                     r.id
                 ));
             }
-            if hi > tmax + 1 {
+            if !lo_side && hi > tmax + 1 {
                 violations.push(format!(
                     "{pose} node {}: hi {hi} is >1 above twin max {tmax}",
                     r.id
@@ -3683,10 +3651,36 @@ fn the_node_range_contains_what_the_twin_wants_within_one_level() {
             }
         }
     }
+    violations
+}
+
+fn assert_no_violations(violations: Vec<String>) {
     assert!(
         violations.is_empty(),
         "{} violations:\n{}",
         violations.len(),
         violations.join("\n")
     );
+}
+
+/// `lo` of the node range contains what the twin of the GPU rule wants, within one level (ADR 0055
+/// plan, task 4: `lo` comes from `node_view_range`).
+#[test]
+#[ignore = "slow (about 3 minutes of twin sampling); P4 alone runs in the next test"]
+fn the_node_lo_is_not_finer_than_what_the_twin_wants_within_one_level() {
+    assert_no_violations(range_violations(&["P1", "P2", "P3", "P4", "P5"], true));
+}
+
+/// The `lo` property at P4, where `node_far_depth` used to put node 14 three levels too fine.
+#[test]
+fn the_node_lo_at_p4_is_not_finer_than_what_the_twin_wants_within_one_level() {
+    assert_no_violations(range_violations(&["P4"], true));
+}
+
+/// `hi` of the node range contains what the twin wants, within one level. Paused: near the eye the
+/// faithful `hi` is the finest level in empty air, a budget question (plan task 5).
+#[test]
+#[ignore = "paused: `hi` is not changed until plan task 5 decides what bounds it near the eye"]
+fn the_node_hi_contains_what_the_twin_wants_within_one_level() {
+    assert_no_violations(range_violations(&["P1", "P2", "P3", "P4", "P5"], false));
 }

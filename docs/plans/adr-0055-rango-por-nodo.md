@@ -77,17 +77,21 @@ y medirlo; se replantea tras el tramo A, con la validación del propietario en e
 
 ### Task 3: `node_view_range`, a pure per-node range (not wired)
 
-- [ ] Función pura `node_view_range(vista, rejilla, origen, región, tramo ∩ construible, objetivo px, lado mínimo) -> Option<(lo, hi)>`,
+- [x] (HASH) Función pura `node_view_range(vista, rejilla, origen, región, tramo ∩ construible, objetivo px, lado mínimo) -> Option<(lo, hi)>`,
   con `región` = nodo ∩ datos. Tests unitarios: detrás del ojo → `None`, región vacía, lado mínimo, tope.
   Comprobación: la mitad `lo` de la propiedad de la tarea 2 pasa sobre esta función (la propiedad se parte en dos
   tests: `lo`, que la tarea 4 activa, y `hi`, que sigue ignorado). La función calcula también `hi_c`, sin usarlo
   todavía.
+  Comprobado: 6 tests unitarios en `cell_cut_tests.rs`; la propiedad `lo` pasa sobre la función en P1 a P5 (ignorada, 175 s;
+  variante de solo P4 sin ignorar).
 
 ### Task 4: Cell mode takes `lo` from `node_view_range` (R)
 
-- [ ] `refresh_depths` y `cell_cut_ranged` toman `lo` de la función nueva en modo celda; `node_far_depth` deja de
+- [x] (HASH) `refresh_depths` y `cell_cut_ranged` toman `lo` de la función nueva en modo celda; `node_far_depth` deja de
   usarse ahí. `hi` no cambia en esta tarea.
   Test que falla antes: en P4 el nodo 14 tiene `range.lo <= 10` y ningún par visible difiere en más de un nivel.
+  Comprobado: P4 nodo 14 pasa de 11..13 a 10..13 y los 3358 pares visibles tienen diferencia 0; `real_sim` 6 de 6 con
+  contadores del oráculo a 0; `node_far_depth` se borra.
 
 ### Tramo B: rango por nodo completo
 

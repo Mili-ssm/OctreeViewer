@@ -45,7 +45,7 @@ impl Ctx<'_> {
         self.depths[&id].depths[octant].min(data.buildable.1)
     }
 
-    /// `node_far_depth` of the node (cell mode), capped like `depth`.
+    /// `lo` of the node (`node_view_range`) and its octants in front of the eye, capped like `depth`.
     pub(super) fn far(&self, id: NodeId, data: &CellCutNode) -> (u8, u8) {
         let (far, front) = self.depths[&id].far;
         (far.min(data.buildable.1), front)
@@ -191,23 +191,24 @@ impl CellPool {
                 None => depths,
             };
             let far = if self.lod_mode == LodMode::Cell {
-                let (far, front) = node_far_depth(
+                let probes = std::array::from_fn(|octant| data.probe_box(octant));
+                // `lo` of the node's range: the on-axis bound of `node_view_range` (ADR 0055
+                // plan, task 4); a node wholly behind the eye or without data wants the coarsest
+                // depth. Its `hi_c` is not used yet: `hi` stays as the octants want it (task 5).
+                let far = node_view_range(
                     view,
                     grid,
                     origin,
-                    data.bounds,
-                    std::array::from_fn(|octant| data.probe_box(octant)),
+                    probe_region(data.bounds, probes),
                     data.buildable,
                     target_px,
-                    hints
-                        .is_some()
-                        .then(|| was.map(|cached| cached.far.0))
-                        .flatten(),
-                );
+                    self.min_side,
+                )
+                .map_or(data.buildable.0, |(lo, _)| lo);
                 (
                     finest_allowed
                         .map_or(far, |limit| continuity_depth(data.buildable, far, limit)),
-                    front,
+                    octants_in_front(view, origin, data.bounds, probes),
                 )
             } else {
                 (0, 0)

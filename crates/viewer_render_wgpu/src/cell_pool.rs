@@ -87,8 +87,8 @@ use crate::{
     cell_cut::{
         FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_octants,
         behind_wanted, cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels,
-        in_cell_range, node_far_depth, octant_wanted_depth_in, octant_wanted_depth_near,
-        served_depth,
+        in_cell_range, node_view_range, octant_wanted_depth_in, octant_wanted_depth_near,
+        octants_in_front, probe_region, served_depth,
     },
     representative_depth,
 };
@@ -317,7 +317,7 @@ struct NodeDepths {
     node: PoolNode,
     depths: [u8; 8],
     /// Cell mode: the node's far wanted depth and the octants in front of the eye
-    /// (`node_far_depth`); `(0, 0)` in octant mode, which never reads them.
+    /// (`node_view_range`, `octants_in_front`); `(0, 0)` in octant mode, which never reads them.
     far: (u8, u8),
     pose: Pose,
     /// Effective view depth of the node at that pose, in scaled units: the depth of its nearest

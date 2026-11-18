@@ -23,7 +23,9 @@ use viewer_core::{NodeId, SpatialBounds};
 
 use crate::{
     ViewProjection,
-    node_cells::{CellGrid, NodeCellLevel, node_range, representative_depth},
+    node_cells::{
+        CellGrid, NodeCellLevel, node_range, representative_depth, representative_depth_for_spacing,
+    },
 };
 
 /// Hasher for the small integer keys of the cut and the pool (Fx): these maps are probed per node
@@ -422,35 +424,25 @@ fn hinted_search(meets: &OctantProbe, (coarsest, finest): (u8, u8), hint: u8) ->
     }
 }
 
-/// Cell mode: `(far, front)` of a node. `far` is the coarsest buildable depth whose cell, placed
-/// at the node's corner farthest along the view direction (inside the node box), would not
-/// refine: the depth the node's far side needs. It is the coarsest depth when no corner is in
-/// front of the eye. `front` has bit `o` set for each octant (its data box, `probes`) wholly in front of the eye plane; the
-/// others (behind it or crossing it) want the finest depth only because they measure `+inf`,
-/// which says nothing about the node's range: they still draw their own depth but do not set
-/// `hi`. `hint` is the answer of a
-/// nearby view, as in `octant_wanted_depth_near`.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn node_far_depth(
+/// Cell mode: the octants of a node that lie wholly in front of the eye plane, as bit `o` set for
+/// octant `o` (its data box, `probes`). The others (behind it or crossing it) want the finest depth
+/// only because their cubes measure `+inf`, which says nothing about the node's range: they still
+/// draw their own depth but do not set `hi`.
+pub(crate) fn octants_in_front(
     view: &ViewProjection,
-    grid: &CellGrid,
     coordinate_origin: [f64; 3],
     bounds: SpatialBounds,
     probes: [ProbeBox; 8],
-    buildable: (u8, u8),
-    target_px: f64,
-    hint: Option<u8>,
-) -> (u8, u8) {
-    debug_assert!(buildable.0 <= buildable.1, "buildable range is ordered");
+) -> u8 {
     let Some(relative) = relative_bounds(bounds, coordinate_origin) else {
-        return (buildable.1, 0);
+        return 0;
     };
     let eye = view_eye(view);
     let forward = view.camera().forward();
     // An octant counts when it lies wholly in front of the eye plane: one that crosses or lies
     // behind it holds cubes with a corner at or behind the eye, which measure `+inf` and want the
     // finest depth only for that reason.
-    let front = (0..8).fold(0_u8, |bits, octant| {
+    (0..8).fold(0_u8, |bits, octant| {
         let region = match probes[octant] {
             ProbeBox::Geometric => octant_box(relative, octant),
             ProbeBox::Data(data) => relative_bounds(data, coordinate_origin),
@@ -470,26 +462,86 @@ pub(crate) fn node_far_depth(
                 > 0.0
         });
         bits | (u8::from(in_front) << octant)
-    });
-    if farthest_corner_depth(&relative, eye, forward) <= 0.0 {
-        // Wholly behind the eye: nothing in front to measure, so no finest depth.
-        return (buildable.0, front);
+    })
+}
+
+/// The region of a node whose depth range matters: the union box of its octants' probe boxes
+/// (the node box for geometric probes), `None` when no octant holds data.
+pub(crate) fn probe_region(bounds: SpatialBounds, probes: [ProbeBox; 8]) -> Option<SpatialBounds> {
+    let mut region: Option<([f64; 3], [f64; 3])> = None;
+    for probe in probes {
+        let (min, max) = match probe {
+            ProbeBox::Geometric => (bounds.min(), bounds.max()),
+            ProbeBox::Data(data) => (data.min(), data.max()),
+            ProbeBox::Empty => continue,
+        };
+        region = Some(region.map_or((min, max), |(lo, hi)| {
+            (
+                std::array::from_fn(|a| lo[a].min(min[a])),
+                std::array::from_fn(|a| hi[a].max(max[a])),
+            )
+        }));
     }
-    let corner: [f64; 3] = std::array::from_fn(|a| {
-        if forward[a] > 0.0 {
-            relative.max()[a]
-        } else {
-            relative.min()[a]
-        }
+    region.and_then(|(min, max)| SpatialBounds::new(min, max).ok())
+}
+
+/// Cell mode: the candidate depth range `(lo_c, hi_c)` of a node over its `region` (the node box
+/// clipped to the data, dataset frame like `grid` and `coordinate_origin`), `buildable` being its
+/// buildable span. `None` when the region is empty or wholly behind the eye or the LOD near depth.
+///
+/// - `lo_c`: the coarsest depth that does not refine for a cell ON THE VIEW AXIS at the view depth
+///   of the farthest corner of the region. On the axis the projected cell does not depend on where
+///   in the frame the region is, unlike a cell placed at the farthest corner, which perspective
+///   stretches when that corner is far off screen.
+/// - `hi_c`: the same at the nearest view depth the region can show (`nearest_visible_depth`, not
+///   nearer than the LOD near depth), with the px target divided by the off-axis stretch
+///   `sqrt(1 + tan^2)` at the corner of the field of view.
+///
+/// Both are limited to `buildable` and to `min_side` (a cell whose children are shorter does not
+/// refine, as `continuity_depth` applies in the pool), with `lo_c <= hi_c`.
+pub fn node_view_range(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    region: Option<SpatialBounds>,
+    buildable: (u8, u8),
+    target_px: f64,
+    min_side: Option<f64>,
+) -> Option<(u8, u8)> {
+    debug_assert!(buildable.0 <= buildable.1, "buildable range is ordered");
+    let relative = relative_bounds(region?, coordinate_origin)?;
+    let eye = view_eye(view);
+    let forward = view.camera().forward();
+    let [width, height] = view.viewport();
+    let aspect = f64::from(width) / f64::from(height.max(1));
+    let tan_corner = (crate::camera::VERTICAL_FOV * 0.5).tan() * (1.0 + aspect * aspect).sqrt();
+    let stretch = (1.0 + tan_corner * tan_corner).sqrt();
+    let near = view.camera().lod_near_depth() / view.visual_scale();
+    let nearest = near.max(nearest_visible_depth(view, &relative, eye));
+    let farthest = farthest_corner_depth(&relative, eye, forward);
+    if farthest <= nearest {
+        return None;
+    }
+    let cap = min_side.map_or(buildable.1, |side| {
+        representative_depth_for_spacing(grid, side).clamp(buildable.0, buildable.1)
     });
-    let meets = OctantProbe::at_anchor(view, grid, relative, corner, target_px);
-    let far = match hint.filter(|h| (buildable.0..=buildable.1).contains(h)) {
-        Some(hint) => hinted_search(&meets, buildable, hint),
-        None => (buildable.0..=buildable.1)
-            .find(|depth| meets.at(*depth))
-            .unwrap_or(buildable.1),
+    let on_axis = |depth: f64, target_px: f64| {
+        let meets = OctantProbe {
+            view,
+            grid,
+            octant_box: relative,
+            anchor: eye,
+            on_axis: Some(depth),
+            target_px,
+        };
+        (buildable.0..=buildable.1)
+            .find(|d| meets.at(*d))
+            .unwrap_or(buildable.1)
+            .min(cap)
     };
-    (far, front)
+    let lo = on_axis(farthest, target_px);
+    let hi = on_axis(nearest, target_px / stretch).max(lo);
+    Some((lo, hi))
 }
 
 /// Lower bound of the view depth of any point of `bounds` inside the view frustum: its
@@ -926,7 +978,7 @@ pub(crate) fn cell_cut_with(
     cell_cut_ranged(cut, node, grid, mode, wanted_depth, None, None)
 }
 
-/// `(far, front)` of a node, as `node_far_depth` returns them.
+/// `(far, front)` of a node: `far` as `node_view_range` gives `lo`, `front` from `octants_in_front`.
 pub(crate) type FarDepth<'a> = dyn Fn(NodeId, &CellCutNode) -> (u8, u8) + 'a;
 
 /// What each octant of a node drew in the last applied cut (the stepping rule's `prev`).
@@ -940,7 +992,7 @@ pub(crate) struct PrevState {
 }
 
 /// `cell_cut_with` that also fills `CellCutEntry::range` in cell mode from `far(node, data)` =
-/// `(far, front)` as `node_far_depth` returns them (`None`: no range), and steps each octant from
+/// `(far, front)` as `FarDepth` describes (`None`: no range), and steps each octant from
 /// `prev(node)` (`None`: every octant draws its closest resident level).
 pub(crate) fn cell_cut_ranged(
     cut: &[NodeId],
