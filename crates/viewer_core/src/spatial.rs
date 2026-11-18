@@ -56,6 +56,14 @@ impl SpatialBounds {
         self.max
     }
 
+    /// Length of the longest side.
+    #[must_use]
+    pub fn max_side(&self) -> f64 {
+        (0..3)
+            .map(|axis| self.max()[axis] - self.min()[axis])
+            .fold(0.0, f64::max)
+    }
+
     pub fn contains(&self, other: &Self) -> bool {
         (0..3).all(|axis| self.min[axis] <= other.min[axis] && self.max[axis] >= other.max[axis])
     }
@@ -280,9 +288,7 @@ impl SpatialNode {
     /// otherwise one eighth of the node side (the 8 representatives per axis of V5 and V7.1-3-pre).
     pub fn representative_spacing(&self) -> f64 {
         self.spacing.unwrap_or_else(|| {
-            let side = (0..3)
-                .map(|axis| self.bounds.max()[axis] - self.bounds.min()[axis])
-                .fold(0.0, f64::max);
+            let side = self.bounds.max_side();
             side / 8.0
         })
     }

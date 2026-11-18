@@ -11,18 +11,22 @@ use std::{
     time::Instant,
 };
 
-use viewer_convert_core::written_block_ids;
+use viewer_convert_core::{
+    error::ConvertError,
+    report::{ConversionProgress, ConversionStage, ConversionWorkerStats, emit_progress},
+    written_block_ids,
+};
 use viewer_core::{BlockId, DatasetSource};
 use viewer_format::FormatReader;
 
 use crate::checkpoint::fingerprint_file;
 use crate::diagnostics::ConversionDiagnostics;
 use crate::diagnostics::{DiagnosticTimer, ValidationWorkerDiagnostics};
-use crate::error::ConvertError;
 use crate::fs_util;
 #[allow(unused_imports, reason = "old path of the pure limit checks")]
-pub(crate) use crate::limits::{check_reader_attribute_ranges, visual_scale_for_bounds};
-use crate::report::{ConversionProgress, ConversionStage, ConversionWorkerStats, emit_progress};
+pub(crate) use viewer_convert_core::limits::{
+    check_reader_attribute_ranges, visual_scale_for_bounds,
+};
 
 pub(crate) static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 

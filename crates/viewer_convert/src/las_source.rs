@@ -9,19 +9,28 @@ use std::{
 
 use las::Reader;
 use rayon::prelude::*;
+use viewer_convert_core::{
+    blocks::{
+        ConversionPlan, output_writer, prepare_planned_block,
+        prepare_planned_block_with_diagnostics, write_prepared,
+    },
+    error::ConvertError,
+    limits::visual_scale_for_bounds,
+    options::ESTIMATED_WORKING_BYTES_PER_POINT,
+    report::{
+        ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats,
+        aggregate_geometry_codec_diagnostics, emit_progress,
+    },
+    spatial::{
+        PlannedBlock, build_spatial_plan, build_spatial_plan_from_source, emit_source_progress,
+    },
+};
 use viewer_format::{BlockEncoder, OctreeWriter, PreparedOctreeWriter};
 
-use crate::blocks::{
-    ConversionPlan, output_writer, prepare_planned_block, prepare_planned_block_with_diagnostics,
-    write_prepared,
-};
 use crate::checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 use crate::diagnostics::DiagnosticTimer;
 use crate::ept;
-use crate::error::ConvertError;
 use crate::executor::ThreadedExecutor;
-use crate::limits::visual_scale_for_bounds;
-use crate::options::ESTIMATED_WORKING_BYTES_PER_POINT;
 use crate::pipeline::clock::SystemClock;
 use crate::pipeline::node_job::{JobProgress, spool_source};
 use crate::pipeline::point_source::{ByteSource, LasFactory, LasPointSource, RangeSource};
@@ -30,19 +39,12 @@ use crate::publish::{
     OutputValidation, create_temporary_pair, link_or_copy, output_attributes_path,
     output_block_ids, publish_output_pair, validate_output_pair, verify_candidate_visual_scale,
 };
-use crate::report::{
-    ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats,
-    aggregate_geometry_codec_diagnostics, emit_progress,
-};
-use crate::spatial::{
-    PlannedBlock, build_spatial_plan, build_spatial_plan_from_source, emit_source_progress,
-};
 use crate::workspace::Workspace;
 use crate::{CheckpointMode, ConversionDiagnostics, ConvertOptions};
 
 // The pure source helpers live in `source`; these are their old paths.
 #[allow(unused_imports, reason = "old paths of the pure source helpers")]
-pub(crate) use crate::source::{
+pub(crate) use viewer_convert_core::source::{
     SourceInfo, contain_decoder_panic, contain_decoder_panic_at, fill_points, inspect_source,
     next_descriptor, omitted_dimensions, open_las_reader_from, seek_points, seek_points_at,
     source_schema,
@@ -305,7 +307,7 @@ pub(crate) fn convert_file_inner(
                 let bytes = spool_source(
                     &mut LasPointSource::full(&mut reader),
                     &source,
-                    crate::options::input_batch_point_limit(
+                    viewer_convert_core::options::input_batch_point_limit(
                         options.points_per_block(),
                         source.record_length,
                     ),

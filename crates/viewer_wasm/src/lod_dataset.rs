@@ -1181,9 +1181,7 @@ impl WorkClock {
 
 #[cfg(test)]
 fn bounds_side(bounds: viewer_core::SpatialBounds) -> f64 {
-    (0..3)
-        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-        .fold(0.0, f64::max)
+    bounds.max_side()
 }
 
 fn reusable_build_match(

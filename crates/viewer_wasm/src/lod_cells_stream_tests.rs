@@ -1914,10 +1914,10 @@ fn real_path(name: &str) -> Option<std::path::PathBuf> {
     }
 }
 
-#[path = "lod_cells_bench.rs"]
+#[path = "lod_cells_bench_tests.rs"]
 mod bench;
 
-#[path = "lod_cells_sim.rs"]
+#[path = "lod_cells_sim_tests.rs"]
 mod sim;
 
 fn open_real(name: &str, target_px: f64, page_budget: usize) -> Option<Real> {
@@ -2576,6 +2576,7 @@ fn a_node_holding_the_eye_keeps_contiguous_active_depths_and_no_sub_pixel_cells(
     let grid = h.dataset.cell_grid();
     let hierarchy = h.dataset.metadata.hierarchy();
     let mut seen = 0;
+    let mut checked = 0;
     for (node, depths, range) in &h.last_levels {
         let mut depths = depths.clone();
         depths.sort_unstable();
@@ -2628,6 +2629,7 @@ fn a_node_holding_the_eye_keeps_contiguous_active_depths_and_no_sub_pixel_cells(
             let cell_min: [f32; 3] =
                 std::array::from_fn(|a| (rel_lo[a] + cell[a] * cell_side) as f32);
             let px = edge_px(&ctx.lod, cell_min, cell_side as f32);
+            checked += 1;
             assert!(
                 px >= 2.0,
                 "node {} draws depth {depth} at {px} px (active {depths:?})",
@@ -2636,4 +2638,5 @@ fn a_node_holding_the_eye_keeps_contiguous_active_depths_and_no_sub_pixel_cells(
         }
     }
     assert_eq!(seen, 2, "nodes 14 and 17 are drawn");
+    assert!(checked > 100, "too few lattice samples measured: {checked}");
 }

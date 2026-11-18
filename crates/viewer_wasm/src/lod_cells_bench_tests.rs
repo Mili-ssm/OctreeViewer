@@ -66,9 +66,7 @@ pub(super) fn spike_frame(path: &std::path::Path) -> Frame {
     let hierarchy = metadata.hierarchy().clone();
     let origin = metadata.coordinate_frame().origin();
     let root = hierarchy.stats().root_bounds;
-    let root_side = (0..3)
-        .map(|a| root.max()[a] - root.min()[a])
-        .fold(0.0, f64::max);
+    let root_side = root.max_side();
     let root_local = SceneBounds {
         min: std::array::from_fn(|a| (root.min()[a] - origin[a]) * scale),
         max: std::array::from_fn(|a| (root.max()[a] - origin[a]) * scale),

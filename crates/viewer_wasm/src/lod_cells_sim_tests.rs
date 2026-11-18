@@ -1432,7 +1432,7 @@ real_sim_both_modes!(
     real_sim_belvedere_pool_reset_and_driver_replaced_mid_load_converge_in_cell_mode
 );
 
-#[path = "lod_cells_glue_sim.rs"]
+#[path = "lod_cells_glue_sim_tests.rs"]
 mod glue;
 
 // ---------------------------------------------------------------------------------------------

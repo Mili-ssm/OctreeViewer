@@ -1,6 +1,6 @@
 # Fase 2b: rango de niveles por nodo y transiciones de un nivel (#44) Implementation Plan
 
-Estado: en curso · 16-11-2026 · fase 2b del [plan maestro](nivel-pedido-y-lod-por-celda.md)
+Estado: en pausa · 18-11-2026 · fase 2b del [plan maestro](nivel-pedido-y-lod-por-celda.md); replanteada en [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md) (propuesta pendiente del propietario)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -44,6 +44,11 @@ As in phase 2a (English code/commits, Spanish docs, no AI attribution; octant mo
   and decide with the owner (fit raising the px target of the whole cloud, R3-Q11, or limiting the tail below spacing).
 
 ## Status at pause (16-11-2026, late) — resume here
+
+> **Update 18-11-2026:** step 1 of "Next" (contiguous active set, P2 test) is done on the local branch
+> `explore/2b-contiguous-active` (39a9c33), and the black quadrant at P2 is gone in the browser. A rethink of the
+> requirements behind this phase, a second experiment and the questions for the owner are in
+> [Replanteamiento del LOD por celda](replanteamiento-lod-por-celda-18-11-2026.md). Read it before continuing here.
 
 Branch `feat/cell-lod-2b` (worktree `~/.cache/codex-worktrees/octree-publicar`), HEAD 6da8f79, tree clean, **not
 pushed, no PR**. Evidence and agent reports: `.superpowers/sdd/fase-2b/` (git-ignored; `evidence/` holds the

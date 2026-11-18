@@ -1,7 +1,7 @@
 //! Native offscreen rendering using the viewer's shader and pipeline.
 use wgpu::util::DeviceExt;
 
-use crate::gpu::{CUBE_INDICES, ViewProjection, create_pipeline_resources};
+use crate::gpu::{CUBE_INDICES, ViewUniform, create_pipeline_resources};
 use crate::{GpuRendererError, OrbitCamera, RenderScene, RendererConfig};
 
 #[derive(Debug)]
@@ -76,7 +76,7 @@ pub async fn render_offscreen(
     queue.write_buffer(
         &pipeline.uniform_buffer,
         0,
-        bytemuck::bytes_of(&ViewProjection {
+        bytemuck::bytes_of(&ViewUniform {
             matrix: frame.view_projection,
             render_origin: origin,
             style: [0.0, 1.0, 0.0, 1.0],

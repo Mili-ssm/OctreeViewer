@@ -16,8 +16,8 @@ mod tests {
     use crate::{
         ConvertError,
         las_source::{inspect_source, open_las_reader},
-        options::input_batch_point_limit,
     };
+    use viewer_convert_core::options::input_batch_point_limit;
 
     const POINTS: u64 = 1000;
     const BATCH: u64 = 64;

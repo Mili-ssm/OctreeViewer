@@ -431,9 +431,7 @@ fn aligned_direct_child(
         return false;
     }
     let root = hierarchy.stats().root_bounds;
-    let side = (0..3)
-        .map(|axis| root.max()[axis] - root.min()[axis])
-        .fold(0.0, f64::max);
+    let side = root.max_side();
     if !side.is_finite() || side <= 0.0 {
         return false;
     }

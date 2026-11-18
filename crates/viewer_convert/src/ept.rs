@@ -9,6 +9,10 @@ use std::{
 
 use las::PointDataBuilder;
 use serde::Deserialize;
+use viewer_convert_core::{
+    options::{MAX_BLOCKS, input_batch_point_limit},
+    report::{ConversionProgress, ConversionReport, ConversionStage, emit_progress},
+};
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, CoordinateFrame, DatasetMetadata,
     HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
@@ -21,12 +25,10 @@ use super::ept_checkpoint::{EptCheckpoint, EptCheckpointStage, EptJournalRecord,
 use super::{CheckpointMode, ConvertError, ConvertOptions};
 use crate::diagnostics::{ConversionDiagnostics, DiagnosticTimer};
 use crate::las_source::{next_descriptor, omitted_dimensions, open_las_reader, source_schema};
-use crate::options::{MAX_BLOCKS, input_batch_point_limit};
 use crate::publish::{
     OutputValidation, create_temporary_pair, output_attributes_path, publish_output_pair,
     publish_validated_output_pair, validate_output_pair, visual_scale_for_bounds,
 };
-use crate::report::{ConversionProgress, ConversionReport, ConversionStage, emit_progress};
 
 const MAX_EPT_NODES: usize = 1_000_000;
 const MAX_EPT_MANIFEST_BYTES: u64 = 1024 * 1024;

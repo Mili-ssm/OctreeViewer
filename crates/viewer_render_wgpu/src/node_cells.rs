@@ -61,9 +61,7 @@ pub fn representative_depth_for_spacing(grid: &CellGrid, spacing: f64) -> u8 {
 }
 
 fn side_of(bounds: SpatialBounds) -> f64 {
-    (0..3)
-        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-        .fold(0.0, f64::max)
+    bounds.max_side()
 }
 
 /// Exact per-cell sums, accumulated in point order like the CPU voxel build.

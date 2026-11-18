@@ -41,6 +41,12 @@ fn unit_cube_frustum() -> SpatialFrustum {
 }
 
 #[test]
+fn max_side_is_the_longest_axis_extent() {
+    assert_eq!(bounds([1.0, -2.0, 0.0], [3.0, 5.0, 4.0]).max_side(), 7.0);
+    assert_eq!(bounds([2.0; 3], [2.0; 3]).max_side(), 0.0);
+}
+
+#[test]
 fn uniform_subdivision_maps_points_and_bounds_consistently() {
     let bounds = bounds([-2.0, 4.0, 8.0], [6.0, 12.0, 16.0]);
     for divisions in [2, 4, 8] {
