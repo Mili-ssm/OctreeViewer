@@ -3,7 +3,8 @@
 //!
 //! One node is built in the local frame of its points, on the local grid; the driver pools it on
 //! the world grid. The reference is the CPU path drawing the cells the driver's own plan selects
-//! (octant bits and mask), computed here in f64 from the world coordinates.
+//! (the cells the CPU twin of the per-cell LOD rule draws, from the records and the view the
+//! driver gave the target), placed here in f64 from the world coordinates.
 
 use super::*;
 use std::collections::HashMap;
@@ -19,6 +20,9 @@ const NODE: u64 = 1;
 struct Target<'a> {
     pool: &'a mut CellRenderer,
     eye: [f64; 3],
+    /// The last record of each node slot and the last LOD view the driver gave the target.
+    records: &'a mut HashMap<u32, [u32; NODE_WORDS]>,
+    view: &'a mut Option<crate::cell_lod::LodView>,
 }
 
 impl CellTarget for Target<'_> {
@@ -53,7 +57,13 @@ impl CellTarget for Target<'_> {
         slot: u32,
         record: &[u32; NODE_WORDS],
     ) -> Result<(), CellPoolError> {
+        self.records.insert(slot, *record);
         self.pool.set_node_record(slot, record)
+    }
+
+    fn set_lod_view(&mut self, view: Option<crate::cell_lod::LodView>) {
+        *self.view = view;
+        self.pool.set_lod_view(view);
     }
 
     fn set_active_pages(
@@ -105,15 +115,27 @@ fn node_cells(seed: u64, depths: &[(u8, usize)]) -> NodeCells {
     }
 }
 
-/// The cells the pass draws, as the CPU path takes them: octant bit set and mask bit clear.
+/// The cells the pass draws, as the CPU twin of the per-cell rule takes them: those whose active
+/// depth draws them from the node record the target holds (`cell_lod::draws`, f32 like the GPU).
 fn expected_instances(
     cells: &NodeCells,
     world: &CellGrid,
+    bounds: SpatialBounds,
     report: &crate::FrameReport,
+    records: &HashMap<u32, [u32; NODE_WORDS]>,
+    view: &crate::cell_lod::LodView,
 ) -> Vec<InstanceRaw> {
-    let entry = &report.plan.entries[0];
     let mut out = Vec::new();
     for active in &report.plan.active {
+        let record = &records[&active.mask_slot];
+        let node = crate::cell_lod::NodeLod {
+            anchor: std::array::from_fn(|axis| f32::from_bits(record[16 + axis])),
+            node_depth: record[19] as u8,
+            active: u64::from(record[20]) | u64::from(record[21]) << 32,
+            mask: std::array::from_fn(|word| {
+                u64::from(record[2 * word]) | u64::from(record[2 * word + 1]) << 32
+            }),
+        };
         let level = cells
             .levels
             .iter()
@@ -121,11 +143,12 @@ fn expected_instances(
             .unwrap();
         let side = world.root_side / (1_u64 << level.depth) as f64;
         for cell in &level.cells {
-            let m = cell.coord.map(|c| (c >> (level.depth - 3)) as usize);
-            let octant = 4 * (m[0] >> 2) + 2 * (m[1] >> 2) + (m[2] >> 2);
-            let bit = m[0] + 8 * m[1] + 64 * m[2];
-            if active.octant_bits >> octant & 1 == 0 || entry.mask[bit / 64] >> (bit % 64) & 1 == 1
-            {
+            // The cell relative to the node corner, and its side in the render frame.
+            let rel = std::array::from_fn(|axis| {
+                let lo = crate::node_cells::node_range(world, bounds, level.depth, axis).0;
+                (cell.coord[axis] - lo) as u32
+            });
+            if !crate::cell_lod::draws(view, &node, level.depth, rel, (side * SCALE) as f32) {
                 continue;
             }
             let rgb = cell.rgb_sum.map(|c| c as u8);
@@ -195,11 +218,14 @@ fn the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter() {
             crate::VoxelBuildLimits::default(),
         );
         let mut pool = new_pool(h);
+        let (mut records, mut lod_view) = (HashMap::new(), None);
         let mut last = None;
         for _ in 0..60 {
             let mut target = Target {
                 pool: &mut pool,
                 eye: camera.position(),
+                records: &mut records,
+                view: &mut lod_view,
             };
             let report = driver
                 .frame(&mut target, &[NodeId::new(NODE)], &view, 20.0)
@@ -216,7 +242,13 @@ fn the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter() {
         let depths: Vec<u8> = report.plan.active.iter().map(|a| a.key.depth).collect();
         assert!(!depths.is_empty());
         println!("# adapter {}: active depths {depths:?}", h.label);
-        let instances = expected_instances(&cells, &world, &report);
+        let lod_view = lod_view.expect("the driver gives the target a view in cell mode");
+        let instances = expected_instances(&cells, &world, bounds, &report, &records, &lod_view);
+        println!(
+            "# adapter {}: {} cells drawn by the twin",
+            h.label,
+            instances.len()
+        );
         let stats = run_oracle_against(h, &mut pool, &instances, &camera, false);
         println!("# adapter {}: driver oracle {stats:?}", h.label);
         true
@@ -447,7 +479,6 @@ fn partitions_the_view(first: &[u8], second: &[u8]) {
                 .unwrap();
             cut.push(id);
         }
-        driver.set_lod_mode(crate::LodMode::Cell);
 
         // A zoom in and out on a cell of the first node, then random poses.
         let focus = {
@@ -584,7 +615,6 @@ fn partitions_a_parent_and_its_children(parent: &[u8], children: &[u8]) {
                 .unwrap();
             cut.push(id);
         }
-        driver.set_lod_mode(crate::LodMode::Cell);
 
         // A zoom in and out on a cell of the first child, then random poses around the children.
         let focus = {
