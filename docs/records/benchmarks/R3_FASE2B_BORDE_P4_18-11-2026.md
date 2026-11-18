@@ -2,8 +2,8 @@
 
 **Estado: medido; no hace falta la cadena entre nodos.** En la pose P4 de la muestra integrada, las celdas
 dibujadas a los dos lados de cada borde de nodo visible difieren como mucho en un nivel, con las dos reglas de
-niveles activos (`ActiveRule::Window` y `Contiguous`). El borde se ve por otra causa: el extremo grueso del rango
-del nodo que contiene el ojo lo fija una esquina de su caja que queda fuera de pantalla.
+niveles activos (`ActiveRule::Window` y `Contiguous`). El borde se ve porque el rango del nodo que contiene el ojo
+empieza un nivel más fino de lo que pide su parte visible; por qué sale ese extremo no está comprobado.
 
 Medida nativa, sin GPU: el gemelo en CPU de la regla de la GPU sobre la muestra integrada, en modo celda. Cierra
 la casilla 2c de la [fase 2b](../../plans/fase-2b-rango-de-niveles-y-transiciones.md) («P4 straight border
@@ -13,11 +13,11 @@ unmeasured»).
 
 | Dato | Valor |
 | --- | --- |
-| Revisión | `7f3dca9` (rama `docs/fase-2b-evidencia`; el test parte de la opción `cellActive`, PR #74) |
+| Revisión | `7f3dca9` (rama `docs/fase-2b-evidencia`; el test fija la regla con `Harness.rule`) |
 | Perfil y toolchain | `fast` · rustc 1.101.0-nightly (2026-10-27) |
 | Equipo | AMD Ryzen AI 9 365 (la medida no depende del tiempo) |
 | Dataset | Muestra integrada de la demo; `data_bounds` (0, 0, −0,06)..(63,9, 63,9, 4,06) |
-| Pose P4 | Encuadre inicial, 8 pasos de rueda en (400, 500) y arrastre derecho de 120 px; derivada como la demo (encuadre, `zoom`, `orbit`), equivale a la de la prueba de pose cercana (ojo ≈ (31,96, 38,76, 6,12)) |
+| Pose P4 | Encuadre inicial, 8 pasos de rueda y arrastre derecho de 120 px, derivada como la demo: `zoom(-0.3 × 8)` y `orbit(0, -120/750)`. El test la compara con la de la prueba de pose cercana (ojo ≈ (31,96, 38,76, 6,12) en el marco del dataset); la equivalencia no se comprobó aquí |
 | Lienzo | 870 × 750 px (el que informa la demo con la ventana de 1280 × 800); objetivo 4 px |
 | Comando | `cargo test --offline --profile fast -p viewer_wasm p4_border_levels -- --ignored --nocapture` |
 
@@ -45,26 +45,35 @@ Las aristas salen del volcado `P4_DUMP` (columnas `pxA` y `pxB` de los pares con
 | --- | --- | --- | --- |
 | 8 | 9, 10, 11 | 5, 9, 10, 11 | 9–11 |
 | 14 | 11, 12, 13 | 5, 7–13 | 11–13 |
-| 17 | 10–13 | 5, 9–13 | 10–13 |
+| 17 | 10–13 | 5, 8–13 (`Window`) · 5, 9–13 (`Contiguous`) | 10–13 |
 
 ## Causa
 
+Comprobado:
+
 - La regla de refinado deja cada celda entre el objetivo y su doble: las celdas de nivel 10 del borde miden entre
   6,4 y 7,9 px y sus hijas medirían entre 3,2 y 4,0 px, por debajo de los 4 px, así que no deben refinarse.
-- El nodo 14 no puede dibujar el nivel 10: no está en su rango. Su nivel activo más grueso es `lo` = 11, y dibuja
-  celdas de 3,2 a 4,0 px, por debajo del objetivo.
-- `lo` sale de `node_far_depth` (`crates/viewer_render_wgpu/src/cell_cut.rs`): toma la esquina de la caja del nodo
-  más lejana según la vista, aquí (16, 32, −0,1), que queda fuera de pantalla a la izquierda, donde las celdas
-  proyectan más grande y piden nivel 11. El suelo visible junto al borde pide nivel 10.
-- El salto de unos 7 px a unos 3,5 px coincide con la cara del nodo. Además, las celdas de 3,5 px son más finas que la
-  separación de los puntos del suelo (unas 0,13 unidades) y se ven como puntos sueltos: por eso parece una línea.
+- El nodo 14 no puede dibujar el nivel 10: no está en su rango (11–13), aunque el nivel 10 cabe en el tramo
+  construible (el nodo 8, de la misma profundidad, lo tiene). Su nivel activo más grueso es el 11 y dibuja celdas
+  de 3,2 a 4,0 px, por debajo del objetivo.
+- El extremo grueso del rango es `min(far, hi_wanted)`, con `far` calculado por `node_far_depth` en la esquina de
+  la caja del nodo más lejana según la vista (`crates/viewer_render_wgpu/src/cell_cut.rs`, `node_far_depth` y el
+  cálculo de `entry.range`). Para el nodo 14 esa esquina es (16, 32, −0,1).
+- El salto de unos 7 px a unos 3,5 px coincide con la cara del nodo. Las celdas de 3,5 px son más finas que la
+  separación de los puntos del suelo (unas 0,13 unidades, según el
+  [plan de la fase 2b](../../plans/fase-2b-rango-de-niveles-y-transiciones.md)) y se ven como puntos sueltos: por
+  eso parece una línea.
+
+Sin comprobar: por qué `far` vale 11 en esa esquina. Está sobre el propio borde, en su extremo izquierdo y más
+lejos del ojo que el centro, donde el nodo 8 dibuja nivel 10; habría que evaluar `node_far_depth` paso a paso.
 
 ## Consecuencias
 
 - **La cadena entre nodos (antiguo F4) no hace falta para P4**: no hay pares visibles con más de un nivel.
-- El defecto es que el rango de un nodo se calcula con partes de su caja que no se ven. Corresponde al paso 1 del
-  [ADR 0055](../../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) (rango por nodo): restringir la esquina
-  lejana a la parte del nodo que cae en pantalla y dentro de los datos.
+- El defecto está en cómo se calcula el extremo grueso del rango de un nodo. Corresponde al paso 1 de «Fuera de
+  esta sesión» del [replanteamiento](../../plans/replanteamiento-lod-por-celda-18-11-2026.md#tareas) (rango por
+  nodo, [ADR 0055](../../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md)), que sustituye ese cálculo; P4
+  es su caso de prueba.
 - El nodo 14 dibuja por debajo del objetivo de px: es un caso de la casilla abierta de la tarea 1 de la fase 2b
   («ninguna celda más fina de lo que pide su celda madre»).
 
