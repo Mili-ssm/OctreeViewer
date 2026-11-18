@@ -94,7 +94,7 @@ try {
         return { stats: last, ms: null };
     };
     const setContinuity = async on => {
-        await evaluate(`(() => { const box = document.querySelector("#continuity"); box.checked = ${on}; box.dispatchEvent(new Event("change")); return true; })()`);
+        await evaluate(`(() => { const mode = document.querySelector("#min-length-mode"); mode.value = ${on} ? "spacing" : "length"; mode.dispatchEvent(new Event("change")); return true; })()`);
     };
     for (const name of poseNames) {
         const pose = name === "leaf" ? leafPose(metadata) : fitted;

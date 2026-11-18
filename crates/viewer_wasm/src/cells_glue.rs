@@ -229,7 +229,8 @@ pub(crate) struct CellsStats {
     /// Continuity requested for the cloud (render side and in-process path).
     pub continuity: bool,
     pub continuity_factor: f64,
-    /// Effective minimum cell side the driver applies; `None` in literal mode.
+    /// Effective minimum cell side the driver applies (the larger of the length minimum and the
+    /// continuity side); `None` when both are off.
     pub continuity_min_side: Option<f64>,
     /// Length minimum requested (`setMinLength`), in dataset units; 0 is off.
     pub min_length: f64,

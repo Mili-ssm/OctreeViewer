@@ -747,8 +747,8 @@ impl WasmVoxelViewer {
     }
 
     /// Continuity of the open cloud (RF-05): with `enabled`, no cell is drawn smaller than
-    /// `factor` (default 1) x the reference spacing of the cloud; off is the literal mode, which
-    /// is the default. It survives `beginRemoteCells` and dataset changes, takes effect on the
+    /// `factor` (default 1) x the reference spacing of the cloud; off (the default) leaves only the
+    /// length minimum (`setMinLength`). It survives `beginRemoteCells` and dataset changes, takes effect on the
     /// next frame and rebuilds nothing: the cells hold every level.
     #[wasm_bindgen(js_name = setContinuity)]
     pub fn set_continuity(&mut self, enabled: bool, factor: Option<f64>) -> Result<(), JsValue> {

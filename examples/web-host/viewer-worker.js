@@ -1325,6 +1325,14 @@ function applyCellLod(mode) {
     return mode;
 }
 
+// The viewer refuses an invalid factor and keeps its own, so the stored setting follows only an accepted one.
+function applyContinuity(enabled, factor) {
+    viewer.setContinuity(enabled, factor);
+    continuitySetting = [enabled, factor];
+    advanceSceneGeneration();
+    return true;
+}
+
 // The viewer refuses an invalid side and keeps its own, so the stored setting follows only an accepted one.
 function applyMinLength(side) {
     viewer.setMinLength(side);
@@ -1498,10 +1506,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         value = applyMinLength(data.side ?? undefined);
                         break;
                     case "setContinuity":
-                        continuitySetting = [Boolean(data.enabled), data.factor ?? undefined];
-                        viewer.setContinuity(...continuitySetting);
-                        advanceSceneGeneration();
-                        value = true;
+                        value = applyContinuity(Boolean(data.enabled), data.factor ?? undefined);
                         break;
                     case "setGpuFrameTiming":
                         hostGpuTiming = Boolean(data.enabled);
@@ -1574,9 +1579,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 break;
             case "continuity":
                 // RF-05: only changes which cell level each octant draws; nothing is rebuilt.
-                continuitySetting = [Boolean(data.enabled), data.factor ?? undefined];
-                viewer.setContinuity(...continuitySetting);
-                advanceSceneGeneration();
+                applyContinuity(Boolean(data.enabled), data.factor ?? undefined);
                 break;
             case "minLength":
                 // Same as "continuity", but an invalid side is a warning: the old minimum stays.
