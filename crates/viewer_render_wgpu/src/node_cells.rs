@@ -27,6 +27,20 @@ pub struct CellGrid {
     pub root_side: f64,
 }
 
+impl CellGrid {
+    /// `root_min[axis] + cell * side - reference`: the lower edge of `cell` (of side `side`)
+    /// measured from `reference`. `cell * side` alone resolves only `root_side * 2^-53` units
+    /// (centimetres when a global cloud keeps the whole 2^64-quanta lattice as its root, issue
+    /// #31), so the high bits of the index, whose product with a power-of-two side is exact, are
+    /// added to the root corner first and the low bits last.
+    pub(crate) fn cell_edge_from(&self, axis: usize, cell: u64, side: f64, reference: f64) -> f64 {
+        const LOW_BITS: u32 = 20;
+        let low = cell & ((1 << LOW_BITS) - 1);
+        let high = cell - low;
+        ((self.root_min[axis] + high as f64 * side) - reference) + low as f64 * side
+    }
+}
+
 // Node sides carry float noise from the frame shifts: on real data log2(root_side / side) lies
 // ~1e-5 off an integer.
 const DEPTH_SNAP_TOLERANCE: f64 = 1e-3;

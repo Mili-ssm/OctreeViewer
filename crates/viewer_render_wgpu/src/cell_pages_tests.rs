@@ -1119,3 +1119,54 @@ fn an_off_grid_node_gets_no_relative_origin() {
     let packed = pack_level_aligned(&grid, bounds, NodeId::new(1), &level, false);
     assert_eq!(packed.pages[0].rel_origin, [u32::MAX; 3]);
 }
+
+/// Issue #31: a cloud that crosses a sign bit keeps the whole 2^64-quanta lattice as its root
+/// (side 2^49, ADR 0029). Measured from the root corner in `f64`, a deep page lands on a multiple
+/// of 2^-4 units (about 6 cm); its corner must be exact to the cell instead.
+#[test]
+fn deep_pages_far_from_the_root_corner_are_placed_exactly() {
+    let half = (1_u64 << 48) as f64;
+    let grid = CellGrid {
+        root_min: [-half; 3],
+        root_side: 2.0 * half,
+    };
+    // A coordinate origin off zero on z: the corner is measured from it.
+    let frame = PageFrame {
+        grid,
+        coordinate_origin: [0.0, 0.0, 8.5],
+        visual_scale: 1.0,
+        eye_scaled: [0.0; 3],
+    };
+    let depth = 55;
+    // Cells of 2^-6 units; cell `2^54 + k` starts at `k * 2^-6`.
+    let side = 1.0 / 64.0;
+    for (cells, expected) in [(3_u64, 3.0 * side), (4097, 4097.0 * side), (0, 0.0)] {
+        let page = crate::cell_pages::PageInfo {
+            node: NodeId::new(1),
+            depth,
+            origin: [(1 << 54) + cells, (1 << 54) - cells - 1, (1 << 54) + cells],
+            first_cell: 0,
+            cells: 1,
+            box_max: [0; 3],
+            flags: 0,
+            rel_origin: [u32::MAX; 3],
+        };
+        let entry = page.entry(&frame, 0, 0);
+        assert_eq!(
+            f32::from_bits(entry.0[0]),
+            expected as f32,
+            "x of cell +{cells}"
+        );
+        assert_eq!(
+            f32::from_bits(entry.0[1]),
+            (-(cells as f64 + 1.0) * side) as f32,
+            "y of cell -{cells}"
+        );
+        assert_eq!(
+            f32::from_bits(entry.0[2]),
+            (cells as f64 * side - 8.5) as f32,
+            "z of cell +{cells} from the coordinate origin"
+        );
+        assert_eq!(f32::from_bits(entry.0[3]), side as f32, "cell side");
+    }
+}
