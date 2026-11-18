@@ -3,7 +3,7 @@
 Estado: Propuesta · Fecha: 18-11-2026 · Decide: propietario (propone el agente) · Precisaría [ADR 0050](0050-nivel-por-celda-segun-distancia.md) y [ADR 0053](0053-transiciones-de-un-nivel.md); cambiaría la lectura de R3-Q21 y de RF-31
 
 ## Contexto
-- La regla E4 de la GPU (`cell_draws` en `cell_render.rs`, gemelo `cell_lod.rs::draws`) dibuja, entre los niveles
+- La regla E4 de la GPU (`cell_draws` en `shaders/cell_compute.wgsl`, gemelo `cell_lod.rs::draws`) dibuja, entre los niveles
   activos de un nodo, el más grueso cuya celda no se refina. Parte cada punto en una sola celda (test de partición
   en GPU de la fase 2a: 0 huecos y 0 dobles).
 - La CPU elige antes los niveles activos con una estimación por octante (sondas, octantes detrás del ojo, caja de

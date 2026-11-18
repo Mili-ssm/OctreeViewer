@@ -32,7 +32,7 @@ documentadas. «Los vóxeles/microvóxeles siguen siendo el objetivo original» 
 ## Por qué se atascó
 
 1. **Dos decisores para lo mismo.** La GPU decide por celda entre los niveles activos (`cell_draws`,
-   `cell_render.rs`; gemelo `cell_lod.rs::draws`). La CPU decide antes, por octante, qué niveles están activos
+   `shaders/cell_compute.wgsl`; gemelo `cell_lod.rs::draws`). La CPU decide antes, por octante, qué niveles están activos
    (`wanted`/`drawn`/`stage`/`step` en `cell_cut.rs`, ventana y semillas en `cell_pool.rs`). Cada hueco visto en la
    demo fue la estimación de la CPU dejando un conjunto activo con saltos, no un fallo de la regla de la GPU.
 2. **Un medio registrado como fin.** «Máximo un nivel de diferencia por frame» (ADR 0053) se convirtió en una
