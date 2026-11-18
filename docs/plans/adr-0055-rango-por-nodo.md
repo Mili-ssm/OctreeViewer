@@ -141,10 +141,15 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 6: The sim oracle checks the node range, not per-octant fields
 
-- [ ] El oráculo de celdas muestrea solo celdas ocupadas (o la rejilla cortada con las cajas de página), para que
-  un `hi` que se ajusta con la cámara quieta no cuente como caída en puntos de aire. Deja de leer `wanted` y
-  `stage` por octante. Comprobación: la mutación que deja de proteger los niveles aplicados da
-  `unexcused_drops > 0`.
+- [ ] **Aplazado a la tarea 10** (intentado el 18-11-2026 y parado por su criterio de parada): que el oráculo
+  juzgue solo celdas ocupadas y deje de leer `wanted` y `stage` por octante. Con el tramo construible como tope, el
+  oráculo marca 90 caídas en celdas ocupadas que no son un defecto nuevo: son la diferencia ya medida entre lo que
+  pide el gemelo junto al ojo (niveles 14 a 17) y el deseo del pool (9 a 10), y el gemelo se satura en las celdas
+  que cruzan el plano del ojo o tocan el lado mínimo, así que no sirve como único tope. El tope correcto es el
+  rango por nodo con la cota por datos, que existirá cuando sustituya a los campos por octante. Mientras tanto la
+  tarea 7a limita `wanted` a la cota, y el oráculo actual, que usa `wanted` como tope, sigue valiendo. El trabajo
+  a medias (muestreo solo de celdas ocupadas, excusa por expulsión de nivel) está en
+  `.superpowers/sdd/retomar-18-11/t6a/t6a-wip.patch`.
 - [x] (da47822) Regla de contigüidad en el oráculo ([#83](https://github.com/Mili-ssm/OctreeViewer/issues/83)):
   entre el nivel activo más grueso y el más fino de un nodo, todo nivel residente y usable dentro del tramo del nodo
   está activo; el nivel D5 queda exento. Corre en cada frame de todas las simulaciones, que ahora aplican de verdad
@@ -197,6 +202,9 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
   una muestra de entradas, con el motivo escrito.
 - [ ] **10d.** Los tests se migran (unas 290 referencias en más de diez ficheros) y el oráculo de pasos de
   `cell_pool_tests` se sustituye por uno del tramo activo.
+- [ ] **10e.** El oráculo de las simulaciones juzga solo celdas ocupadas, con el rango por nodo como tope y una
+  excusa específica (el nivel que falta fue expulsado o limitado por el `fit` en ese frame); parte del parche
+  guardado de la tarea 6.
 - [ ] Test de la regla `Window`: con la cámara quieta, el tramo activo llega a `[lo, hi]` en como mucho `hi − lo`
   frames y el driver sigue ocupado mientras tanto.
 
