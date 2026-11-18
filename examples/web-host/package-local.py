@@ -58,6 +58,7 @@ def main() -> None:
     rendering_budget_js = (HOST / "rendering-budget.mjs").read_text(encoding="utf-8")
     viewer_api_js = (HOST / "viewer-api.mjs").read_text(encoding="utf-8")
     canvas_replacement_js = (HOST / "canvas-replacement.mjs").read_text(encoding="utf-8")
+    min_length_js = (HOST / "min-length.mjs").read_text(encoding="utf-8")
     converter_api_js = (HOST / "converter-api.mjs").read_text(encoding="utf-8")
     converter_worker_js = (HOST / "converter-worker.js").read_text(encoding="utf-8")
     spool_tiers_js = (HOST / "spool-tiers.mjs").read_text(encoding="utf-8")
@@ -181,6 +182,12 @@ def main() -> None:
     )
     main_js = require_replace(
         main_js,
+        'import { lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";\n',
+        "",
+        "min length import",
+    )
+    main_js = require_replace(
+        main_js,
         'import { createConverter } from "./converter-api.mjs";\n',
         "",
         "converter API import",
@@ -256,6 +263,8 @@ def main() -> None:
         + "\n"
         + canvas_replacement_js.replace("export function ", "function ")
         + "\n"
+        + min_length_js.replace("export const ", "const ").replace("export function ", "function ")
+        + "\n"
         + inline_spool_tiers_js
         + "\n"
         + converter_api_js
@@ -329,6 +338,7 @@ def main() -> None:
     (embed_dir / "build-worker.js").write_text(embed_build_worker_js, encoding="utf-8")
     (embed_dir / "rendering-budget.mjs").write_text(rendering_budget_js, encoding="utf-8")
     (embed_dir / "canvas-replacement.mjs").write_text(canvas_replacement_js, encoding="utf-8")
+    (embed_dir / "min-length.mjs").write_text(min_length_js, encoding="utf-8")
     (embed_dir / "viewer_wasm.js").write_text(embed_wasm_js, encoding="utf-8")
     (embed_dir / "viewer_wasm_bg.wasm").write_bytes(wasm_path.read_bytes())
     (embed_dir / "README.txt").write_text(
