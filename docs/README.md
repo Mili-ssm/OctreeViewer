@@ -28,7 +28,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 
 | Documento | Contenido | Estado |
 | --- | --- | --- |
-| [Retirada del modo octante](plans/retirada-del-modo-octante.md) | Ejecuta el ADR 0056: línea base del modo celda, cambio de predeterminado, borrado de la API y de las ramas `LodMode`; ocho tareas con sus puertas. | en curso |
+| [Retirada del modo octante](plans/retirada-del-modo-octante.md) | Ejecuta el ADR 0056: línea base del modo celda, cambio de predeterminado, ensayo que clasifica los tests, oráculo de pasos de celda, borrado de la API y de las ramas `LodMode`; diez tareas, pre-mortem aplicado. | en curso |
 | [ADR 0055 en modo celda: rango por nodo y puerta de residencia](plans/adr-0055-rango-por-nodo.md) | División de `cell_pool.rs`, rango por nodo en lugar de sondas por octante y puerta de residencia en los bordes; doce tareas en tres tramos entregables por separado, con pre-mortem aplicado. | en curso |
 | [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho y fusionado en `main`, sigue D4) |
 | [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050, 0052 y 0053); fase 1 y 2a fusionadas; 2b en pausa. | en curso |

@@ -1,18 +1,25 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem pendiente antes de la tarea 2
+Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tarea 1 hecha
 
-**Conclusión.** Ocho tareas, cada una deja la compilación y los tests en verde. Primero se fija una línea base del
-modo celda; después se cambia el predeterminado, se quita la API, se pasan los tests a modo celda y, al final, se
-borran las ramas. Ahora se borran unas 300–450 líneas de producción y unas 1000–1500 de tests; la maquinaria por
-octante que el modo celda todavía usa (pasos, sondas, retención por nodo) se queda para el
-[plan del ADR 0055](adr-0055-rango-por-nodo.md).
+**Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
+clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
+cambio de predeterminado, la API, el porte de tests por temas y el borrado de ramas fichero a fichero. Ahora se
+borran unas 300–450 líneas de producción y unas 1000–1500 de tests; la maquinaria por octante que el modo celda
+todavía usa (pasos, sondas, retención por nodo) se queda para el [plan del ADR 0055](adr-0055-rango-por-nodo.md).
 
-## Riesgo principal
+## Riesgos principales (pre-mortem del 18-11-2026)
 
-Unos 81 de los 97 tests de `cell_pool_tests` y 39 de los 45 de `cell_driver_tests` no fijan modo: hoy corren en
-modo octante por el predeterminado. Al cambiarlo pasarían a modo celda sin avisar. Por eso la tarea 2 fija los
-arneses en octante antes de tocar el predeterminado, y las tareas 4 y 5 los pasan a celda test a test.
+- **Tests que cambian de modo sin avisar.** Unos 81 de los 97 tests de `cell_pool_tests` y 39 de los 45 de
+  `cell_driver_tests` no fijan modo y corren en octante. El predeterminado no es `#[default]` (nadie llama a
+  `LodMode::default()`), sino literales: `cell_pool.rs` (`CellPool::new`), `cells_glue.rs` (dos), `bindings/mod.rs`;
+  además lo fijan por su cuenta los arneses wasm (`lod_cells_stream_tests.rs`, `lod_cells_glue_sim_tests.rs`),
+  `BENCH_MODE` y el `cell_cut` público.
+- **El oráculo de pasos se apaga solo.** `Rig::check_stepping` (`cell_pool_tests.rs`) vuelve sin comprobar nada
+  fuera del modo octante; el modo celda sigue dando pasos (`stepped_depth`).
+- **Borrar cobertura en vez de portarla.** Muchos tests afirman órdenes de subida, recortes y presupuestos
+  calibrados en bytes de octante; fallarán por diferencias legítimas entre modos.
+- **Un guarda de modo invertido al borrar ramas** pasaría un golden de un solo frame.
 
 ## Restricciones
 
@@ -33,68 +40,85 @@ arneses en octante antes de tocar el predeterminado, y las tareas 4 y 5 los pasa
 
 ## Criterios de parada
 
-- El resumen de una simulación real de celda cambia respecto a la línea base de la tarea 1: parar.
-- Al pasar un arnés a modo celda fallan más de unos 15 tests de un fichero: parar y repartir el fichero en más tareas.
+- El resumen de una simulación real de celda cambia respecto a la línea base de la tarea 1 (comparado ordenado y
+  sin las líneas de tiempo): parar.
+- Un tema de la tabla de la tarea 2 se queda sin ningún test que lo afirme en modo celda: parar.
+- Una tarea borra más tests de los que porta, o cambia un presupuesto sin su aritmética en un comentario: parar y
+  consultar al propietario.
 - Un test que falla en modo celda revela un defecto del modo celda (no una diferencia esperada entre modos): parar,
   abrir issue y decidir antes de seguir.
-- La ruta del shader sin vista de LOD no se puede quitar sin reescribir los tests de render y de selección: se deja
-  (tarea 8 lo decide con medida).
+- Un test de GPU «pasa» sin ningún adaptador: no cuenta como puerta.
+- El encargo de una tarea necesita más de unas 20 llamadas antes de empezar a escribir: dividirla.
 
 ## Tareas
 
 ### Task 1: Characterize cell mode (R)
 
-- [x] Golden de `cell_cut_ranged` en `LodMode::Cell` sobre los casos del golden actual (`cell_cut_tests.rs`), y
-  registro fechado con el resumen de las simulaciones reales de celda y una pasada de `cells_bench` en modo celda.
-  Comprobación: el golden nuevo pasa y falla si se altera una profundidad a mano.
-  Hecho en `4116b38` (golden `cell_cut_digest_golden_in_cell_mode`, falla al alterar `range`) y en el registro
-  [R3_LINEA_BASE_CELDA_18-11-2026](../records/benchmarks/R3_LINEA_BASE_CELDA_18-11-2026.md); la pasada de
-  `cells_bench` no se hizo (solo las simulaciones `real_sim`).
+- [x] (4116b38, efdef22) Golden `cell_cut_digest_golden_in_cell_mode` (falla al alterar `range`) y
+  [línea base](../records/benchmarks/R3_LINEA_BASE_CELDA_18-11-2026.md): las simulaciones reales son deterministas
+  salvo el orden y las líneas de tiempo; 618 nombres de test. La pasada de `cells_bench` no se hizo.
 
-### Task 2: Default flip, with the test rigs pinned to octant
+### Task 2: Dry run, classify what fails in cell mode
 
-- [ ] Los cuatro predeterminados pasan a celda (`cell_cut.rs`, `cell_pool.rs`, `cells_glue.rs` ×2,
-  `bindings/mod.rs`); antes, cada arnés de tests que dependía del predeterminado fija `LodMode::Octant` de forma
-  explícita. Comprobación: mismos tests y mismo recuento que antes; `grep` de `LodMode::default()` y de arneses sin
-  modo queda vacío.
+- [ ] En un worktree desechable se cambian a celda todos los sitios que fijan el modo, se ejecutan los tests y cada
+  fallo se clasifica: test, fichero, tema (orden de subida, cancelación, expulsión, ajuste y topes, retención y
+  zonas perdidas, reinicio, pasos, selección, registros, solo octante), acción (portar, recalibrar, borrar, posible
+  defecto de celda) y motivo. La tabla se guarda en este plan y las tareas 6 a 8 se reparten con ella.
+  Comprobación: ningún fallo sin clasificar; lista exacta de sitios que fijan el modo.
 
-### Task 3: Remove the mode from the API and the web host
+### Task 3: A stepping oracle for cell mode
+
+- [ ] `check_stepping` deja de apagarse: versión para modo celda (pasos de un nivel dentro del tramo del nodo, sin
+  la excepción de octantes que abarcan), activa en todos los arneses de celda. Debe pasar en los tests
+  `*_in_cell_mode` de hoy. Si falla en alguno, es un posible defecto: criterio de parada.
+
+### Task 4: Goldens of the paths the deletions will touch
+
+- [ ] Golden del `cell_cut` público calculado en modo celda (ruta sin rango ni estado previo) y golden de un corte
+  de dos frames con estado previo (pasos). Se anota qué miden hoy `coverage_spike` y la estimación sin tope de
+  `cell_pool_bench` (los dos pasan por el `cell_cut` de octante) y qué medirán después.
+
+### Task 5: Default flip, with every rig pinned first
+
+- [ ] Cada arnés y cada llamada directa que dependía del predeterminado fija `LodMode::Octant` de forma explícita
+  (lista de la tarea 2); después cambian los literales del predeterminado. Comprobación: la lista de tests
+  (`cargo test -- --list`, ignorados incluidos) es idéntica byte a byte y el recuento no cambia.
+
+### Task 6: Remove the mode from the API and the web host
 
 - [ ] Se borran `setCellLod` y `parse_lod_mode` (wasm), el método de `viewer-api.mjs`, el comando del worker, el
   selector `#cell-lod` y la opción `--cell-lod` del probe de paridad; `?cellLod=` se ignora con un aviso. README y
   PROBES actualizados. Comprobación: `node --test`, test de Python del paquete y Playwright (la demo abre, el
   selector no existe, `?cellLod=octant` avisa y dibuja en modo celda).
 
-### Task 4: `cell_pool_tests` run in cell mode
+### Task 7: Port the render tests to cell mode, by theme
 
-- [ ] El arnés de `cell_pool_tests` pasa a celda. Cada test que falle se porta (si lo que comprueba sigue
-  importando) o se borra con su motivo. Los tests solo de octante (`check_stepping` como oráculo de octante, los de
-  cambio de modo) se borran.
+- [ ] Una subtarea por tema de la tabla, con ocho portes como máximo cada una: `cell_pool_tests`, después
+  `cell_driver_tests`, `cell_cut_tests`, `cell_pick_tests` y `cell_driver_gpu_tests`
+  (`the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter`, con el gemelo de celda como oráculo y al
+  menos un adaptador). Los presupuestos se recalibran con su aritmética en un comentario. La tabla se actualiza en
+  cada subtarea con lo portado y lo borrado. Se conservan los tests unitarios de pasos de `cell_cut_tests`.
 
-### Task 5: `cell_driver_tests`, `cell_cut_tests`, `cell_pick_tests` run in cell mode
+### Task 8: wasm sims and glue tests, one mode (R)
 
-- [ ] Igual que la tarea 4. Se conservan: los tests unitarios de pasos de `cell_cut_tests` (el modo celda aún usa
-  `stepped_depth`), `the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter` y
-  `a_digest_is_not_at_rest_right_after_the_pool_was_lost`, portados. El golden de octante se sustituye por el de
-  celda de la tarea 1.
-
-### Task 6: wasm sims and glue tests, one mode (R)
-
-- [ ] Se colapsan las macros `sim_both_modes!`, `real_sim_both_modes!`, `glue_both_modes!`, `real_glue_both_modes!`
-  y `both_modes!`: queda el test de celda con el nombre simple. Se borra el oráculo de octante. Se portan los tests
-  con presupuesto calibrado en bytes de octante y las mitades de celda de los tests de cambio de modo.
+- [ ] Se colapsan las macros de dos modos (queda el test de celda con el nombre simple), se cambian los literales
+  de los arneses wasm y los tests fuera de las macros, se borra el oráculo de octante y se portan
+  `a_digest_is_not_at_rest_right_after_the_pool_was_lost` (`lod_cells_sim_tests.rs`) y los tests con presupuesto
+  en bytes de octante (`synthetic_cpu_bytes(Cell)` con la misma fracción; se anotan las dos cifras).
   Comprobación: resumen de las simulaciones reales igual que la línea base.
 
-### Task 7: Delete the branches and `LodMode` (R)
+### Task 9: Delete the branches and `LodMode`, file by file (R)
 
-- [ ] Se borran las ramas de octante de `cell_cut`, `cell_pool/*`, `cell_driver`, `cells_glue`, la opción
-  `--cell-lod` de `cell_pool_bench`, `records_mode`/`mode_changed` del driver y el enum. `cell_cut` público calcula
-  en modo celda. Comprobación: puerta de la tarea 1 y simulaciones reales.
+- [ ] Un commit por fichero (`cell_cut`, cada `cell_pool/*`, `cell_driver`, `cells_glue`, `cell_pool_bench`), con
+  los goldens de las tareas 1 y 4 y las simulaciones reales tras cada uno; al final, el enum. Atención a los
+  guardas `!= Cell → return` de `seed.rs` y `hold.rs` y a `drawn_levels`, donde el código de octante va detrás del
+  `return` del bloque de celda.
 
-### Task 8: Shader path without a LOD view, docs, and closing
+### Task 10: Shader path without a LOD view, docs, and closing
 
-- [ ] Se decide con los tests de render y de selección delante si la ruta `lod_mode == 0` del shader se queda como
-  ruta solo de máscara para tests o si la vista de LOD pasa a ser obligatoria; se aplica lo más pequeño.
+- [ ] Se comprueba primero si la selección en producción corre siempre con vista de LOD. Si es así, los tests de
+  render y de selección reciben una `LodView` (como `cell_lod_gpu_tests`) y se borra la ruta `lod_mode == 0`; si
+  no, se deja como ruta de máscara.
 - [ ] `docs/requirements.md`, `docs/explanation/REGIONAL_VOXEL_LOD.md` y `docs/estado.md` dejan de describir el
-  modo octante como vigente; se cierra #59 y #67; `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4.
+  modo octante como vigente; se cierran #59 y #67; `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4.
 - [ ] El plan del ADR 0055 se reescribe sin la restricción del modo octante: su D4 deja de hacer falta.
