@@ -53,6 +53,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
     let gpuFrameMs = null;
     let holdStage = null; // while set, updateLod leaves the ladder on this coarse rung
     let lod = makeLod(targetVoxelPixels, targetVoxelPixels);
+    let lodExtra = {}; // fields layered over every LOD stats object (e.g. the cells-path counters)
     const performance = { now: () => now };
     const viewer = {
         enableCells(on) { enableCellsCalls.push(on); },
@@ -97,9 +98,9 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
             updateLodCalls.push(pixels);
             targetVoxelPixels = pixels;
             if (colorMode !== "intensity") lod = makeLod(holdStage ?? pixels, pixels);
-            return lod;
+            return { ...lod, ...lodExtra };
         },
-        lodStats: () => lod,
+        lodStats: () => ({ ...lod, ...lodExtra }),
         renderFrame() {
             if (colorMode === "intensity") {
                 colorFrames += 1;
@@ -265,6 +266,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         send,
         setNow(value) { now = value; },
         holdStage(stage) { holdStage = stage; lod = makeLod(stage ?? targetVoxelPixels, targetVoxelPixels); },
+        setLodExtra(fields) { lodExtra = fields; },
         setGpuFrameMs(p95, samples = 60) { gpuFrameMs = p95 === null ? null : { p95, samples }; },
         timing,
         updateLodCalls,
@@ -292,6 +294,29 @@ function makeLod(stage, target) {
 function latestProgress(messages) {
     return messages.filter((message) => message.type === "lodProgress").at(-1);
 }
+
+const CELLS_CAMERA = { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 };
+
+// `cells: false` leaves the mock's own `cellPath` in place (no gate override from the missing build worker).
+async function firstCoarseAfterCellsFrame(extra) {
+    const worker = await runWorker(undefined, null, { initFields: { cells: false } });
+    worker.setLodExtra({ cellPath: "enabled", visiblePoints: 0, ...extra });
+    worker.setNow(100);
+    await worker.send("openFile", { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    worker.setNow(140);
+    await worker.send("frame", { camera: CELLS_CAMERA });
+    return latestProgress(worker.messages).firstCoarseMs;
+}
+
+test("cells path reports the first frame once a cut is applied and pool pages are resident (#42)", async () => {
+    assert.equal(typeof await firstCoarseAfterCellsFrame({ cutApply: "applied", poolResidentPages: 3 }), "number");
+    assert.equal(typeof await firstCoarseAfterCellsFrame({ cutApply: "retained", poolResidentPages: 3 }), "number");
+});
+
+test("cells path keeps the first frame pending without an applied cut or resident pages (#42)", async () => {
+    assert.equal(await firstCoarseAfterCellsFrame({ cutApply: null, poolResidentPages: 3 }), null);
+    assert.equal(await firstCoarseAfterCellsFrame({ cutApply: "applied", poolResidentPages: 0 }), null);
+});
 
 test("worker starts scoped refinement timers after successful color changes", async () => {
     const worker = await runWorker();

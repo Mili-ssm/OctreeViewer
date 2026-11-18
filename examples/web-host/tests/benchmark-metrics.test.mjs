@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-    FRAME_RATE_WARMUP_MS, cellsTargetReached, lodCounters, lodLogEntry, lodStillLoading, lodTargetReached, measureFrameRate, summarizeFrameReplies,
+    FRAME_RATE_WARMUP_MS, cellsTargetReached, lodCounters, lodLogEntry, lodStillLoading, lodTargetReached, measureFrameRate, renderPathStatsLines, summarizeFrameReplies,
 } from "../benchmark-metrics.mjs";
 
 test("summarizes frame reply intervals, round trips and render calls over a window", () => {
@@ -110,4 +110,44 @@ test("cells loading ends at rest, also with a coarsened zone, and follows the pu
     assert.equal(lodStillLoading({ ...rest, cpuCoarsened: 12 }), false, "a budget-coarsened rest is final");
     assert.equal(lodStillLoading({ ...rest, lodStagePixels: 8 }), true);
     assert.equal(lodStillLoading({ ...rest, cellsBusy: true }), true);
+});
+
+const CPU_GPU = { visibleInstances: 7, visibleBlocks: 2, uploadedBytes: 400 };
+
+test("renderPathStatsLines keeps the CPU voxel lines as they were", () => {
+    const lod = { visiblePoints: "1156", renderedVoxels: 12, coverageComplete: false, uncoveredNodes: 3 };
+    assert.deepEqual(renderPathStatsLines(lod, CPU_GPU), {
+        path: "render path: CPU voxels",
+        points: "visible points: 1156",
+        voxels: "visible voxels: 12",
+        blocks: "visible blocks: 2",
+        coverage: "LOD coverage: incomplete (3 uncovered)",
+        uploaded: "uploaded instance bytes: 400",
+    });
+    assert.equal(renderPathStatsLines(null, CPU_GPU).coverage, "LOD coverage: not using LOD");
+    assert.equal(renderPathStatsLines({ cellPath: "needsBuildWorker", visiblePoints: 1, coverageComplete: true, uncoveredNodes: 0 }, CPU_GPU).path,
+        "render path: CPU voxels (needsBuildWorker)");
+});
+
+test("renderPathStatsLines shows the cells counters instead of the CPU ones", () => {
+    const lod = {
+        cellPath: "enabled", visiblePoints: 1156, cutApply: "applied", cutEpochSent: 12, cutEpochApplied: 12,
+        poolResidentPages: 345, poolCapacityPages: 65536, poolUploadedBytes: 1024,
+        poolNodesWithoutLevel: 0, poolCoarsened: 0, poolStages: 0, queuedNodeCells: 0,
+    };
+    const lines = renderPathStatsLines(lod, CPU_GPU);
+    assert.equal(lines.path, "render path: cells");
+    assert.equal(lines.cut, "cut: applied · epoch 12 of 12");
+    assert.equal(lines.pool, "pool pages: 345 / 65536 resident");
+    assert.equal(lines.poolBytes, "pool uploaded bytes: 1024");
+    assert.equal(lines.poolWork, "nodes without level / coarsened / stages: 0 / 0 / 0");
+    assert.equal(lines.queued, "queued node cells: 0");
+    for (const key of ["points", "voxels", "blocks", "coverage", "uploaded"]) assert.equal(lines[key], undefined);
+});
+
+test("renderPathStatsLines renders a dash for missing cells fields", () => {
+    const text = Object.values(renderPathStatsLines({ cellPath: "enabled" }, CPU_GPU)).join("\n");
+    assert.doesNotMatch(text, /undefined|NaN|null/);
+    assert.match(text, /cut: — · epoch — of —/);
+    assert.match(text, /pool pages: — \/ — resident/);
 });

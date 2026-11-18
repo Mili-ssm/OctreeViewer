@@ -1,7 +1,7 @@
 import { CoalescedCommandQueue } from "./coalesced-command-queue.mjs";
 import {
     FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,
-    summarizeFrameReplies,
+    renderPathStatsLines, summarizeFrameReplies,
 } from "./benchmark-metrics.mjs";
 import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
@@ -325,15 +325,13 @@ function formatVoxelEdges(lod) {
 
 function updateStats(message) {
     const lod = message.lod ?? latestLodStats;
-    const points = lod?.visiblePoints ?? message.viewer.point_count;
-    const coverage = lod
-        ? `${lod.coverageComplete ? "complete" : "incomplete"} (${lod.uncoveredNodes} uncovered)`
-        : "not using LOD";
+    const path = renderPathStatsLines(lod, message.gpu, message.viewer);
     const cache = lod
         ? `${formatBytes(Number(lod.cacheBytes))} / ${formatBytes(Number(lod.cacheBudgetBytes))}`
         : "—";
     statsRoot.textContent = [
         `dataset: ${datasetName}`,
+        path.path,
         `finest voxel detail target: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`
             + (latestPxStats?.mode === "dynamic"
                 ? ` · dynamic (${latestPxStats.signalSource ?? "no signal"}${latestPxStats.signalMs === null ? "" : ` p95 ${latestPxStats.signalMs.toFixed(1)} ms`})`
@@ -342,20 +340,25 @@ function updateStats(message) {
         `rendered voxel limit: ${lod?.voxelBudget ?? "—"}`,
         `projected voxel edges: ${formatVoxelEdges(lod)}`,
         `voxels above target: ${lod?.oversizedVoxels ?? "—"}`,
-        `visible points: ${points}`,
-        `visible voxels: ${lod?.renderedVoxels ?? message.gpu.visibleInstances}`,
+        path.points,
+        path.cut,
+        path.pool,
+        path.voxels,
         `HZB occlusion: ${(lod?.hzbActive ?? message.gpu.hzbActive) ? "active" : "inactive"}`,
-        `visible blocks: ${message.gpu.visibleBlocks}`,
+        path.blocks,
+        path.poolWork,
         `deepest visible LOD level: ${lod?.maxVisibleLevel ?? "—"}`,
-        `LOD coverage: ${coverage}`,
+        path.coverage,
+        path.queued,
         `pending blocks: ${lod?.pendingBlockIds.length ?? 0} · pending pages ${lod?.pendingPageAnchors?.length ?? 0}${lod?.pageBudgetExhausted ? " (page budget exhausted)" : ""} · evicted targets ${lod?.refinementWork?.evictedPendingBlocks ?? "—"}`,
         `decoded cache: ${cache} · evictions / rejects ${lod?.cacheActivity?.evictions ?? "—"} / ${lod?.cacheActivity ? Number(lod.cacheActivity.rejectedOversize) + Number(lod.cacheActivity.rejectedProtected) : "—"}`,
-        `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
+        path.uploaded,
+        path.poolBytes,
         `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
         `renderFrame p50/p95/p99: ${formatFrameRenderMs(message.frameRenderMs)}`,
         `worker frame replies: ${measureFrameRate(frameSamples, benchmarkRun?.measurementStartedAt).meanFps?.toFixed(1) ?? "warming up"} FPS (last stable window)`,
         `viewport: ${viewportSize?.join(" x ") ?? "—"}`,
-    ].join("\n");
+    ].filter((line) => line !== undefined).join("\n");
 }
 
 function requestFrame() {
