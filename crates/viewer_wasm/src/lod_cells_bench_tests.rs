@@ -287,6 +287,9 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
             last.cut_nodes,
         );
     }
+    if cell_mode && env_or("BENCH_HI_D", "0") == "1" {
+        print_data_bound_totals(h, &view);
+    }
     let json = format!(
         "{{\"dataset\":\"{dataset}\",\"pose\":\"{pose}\",\"px\":{px},\"viewport\":[1280,720],\
 \"stop\":{stop:?},\"updates\":{},\"updates_to_settle\":{},\"nodes_built\":{nodes_built},\

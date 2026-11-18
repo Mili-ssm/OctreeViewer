@@ -3684,3 +3684,348 @@ fn the_node_lo_at_p4_is_not_finer_than_what_the_twin_wants_within_one_level() {
 fn the_node_hi_contains_what_the_twin_wants_within_one_level() {
     assert_no_violations(range_violations(&["P1", "P2", "P3", "P4", "P5"], false));
 }
+
+// ---- OQ-16: fine end of the node range bounded by the nearest occupied cell -----------------
+
+/// What the occupied cells of the finest resident level of a node say (see `data_bound`).
+#[derive(Clone, Debug, Default)]
+struct DataBound {
+    /// Finest resident level of the node at rest, and its cells inside the frustum.
+    finest: Option<u8>,
+    in_view: usize,
+    /// Nearest view depth (scaled) of a nearest cell face.
+    nearest_occupied: Option<f64>,
+    /// Twin maximum at the centres of those cells, and at the point of each cell nearest the eye.
+    data_max: Option<u8>,
+    cell_max: Option<u8>,
+    /// The candidate's `hi` with the nearest view depth replaced by `max(near, nearest_occupied)`.
+    hi_d: Option<u8>,
+    /// `hi_c` recomputed here (validates the restatement against `node_view_range`).
+    hi_c_restated: Option<u8>,
+    /// Pages of the node's levels that the pool holds now.
+    resident_pages: usize,
+}
+
+/// `ViewSpan::on_axis` (`cell_cut.rs`, private) restated: the first buildable depth whose
+/// smallest child, for a cell on the view axis with its nearest face at view depth `near`
+/// (dataset units, eye-relative frame), projects below `target_px`, capped.
+#[allow(clippy::too_many_arguments)]
+fn on_axis_depth(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    eye: [f64; 3],
+    forward: [f64; 3],
+    buildable: (u8, u8),
+    cap: u8,
+    near: f64,
+    target_px: f64,
+) -> u8 {
+    let meets = |depth: u8| {
+        let side = grid.root_side / 2.0_f64.powi(i32::from(depth));
+        let extent: f64 = forward.iter().map(|v| v.abs()).sum::<f64>() * side;
+        let min: [f64; 3] =
+            std::array::from_fn(|a| eye[a] + forward[a] * (near + extent / 2.0) - side / 2.0);
+        let half = side / 2.0;
+        let smallest = (0..8_usize)
+            .map(|child| {
+                let lo: [f64; 3] =
+                    std::array::from_fn(|a| min[a] + half * ((child >> a & 1) as f64));
+                SpatialBounds::new(lo, lo.map(|v| v + half))
+                    .map_or(f64::NAN, |c| view.projected_voxel_edge_pixels(c, [0.0; 3]))
+            })
+            .fold(
+                f64::INFINITY,
+                |acc, edge| if edge < acc { edge } else { acc },
+            );
+        smallest < target_px
+    };
+    (buildable.0..=buildable.1)
+        .find(|d| meets(*d))
+        .unwrap_or(buildable.1)
+        .min(cap)
+}
+
+/// Occupied-cell measurement of node `j` of the cut (see the section header and the test below).
+fn data_bound(
+    h: &Harness,
+    view: &ViewProjection,
+    j: usize,
+    row: &NodeRow,
+    with_twin: bool,
+) -> DataBound {
+    let ctx = h.cell_ctx.as_ref().expect("cell mode context");
+    let node = &h.cell_nodes[j];
+    let (grid, scale) = (h.dataset.cell_grid(), ctx.scale);
+    let camera = view.camera();
+    let near = lod_near_depth_scaled(&camera);
+    let key = |depth: u8| viewer_render_wgpu::LevelKey {
+        session: 0,
+        node: node.id,
+        depth,
+        color_gen: 0,
+    };
+    let mut out = DataBound::default();
+    // Every level the pool holds data for, not only the drawn ones: a resident level that no
+    // octant draws still occupies pages.
+    let levels: Vec<(u8, &PackedLevel)> = (0..=MAX_CELL_DEPTH)
+        .filter_map(|d| Some((d, h.driver.pool().level(key(d))?)))
+        .collect();
+    out.resident_pages = levels.iter().map(|(_, l)| l.pages.len()).sum();
+    let Some(&(finest, level)) = levels.iter().max_by_key(|(d, _)| *d) else {
+        return out;
+    };
+    out.finest = Some(finest);
+    let f64v = |v: [f32; 3]| v.map(f64::from);
+    let forward = f64v(ctx.lod.forward);
+    let spread: f64 = forward.iter().map(|v| v.abs()).sum();
+    let targets = [ctx.lod.target_px; 3];
+    let side = grid.root_side / 2.0_f64.powi(i32::from(finest)) * scale;
+    let mut nearest: Option<f64> = None;
+    let (mut data_max, mut cell_max): (Option<u8>, Option<u8>) = (None, None);
+    for (p, page) in level.pages.iter().enumerate() {
+        for i in 0..page.cells as usize {
+            let instance = level.instances[p * PAGE_SLOTS + i];
+            if instance.is_empty() {
+                continue;
+            }
+            let min: [f64; 3] = std::array::from_fn(|a| {
+                let coordinate = page.origin[a] + u64::from(instance.rel()[a]);
+                (grid.root_min[a] - ctx.origin[a]) * scale - ctx.eye[a] + coordinate as f64 * side
+            });
+            let centre: [f64; 3] = min.map(|v| v + side / 2.0);
+            let depth: f64 = (0..3).map(|a| centre[a] * forward[a]).sum();
+            if depth < near || !ctx.on_screen(centre) {
+                continue;
+            }
+            if with_twin {
+                let (found, crosses) = twin_depths(&ctx.lod, node, centre, row.span, targets);
+                if crosses {
+                    continue;
+                }
+                data_max = data_max.max(Some(found[0]));
+            }
+            out.in_view += 1;
+            let face = depth - side / 2.0 * spread;
+            nearest = Some(nearest.map_or(face, |n| n.min(face)));
+            // The point of the cell nearest the eye (the eye is the origin of this frame).
+            let q: [f64; 3] = std::array::from_fn(|a| 0.0_f64.clamp(min[a], min[a] + side));
+            let q_depth: f64 = q.iter().zip(&forward).map(|(a, b)| a * b).sum();
+            if with_twin && q_depth >= near && ctx.on_screen(q) {
+                let (f, c) = twin_depths(&ctx.lod, node, q, row.span, targets);
+                if !c {
+                    cell_max = cell_max.max(Some(f[0]));
+                }
+            }
+        }
+    }
+    out.nearest_occupied = nearest;
+    out.data_max = data_max;
+    out.cell_max = cell_max;
+    // The candidate's inputs, as `twin_rows` and `ViewSpan` derive them.
+    let data = h.dataset.metadata.hierarchy().stats().data_bounds;
+    let (Some((lo_c, hi_c)), Some(nearest)) = (row.candidate, nearest) else {
+        return out;
+    };
+    let eye_ds: [f64; 3] = camera.position().map(|v| v / scale);
+    let target = camera.target();
+    let fwd = unit(std::array::from_fn(|a| target[a] - camera.position()[a]));
+    let min_side = h.driver.pool().min_side();
+    let cap = min_side.map_or(row.span.1, |s| {
+        representative_depth_for_spacing(&grid, s).clamp(row.span.0, row.span.1)
+    });
+    let [width, height] = view.viewport();
+    let aspect = f64::from(width) / f64::from(height.max(1));
+    let tan_corner = (45.0_f64.to_radians() * 0.5).tan() * (1.0 + aspect * aspect).sqrt();
+    let stretch = (1.0 + tan_corner * tan_corner).sqrt();
+    let target_px = f64::from(ctx.lod.target_px);
+    let hi_at = |near_ds: f64| {
+        on_axis_depth(
+            view,
+            &grid,
+            eye_ds,
+            fwd,
+            row.span,
+            cap,
+            near_ds,
+            target_px / stretch,
+        )
+        .max(lo_c)
+    };
+    out.hi_d = Some(hi_at(nearest.max(near) / scale));
+    // Restate `hi_c`: nearest depth = max(near, distance to the region / stretch).
+    let region_lo: [f64; 3] =
+        std::array::from_fn(|a| node.min[a].max(data.min()[a]) - ctx.origin[a]);
+    let region_hi: [f64; 3] =
+        std::array::from_fn(|a| node.max[a].min(data.max()[a]) - ctx.origin[a]);
+    let distance = (0..3)
+        .map(|a| (eye_ds[a].clamp(region_lo[a], region_hi[a]) - eye_ds[a]).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    out.hi_c_restated = Some(hi_at((near / scale).max(distance / stretch)));
+    debug_assert!(hi_c >= lo_c);
+    out
+}
+
+/// Diagnostic (prints, asserts nothing), OQ-16: bound the fine end of the node range by the data.
+/// `hi_d` = the candidate's `hi` with the nearest view depth replaced by `max(lod_near_depth,
+/// nearest face of an occupied cell of the node's finest resident level inside the frustum)`.
+/// Compared per node with `twin_data_max` (the twin's maximum at the occupied cells: centres, and
+/// the point of each cell nearest the eye), today's `hi`, `hi_c`, and in estimated pages
+/// (`estimate_pages_like_the_pool`) of the run `lo..=X` for X in {today's hi, twin_data_max,
+/// hi_d, hi_c}, with `lo` today's `lo`. Also prints the pages the pool holds for the node.
+/// Run: `TWIN_POSES=P2,P4 cargo test --offline --profile fast -p viewer_wasm --lib data_bounded_hi -- --ignored --nocapture`.
+#[test]
+#[ignore = "diagnostic: prints a data-bounded fine end of the node range against the others"]
+fn data_bounded_hi_vs_node_range() {
+    let lattice = std::env::var("TWIN_LATTICE_PX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(LATTICE_PX);
+    let poses = std::env::var("TWIN_POSES").unwrap_or_else(|_| "P1,P2,P3,P4,P5".into());
+    let (mut slack_d, mut d_vs_c, mut violations) = (Vec::new(), Vec::new(), Vec::new());
+    for pose in poses.split(',') {
+        let (h, view) = settled_sample_pose(pose, ActiveRule::default());
+        let rows = twin_rows(&h, &view, lattice);
+        let pool = h.driver.pool().resident_pages();
+        println!("######## {pose}: pool resident pages {pool}");
+        println!(
+            "node EYE fin cells | hi_now wmax twin_max data_max cell_max hi_c hi_d (hi_c rst) | \
+             hi_d-dmax hi_d-cmax hi_c-hi_d | near_occ | pages now/dmax/hi_d/hi_c | resident"
+        );
+        let mut tot = [0_usize; 5];
+        let mut eye_tot = [0_usize; 5];
+        for (j, row) in rows.iter().enumerate() {
+            let d = data_bound(&h, &view, j, row, true);
+            let show = |v: Option<u8>| v.map_or("-".to_string(), |x| x.to_string());
+            let (Some((lo, hi)), Some((_, hi_c)), Some(hi_d), Some(dmax)) =
+                (row.range, row.candidate, d.hi_d, d.data_max)
+            else {
+                println!(
+                    "{:>4} {:>3} {:>3} {:>5} | no data in view or no range/candidate | resident {}",
+                    row.id,
+                    if row.eye_inside { "EYE" } else { "" },
+                    show(d.finest),
+                    d.in_view,
+                    d.resident_pages
+                );
+                continue;
+            };
+            let cmax = d.cell_max.unwrap_or(dmax);
+            let run = |x: u8| pages_of(row, lo.min(x)..=x);
+            let cols = [run(hi), run(dmax), run(hi_d), run(hi_c), d.resident_pages];
+            for (t, c) in tot.iter_mut().zip(cols) {
+                *t += c;
+            }
+            if row.eye_inside {
+                for (t, c) in eye_tot.iter_mut().zip(cols) {
+                    *t += c;
+                }
+            }
+            let (sd, sc) = (
+                i32::from(hi_d) - i32::from(dmax),
+                i32::from(hi_d) - i32::from(cmax),
+            );
+            slack_d.push(sd.min(sc));
+            d_vs_c.push(i32::from(hi_c) - i32::from(hi_d));
+            if sd < 0 || sc < 0 {
+                violations.push(format!(
+                    "{pose} node {}: hi_d {hi_d} < data_max {dmax} / cell_max {cmax}",
+                    row.id
+                ));
+            }
+            println!(
+                "{:>4} {:>3} {:>3} {:>5} | {hi:>3} {:>4} {} {dmax:>8} {cmax:>8} {hi_c:>4} {hi_d:>4} ({}) | \
+                 {sd:>3} {sc:>3} {:>3} | {:.4} | {}/{}/{}/{} | {}",
+                row.id,
+                if row.eye_inside { "EYE" } else { "" },
+                show(d.finest),
+                d.in_view,
+                show(row.wanted_max),
+                show(row.twin.map(|t| t.1)),
+                show(d.hi_c_restated),
+                i32::from(hi_c) - i32::from(hi_d),
+                d.nearest_occupied.unwrap_or(f64::NAN),
+                cols[0],
+                cols[1],
+                cols[2],
+                cols[3],
+                cols[4],
+            );
+        }
+        println!(
+            "-- {pose} totals (pages now/data_max/hi_d/hi_c/resident): all {tot:?}; nodes holding the eye {eye_tot:?}; pool resident {pool}"
+        );
+    }
+    println!(
+        "== hi_d - max(data_max, cell_max): {:?}",
+        histogram(slack_d.into_iter())
+    );
+    println!("== hi_c - hi_d: {:?}", histogram(d_vs_c.into_iter()));
+    println!(
+        "== violations ({}):\n{}",
+        violations.len(),
+        violations.join("\n")
+    );
+}
+
+/// OQ-16 on a real cut (`cells_bench` with `BENCH_HI_D=1`): per node of the settled cut, today's
+/// `hi`, `hi_c`, `hi_d` (no twin sampling: only the nearest occupied face of the finest resident
+/// level) and the estimated pages of the run `lo..=X`; totals against the pages the pool holds.
+fn print_data_bound_totals(h: &Harness, view: &ViewProjection) {
+    let ctx = h.cell_ctx.as_ref().expect("cell mode context");
+    let hierarchy = h.dataset.metadata.hierarchy();
+    let data = hierarchy.stats().data_bounds;
+    let (mut tot, mut skipped, mut worst) = ([0_usize; 4], 0, (0_usize, 0_u64));
+    for (j, node) in h.cell_nodes.iter().enumerate() {
+        let region = SpatialBounds::new(
+            std::array::from_fn(|a| node.min[a].max(data.min()[a])),
+            std::array::from_fn(|a| node.max[a].min(data.max()[a])),
+        )
+        .ok();
+        let row = NodeRow {
+            id: node.id.get(),
+            node_depth: node.lod.node_depth,
+            span: buildable_span(h, node.id).expect("blocks of the cut are cached"),
+            points: hierarchy.node(node.id).unwrap().point_count(),
+            range: h.last_levels[j].2,
+            candidate: node_view_range(
+                view,
+                &h.dataset.cell_grid(),
+                h.dataset.coordinate_origin(),
+                region,
+                buildable_span(h, node.id).unwrap(),
+                f64::from(ctx.lod.target_px),
+                h.driver.pool().min_side(),
+            ),
+            ..NodeRow::default()
+        };
+        let d = data_bound(h, view, j, &row, false);
+        let (Some((lo, hi)), Some((_, hi_c)), Some(hi_d)) = (row.range, row.candidate, d.hi_d)
+        else {
+            skipped += 1;
+            tot[3] += d.resident_pages;
+            continue;
+        };
+        let run = |x: u8| pages_of(&row, lo.min(x)..=x);
+        for (t, c) in tot
+            .iter_mut()
+            .zip([run(hi), run(hi_d), run(hi_c), d.resident_pages])
+        {
+            *t += c;
+        }
+        if run(hi_c) > worst.0 {
+            worst = (run(hi_c), row.id);
+        }
+    }
+    println!(
+        "BENCH_HI_D nodes {} (without range/candidate/data in view: {skipped}) pages est today's hi {} | hi_d {} | hi_c {} | resident (pool, all nodes of the cut) {} | pool counter {} | biggest hi_c run: node {} {} pages",
+        h.cell_nodes.len(),
+        tot[0],
+        tot[1],
+        tot[2],
+        tot[3],
+        h.driver.pool().resident_pages(),
+        worst.1,
+        worst.0
+    );
+}
