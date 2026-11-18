@@ -131,4 +131,4 @@ Fuera de esta sesión, si el propietario valida la dirección (orden propuesto):
 | Q2 | ¿Se retira el modo octante y el modo celda pasa a ser el predeterminado de la librería? | Sí, tras validar la fase 2b en el navegador |
 | Q3 | En las poses P3 y P4, cerca del ojo, cada punto es un cubo de 4–8 px con huecos entre ellos (la muestra tiene un punto cada ~0,13 unidades). ¿Es el aspecto de «microvóxel» que quieres, o los cubos no deberían bajar del espaciado de la nube? | Probar el filtro de longitud «espaciado de la nube» (RF-05, sin implementar) antes de decidir |
 | Q4 | Si el tramo contiguo no cabe en 512 MiB, ¿sube el objetivo de px de toda la nube (R5) o se amplía el pool? | Subir el objetivo de px; medir antes |
-| Q5 | ¿Se acepta el ADR 0055 y se revisan RF-31, R3-Q21 y RQ-09 como en la tabla? | Sí |
+| Q5 | ¿Se acepta el ADR 0055 y se revisan RF-31, R3-Q21 y el texto de R3-Q13 como en la tabla (R1, R2 y R7)? | Sí |
