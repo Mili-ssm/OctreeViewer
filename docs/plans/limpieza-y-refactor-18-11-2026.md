@@ -1,6 +1,6 @@
 # Limpieza y refactor del proyecto
 
-Estado: completado · 18-11-2026 · encargo del propietario (18-11-2026); rama `refactor/limpieza`, PR [#61](https://github.com/Mili-ssm/OctreeViewer/pull/61) sin fusionar; decisiones del propietario respondidas
+Estado: completado · 18-11-2026 · encargo del propietario (18-11-2026); rama `refactor/limpieza`, PR [#61](https://github.com/Mili-ssm/OctreeViewer/pull/61) fusionada el 18-11-2026; decisiones del propietario respondidas
 
 **Objetivo.** Dejar el repositorio y el código más fáciles de mantener sin cambiar su comportamiento: quitar
 basura, poner al día los documentos vivos y partir los módulos más grandes en submódulos cohesivos. Cada tarea
