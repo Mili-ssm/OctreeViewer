@@ -73,7 +73,7 @@ Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 **Resultado para el plan (18-11-2026).** El tramo A sigue: `lo` tiene fórmula cerrada sin coste. El tramo B queda
 **en pausa**: el `hi` que pide la regla junto al ojo lo fija el recorte cercano en puntos sin datos (nivel 18,
 576 páginas estimadas frente a 72 en el nodo 14 en P2). Antes de la tarea 5 hay que decidir con qué se limita `hi`
-y medirlo; se replantea tras el tramo A, con la validación del propietario en el navegador.
+y medirlo: es la pregunta OQ-16 ([#80](https://github.com/Mili-ssm/OctreeViewer/issues/80)).
 
 ### Task 3: `node_view_range`, a pure per-node range (not wired)
 
