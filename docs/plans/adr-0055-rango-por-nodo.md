@@ -1,6 +1,6 @@
 # ADR 0055 en modo celda: rango por nodo y puerta de residencia
 
-Estado: en curso · 18-11-2026 · plan del agente a partir del mapa de arquitectura; pre-mortem aplicado el 18-11-2026; tarea 1 hecha
+Estado: en curso · 18-11-2026 · plan del agente a partir del mapa de arquitectura; pre-mortem aplicado el 18-11-2026; tramo A hecho (tareas 1 a 4), tramo B en pausa hasta decidir cómo se limita `hi`
 
 **Conclusión.** Doce tareas pequeñas en tres tramos, cada tramo entregable por separado: (A) dividir `cell_pool.rs`,
 medir y corregir el extremo grueso `lo` del rango; (B) rango por nodo completo y campos a nivel de nodo; (C) puerta
@@ -62,27 +62,43 @@ Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 
 ### Task 2: Measure what the twin wants, and why `far` is 11 at P4
 
-- [ ] `p4_border_levels` imprime, para el nodo 14, `node_depth`, `buildable` y el px de la hija más pequeña en la
-  esquina lejana y en el centro del borde: queda escrito por qué `far` vale 11.
-- [ ] Medida (test ignorado que imprime): en las poses P1 a P5 y en las simulaciones s1 y s7, el nivel mínimo y
-  máximo que pide el gemelo de la GPU dentro de nodo ∩ datos ∩ vista, frente al `[lo, hi]` de hoy y frente a una
-  cota candidata; holgura por cada extremo y páginas que cuesta un nivel más de `hi`.
-- [ ] Propiedad escrita con exactitud y como test ignorado mientras falle: quedan fuera los puntos más cercanos que
-  `lod_near_depth` y las celdas que cruzan el plano del ojo; tolerancia en px (el gemelo calcula en f32); además de
-  contener lo pedido, holgura de `lo` ≤ 1 nivel y `hi − máximo pedido` ≤ 1.
+- [x] (52e56e5) `p4_border_levels` imprime el diagnóstico de `far`: la esquina que sondea `node_far_depth` está
+  1174 px fuera de pantalla, donde la perspectiva plana estira la celda.
+- [x] (52e56e5) Medida en P1 a P5 ([registro](../records/benchmarks/R3_RANGO_GEMELO_18-11-2026.md)): la cota
+  candidata contiene lo que pide el gemelo en 46 de 46 casos, con holgura 0 en `lo` y de 0 a 1 en `hi`. Las
+  simulaciones s1 y s7 no se midieron (otro arnés).
+- [x] (52e56e5) Propiedad `the_node_range_contains_what_the_twin_wants_within_one_level`, ignorada: hoy falla con
+  11 infracciones.
+
+**Resultado para el plan (18-11-2026).** El tramo A sigue: `lo` tiene fórmula cerrada sin coste. El tramo B queda
+**en pausa**: el `hi` que pide la regla junto al ojo lo fija el recorte cercano en puntos sin datos (nivel 18,
+576 páginas estimadas frente a 72 en el nodo 14 en P2). Antes de la tarea 5 hay que decidir con qué se limita `hi`
+y medirlo: es la pregunta OQ-16 ([#80](https://github.com/Mili-ssm/OctreeViewer/issues/80)).
 
 ### Task 3: `node_view_range`, a pure per-node range (not wired)
 
-- [ ] Función pura `node_view_range(vista, rejilla, origen, región, tramo ∩ construible, objetivo px, lado mínimo) -> Option<(lo, hi)>`,
+- [x] (2f628e9) Función pura `node_view_range(vista, rejilla, origen, región, tramo ∩ construible, objetivo px, lado mínimo) -> Option<(lo, hi)>`,
   con `región` = nodo ∩ datos. Tests unitarios: detrás del ojo → `None`, región vacía, lado mínimo, tope.
-  Comprobación: la propiedad de la tarea 2 pasa sobre esta función. Si solo pasa para `lo`, la función devuelve
-  `lo` y la tarea 4 conserva el `hi` actual (salida pequeña).
+  Comprobación: la mitad `lo` de la propiedad de la tarea 2 pasa sobre esta función (la propiedad se parte en dos
+  tests: `lo`, que la tarea 4 activa, y `hi`, que sigue ignorado). La función calcula también `hi_c`, sin usarlo
+  todavía.
+  Comprobado: 6 tests unitarios en `cell_cut_tests.rs`; la propiedad `lo` pasa sobre la función en P1 a P5 (ignorada, 175 s;
+  variante de solo P4 sin ignorar).
 
 ### Task 4: Cell mode takes `lo` from `node_view_range` (R)
 
-- [ ] `refresh_depths` y `cell_cut_ranged` toman `lo` de la función nueva en modo celda; `node_far_depth` deja de
+- [x] (2f628e9) `refresh_depths` y `cell_cut_ranged` toman `lo` de la función nueva en modo celda; `node_far_depth` deja de
   usarse ahí. `hi` no cambia en esta tarea.
   Test que falla antes: en P4 el nodo 14 tiene `range.lo <= 10` y ningún par visible difiere en más de un nivel.
+  Comprobado: P4 nodo 14 pasa de 11..13 a 10..13 y los 3358 pares visibles tienen diferencia 0; `real_sim` 6 de 6 con
+  contadores del oráculo a 0; `node_far_depth` se borra.
+
+**Tramo A cerrado (18-11-2026).** Tras `0e63030` (el cableado pide solo `lo`; test de propiedad de 800 poses
+recuperado): 409 y 185 tests, simulaciones reales 6 de 6 con los contadores a cero y el mismo resumen del corte, y
+en P4 el nodo 14 pasa de rango 11–13 a 10–13 con 3358 pares visibles sin diferencia de nivel. En el navegador la
+línea recta de P4 desaparece; queda la transición normal entre dos niveles (cubos de 4 a 8 px, ADR 0054), las
+etapas quedan a 0 en reposo y no hay errores de consola. Sin medir: el coste por frame de la búsqueda de `lo` con
+la cámara en movimiento, y el recorte por el plano lejano (hoy `lo` puede quedar algo más grueso de lo necesario).
 
 ### Tramo B: rango por nodo completo
 

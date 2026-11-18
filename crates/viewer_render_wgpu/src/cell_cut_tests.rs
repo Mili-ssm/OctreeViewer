@@ -1537,15 +1537,19 @@ fn ranged_entry(
             octant_wanted_depth(view, grid, [0.0; 3], bounds, octant, data.buildable, target)
         },
         Some(&|_, data| {
-            node_far_depth(
-                view,
-                grid,
-                [0.0; 3],
-                bounds,
-                [ProbeBox::Geometric; 8],
-                data.buildable,
-                target,
-                None,
+            let probes = [ProbeBox::Geometric; 8];
+            (
+                view_range_lo(
+                    view,
+                    grid,
+                    [0.0; 3],
+                    Some(bounds),
+                    data.buildable,
+                    target,
+                    None,
+                )
+                .unwrap_or(data.buildable.0),
+                octants_in_front(view, [0.0; 3], bounds, probes),
             )
         }),
         None,
@@ -1586,16 +1590,9 @@ fn the_far_wanted_depth_is_never_finer_than_the_near_one() {
             -1000.0 + ((next() * 2000.0 / side).floor() * side).min(2000.0 - side)
         });
         let bounds = SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
-        let (far, front) = node_far_depth(
-            &view,
-            &grid,
-            [0.0; 3],
-            bounds,
-            [ProbeBox::Geometric; 8],
-            (3, 12),
-            target,
-            None,
-        );
+        let far =
+            view_range_lo(&view, &grid, [0.0; 3], Some(bounds), (3, 12), target, None).unwrap_or(3);
+        let front = octants_in_front(&view, [0.0; 3], bounds, [ProbeBox::Geometric; 8]);
         let near = (0..8)
             .filter(|o| front >> o & 1 == 1)
             .map(|o| octant_wanted_depth(&view, &grid, [0.0; 3], bounds, o, (3, 12), target))
@@ -1609,6 +1606,115 @@ fn the_far_wanted_depth_is_never_finer_than_the_near_one() {
         }
     }
     assert!(checked > 300, "{checked} poses checked");
+}
+
+/// Eye at `x = -900` looking along `+x` over `huge_grid`: view depth = `x + 900`.
+fn along_x() -> ViewProjection {
+    posed([-900.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+}
+
+fn boxed(min: [f64; 3], max: [f64; 3]) -> Option<SpatialBounds> {
+    Some(SpatialBounds::new(min, max).unwrap())
+}
+
+#[test]
+fn a_region_behind_the_eye_has_no_view_range() {
+    let (view, grid) = (along_x(), huge_grid());
+    let behind = boxed([-1000.0, -100.0, -100.0], [-950.0, 100.0, 100.0]);
+    assert_eq!(
+        node_view_range(&view, &grid, [0.0; 3], behind, (3, 12), 4.0, None),
+        None
+    );
+}
+
+#[test]
+fn an_empty_region_has_no_view_range() {
+    let (view, grid) = (along_x(), huge_grid());
+    let bounds = SpatialBounds::new([0.0; 3], [100.0; 3]).unwrap();
+    assert_eq!(probe_region(bounds, [ProbeBox::Empty; 8]), None);
+    assert_eq!(
+        node_view_range(&view, &grid, [0.0; 3], None, (3, 12), 4.0, None),
+        None
+    );
+}
+
+#[test]
+fn the_min_side_rule_caps_the_view_range() {
+    let (view, grid) = (along_x(), huge_grid());
+    let region = boxed([0.0, -50.0, -50.0], [100.0, 50.0, 50.0]);
+    // A tiny target wants the finest depth; a minimum side of one depth-6 cell stops at 6.
+    let free = node_view_range(&view, &grid, [0.0; 3], region, (3, 12), 0.001, None).unwrap();
+    assert_eq!(free, (12, 12));
+    let side = grid.root_side / 64.0;
+    let capped =
+        node_view_range(&view, &grid, [0.0; 3], region, (3, 12), 0.001, Some(side)).unwrap();
+    assert_eq!(capped, (6, 6));
+}
+
+#[test]
+fn the_buildable_span_clamps_both_ends_of_the_view_range() {
+    let (view, grid) = (along_x(), huge_grid());
+    let region = boxed([0.0, -50.0, -50.0], [100.0, 50.0, 50.0]);
+    // Too coarse a target for the span: its coarsest depth; too fine: its finest.
+    let coarse = node_view_range(&view, &grid, [0.0; 3], region, (8, 9), 1e6, None).unwrap();
+    assert_eq!(coarse, (8, 8));
+    let fine = node_view_range(&view, &grid, [0.0; 3], region, (8, 9), 0.001, None).unwrap();
+    assert_eq!(fine, (9, 9));
+}
+
+#[test]
+fn the_view_range_is_ordered_and_inside_the_span() {
+    let grid = huge_grid();
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1_u64 << 53) as f64
+    };
+    let mut checked = 0;
+    for _ in 0..600 {
+        let eye: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1600.0);
+        let at: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1000.0);
+        let mut camera = cameras().remove(0).1;
+        if !camera.set_pose(eye, at) {
+            continue;
+        }
+        let view = view(&camera);
+        let side = 2000.0 / f64::from(1_u32 << ((next() * 3.0) as u32));
+        let min: [f64; 3] = std::array::from_fn(|_| {
+            -1000.0 + ((next() * 2000.0 / side).floor() * side).min(2000.0 - side)
+        });
+        let region = boxed(min, min.map(|v| v + side));
+        let target = [1.0, 4.0, 16.0][(next() * 3.0) as usize % 3];
+        if let Some((lo, hi)) =
+            node_view_range(&view, &grid, [0.0; 3], region, (3, 12), target, None)
+        {
+            assert!(
+                lo <= hi && (3..=12).contains(&lo) && hi <= 12,
+                "{lo}..{hi}: eye {eye:?} at {at:?} region {region:?} target {target}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 300, "{checked} ranges checked");
+}
+
+#[test]
+fn lo_does_not_depend_on_how_far_off_axis_the_far_corner_is() {
+    // Both regions end at view depth 1000: one on the axis, one far off to the side, where a cell
+    // placed at the far corner would look larger (planar perspective stretches it).
+    let (view, grid) = (along_x(), huge_grid());
+    let centred = boxed([0.0, -50.0, -50.0], [100.0, 50.0, 50.0]);
+    let aside = boxed([0.0, 700.0, -50.0], [100.0, 800.0, 50.0]);
+    for target in [1.0, 4.0, 16.0] {
+        let lo = |region| {
+            node_view_range(&view, &grid, [0.0; 3], region, (3, 14), target, None)
+                .unwrap()
+                .0
+        };
+        assert_eq!(lo(centred), lo(aside), "target {target}");
+    }
 }
 
 #[test]

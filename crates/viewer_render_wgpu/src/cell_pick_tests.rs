@@ -1124,7 +1124,11 @@ fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
             root_min: [0.0; 3],
             root_side: 1.0,
         };
-        let mut rng = Rng(0x7a11);
+        // The scene must produce at least one retained frame whose active set moves
+        // (`retained_changes > 0` below). Re-chosen from 0x7a11 on 18-11-2026 when `lo` became
+        // coarser (ADR 0055): the old scene then gave none, this one gives 3. A seed with 0
+        // fails that guard instead of passing vacuously.
+        let mut rng = Rng(0x7a12);
         let scene = [
             LodNodeScene::random(&mut rng, unit, 1, [0, 1, 0], &[0, 2, 4, 6], 0, 1200),
             LodNodeScene::random(&mut rng, unit, 1, [1, 0, 0], &[1, 3, 5], 0, 500),
