@@ -243,6 +243,11 @@ are in source dataset coordinates, with the file's coordinate origin and visual 
 cell); an unknown mode rejects and keeps the current one, and the choice survives "Recreate
 viewer". The demo starts in `cell` mode (the library default stays `octant`);
 `?cellLod=octant` in the page URL compares with the per-octant selection. There is no UI control yet.
+`setCellActiveRule("window" | "contiguous")` (experimental) picks which range depths a node activates in cell
+mode: `"window"` (default) widens one level per frame, `"contiguous"` activates the resident run of the range
+at once. An unknown rule rejects and keeps the current one; `?cellActive=window|contiguous` in the page URL sets it
+at start, and an invalid value is ignored with a console warning. It is a temporary option so the owner can compare
+the zoom; after the decision the losing rule is deleted (OQ-11, issue #66). There is no UI control yet.
 The cells path never draws cubes smaller than a default length minimum of 0.1 mm (`1e-4` dataset
 units, metres assumed until the CRS unit is read); continuity (cloud spacing x factor) wins when larger.
 `renderedVoxels` reports submitted/current HZB-visible instances; it does not guarantee each voxel

@@ -302,6 +302,11 @@ resultados en el [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-
 `cellLod` vale `octant` (por defecto) o `cell`. Se fija con `?cellLod=` en la URL al arrancar o con la API del visor
 (`setCellLod`); no hay control en la interfaz. Ver [`examples/web-host/README.md`](../../examples/web-host/README.md).
 
+`cellActive` (experimental) vale `window` (por defecto: la ventana de un nivel por fotograma del ADR 0053) o
+`contiguous` (la tirada residente contigua del rango, de golpe). Se fija con `?cellActive=` o con
+`setCellActiveRule`. Es una opción temporal para que el propietario compare el zoom; tras su decisión se borra la
+regla perdedora (OQ-11, issue #66).
+
 ### Límites conocidos
 
 - Los conjuntos activos de la 2a pueden saltarse niveles (por ejemplo `{6, 13}`) hasta la fase 2b, que aplica la regla de

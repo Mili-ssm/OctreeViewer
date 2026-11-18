@@ -4240,7 +4240,11 @@ fn switching_the_active_rule_replans_without_a_camera_change() {
     assert_eq!(windowed, [8, 9, 10], "the window widens one level");
     rig.pool.set_active_rule(ActiveRule::Contiguous);
     let contiguous = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
-    assert_eq!(contiguous, [7, 8, 9, 10, 11], "the rule change is applied at once");
+    assert_eq!(
+        contiguous,
+        [7, 8, 9, 10, 11],
+        "the rule change is applied at once"
+    );
 }
 
 /// Children of node 2 (ids 10..=17) that store depths 4..=10, with node 2 drawing depth 6 under
