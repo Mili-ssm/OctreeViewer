@@ -88,7 +88,8 @@ Quedan aparte unos 28 tests explícitamente de octante (15 mitades de las macros
 - En modo celda el arnés wasm no ejecuta `CutView::holes`, `gate_octant_steps` ni los contadores de zona; solo
   `check_cell_cut`, que no tiene autotest. Por eso el último test de la tabla se porta en vez de borrarse.
 - Con el oráculo de pasos activado en celda falla un solo test (`a_leaving_node_hands_back_one_level`) y el fallo
-  es del oráculo: `spec_depth` no aplica el filtro de tramo del nodo (`in_cell_range`) que sí aplica el código.
+  es del oráculo. La tarea 3 encontró la causa: no era el filtro de tramo, sino que el oráculo no conocía la semilla
+  de entrada (`CellPool::entering_seed`) de un nodo que no dibujó nada en el corte aplicado.
 - Los temas se etiquetaron por nombre de test, no leyendo los 142 de pool y driver: ningún tema se queda sin tests
   que pasen, pero el recuento es aproximado.
 
@@ -122,11 +123,18 @@ Quedan aparte unos 28 tests explícitamente de octante (15 mitades de las macros
   - Hecho: tras la retirada, `cell_cut` calculará por `cell_cut_with` en modo celda, la ruta fijada por el golden 1,
     y esos tres puntos de llamada pasarán por ella.
 
-### Task 5: Default flip, with every rig pinned first
+### Task 5: Flip the defaults and the rigs to cell mode
 
-- [ ] Cada arnés y cada llamada directa que dependía del predeterminado fija `LodMode::Octant` de forma explícita
-  (lista de la tarea 2); después cambian los literales del predeterminado. Comprobación: la lista de tests
-  (`cargo test -- --list`, ignorados incluidos) es idéntica byte a byte y el recuento no cambia.
+Replanteada tras el ensayo: como solo fallan 10 tests y el oráculo de pasos ya corre en celda, no hace falta fijar
+antes los arneses en octante. Los tests explícitamente de octante siguen corriendo hasta las tareas 8 y 9.
+
+- [ ] **5a, render.** Cambian a celda `CellPool::new`, el `#[default]`, el `cell_cut` público y `eval_with`. Los
+  siete fallos de render de la tabla de la tarea 2 se resuelven como dice la tabla (dos portes, cinco borrados con
+  su motivo). Comprobación: la lista de tests solo pierde los borrados; goldens de las tareas 1 y 4 intactos.
+- [ ] **5b, wasm (R).** Cambian a celda `cells_glue.rs` (dos), `bindings/mod.rs`, los arneses
+  `lod_cells_stream_tests.rs` y `lod_cells_glue_sim_tests.rs` y `BENCH_MODE`. Se borran los dos tests de cambio de
+  modo; el autotest del oráculo de octante ya tiene sustituto (tarea 3). Comprobación: simulaciones reales iguales
+  a la línea base.
 
 ### Task 6: Remove the mode from the API and the web host
 
@@ -135,14 +143,12 @@ Quedan aparte unos 28 tests explícitamente de octante (15 mitades de las macros
   PROBES actualizados. Comprobación: `node --test`, test de Python del paquete y Playwright (la demo abre, el
   selector no existe, `?cellLod=octant` avisa y dibuja en modo celda).
 
-### Task 7: Port the render tests to cell mode, by theme
+### Task 7: Delete the explicitly-octant render tests
 
-- [ ] Según la tabla de la tarea 2 son dos portes y seis borrados en render, más los tests explícitamente de
-  octante. Una subtarea por fichero, con ocho portes como máximo cada una: `cell_pool_tests`, después
-  `cell_driver_tests`, `cell_cut_tests`, `cell_pick_tests` y `cell_driver_gpu_tests`
-  (`the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter`, con el gemelo de celda como oráculo y al
-  menos un adaptador). Los presupuestos se recalibran con su aritmética en un comentario. La tabla se actualiza en
-  cada subtarea con lo portado y lo borrado. Se conservan los tests unitarios de pasos de `cell_cut_tests`.
+- [ ] Se borran los tests de render que tienen el modo octante como sujeto (5 de `cell_cut_tests`, 2 de
+  `cell_pool_tests`, el golden de octante, duplicado ya por el de celda) y se porta
+  `the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter` (`cell_driver_gpu_tests.rs`) con el gemelo
+  de celda como oráculo y al menos un adaptador. Se conservan los tests unitarios de pasos de `cell_cut_tests`.
 
 ### Task 8: wasm sims and glue tests, one mode (R)
 
