@@ -163,6 +163,7 @@ pub(super) fn add_cells_stats(
             .continuity_min_side
             .map_or(JsValue::NULL, JsValue::from_f64),
     )?;
+    set(object, "minLength", &JsValue::from_f64(stats.min_length))?;
     set(
         object,
         "poolDescendantTooFine",
@@ -586,7 +587,12 @@ impl WasmVoxelViewer {
                 // `cellStats` report the mode actually applied).
                 let spacing = dataset.reference_spacing();
                 if cells.set_continuity(self.continuity, spacing).is_err() {
-                    self.continuity = Continuity::default();
+                    self.continuity = Continuity {
+                        min_length: self.continuity.min_length,
+                        ..Continuity::default()
+                    };
+                    // Cannot fail: the length minimum was validated when it was set.
+                    let _ = cells.set_continuity(self.continuity, spacing);
                 }
                 cells.set_lod_mode(self.lod_mode);
                 cells.set_active_rule(self.active_rule);
@@ -747,7 +753,29 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = setContinuity)]
     pub fn set_continuity(&mut self, enabled: bool, factor: Option<f64>) -> Result<(), JsValue> {
         let error = |message: String| JsValue::from_str(&message);
-        let continuity = Continuity::new(enabled, factor).map_err(error)?;
+        let continuity = Continuity::new(enabled, factor)
+            .and_then(|continuity| continuity.with_min_length(Some(self.continuity.min_length)))
+            .map_err(error)?;
+        self.apply_continuity(continuity)
+    }
+
+    /// Length minimum of the drawn cubes, in dataset units (ADR 0049 revision of 16-11-2026,
+    /// ADR 0054): no cell is drawn smaller than it, and the larger of it and the continuity side
+    /// wins. `undefined` restores the default (1e-4, 0.1 mm if the unit is metres); 0 turns the
+    /// length filter off; a negative, NaN or infinite value is an error and leaves the state as
+    /// it was. It survives `beginRemoteCells` and dataset changes like the continuity, takes
+    /// effect on the next frame and rebuilds nothing.
+    #[wasm_bindgen(js_name = setMinLength)]
+    pub fn set_min_length(&mut self, side: Option<f64>) -> Result<(), JsValue> {
+        let continuity = self
+            .continuity
+            .with_min_length(side)
+            .map_err(|message| JsValue::from_str(&message))?;
+        self.apply_continuity(continuity)
+    }
+
+    fn apply_continuity(&mut self, continuity: Continuity) -> Result<(), JsValue> {
+        let error = |message: String| JsValue::from_str(&message);
         // Every side is checked before any changes, so an error leaves the mode as it was.
         let spacing = self
             .lod_session
