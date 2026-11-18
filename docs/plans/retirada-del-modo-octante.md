@@ -1,6 +1,6 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1, 2 y 4 hechas
+Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 6 hechas; añadida la 6b (cobertura de celda con rangos anchos)
 
 **Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
 clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
@@ -147,6 +147,40 @@ antes los arneses en octante. Los tests explícitamente de octante siguen corrie
   selector no existe, `?cellLod=octant` avisa y dibuja en modo celda). Hecho: wasm 185 tests (-1,
   `set_cell_lod_rejects_unknown_modes`), `node --test` 252 (-1, el de `setCellLod`), clippy nativo y wasm32 limpios;
   el probe conserva `cellLod: "cell"` constante en su informe; Playwright pendiente.
+
+### Task 6b: Cell-mode coverage with wide ranges, before any deletion
+
+Evaluación de calidad del 18-11-2026 (lectura estática de los 110 tests de pool y driver que pasaron a modo celda
+sin fijar modo): unos 62 siguen siendo sólidos, 25 comprueban menos y 20 pasan por coincidencia, porque con la
+cámara de encuadre el rango de cada nodo se reduce a un nivel y el modo celda se comporta como el octante. El
+comportamiento con rangos anchos solo lo cubren unos 15 tests explícitos. Estas lagunas son anteriores a la
+retirada, pero al borrar el modo octante dejaría de haber red. Cada test nuevo debe fallar con su mutación.
+
+- [ ] **6b-1** `cell_reset_restarts_the_active_window`: tras `reset()` el conjunto activo de un nodo que entra
+  vuelve a empezar. Mutación: quitar `applied_window.clear()`.
+- [ ] **6b-2** `an_active_range_depth_is_never_evicted_under_pressure`: con zoom y un pool justo, ninguna clave
+  expulsada está en el conjunto activo anterior ni en el actual. Mutación: quitar los niveles del rango de
+  `needed_levels`.
+- [ ] **6b-3** `cap_clamps_the_range_and_fit_reports_it_with_wide_ranges`: recorte del más lejano primero, informado,
+  y niveles activos no más finos que el tope. Mutación: quitar `capped()` de `range_depths`.
+- [ ] **6b-4** `every_active_depth_is_fully_uploaded_with_a_wide_range`: con subida de una página por frame, todo
+  nivel activo es residente; un contador prueba que hubo un nivel activo solo de rango y una subida parcial.
+  Mutación: quitar la comprobación de residencia de `cell_active_depths`.
+- [ ] **6b-5** `hold_threshold_is_the_finest_active_depth_end_to_end`: retención con un antepasado de rango ancho.
+  Mutación: usar la profundidad nominal dibujada como umbral.
+- [ ] **6b-6** `real_memo_is_recomputed_when_only_the_active_span_changes`: el resumen del corte aplicado no
+  incluye el nivel activo más fino, que las semillas leen. Riesgo sin comprobar: si el test falla sin mutación,
+  es un defecto y se para.
+- [ ] **6b-7** `requests_rank_first_step_wanted_range_only_nearest_first`: orden de peticiones con dos nodos y
+  niveles solo de rango. Mutación: quitar el rango `range_only` o invertir el desempate por distancia.
+- [ ] **6b-8** El test de presupuesto del driver afirma `coarsened >= 1` y residentes por debajo de la capacidad
+  (hoy afirma un intervalo que siempre se cumple); el arnés afirma que el oráculo de pasos comprobó algo y cuenta
+  los nodos que se salta.
+
+Pendiente de la revisión de las tareas 1 a 5 (se resuelve al borrar en la tarea 7): dos tests de retención fijados
+en octante ejecutan sus primeros frames, o su corte, en modo celda (`the_hold_threshold_is_the_depth…`, la mitad de
+octante de `in_cell_mode_the_hold_threshold…`); el autotest del oráculo de celda solo prueba un nodo sin ningún
+nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
 
 ### Task 7: Delete the explicitly-octant render tests
 
