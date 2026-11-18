@@ -7,9 +7,9 @@ Estado: completado · 02-11-2026
 
 **Objetivo:** el coste de abrir una nube deja de crecer con el número total de nodos. El índice se lee por páginas bajo demanda, en local y por HTTP Range. Va en la revisión `v7.5-pre`, que incluye también los flags LAS y los Extra Bytes (RF-24).
 
-**Por qué:** con el índice entero, el primer frame remoto (RQ-04) falla hacia 70 GB, el local (RQ-03) hacia 90 GB y el límite del lector de 256 MiB se alcanza hacia 150 GB. Antes de 1 TB revienta la memoria wasm32 ([ADR 0030](../adr/0030-jerarquia-paginada-por-anclas.md)).
+**Por qué:** con el índice entero, el primer frame remoto (RQ-04) falla hacia 70 GB, el local (RQ-03) hacia 90 GB y el límite del lector de 256 MiB se alcanza hacia 150 GB. Antes de 1 TB revienta la memoria wasm32 ([ADR 0030](../../adr/0030-jerarquia-paginada-por-anclas.md)).
 
-**Spec:** [ADR 0030](../adr/0030-jerarquia-paginada-por-anclas.md), [ADR 0029](../adr/0029-octree-global-por-bits-de-enteros.md), [ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md), [ADR 0023](../adr/0023-fuentes-locales-y-remotas.md); [spec v7.4-pre](../reference/format/FORMAT_V7_PRE4.md); [spec v7.5-pre](../reference/format/FORMAT_V7_PRE5.md); [spike P0](../records/benchmarks/R5_P0_PAGES_02-11-2026.md); requisitos RF-24, RQ-02, RQ-03, RQ-04, RQ-08.
+**Spec:** [ADR 0030](../../adr/0030-jerarquia-paginada-por-anclas.md), [ADR 0029](../../adr/0029-octree-global-por-bits-de-enteros.md), [ADR 0022](../../adr/0022-alcance-y-congelacion-de-v7-final.md), [ADR 0023](../../adr/0023-fuentes-locales-y-remotas.md); [spec v7.4-pre](../../reference/format/FORMAT_V7_PRE4.md); [spec v7.5-pre](../../reference/format/FORMAT_V7_PRE5.md); [spike P0](../benchmarks/R5_P0_PAGES_02-11-2026.md); requisitos RF-24, RQ-02, RQ-03, RQ-04, RQ-08.
 
 ## Resoluciones del propietario (02-11-2026)
 
@@ -55,19 +55,19 @@ Resultado (02-11-2026): API `mark_unloaded` / `graft_page` / `evict_page` en `Sp
 
 ## Tarea P2: `v7.5-pre`, páginas
 
-- [x] Spec [`FORMAT_V7_PRE5.md`](../reference/format/FORMAT_V7_PRE5.md):
+- [x] Spec [`FORMAT_V7_PRE5.md`](../../reference/format/FORMAT_V7_PRE5.md):
   - cabecera de página (nivel del ancla, prefijo, *k*, número de nodos, CRC32);
   - registro reducido y punteros a páginas hijas;
   - página raíz junto al pie, con una lectura de cola que traiga pie y raíz en una sola petición;
   - derivación de `NodeId` (página, índice), `BlockId` y del orden de los hijos.
 - [x] Validación por página: el ancla de la página hija coincide con el nodo que la apunta. Límites `max_page_bytes` y `max_resident_pages` en `FormatReaderLimits`. Ningún `BlockId` se repite entre páginas.
-- [x] Códec, escritor y lector de páginas en `viewer_format`; fuzz con varias páginas encadenadas (`fuzz_paged_reader`, [semillas](../records/benchmarks/R5_V75_REFERENCE_SHA_02-11-2026.md)).
+- [x] Códec, escritor y lector de páginas en `viewer_format`; fuzz con varias páginas encadenadas (`fuzz_paged_reader`, [semillas](../benchmarks/R5_V75_REFERENCE_SHA_02-11-2026.md)).
 Resultado parcial (02-11-2026): `FormatVersion::V7_PRE5`, `PagedReader` (lectura de cola: pie, metadatos y raíz en una petición) y escritor con *k* por página en `viewer_format`; con el mismo contenido el índice mide el 39 % del de `v7.4-pre` en el fixture de los tests. Queda la segunda mitad.
 - [x] El conversor escribe las páginas en anchura después de los datos, eligiendo *k* por página.
 - [x] Subcomando `viewer_convert verify` con las comprobaciones globales (hoy el CLI solo tiene flags sueltos, `main.rs:28-80`).
 - [x] Generador de un `.oct` sintético `v7.5-pre` con 6 M nodos.
 - [x] **Pasa si** el índice es al menos un 30 % menor que el de `v7.4-pre` y hay paridad web/CLI.
-Resultado (02-11-2026, revisado el mismo día por dos decisiones del propietario): `--format-version v7.5-pre` escribe la pareja `.oct` + `.octattrs` como v7.4 ([ADR 0001](../adr/0001-pareja-separada-oct-octattrs.md); la geometría, las páginas y el índice van en el `.oct`, que abre solo en gris) y el id de nodo es `(página, índice)` sin límite de profundidad. EPT, checkpoints y Additive dan error explícito. Índice (release, `perf` no usado):
+Resultado (02-11-2026, revisado el mismo día por dos decisiones del propietario): `--format-version v7.5-pre` escribe la pareja `.oct` + `.octattrs` como v7.4 ([ADR 0001](../../adr/0001-pareja-separada-oct-octattrs.md); la geometría, las páginas y el índice van en el `.oct`, que abre solo en gris) y el id de nodo es `(página, índice)` sin límite de profundidad. EPT, checkpoints y Additive dan error explícito. Índice (release, `perf` no usado):
 
 | Dataset | Índice v7.4 | Índice v7.5 | Reducción | Páginas | Página máx. | Conversión | RSS |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ Decisión (02-11-2026): el criterio de parada se activó (toca `viewer_convert_c
 - [x] Llevar los flags y los Extra Bytes al spool (`SpoolLayout`), al esquema (≤ 256 atributos) y a la conversión web (la web usa el mismo núcleo serie de `viewer_convert_core`).
 - [x] **Pasa si** una ida y vuelta conversor → lector devuelve los flags y los Extra Bytes exactos. Mientras no exista exportador LAS, esta es la verificación.
 
-Resultado (02-11-2026): implementado según el diseño; formato en [FORMAT_V7_PRE5](../reference/format/FORMAT_V7_PRE5.md#flags-las-y-extra-bytes-rf-24). Extra Bytes de hasta 64 B por punto (el registro del spool los lleva en línea). Pruebas de ida y vuelta en `viewer_convert` (`las_extra_tests.rs`: formatos 3 y 6, escalado, no escalado, array, tipos rechazados, más de 256 atributos, formatos anteriores sin cambios) y paridad núcleo serie (ruta web) frente a CLI. Pendiente: caso de paridad en wasm32 real (`tools/convert_parity`, necesita un LAS generado) y verificación en navegador.
+Resultado (02-11-2026): implementado según el diseño; formato en [FORMAT_V7_PRE5](../../reference/format/FORMAT_V7_PRE5.md#flags-las-y-extra-bytes-rf-24). Extra Bytes de hasta 64 B por punto (el registro del spool los lleva en línea). Pruebas de ida y vuelta en `viewer_convert` (`las_extra_tests.rs`: formatos 3 y 6, escalado, no escalado, array, tipos rechazados, más de 256 atributos, formatos anteriores sin cambios) y paridad núcleo serie (ruta web) frente a CLI. Pendiente: caso de paridad en wasm32 real (`tools/convert_parity`, necesita un LAS generado) y verificación en navegador.
 
 ## Tarea P3: lector perezoso local
 
@@ -125,9 +125,9 @@ Resultado (02-11-2026, release, Chrome headless 1280×720, RED-REF 100 Mbit/s y 
 
 ## Tarea P5: documentación
 
-- [x] Actualizar el inventario (`docs/reference/inventory.md`) y los límites vigentes de v7.5-pre. ADR 0007 no se edita (aceptada): sus límites de nodos y bloques siguen vigentes para el lector eager; los de páginas están en la [spec](../reference/format/FORMAT_V7_PRE5.md#limits) y el inventario.
+- [x] Actualizar el inventario (`docs/reference/inventory.md`) y los límites vigentes de v7.5-pre. ADR 0007 no se edita (aceptada): sus límites de nodos y bloques siguen vigentes para el lector eager; los de páginas están en la [spec](../../reference/format/FORMAT_V7_PRE5.md#limits) y el inventario.
 
-Resultado (02-11-2026): inventario, README y registro [R5-P4](../records/benchmarks/R5_P4_HTTP_RANGE_02-11-2026.md) al día. R5 queda implementado como `v7.5-pre` en la rama `feat/r5-paged-hierarchy`, pendiente de integración.
+Resultado (02-11-2026): inventario, README y registro [R5-P4](../benchmarks/R5_P4_HTTP_RANGE_02-11-2026.md) al día. R5 queda implementado como `v7.5-pre` en la rama `feat/r5-paged-hierarchy`, pendiente de integración.
 
 ## Fuera de este plan
 

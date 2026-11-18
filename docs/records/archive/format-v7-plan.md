@@ -1,9 +1,9 @@
 # V7: almacenamiento y ejecución acotada
 
-Estado: activo · 30-10-2026
+Estado: cerrado · 18-11-2026 · V7 congelado y predeterminado ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md), [plan D3c](d3c-congelado-v7-final.md)); lo abierto vive en issues: retirada de V5/V6 y de las `-pre` ([#13](https://github.com/Mili-ssm/OctreeViewer/issues/13), [#28](https://github.com/Mili-ssm/OctreeViewer/issues/28)), checkpoints y reanudación en v7 ([#12](https://github.com/Mili-ssm/OctreeViewer/issues/12)), codificador LZ4 propio ([#14](https://github.com/Mili-ssm/OctreeViewer/issues/14)), aparcados del congelado ([#16](https://github.com/Mili-ssm/OctreeViewer/issues/16)) y techo de temporales RQ-06 ([#24](https://github.com/Mili-ssm/OctreeViewer/issues/24))
 
 Decisión del 24-10-2026: dedicar el desarrollo al sucesor V7 y retirar V5/V6 al completar
-su sustitución. El [estado](../estado.md#prioridades-pendientes) registra el progreso activo.
+su sustitución. El [estado](../../estado.md#prioridades-pendientes) registra el progreso activo.
 Este documento fija el contrato, las alternativas y los criterios de cierre. La base V7.1-pre
 y el plan selectivo de lectura están implementados; las integraciones pendientes se indican
 en cada fase y en el README.
@@ -20,30 +20,30 @@ La asincronía solapa esperas; el paralelismo distribuye CPU y puede multiplicar
 La velocidad se medirá junto a los recursos consumidos. No se presupone que permita compensar
 cualquier codec más costoso. El objetivo de más de 500 GB sigue sin demostrarse.
 
-Objetivos acordados (30-10-2026) en [requisitos](../requirements.md): equipo EQ-REF, PSS del visor RQ-05,
+Objetivos acordados (30-10-2026) en [requisitos](../../requirements.md): equipo EQ-REF, PSS del visor RQ-05,
 disco temporal RQ-06 y tolerancias de V7 frente a V5 RQ-07; alcance y congelación en el
-[ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md). RQ-07 (cifra de conversión revisada por el
-[ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)) y RQ-06
+[ADR 0022](../../adr/0022-alcance-y-congelacion-de-v7-final.md). RQ-07 (cifra de conversión revisada por el
+[ADR 0043](../../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)) y RQ-06
 (temporales ≤ 2 × LAZ) son los objetivos vigentes; las mediciones actuales de §4 y §6 aún no los demuestran.
 
-**Alcance de V7 final:** pirámide densa (R4, [ADR 0020](../adr/0020-piramide-lod-densa.md)), jerarquía
-paginada (R5), rejilla global determinista y CRS ([ADR 0021](../adr/0021-rejilla-global-determinista-y-crs.md)),
-flags LAS y Extra Bytes conservados, escritor que rechaza > 256 atributos ([ADR 0007](../adr/0007-limites-por-defecto-del-lector.md)) y codificador LZ4
-propio ([ADR 0025](../adr/0025-codificador-lz4-propio.md)). Congelado el 15-11-2026 con RQ-07 revisado ([ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md)): V7 es la salida por defecto; el codificador LZ4 propio sigue pendiente.
+**Alcance de V7 final:** pirámide densa (R4, [ADR 0020](../../adr/0020-piramide-lod-densa.md)), jerarquía
+paginada (R5), rejilla global determinista y CRS ([ADR 0021](../../adr/0021-rejilla-global-determinista-y-crs.md)),
+flags LAS y Extra Bytes conservados, escritor que rechaza > 256 atributos ([ADR 0007](../../adr/0007-limites-por-defecto-del-lector.md)) y codificador LZ4
+propio ([ADR 0025](../../adr/0025-codificador-lz4-propio.md)). Congelado el 15-11-2026 con RQ-07 revisado ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md)): V7 es la salida por defecto; el codificador LZ4 propio sigue pendiente.
 
 ## Base contrastada
 
 | Base inspeccionada | Conservar / corregir |
 | --- | --- |
-| [V5](../reference/format/FORMAT_V5.md): separación `.oct`/`.octattrs`, columnas y CRC independientes. | Abrir XYZ sin acompañante; RGB o una columna sin leer las demás; no compartir IDs entre columnas por defecto. |
-| [V6 pre4](../records/archive/FORMAT_V6_PRE4.md): delta, ocupación compacta, constantes, diccionarios y planos de bytes con fallback. | Reutilizar codecs y validaciones; contrastar tamaño completo y coste de candidatos. La ocupación por bloque no define una grilla global. |
-| [I/O existente](../records/benchmarks/STORAGE_V6_IO.md): preparación Rayon, pipeline optativo con hasta dos lotes, `fork_reader` e índice compartido. | Reutilizar límites de propiedad y escritura ordenada; límites por lote y modelos actuales no garantizan RSS. La lectura paralela del ejemplo no está integrada en el viewer. |
-| [`BlockRequestScheduler`](../../crates/viewer_core/src/scheduler.rs) y [reader](../../crates/viewer_format/src/contracts.rs). | Prioridad, tickets y cancelación lógica existentes; integrados en WASM con admisión por bytes antes del ticket. El presupuesto del viewer/cache y la medición conjunta siguen pendientes. |
-| [Memoria de conversión](../records/benchmarks/V5_MEMORY_BENCH.md) y [memoria web](../records/benchmarks/WEB_PERFORMANCE_BENCH.md). | Separar spools, buffers, índice, caché, WASM y GPU; las medidas existentes pertenecen a sus versiones y entornos. |
+| [V5](../../reference/format/FORMAT_V5.md): separación `.oct`/`.octattrs`, columnas y CRC independientes. | Abrir XYZ sin acompañante; RGB o una columna sin leer las demás; no compartir IDs entre columnas por defecto. |
+| [V6 pre4](FORMAT_V6_PRE4.md): delta, ocupación compacta, constantes, diccionarios y planos de bytes con fallback. | Reutilizar codecs y validaciones; contrastar tamaño completo y coste de candidatos. La ocupación por bloque no define una grilla global. |
+| [I/O existente](../benchmarks/STORAGE_V6_IO.md): preparación Rayon, pipeline optativo con hasta dos lotes, `fork_reader` e índice compartido. | Reutilizar límites de propiedad y escritura ordenada; límites por lote y modelos actuales no garantizan RSS. La lectura paralela del ejemplo no está integrada en el viewer. |
+| [`BlockRequestScheduler`](../../../crates/viewer_core/src/scheduler.rs) y [reader](../../../crates/viewer_format/src/contracts.rs). | Prioridad, tickets y cancelación lógica existentes; integrados en WASM con admisión por bytes antes del ticket. El presupuesto del viewer/cache y la medición conjunta siguen pendientes. |
+| [Memoria de conversión](../benchmarks/V5_MEMORY_BENCH.md) y [memoria web](../benchmarks/WEB_PERFORMANCE_BENCH.md). | Separar spools, buffers, índice, caché, WASM y GPU; las medidas existentes pertenecen a sus versiones y entornos. |
 
 ## 1. Base V7 verificable
 
-Primera revisión optativa [`v7.1-pre`](../reference/format/FORMAT_V7_PRE1.md), con identidad
+Primera revisión optativa [`v7.1-pre`](../../reference/format/FORMAT_V7_PRE1.md), con identidad
 propia y reglas de payload heredadas de pre4. La alternativa de diseñar todo el formato final
 antes de disponer de una ruta ejecutable retrasaría las comprobaciones; la base provisional
 permite validar conversión, selectividad y checkpoints mientras cambia la representación.
@@ -352,7 +352,7 @@ coordenadas/color reconstruidos, nombres/tipos de columnas y valores tipados. Es
 igualdad lógica para esta fuente. Las lecturas tardaron 63,36 / 68,87 / 64,34 s; al ser una lectura
 por salida sin control de caché, son observaciones, no evidencia comparativa de latencia. Reportes
 compactos, opciones, hashes de binarios, temporales y límites:
-[la serie secuencial Albuera](../records/benchmarks/data/storage-v7-albuera-v5-v64-v71-sequential-2026-10-25.json).
+[la serie secuencial Albuera](../benchmarks/data/storage-v7-albuera-v5-v64-v71-sequential-2026-10-25.json).
 
 **V7 Albuera por workers:** una pasada sin checkpoint ni pipeline, mismo host/binario y orden
 1/2/4 workers. El tiempo fue 796,84 / 662,53 / 811,36 s; 2 workers observó 16,86% menos tiempo
@@ -362,7 +362,7 @@ codificada máxima por lote observada pasó de 5.900.424 a 11.345.638 y 19.631.5
 preparados máximos fueron 1/2/4. Las tres parejas mantuvieron el mismo tamaño y checksum lógico
 (`8caae2a09753e50e`, 8.437 bloques, 508.989.347 puntos). Es una observación por configuración,
 con caché no purgada; el resultado de 2 workers no justifica cambiar la política general todavía.
-[Matriz parcial y diagnósticos](../records/benchmarks/data/storage-v7-albuera-v71-workers-2026-10-25.json).
+[Matriz parcial y diagnósticos](../benchmarks/data/storage-v7-albuera-v71-workers-2026-10-25.json).
 
 Error/cancelación: desbloquear canales, reunir workers y después limpiar temporales. No prometer
 cancelación dentro de un codec. Mantener fuente/opciones/revisión en checkpoint; nunca reanudar
@@ -411,8 +411,8 @@ Una comparación exploratoria de una corrida con dos workers dio V7 414,13 s fre
 cerrar la brecha frente a V5. Es un dato único, no justifica cambiar defaults. Los archivos V5
 locales antiguos llevan `OCTVWFRM` y el reader los
 rechaza como `ProvisionalFormat`; las referencias válidas se regeneraron desde LAS/LAZ.
-[Repeticiones V5/V7 y fases](../records/benchmarks/data/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json),
-[optimización radix y límites](../records/benchmarks/data/storage-v7-majadas-radix-index-2026-10-25.json).
+[Repeticiones V5/V7 y fases](../benchmarks/data/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json),
+[optimización radix y límites](../benchmarks/data/storage-v7-majadas-radix-index-2026-10-25.json).
 
 Usar muestras versionadas y Belvedere, Albuera y Majadas disponibles, más casos sintéticos de
 alta entropía/cardinalidad, constantes, extremos tipados, vacíos y duplicados. Fijar fuente,
@@ -430,7 +430,7 @@ bloques preparados incompatibles, cancelación con trabajo activo, errores de pr
 resultados obsoletos y recuperación/checkpoints. Nativo y WASM; Playwright al integrar la ruta
 del visor, con datos reales, navegación, cambio de objetivo, cierre/reapertura y fallos parciales.
 
-**Promoción hecha el 15-11-2026** ([ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md), [plan D3c](d3c-congelado-v7-final.md)); queda la retirada de V5/V6 y de las identidades `-pre` (ver el inventario). Texto original: promover a V7 final/default después de demostrar contratos, recursos y latencia aceptables en
+**Promoción hecha el 15-11-2026** ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md), [plan D3c](d3c-congelado-v7-final.md)); queda la retirada de V5/V6 y de las identidades `-pre` (ver el inventario). Texto original: promover a V7 final/default después de demostrar contratos, recursos y latencia aceptables en
 el corpus acordado, completar integración reader/writer y validar navegador. Regenerar muestras,
 datasets activos y herramientas desde fuentes conservadas. Después retirar backends y opciones
 V5/V6, manteniendo solo detección y error de regeneración cuando ayude al usuario. Archivar
@@ -442,12 +442,12 @@ no basta con cambiar la etiqueta o el default.
 | Ruta actual | Cierre que habrá que comprobar al promover |
 | --- | --- |
 | `viewer_convert::ConvertOptions`, CLI y `viewer_format::{version,layout,reader,writer}` | **Hecho:** V7 final es el default (ADR 0044). **Pendiente para la retirada:** V5 sigue siendo el único formato con `--checkpoint`/`--resume` y entrada EPT (V7.1–V7.3-pre también para EPT), así que retirarlo exige checkpoints en el formato paginado o una decisión sobre RF-26; V5/V6 y las `-pre` siguen como backends. Detección V5/V6 puede conservar un error explícito de regeneración; ningún payload legacy debe seguir necesitando su decoder. |
-| `viewer_wasm/src/core_convert.rs` y `web-host/converter-worker.js` (el conversor antiguo `browser_convert.rs` se retiró en la etapa 4 del conversor web) | **Hecho** (D3c, [registro web](../records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md)): constructor y worker escriben V7 final por defecto. Pendiente: retirar las opciones V5/V6 del selector. |
-| `create_web_sample`, `web-host/sample*.oct*`, `package-local.py`, `data/samples/*.oct*` y datasets locales activos | **Hecho** para los datasets de render y las referencias ([registro](../records/benchmarks/D3C_V7_REFERENCES_15-11-2026.md)); `web-host/sample.oct*` pasa a V7 el 15-11-2026 ([ADR 0047](../adr/0047-v5-heredado-hasta-v8.md)); `sample-v5`/`sample-v7` quedan como heredados de las sondas, y `data/samples/*.oct*` sigue pendiente. Regenerar y validar antes de sustituir. Fuentes: generador sintético, LAS versionados de `data/samples/` y LAZ locales de Belvedere/Albuera/Majadas documentados en `data/datasets/README.md`. El paquete web debe incluir la pareja nueva. |
+| `viewer_wasm/src/core_convert.rs` y `web-host/converter-worker.js` (el conversor antiguo `browser_convert.rs` se retiró en la etapa 4 del conversor web) | **Hecho** (D3c, [registro web](../benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md)): constructor y worker escriben V7 final por defecto. Pendiente: retirar las opciones V5/V6 del selector. |
+| `create_web_sample`, `web-host/sample*.oct*`, `package-local.py`, `data/samples/*.oct*` y datasets locales activos | **Hecho** para los datasets de render y las referencias ([registro](../benchmarks/D3C_V7_REFERENCES_15-11-2026.md)); `web-host/sample.oct*` pasa a V7 el 15-11-2026 ([ADR 0047](../../adr/0047-v5-heredado-hasta-v8.md)); `sample-v5`/`sample-v7` quedan como heredados de las sondas, y `data/samples/*.oct*` sigue pendiente. Regenerar y validar antes de sustituir. Fuentes: generador sintético, LAS versionados de `data/samples/` y LAZ locales de Belvedere/Albuera/Majadas documentados en `data/datasets/README.md`. El paquete web debe incluir la pareja nueva. |
 | Suites/perfiladores y generadores auxiliares | Herramientas activas aceptan V7; archivar comparaciones antiguas y retirar opciones/backend V5/V6 tras migrar los consumidores. |
 
 La suite de almacenamiento y el perfilador ya comparten las revisiones soportadas, incluyendo
 V7.1/V7.2; el comparador alternado usa V5/V7.2 por defecto. Los defaults de conversión eran V5; desde D3c son V7 (ADR 0044).
 Pasan las 24 pruebas Python; la suite completó conversión V7.2 y lecturas hierarchy/reconstruct/
 progressive sobre `fs_e430_n4008_18.las`. Esto habilita la matriz pendiente, no constituye promoción
-ni retirada. [Comandos](../records/benchmarks/STORAGE_BENCH.md).
+ni retirada. [Comandos](../benchmarks/STORAGE_BENCH.md).

@@ -16,7 +16,7 @@ point, so a node whose octants are all near has one active depth and the per-cel
 
 **Spec:** [ADR 0050](../adr/0050-nivel-por-celda-segun-distancia.md), [ADR 0053](../adr/0053-transiciones-de-un-nivel.md)
 (RF-31), D4 of the [master plan](nivel-pedido-y-lod-por-celda.md), R3-Q11/Q19/Q21 in [requirements](../requirements.md),
-design E1–E8 of [phase 2a](fase-2a-lod-por-celda-en-gpu.md).
+design E1–E8 of [phase 2a](../records/archive/fase-2a-lod-por-celda-en-gpu.md).
 
 ## Design decisions (agent, 16-11-2026; pre-mortem applied)
 

@@ -283,7 +283,7 @@ consumo de bloques que requiera agregación.
 
 Con `cellLod: cell` el pase de slots decide **por celda** qué nivel activo de un nodo dibuja cada punto, de modo que las
 fronteras entre niveles siguen la distancia de cada celda y no los bordes de octante. Con `octant` (por defecto) todo
-queda como antes. Diseño y decisiones E1–E8 en el [plan de la fase 2a](../plans/fase-2a-lod-por-celda-en-gpu.md#design-decisions-agent-16-11-2026);
+queda como antes. Diseño y decisiones E1–E8 en el [plan de la fase 2a](../records/archive/fase-2a-lod-por-celda-en-gpu.md#design-decisions-agent-16-11-2026);
 resultados en el [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-2026.md).
 
 ### Regla

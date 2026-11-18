@@ -1,6 +1,6 @@
 # R3 fase 2a: métrica de refinado por celda medida en CPU — 16-11-2026
 
-**Estado: puerta superada con `edge`; `bound` (la E1 provisional) no pasa.** Los criterios de parada de la [fase 2a](../../plans/fase-2a-lod-por-celda-en-gpu.md) se evaluaron con tres reglas de refinado. `edge` (refinar mientras la arista proyectada real de la celda supere el objetivo) pasa todos los criterios y da las menos instancias; `bound` falla el de celdas por encima del objetivo dentro de Majadas a 8 px (0,596 % > 0,5 %); `distance` (la regla de la fase 0a) falla por mucho. Este registro no cambia el plan: enmendar la E1 y el gemelo `cell_lod` es decisión del controlador.
+**Estado: puerta superada con `edge`; `bound` (la E1 provisional) no pasa.** Los criterios de parada de la [fase 2a](../archive/fase-2a-lod-por-celda-en-gpu.md) se evaluaron con tres reglas de refinado. `edge` (refinar mientras la arista proyectada real de la celda supere el objetivo) pasa todos los criterios y da las menos instancias; `bound` falla el de celdas por encima del objetivo dentro de Majadas a 8 px (0,596 % > 0,5 %); `distance` (la regla de la fase 0a) falla por mucho. Este registro no cambia el plan: enmendar la E1 y el gemelo `cell_lod` es decisión del controlador.
 
 Spike nativo, sin GPU, como el de la [fase 0a](R3_CELL_LOD_0A_15-11-2026.md): mide recuentos y bytes empaquetados, no tiempos de GPU. Opción nueva `--metric bound|edge|distance` de `coverage_spike.rs`.
 

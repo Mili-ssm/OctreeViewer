@@ -10,4 +10,4 @@ Entrada: `convert_serial` y `validate_output_serial` (ruta serie sobre `Write + 
 `ConvertOptions::with_root_partition_ranges` y `LazChunkPointSource` (`src/pipeline/laz_chunks.rs`).
 Verificación: `clippy.toml` (lint denegado) y los pasos de núcleo y paridad de
 [`scripts/check.sh`](../../scripts/check.sh) (`cargo check-core-web` para el check wasm32);
-contexto en el [plan de la etapa 3](../../docs/plans/conversor-web-paralelo-etapa3.md).
+contexto en el [plan de la etapa 3](../../docs/records/archive/conversor-web-paralelo-etapa3.md).

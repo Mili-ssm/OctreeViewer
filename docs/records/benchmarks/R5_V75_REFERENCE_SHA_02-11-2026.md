@@ -1,6 +1,6 @@
 # Referencia SHA de las semillas `v7.5-pre` (R5, 02-11-2026)
 
-Registro fechado e inmutable. Semillas de fuzz del formato paginado ([spec](../../reference/format/FORMAT_V7_PRE5.md), tarea P2 del [plan R5](../../plans/render-r5-jerarquia-paginada.md)), generadas por `fuzz/src/bin/gen_seeds.rs` (`cargo run --bin gen_seeds` desde `fuzz/`). Las semillas de las demás revisiones no cambian: `seed-sample-rev0`…`rev8` conservan las SHA de los registros anteriores.
+Registro fechado e inmutable. Semillas de fuzz del formato paginado ([spec](../../reference/format/FORMAT_V7_PRE5.md), tarea P2 del [plan R5](../archive/render-r5-jerarquia-paginada.md)), generadas por `fuzz/src/bin/gen_seeds.rs` (`cargo run --bin gen_seeds` desde `fuzz/`). Las semillas de las demás revisiones no cambian: `seed-sample-rev0`…`rev8` conservan las SHA de los registros anteriores.
 
 Fixtures:
 

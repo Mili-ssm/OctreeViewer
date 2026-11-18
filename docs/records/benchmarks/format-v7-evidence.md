@@ -1,6 +1,6 @@
 # Evidencia del plan V7
 
-Evidencia separada del [plan de formato V7](../../plans/format-v7-plan.md).
+Evidencia separada del [plan de formato V7](../archive/format-v7-plan.md).
 
 ## Evidencia del primer incremento
 

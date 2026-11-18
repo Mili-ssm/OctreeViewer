@@ -34,7 +34,7 @@ Entradas: `data/samples/fs_e430_n4008_18.las`; `autzen.copc.laz` (de `las-0.11.2
 | Belvedere, divisiones 8 | `fb90a490f9884239…` | `b5124e84f7c4e12a…` |
 | Majadas | `742262867c844bb4…` | `d45cd5fd70816d24…` |
 
-SHA completos en el [JSON](data/web-converter-baseline-2026-10-29.json). Belvedere con 1, 4 y 8 workers coincide: confirma a escala real la independencia del número de workers ([plan de la etapa 1](../../plans/conversor-web-paralelo-etapa1.md), Tarea 1). Tamaños Belvedere: 1.591.650.185 B (pareja); Majadas: 7.533.781.717 B. El COPC pequeño es un fichero de prueba diminuto (salida de 2,4 kB `.oct`), útil solo como control de forma.
+SHA completos en el [JSON](data/web-converter-baseline-2026-10-29.json). Belvedere con 1, 4 y 8 workers coincide: confirma a escala real la independencia del número de workers ([plan de la etapa 1](../archive/conversor-web-paralelo-etapa1.md), Tarea 1). Tamaños Belvedere: 1.591.650.185 B (pareja); Majadas: 7.533.781.717 B. El COPC pequeño es un fichero de prueba diminuto (salida de 2,4 kB `.oct`), útil solo como control de forma.
 
 ## Tiempos Belvedere (`convert`, 4 workers, 5 rondas seguidas; mediana; mín–máx)
 

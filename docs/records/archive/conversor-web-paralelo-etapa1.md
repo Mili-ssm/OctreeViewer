@@ -18,7 +18,7 @@ con los datos de S1.
 **Tecnología:** Rust nightly fijado (`rust-toolchain.toml`), `lz4_flex` 0.14.0, node 22,
 `wasm32-unknown-unknown` sin wasm-bindgen para la herramienta, OPFS `FileSystemSyncAccessHandle`.
 
-**Spec:** [conversor-web-paralelo.md](conversor-web-paralelo.md).
+**Spec:** [conversor-web-paralelo.md](../../plans/conversor-web-paralelo.md).
 
 ## Restricciones globales
 

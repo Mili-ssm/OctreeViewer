@@ -23,5 +23,5 @@ Con g = 1,25 el peor es 3,40 ×; con g = 2, 1,83 ×. Belvedere v7.4 sigue por en
 
 ## Consecuencias para R3
 
-- A6 del [plan de R3](../../plans/render-r3-cubos-en-gpu.md): `resident_depth` debe elegir la menor profundidad guardada ≥ la deseada (o la más fina), no la más gruesa cercana.
+- A6 del [plan de R3](../archive/render-r3-cubos-en-gpu.md): `resident_depth` debe elegir la menor profundidad guardada ≥ la deseada (o la más fina), no la más gruesa cercana.
 - `leaf_cell_depth` usa las profundidades guardadas, no un rango contiguo.

@@ -27,4 +27,4 @@ Estado: Aceptada · Fecha: 30-10-2026
 El disco o el coste de conversión medidos incumplen RQ-07.
 
 ## Evidencia
-[Pregunta P3](../requirements.md#resoluciones-del-30-10-2026) · [Plan de render, R4](../plans/render-y-carga-escala.md) · [Requisitos RQ-07](../requirements.md)
+[Pregunta P3](../requirements.md#resoluciones-del-30-10-2026) · [Plan de render, R4](../records/archive/render-y-carga-escala.md) · [Requisitos RQ-07](../requirements.md)

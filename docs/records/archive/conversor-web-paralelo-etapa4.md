@@ -5,19 +5,19 @@ Estado: cerrado · 30-10-2026
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Progreso (30-10-2026): Etapa 4 cerrada.** Resultado: Belvedere en Chrome y Firefox con SHA = R1 a 2,1–2,9 × nativo, ADR 0017 aceptado y conversor antiguo retirado; W1 resuelta (30-10-2026): fusión en `master` tras `scripts/check.sh` (pendiente de ejecutar; [requisitos](../requirements.md#resoluciones-del-30-10-2026)). Detalle por tarea:
+**Progreso (30-10-2026): Etapa 4 cerrada.** Resultado: Belvedere en Chrome y Firefox con SHA = R1 a 2,1–2,9 × nativo, ADR 0017 aceptado y conversor antiguo retirado; W1 resuelta (30-10-2026): fusión en `master` tras `scripts/check.sh` (pendiente de ejecutar; [requisitos](../../requirements.md#resoluciones-del-30-10-2026)). Detalle por tarea:
 
-Tareas 1 y 2 hechas. Zonas OPFS viables en Chrome y Firefox, sin criterio de parada ([registro](../records/benchmarks/OPFS_ZONES_2026-10-30.md)): `at` > 2³² correcto, escritura de 256 KiB ≥ 3,6 GB/s en Firefox; Chrome solo libera cuota al cerrar el handle y tarda ~2 s en liberar un handle tras `terminate()`. Política y granularidad ([registro](../records/benchmarks/HYBRID_POLICY_2026-10-30.md)): segmentos progresivos recortados al cerrar, lectores fijados sin romper el presupuesto, páginas de 1 MiB a 1,98 × el pico vivo volcado frente a ≤ 1,18 × con 256 KiB. **Decisiones del coordinador:** páginas de 256 KiB, zonas de 1 GiB, segmentos de JS en clases de tamaño reutilizadas, orden de volcado P3 con dos pistas del planificador. Tarea 3 hecha (firmas abajo). Tarea 4 hecha: pistas del planificador (`c704de1`, SHA de R1 intactos), almacén híbrido (`767c811`), volcado a zonas paginadas (`91e73c3`; mismos bytes que en memoria con presupuestos de 64 KiB y 0), estimación (`819adcc`; 13/10/49 zonas como el modelo), arnés nativo C6 `native_hybrid` (`5a39ca0`) y modo solo RAM sin zonas (`3155d5c`). Tarea 5a hecha: tiers JS y bindings reales con paridad en Node y `QuotaExceededError` (`check.sh`, 23 pasos). Tareas 5b–5d hechas; Tarea 9 (código) hecha. Puerta 5e y R7 corto de 4a pasados. Tarea 6 hecha (`bdf8f8e`, [registro](../records/benchmarks/M3B_BELVEDERE_2026-10-30.md)): Chrome y Firefox convierten Belvedere (divisiones 2 y 8; HTTP y Firefox `file://`) con SHA = R1 en las 8 celdas, a 2,13–2,93 × `native_hybrid` (parada en 4 ×), PSS 3,4–4,5 GiB con 2 GiB de spools y sin zonas sobrantes; Chrome `file://` convierte el LAS pequeño solo en RAM y rechaza Belvedere antes de empezar. **Decisión 3 resuelta con los datos:** 2 GiB (mismo tiempo que 4 GiB dentro de la dispersión, 2,3 GiB menos de PSS) queda por defecto. Tareas 7 y 9 verificadas en Chrome y Firefox (Playwright): validación de opciones, teclado, conversión con SHA = R1, `formatVersion` v7.3-pre, error de presupuesto idéntico al CLI, cancelación de Belvedere en jerarquía y en escritura sin parciales, 390 px sin desbordamiento, consola limpia; la verificación encontró que `convert()` descartaba las estadísticas de spools y un prefijo de error duplicado (corregidos en `94600e4`). Tarea 8 hecha (`0cef782`: `browser_convert.rs` y sus módulos exclusivos eliminados; `engine: "core"` obsoleto y `"legacy"` con error, D4). Tarea 10 hecha.
+Tareas 1 y 2 hechas. Zonas OPFS viables en Chrome y Firefox, sin criterio de parada ([registro](../benchmarks/OPFS_ZONES_2026-10-30.md)): `at` > 2³² correcto, escritura de 256 KiB ≥ 3,6 GB/s en Firefox; Chrome solo libera cuota al cerrar el handle y tarda ~2 s en liberar un handle tras `terminate()`. Política y granularidad ([registro](../benchmarks/HYBRID_POLICY_2026-10-30.md)): segmentos progresivos recortados al cerrar, lectores fijados sin romper el presupuesto, páginas de 1 MiB a 1,98 × el pico vivo volcado frente a ≤ 1,18 × con 256 KiB. **Decisiones del coordinador:** páginas de 256 KiB, zonas de 1 GiB, segmentos de JS en clases de tamaño reutilizadas, orden de volcado P3 con dos pistas del planificador. Tarea 3 hecha (firmas abajo). Tarea 4 hecha: pistas del planificador (`c704de1`, SHA de R1 intactos), almacén híbrido (`767c811`), volcado a zonas paginadas (`91e73c3`; mismos bytes que en memoria con presupuestos de 64 KiB y 0), estimación (`819adcc`; 13/10/49 zonas como el modelo), arnés nativo C6 `native_hybrid` (`5a39ca0`) y modo solo RAM sin zonas (`3155d5c`). Tarea 5a hecha: tiers JS y bindings reales con paridad en Node y `QuotaExceededError` (`check.sh`, 23 pasos). Tareas 5b–5d hechas; Tarea 9 (código) hecha. Puerta 5e y R7 corto de 4a pasados. Tarea 6 hecha (`bdf8f8e`, [registro](../benchmarks/M3B_BELVEDERE_2026-10-30.md)): Chrome y Firefox convierten Belvedere (divisiones 2 y 8; HTTP y Firefox `file://`) con SHA = R1 en las 8 celdas, a 2,13–2,93 × `native_hybrid` (parada en 4 ×), PSS 3,4–4,5 GiB con 2 GiB de spools y sin zonas sobrantes; Chrome `file://` convierte el LAS pequeño solo en RAM y rechaza Belvedere antes de empezar. **Decisión 3 resuelta con los datos:** 2 GiB (mismo tiempo que 4 GiB dentro de la dispersión, 2,3 GiB menos de PSS) queda por defecto. Tareas 7 y 9 verificadas en Chrome y Firefox (Playwright): validación de opciones, teclado, conversión con SHA = R1, `formatVersion` v7.3-pre, error de presupuesto idéntico al CLI, cancelación de Belvedere en jerarquía y en escritura sin parciales, 390 px sin desbordamiento, consola limpia; la verificación encontró que `convert()` descartaba las estadísticas de spools y un prefijo de error duplicado (corregidos en `94600e4`). Tarea 8 hecha (`0cef782`: `browser_convert.rs` y sus módulos exclusivos eliminados; `engine: "core"` obsoleto y `"legacy"` con error, D4). Tarea 10 hecha.
 
 **Objetivo:** cerrar M3b: un worker convierte Belvedere en el navegador con spools fuera de la
 memoria wasm (RAM de JS más zonas OPFS), con paridad byte a byte con el CLI en Chrome y Firefox,
 tiempo dentro de 4 × el mismo código nativo, picos de RAM y OPFS medidos con presupuestos de 2 y
 4 GiB, y el conversor antiguo (`browser_convert.rs`) retirado.
 
-**Arquitectura:** la [spec](conversor-web-paralelo.md) es la autoridad; la etapa anterior es la
+**Arquitectura:** la [spec](../../plans/conversor-web-paralelo.md) es la autoridad; la etapa anterior es la
 [etapa 3](conversor-web-paralelo-etapa3.md). M3a guarda todos los spools en la memoria wasm
 (`MemSpoolStore`, `crates/viewer_wasm/src/core_convert.rs:218`) y el pico modelado con un worker
-(4,35 GiB en divisiones 2, [S10](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)) supera el
+(4,35 GiB en divisiones 2, [S10](../benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)) supera el
 techo de 4 GiB de wasm32, así que M3b saca los spools de wasm. `convert_serial` sigue siendo una
 sola llamada síncrona: un `HybridSpoolStore` del núcleo guarda los spools en segmentos de JS y, por
 encima de un presupuesto, los vuelca de forma síncrona a páginas de zonas OPFS cuyos handles abre
@@ -39,14 +39,14 @@ Decisión técnica del coordinador: el brazo de 4 GiB de spools se mide con `ram
 `FileSystemSyncAccessHandle` (`read`/`write` con `at`, `truncate`, `flush`, `close`), Node 22
 (`node:test`), Playwright 1.64 vía scripts Node (como los drivers de S8/S9/M3a).
 
-**Spec:** [conversor-web-paralelo.md](conversor-web-paralelo.md).
+**Spec:** [conversor-web-paralelo.md](../../plans/conversor-web-paralelo.md).
 
 ## Restricciones globales
 
 - `scripts/check.sh` en verde (todos los pasos) al cerrar cada tarea.
 - No cambiar la fecha del nightly ni añadir `#![feature]`.
 - `FormatVersion::V<n>` solo en `crates/viewer_format`.
-- R1: SHA de [referencia R1](../records/benchmarks/R1_REFERENCE_SHA_2026-10-29.md) (LAS pequeño `176ee42d…`, Belvedere `ecdc4889…`, Belvedere divisiones 8 `3aee2890…`, Majadas `38168777…`).
+- R1: SHA de [referencia R1](../benchmarks/R1_REFERENCE_SHA_2026-10-29.md) (LAS pequeño `176ee42d…`, Belvedere `ecdc4889…`, Belvedere divisiones 8 `3aee2890…`, Majadas `38168777…`).
 - R7 solo si una tarea toca la ruta nativa del CLI: mediana pareada de `real_dataset_bench convert` en Belvedere (4 workers, perfil `perf`), 7–10 pares A/B en máquina en reposo, ±3% frente a la base de la misma sesión.
 - El núcleo sigue sin E/S, hilos, reloj ni funciones de libm (lint de clippy, ADR 0014 y 0016); sin `unsafe` nuevo.
 - R8: funciona con `python3 -m http.server` y desde el paquete `file://` sin COOP/COEP; sin `SharedArrayBuffer`.
@@ -175,7 +175,7 @@ pistas y modelo suponen recorrido en profundidad con N = 1 (revisar en M4/M5).
 - [x] **5b, worker (`1c5e5d6`–`baf5258`):** el worker abre Z zonas antes de convertir y las anuncia como parciales; escritura corta → mensaje de cuota y limpieza (R4, R5); tests Node; commit.
 - [x] **5c, Chrome `file://` (`c783b83`):** sin OPFS, solo RAM con aviso; salida en RAM a un `Blob` y validación desde RAM; rechazo temprano por estimación (D3); commit.
 - [x] **5d, preflight y limpieza (`e652685`; Firefox sin `persist()` limitado a ~10 GiB; Chrome nunca se rechaza por su estimación):** `persist()` y cuota de Firefox antes de crear zonas; la limpieza de huérfanos termina antes de la primera conversión; commit.
-- [x] **5e, puerta en Node (30-10-2026, [registro](../records/benchmarks/M3B_NODE_GATE_2026-10-30.md)): SHA = R1 en d2 y d8, memoria wasm 28–40 MiB, cociente 2,81 × / 2,80 × frente a `native_hybrid` (bajo 3 ×, margen 6–7 %); R7 corto de 4a 0,997.** Belvedere divisiones 2 y 8 a través de los bindings de `viewer_wasm` (shim de `FileReaderSync`, handles sobre `fs`): SHA = R1, `memory.buffer.byteLength` al final y tiempo frente al arnés nativo (C6). Criterios de parada: SHA ≠ R1, cociente > 3 ×, memoria wasm > 1 GiB.
+- [x] **5e, puerta en Node (30-10-2026, [registro](../benchmarks/M3B_NODE_GATE_2026-10-30.md)): SHA = R1 en d2 y d8, memoria wasm 28–40 MiB, cociente 2,81 × / 2,80 × frente a `native_hybrid` (bajo 3 ×, margen 6–7 %); R7 corto de 4a 0,997.** Belvedere divisiones 2 y 8 a través de los bindings de `viewer_wasm` (shim de `FileReaderSync`, handles sobre `fs`): SHA = R1, `memory.buffer.byteLength` al final y tiempo frente al arnés nativo (C6). Criterios de parada: SHA ≠ R1, cociente > 3 ×, memoria wasm > 1 GiB.
 
 ### Tarea 6: Belvedere con un worker en el navegador
 
@@ -213,4 +213,4 @@ Siguiente: M6 (Majadas) con un worker. M4 (pool de preparación y escritor orden
 (pool de partición y trabajos por nodo, validación paralela; con D1 los spools pasan por el líder y
 hará falta un conductor del plan por pasos) solo si M6 supera 60 min o la experiencia lo pide
 (propietario, 30-10-2026). El conversor va después de la escala (R3–R5, V7 final) y la API pública
-([orden de trabajo](../requirements.md#orden-de-trabajo-acordado)).
+([orden de trabajo](../../requirements.md#orden-de-trabajo-acordado)).

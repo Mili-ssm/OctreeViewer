@@ -2,7 +2,7 @@
 
 Fecha: 02-11-2026. Rama: `feat/r5-paged-hierarchy` (`bc102c6`). Estado: **RQ-04 se cumple con holgura en los cinco ficheros medidos; vista fija sin órbita**.
 
-Registro fechado e inmutable. Tarea P4 del [plan R5](../../plans/render-r5-jerarquia-paginada.md#tarea-p4-http-range); formato en [FORMAT_V7_PRE5](../../reference/format/FORMAT_V7_PRE5.md), fuente en [ADR 0023](../../adr/0023-fuentes-locales-y-remotas.md).
+Registro fechado e inmutable. Tarea P4 del [plan R5](../archive/render-r5-jerarquia-paginada.md#tarea-p4-http-range); formato en [FORMAT_V7_PRE5](../../reference/format/FORMAT_V7_PRE5.md), fuente en [ADR 0023](../../adr/0023-fuentes-locales-y-remotas.md).
 
 ## Método
 

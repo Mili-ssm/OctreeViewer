@@ -4,7 +4,7 @@ Registro fechado. Objetivo del propietario (30-10-2026): cargar nubes de **cient
 dibujarlas con un tamaño de vóxel en pantalla de **1–8 px**, con una carga que se perciba continua y
 natural (sin saltos, huecos ni bloqueos). Fuentes: revisión de arquitectura del código (líneas de
 `c38cf47`), registros ya mergeados e investigación externa. **[E]** = evidencia en código o registro;
-**[I]** = inferencia. Plan derivado: [render y carga a escala](../../plans/render-y-carga-escala.md).
+**[I]** = inferencia. Plan derivado: [render y carga a escala](render-y-carga-escala.md).
 
 ## Conclusión
 

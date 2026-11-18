@@ -1,6 +1,6 @@
 # Puerta Node del hito M3b y R7 corto de las pistas (30-10-2026)
 
-Registro fechado; solo admite añadidos hasta el merge de la rama. Contexto: [plan de la etapa 4](../../plans/conversor-web-paralelo-etapa4.md) (Tarea 4a, Tarea 5e, enmiendas C3 y C6). Referencias SHA: [R1](R1_REFERENCE_SHA_2026-10-29.md). Método R7: [M2 R7](M2_R7_2026-10-29.md). Datos crudos: [JSON](data/m3b-node-gate-2026-10-30.json).
+Registro fechado; solo admite añadidos hasta el merge de la rama. Contexto: [plan de la etapa 4](../archive/conversor-web-paralelo-etapa4.md) (Tarea 4a, Tarea 5e, enmiendas C3 y C6). Referencias SHA: [R1](R1_REFERENCE_SHA_2026-10-29.md). Método R7: [M2 R7](M2_R7_2026-10-29.md). Datos crudos: [JSON](data/m3b-node-gate-2026-10-30.json).
 
 ## Entorno
 

@@ -1,4 +1,4 @@
-//! Density spike for render R4 (plan `docs/plans/render-r4-piramide-densa.md`, task 1).
+//! Density spike for render R4 (plan `docs/records/archive/render-r4-piramide-densa.md`, task 1).
 //!
 //! Usage: `density_spike INPUT OUTPUT_DIR --leaf-points N --sample-grid G`
 //!

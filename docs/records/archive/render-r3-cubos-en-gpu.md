@@ -7,12 +7,12 @@ Estado: completado · 14-11-2026 (en curso desde el 03-11-2026; enmendado el 05-
 
 **Objetivo:** sustituir la voxelización en CPU por vista (B1) por celdas por nodo residentes en GPU, sobre `v7.4/v7.5-pre` paginado.
 
-**Por qué:** con 256³ por nodo, el diseño de 0027 desborda el pool y dibuja lo lejano con detalle de más ([ADR 0031](../adr/0031-celdas-por-nodo-en-v7-5.md)).
+**Por qué:** con 256³ por nodo, el diseño de 0027 desborda el pool y dibuja lo lejano con detalle de más ([ADR 0031](../../adr/0031-celdas-por-nodo-en-v7-5.md)).
 
 **Spec:**
-- ADR: [0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md) (en lo vigente), [0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md), [0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), [0034](../adr/0034-nivel-por-octante-con-arista-real.md), [0035](../adr/0035-instancia-de-16-b-con-w-16.md), [0036](../adr/0036-hi-z-por-celda.md), [0029](../adr/0029-octree-global-por-bits-de-enteros.md), [0030](../adr/0030-jerarquia-paginada-por-anclas.md) y [0031](../adr/0031-celdas-por-nodo-en-v7-5.md).
+- ADR: [0019](../../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [0027](../../adr/0027-celdas-por-nodo-en-pool-paginado.md) (en lo vigente), [0032](../../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md), [0033](../../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), [0034](../../adr/0034-nivel-por-octante-con-arista-real.md), [0035](../../adr/0035-instancia-de-16-b-con-w-16.md), [0036](../../adr/0036-hi-z-por-celda.md), [0029](../../adr/0029-octree-global-por-bits-de-enteros.md), [0030](../../adr/0030-jerarquia-paginada-por-anclas.md) y [0031](../../adr/0031-celdas-por-nodo-en-v7-5.md).
 - Requisitos: RF-03 a RF-08, RQ-01, RQ-02, RQ-05 y RQ-09.
-- [Contrato de celdas](../explanation/REGIONAL_VOXEL_LOD.md).
+- [Contrato de celdas](../../explanation/REGIONAL_VOXEL_LOD.md).
 
 ## Resoluciones del propietario (03-11-2026)
 
@@ -23,36 +23,36 @@ Estado: completado · 14-11-2026 (en curso desde el 03-11-2026; enmendado el 05-
 | R3-Q3 | Mientras falta el nivel deseado se dibuja el residente más grueso como etapa, y se cuenta. «Objetivo alcanzado» exige que no quede ninguno |
 | R3-Q4 | RF-05: espaciado de referencia por nube en los metadatos de `v7.5-pre` (hay que regenerar) |
 | R3-Q5 | La ruta CPU (Additive, v5 y `v7.1–3`) se mantiene hasta retirar V5/V6 |
-| R3-Q6 | ~~Límite de 21 bits relativos por eje; si se supera, se para~~ Sustituida el 05-11-2026 por R3-Q7 y R3-Q8 ([ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) |
+| R3-Q6 | ~~Límite de 21 bits relativos por eje; si se supera, se para~~ Sustituida el 05-11-2026 por R3-Q7 y R3-Q8 ([ADR 0032](../../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) |
 | R3-Q7 | (05-11-2026) La cadena de cada hoja baja hasta separar las posiciones finitas distintas; más allá de 21 bits la clave es regional; el límite es la profundidad absoluta 63 |
 | R3-Q8 | (05-11-2026) ~~Instancia de 12 B: 10 bits por eje relativos a la página y flags en `PageEntry`; W = 16 (16 B) queda como control en T5~~ Sustituida por R3-Q14 |
 | R3-Q9 | (05-11-2026) Una hoja con todas sus posiciones separadas no se refina más: cubos mayores que el objetivo de px en primeros planos caen en la excepción «densidad de la fuente» de RQ-09 |
-| R3-Q10 | (05-11-2026) Una actualización de corte con `DescendantTooFine` se rechaza y se retiene el corte visible hasta que el nuevo esté completo ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
-| R3-Q11 | (05-11-2026) Si el corte deseado no cabe en el pool, los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que quepa ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
-| R3-Q12 | (05-11-2026) Nivel por octante con la arista proyectada real ([ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md)); en la pose rasante, ≤ 2× las instancias de la CPU a 2–8 px y ≤ 2,5× a 1 px |
+| R3-Q10 | (05-11-2026) Una actualización de corte con `DescendantTooFine` se rechaza y se retiene el corte visible hasta que el nuevo esté completo ([ADR 0033](../../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
+| R3-Q11 | (05-11-2026) Si el corte deseado no cabe en el pool, los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que quepa ([ADR 0033](../../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
+| R3-Q12 | (05-11-2026) Nivel por octante con la arista proyectada real ([ADR 0034](../../adr/0034-nivel-por-octante-con-arista-real.md)); en la pose rasante, ≤ 2× las instancias de la CPU a 2–8 px y ≤ 2,5× a 1 px |
 | R3-Q13 | (05-11-2026) RQ-09 admite ≤ 0,5 % de celdas por encima del objetivo con la cámara dentro del dataset (ADR 0034) |
-| R3-Q14 | (05-11-2026) Instancia de 16 B con W = 16 y 512 huecos por página, en lugar de 12 B con W = 10 ([ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)) |
+| R3-Q14 | (05-11-2026) Instancia de 16 B con W = 16 y 512 huecos por página, en lugar de 12 B con W = 10 ([ADR 0035](../../adr/0035-instancia-de-16-b-con-w-16.md)) |
 | R3-Q15 | (05-11-2026) La Tarea 16 (compactación y Hi-Z por página) es obligatoria y va antes de la 6; raymarching solo si no basta (ADR 0035). Técnica precisada por R3-Q16 |
-| R3-Q16 | (05-11-2026) Hi-Z por celda en dos fases (`kpc` de la Tarea 16a), con caja ajustada por página en `PageEntry` ([ADR 0036](../adr/0036-hi-z-por-celda.md)) |
+| R3-Q16 | (05-11-2026) Hi-Z por celda en dos fases (`kpc` de la Tarea 16a), con caja ajustada por página en `PageEntry` ([ADR 0036](../../adr/0036-hi-z-por-celda.md)) |
 | R3-Q17 | (06-11-2026) La regla de 2 ms de CPU por frame de T7c/T7d decide con los casos a 4 px; Majadas dentro de una hoja a 1 px queda como prueba de carga y se vuelve a medir en el visor en la Tarea 11 |
 | R3-Q18 | (06-11-2026) Con la cámara en movimiento, el nivel de cada octante se recalcula solo al pasar un umbral, y una celda puede proyectarse hasta ~5 % por encima del objetivo de px; con la cámara quieta, el resultado es exacto. La Tarea 11 lo comprueba en el navegador |
-| R3-Q19 | (06-11-2026) Un corte de celdas se aplica si no deja huecos: cada nodo sin nivel en GPU queda cubierto por un antepasado dibujado, que sigue en el corte hasta que el nodo tiene nivel, y lo que falta en una zona no bloquea las demás. Se carga de grueso a fino: no se pide el nivel de un nodo antes que el de su antepasado. Sustituye la regla de aplicar de T7a («ningún nodo sin nivel»), que se acercaba a la alternativa que el [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) recuerda rechazada en 0031; R3-Q10 sigue igual para `DescendantTooFine` |
+| R3-Q19 | (06-11-2026) Un corte de celdas se aplica si no deja huecos: cada nodo sin nivel en GPU queda cubierto por un antepasado dibujado, que sigue en el corte hasta que el nodo tiene nivel, y lo que falta en una zona no bloquea las demás. Se carga de grueso a fino: no se pide el nivel de un nodo antes que el de su antepasado. Sustituye la regla de aplicar de T7a («ningún nodo sin nivel»), que se acercaba a la alternativa que el [ADR 0033](../../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) recuerda rechazada en 0031; R3-Q10 sigue igual para `DescendantTooFine` |
 | R3-Q20 | (06-11-2026) Un nodo del corte sin nivel en GPU y sin antepasado que dibuje no entra en el corte aplicado: su nivel más grueso se precarga con prioridad y entra cuando es residente. No bloquea el resto del corte. Si aplicar el corte dejaría de dibujar una zona que el corte anterior dibujaba, se retiene el anterior. Precisa R3-Q19 (hallazgo de T9b2b: la imagen se congelaba mientras llegaban nodos) Precisión del 06-11-2026: al alejar la cámara, los descendientes que ya se dibujaban siguen dibujando la zona del nodo grueso nuevo hasta que es residente; solo se retiene todo el corte si la zona no se puede cubrir así |
 | R3-Q21 | (06-11-2026) La imagen solo se refina: el antepasado sigue dibujando la zona de un hijo hasta que el hijo tiene ahí un nivel al menos tan fino como el que dibujaba el antepasado. Precisa R3-Q19 (hallazgo de T9b2b: al sustituir un nodo se veía un instante un nivel más grueso) Precisión del 06-11-2026: el umbral es el más grueso entre el nivel que dibujaba el antepasado y el que se pide ahora (deseado y tope del ajuste), y se decide por nodo entero (la máscara no distingue octantes del hijo). Dentro de un nodo, si falta el nivel deseado, se dibuja el residente más cercano a él |
 | R3-Q22 | (06-11-2026) Padres primero por nodo: antes de construir las celdas de un nodo se construyen las de su padre, aunque el padre no esté en el corte. La escalera de px de celdas solo arranca al abrir el dataset o tras un salto de cámara (ningún nodo del corte nuevo tiene celdas ni un antepasado con celdas); al orbitar no se reinicia. Sustituye la nota «reiniciar la escalera en cada movimiento de cámara» (pre-mortem de la Tarea 10: volvía más tosca toda la imagen en cada paso) |
 | R3-Q23 | (06-11-2026) Hasta la Tarea 12, la ruta de celdas solo dibuja RGB: otro modo de color vuelve a la ruta CPU, y al volver a RGB las celdas se reactivan solas (siguen en la memoria del driver; solo se vuelven a subir a la GPU) |
 | R3-Q24 | (07-11-2026) La ruta de celdas solo funciona con el worker de construcción. Sin él (`buildWorker=0`, `file://` o un navegador sin workers anidados), `cells=1` se ignora, se usa la ruta CPU y las estadísticas dan `cellPath: "needsBuildWorker"`. Motivo: construir las celdas en el worker de render llevó el p95 del frame a 100 ms mientras llegaban nodos, frente a 18 ms con el worker (T10c2). El camino en proceso sigue para los tests nativos |
 | R3-Q25 | (13-11-2026) Tarea 12: en los modos de intensidad y elevación, el color final de la ruta de celdas puede diferir en ≤ 1 nivel de 8 bits (1 LSB) por canal de la ruta CPU; RGB y el resto de modos siguen bit a bit. Motivo: la instancia de 16 B (ADR 0035) guarda la intensidad como media `u16` redondeada y la elevación sin `center.z` absoluto ([consecuencia en la Tarea 6](#tarea-6-instancia-y-tabla-de-páginas)) |
-| R3-Q26 | (13-11-2026) Pérdida de dispositivo WebGPU (TW6 de la [revisión](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#carga-web-y-api)): salvo `destroy()`, el visor pide adaptador y dispositivo nuevos, recrea los recursos y vuelve a subir la escena desde el worker de construcción, sin recargar el dataset y conservando la cámara. Se prueba con la caída del proceso GPU de Chrome |
-| R3-Q27 | (13-11-2026) Olvido en bucle hallado en la Tarea 11 (Majadas a 1 px dentro de una hoja: las celdas llenan los 512 MiB del presupuesto de CPU en wasm; en nativo, la hoja +x a 1 px ocupa 824 MiB según T9): el corte deseado se ajusta al presupuesto de CPU engrosando los nodos lejanos, como hace el [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) con el pool de GPU, y el driver nunca olvida nodos del corte vigente. La histéresis sola no basta porque el conjunto de trabajo no cabe. Se recoge en el [ADR 0037](../adr/0037-corte-ajustado-al-presupuesto-de-cpu.md) |
-| R3-Q28 | (14-11-2026) La causa del bucle de R3-Q27 es la caché de bloques (256 MiB en el navegador): el plan exige los bloques decodificados de cada nodo del corte. En la ruta de celdas, un nodo con celdas cuenta como residente aunque sus bloques salgan de la caché ([ADR 0038](../adr/0038-residencia-por-celdas.md)) |
-| R3-Q29 | (14-11-2026) Corte que no cabe en el pool de GPU ni con los niveles más gruesos (Belvedere a 1 px tras un salto): pool de 512 MiB y corte de nodos ajustado también al pool ([ADR 0040](../adr/0040-pool-de-512-mib-y-corte-ajustado-al-pool.md)) |
-| R3-Q30 | (14-11-2026) Se confirman las reglas de B1c que el ADR 0037 no detallaba: hijos en curso protegidos y contados, bloqueo de todos los candidatos y bloqueo retenido mientras no cambie la selección ([ADR 0039](../adr/0039-hijos-en-curso-y-bloqueo-retenido.md)) |
+| R3-Q26 | (13-11-2026) Pérdida de dispositivo WebGPU (TW6 de la [revisión](../benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#carga-web-y-api)): salvo `destroy()`, el visor pide adaptador y dispositivo nuevos, recrea los recursos y vuelve a subir la escena desde el worker de construcción, sin recargar el dataset y conservando la cámara. Se prueba con la caída del proceso GPU de Chrome |
+| R3-Q27 | (13-11-2026) Olvido en bucle hallado en la Tarea 11 (Majadas a 1 px dentro de una hoja: las celdas llenan los 512 MiB del presupuesto de CPU en wasm; en nativo, la hoja +x a 1 px ocupa 824 MiB según T9): el corte deseado se ajusta al presupuesto de CPU engrosando los nodos lejanos, como hace el [ADR 0033](../../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) con el pool de GPU, y el driver nunca olvida nodos del corte vigente. La histéresis sola no basta porque el conjunto de trabajo no cabe. Se recoge en el [ADR 0037](../../adr/0037-corte-ajustado-al-presupuesto-de-cpu.md) |
+| R3-Q28 | (14-11-2026) La causa del bucle de R3-Q27 es la caché de bloques (256 MiB en el navegador): el plan exige los bloques decodificados de cada nodo del corte. En la ruta de celdas, un nodo con celdas cuenta como residente aunque sus bloques salgan de la caché ([ADR 0038](../../adr/0038-residencia-por-celdas.md)) |
+| R3-Q29 | (14-11-2026) Corte que no cabe en el pool de GPU ni con los niveles más gruesos (Belvedere a 1 px tras un salto): pool de 512 MiB y corte de nodos ajustado también al pool ([ADR 0040](../../adr/0040-pool-de-512-mib-y-corte-ajustado-al-pool.md)) |
+| R3-Q30 | (14-11-2026) Se confirman las reglas de B1c que el ADR 0037 no detallaba: hijos en curso protegidos y contados, bloqueo de todos los candidatos y bloqueo retenido mientras no cambie la selección ([ADR 0039](../../adr/0039-hijos-en-curso-y-bloqueo-retenido.md)) |
 | R3-Q31 | (14-11-2026) El criterio de ≤ 16,7 ms de la Tarea 16b en el visor wasm se mide con el tiempo de GPU del frame (consultas de timestamp de WebGPU), p95 ≤ 16,7 ms; el intervalo entre frames está atado al vsync y no sirve para ese criterio |
 | R3-Q32 | (14-11-2026) Paridad de color de la Tarea 12: con las mismas entradas por celda o vóxel (RGB, intensidad, clase, z) y los mismos rangos, el shader de celdas da el mismo color que el de la ruta CPU, bit a bit en RGB y clasificación y con ≤ 1 LSB en intensidad y elevación (R3-Q25). No se exige la misma imagen: las dos rutas no voxelizan con la misma rejilla |
 | R3-Q33 | (14-11-2026) Los modos `attribute:N:M` no caben en la instancia de 16 B: al elegirlos, las celdas se reconstruyen con el RGB pintado por el atributo, cada cambio sube `color_gen` y las celdas de generaciones anteriores se descartan; mientras llegan se dibuja de grueso a fino sin huecos. Sustituye para estos modos la vuelta a la ruta CPU de R3-Q23 |
 | R3-Q34 | (14-11-2026) Tras una caída del proceso GPU, el `OffscreenCanvas` transferido deja de presentar aunque el visor se recupere. Ante una pérdida de dispositivo, la API clona el canvas del host (mismo id, clases y estilos), lo sustituye en el DOM, transfiere el nuevo al worker y emite `voxelviewer:canvasReplaced` con el elemento nuevo. El host solo se entera si guarda una referencia al canvas anterior; se documenta en el contrato de la API |
-| R3-Q35 | (14-11-2026) Tras la [medida de la Tarea 17](../records/benchmarks/R3_T17_MEASURE_14-11-2026.md), la ruta de celdas pasa a ser la predeterminada; la ruta CPU sigue como alternativa y sin worker de construcción (R3-Q24). Se aceptan los +2,7 pp de píxeles vacíos de Majadas frente a la ruta CPU (0,88–0,89 en la órbita, dentro del rango de la línea base de R1, 0,885–0,896; 0,897 en reposo, justo por encima). El ADR 0027 queda aceptado |
+| R3-Q35 | (14-11-2026) Tras la [medida de la Tarea 17](../benchmarks/R3_T17_MEASURE_14-11-2026.md), la ruta de celdas pasa a ser la predeterminada; la ruta CPU sigue como alternativa y sin worker de construcción (R3-Q24). Se aceptan los +2,7 pp de píxeles vacíos de Majadas frente a la ruta CPU (0,88–0,89 en la órbita, dentro del rango de la línea base de R1, 0,885–0,896; 0,897 en reposo, justo por encima). El ADR 0027 queda aceptado |
 
 ## Restricciones globales
 
@@ -68,7 +68,7 @@ Estado: completado · 14-11-2026 (en curso desde el 03-11-2026; enmendado el 05-
 
 - **T1:** alguna hoja con posiciones finitas distintas sin separar en la profundidad absoluta 63 → parar (R3-Q7).
 - **T4:** el corte ocupa más de 256 MiB, o en la pose rasante hay más de 2× las instancias en pantalla de la ruta CPU a 2–8 px, o más de 2,5× a 1 px (R3-Q12) → replantear y volver al propietario.
-- **T4/T9:** `DescendantTooFine` en más del 5 % de las actualizaciones de corte → rediseñar la máscara. Revisado el 05-11-2026 ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)): 16,7 % solo en saltos de pose; se retiene el corte (R3-Q10). Vuelve a aplicar si aparece con navegación continua.
+- **T4/T9:** `DescendantTooFine` en más del 5 % de las actualizaciones de corte → rediseñar la máscara. Revisado el 05-11-2026 ([ADR 0033](../../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)): 16,7 % solo en saltos de pose; se retiene el corte (R3-Q10). Vuelve a aplicar si aparece con navegación continua.
 - **T5:** más de 16,7 ms de GPU en Majadas dentro de una hoja a 4 px, con el `draw` por rango → revisar ADR 0019.
 - **T11:** cualquiera de estos → parar:
   - racha de `RetainedPrevious` de más de 1 s;
@@ -78,26 +78,26 @@ Estado: completado · 14-11-2026 (en curso desde el 03-11-2026; enmendado el 05-
 
 ## Tarea 0: línea base y fixtures
 
-- [x] Nueva línea base de la ruta CPU sobre v7.5: Majadas a 4 px y Belvedere a 4 y 8 px, 3 rondas. [Matriz independiente](../records/benchmarks/R3_T0_CPU_04-11-2026.md): 9/9 muestras; no mezcla el [registro parcial anterior](../records/benchmarks/R3_T0_PARTIAL_04-11-2026.md), capturado en otro entorno.
-- [x] Fixtures en ambas versiones, v7.4 y v7.5, con estos casos ([evidencia y límites](../records/benchmarks/R3_T0_PARTIAL_04-11-2026.md)):
+- [x] Nueva línea base de la ruta CPU sobre v7.5: Majadas a 4 px y Belvedere a 4 y 8 px, 3 rondas. [Matriz independiente](../benchmarks/R3_T0_CPU_04-11-2026.md): 9/9 muestras; no mezcla el [registro parcial anterior](../benchmarks/R3_T0_PARTIAL_04-11-2026.md), capturado en otro entorno.
+- [x] Fixtures en ambas versiones, v7.4 y v7.5, con estos casos ([evidencia y límites](../benchmarks/R3_T0_PARTIAL_04-11-2026.md)):
   - nube con CRS y raíz en nivel 0;
   - nube local;
   - hoja de nivel 2 con profundidad 16.
-- [x] **Pasa si** las medidas quedan en un registro fechado y todos los fixtures se abren en nativo y en la web real. En v7.5 se comprueban la carga diferida de jerarquía y el injerto de páginas; v7.4 conserva la ruta de compatibilidad con índice completo (criterio confirmado el 04-11-2026). Evidencia: [matriz CPU](../records/benchmarks/R3_T0_CPU_04-11-2026.md), [anfitrión web real](../records/benchmarks/R3_T0_WEB_REAL_04-11-2026.md) y [prueba nativa](../records/benchmarks/R3_T0_PARTIAL_04-11-2026.md).
+- [x] **Pasa si** las medidas quedan en un registro fechado y todos los fixtures se abren en nativo y en la web real. En v7.5 se comprueban la carga diferida de jerarquía y el injerto de páginas; v7.4 conserva la ruta de compatibilidad con índice completo (criterio confirmado el 04-11-2026). Evidencia: [matriz CPU](../benchmarks/R3_T0_CPU_04-11-2026.md), [anfitrión web real](../benchmarks/R3_T0_WEB_REAL_04-11-2026.md) y [prueba nativa](../benchmarks/R3_T0_PARTIAL_04-11-2026.md).
 
 ## Tarea 0b: espaciado de referencia en v7.5 (R3-Q4)
 
-- [x] Nuevo campo en el bloque de metadatos de `v7.5-pre` (spec, códec, conversor y `verify`), con [semillas de fuzz y SHA nuevos](../records/benchmarks/R5_V75_REFERENCE_SHA_03-11-2026.md).
+- [x] Nuevo campo en el bloque de metadatos de `v7.5-pre` (spec, códec, conversor y `verify`), con [semillas de fuzz y SHA nuevos](../benchmarks/R5_V75_REFERENCE_SHA_03-11-2026.md).
 - [x] Regenerar `target/render-data/*-v75`.
 - [x] **Pasa si** hay ida y vuelta, paridad web/CLI y el valor es estable al injertar páginas.
 
-**Evidencia (04-11-2026, rama `feat/r3-v75`):** tests de formato y jerarquía; para el mismo fixture, el lector nativo obtiene `0,03125` y el visor WebAssembly en Chromium obtiene el mismo valor antes y después de un injerto ([probe y comandos](../../examples/web-host/tests/reference-spacing.browser.mjs)). Belvedere y Majadas se regeneraron y pasaron `viewer_convert verify` en `target/render-data/` del worktree aislado; los originales del checkout principal se conservaron. La expulsión solo se probó en tests nativos; no se verificó GPU. `scripts/check.sh --offline` pasó los 24 pasos sin omisiones, incluidos fuzz, bindings y paridad con Belvedere real ([registro](../records/benchmarks/R3_T0_PARTIAL_04-11-2026.md)).
+**Evidencia (04-11-2026, rama `feat/r3-v75`):** tests de formato y jerarquía; para el mismo fixture, el lector nativo obtiene `0,03125` y el visor WebAssembly en Chromium obtiene el mismo valor antes y después de un injerto ([probe y comandos](../../../examples/web-host/tests/reference-spacing.browser.mjs)). Belvedere y Majadas se regeneraron y pasaron `viewer_convert verify` en `target/render-data/` del worktree aislado; los originales del checkout principal se conservaron. La expulsión solo se probó en tests nativos; no se verificó GPU. `scripts/check.sh --offline` pasó los 24 pasos sin omisiones, incluidos fuzz, bindings y paridad con Belvedere real ([registro](../benchmarks/R3_T0_PARTIAL_04-11-2026.md)).
 
 ## Tarea 1 (reabierta): celdas por nodo
 
-**Hecha (05-11-2026):** [aceptación en Belvedere y Majadas](../records/benchmarks/R3_T1_ACCEPT_05-11-2026.md): ninguna hoja sin separar.
+**Hecha (05-11-2026):** [aceptación en Belvedere y Majadas](../benchmarks/R3_T1_ACCEPT_05-11-2026.md): ninguna hoja sin separar.
 
-**Parada (04-11-2026):** Majadas presenta 16 hojas con colisiones entre posiciones `f32` distintas en el límite de profundidad; resuelta por el [ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md) (05-11-2026); T1 continúa con el código de `experiment/r3-layout-narrow`. [Diagnóstico, reproducción y límites](../records/benchmarks/R3_T1_STOP_04-11-2026.md); [salida completa del benchmark repetido](../records/benchmarks/R3_T1_BENCH_04-11-2026.md).
+**Parada (04-11-2026):** Majadas presenta 16 hojas con colisiones entre posiciones `f32` distintas en el límite de profundidad; resuelta por el [ADR 0032](../../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md) (05-11-2026); T1 continúa con el código de `experiment/r3-layout-narrow`. [Diagnóstico, reproducción y límites](../benchmarks/R3_T1_STOP_04-11-2026.md); [salida completa del benchmark repetido](../benchmarks/R3_T1_BENCH_04-11-2026.md).
 
 - [x] Continuación adaptativa de hojas y clave regional más allá de 21 bits (R3-Q7).
 - [x] Claves `u64`, Morton de 64 bits relativo al nodo hasta 21 bits, firma `&[PointBlock]`, `intensity_count` y clase `i16` (−1 si falta).
@@ -132,9 +132,9 @@ Estado: completado · 14-11-2026 (en curso desde el 03-11-2026; enmendado el 05-
 
 ## Tarea 4: spike de cobertura (v7.5)
 
-**Parada (05-11-2026):** saltan los criterios de T4 y el disparador de `DescendantTooFine` ([registro](../records/benchmarks/R3_T4_COVERAGE_05-11-2026.md)): Majadas pasa de 256 MiB desde dentro de una hoja a 1 px, la pirámide da 2–4,6× las instancias de la CPU en la pose rasante de Majadas, y el 16,7 % de las transiciones (todas saltos de pose) dan `DescendantTooFine`. Causa principal: `projected_error_pixels` es una cota superior. Vuelve al propietario. Medidas nativas hechas; los píxeles vacíos quedan para después de la Tarea 7.
+**Parada (05-11-2026):** saltan los criterios de T4 y el disparador de `DescendantTooFine` ([registro](../benchmarks/R3_T4_COVERAGE_05-11-2026.md)): Majadas pasa de 256 MiB desde dentro de una hoja a 1 px, la pirámide da 2–4,6× las instancias de la CPU en la pose rasante de Majadas, y el 16,7 % de las transiciones (todas saltos de pose) dan `DescendantTooFine`. Causa principal: `projected_error_pixels` es una cota superior. Vuelve al propietario. Medidas nativas hechas; los píxeles vacíos quedan para después de la Tarea 7.
 
-**Alternativas (05-11-2026):** con métrica ajustada y nivel por octante, el corte cabe en 256 MiB y la razón frente a la CPU baja a 1,00–1,01× salvo 2,27× a 1 px en Majadas ([registro](../records/benchmarks/R3_T4_METRIC_05-11-2026.md)). Decidido el 05-11-2026: R3-Q12 y R3-Q13 ([ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md); [celdas por encima del objetivo](../records/benchmarks/R3_T4_OFFAXIS_05-11-2026.md)).
+**Alternativas (05-11-2026):** con métrica ajustada y nivel por octante, el corte cabe en 256 MiB y la razón frente a la CPU baja a 1,00–1,01× salvo 2,27× a 1 px en Majadas ([registro](../benchmarks/R3_T4_METRIC_05-11-2026.md)). Decidido el 05-11-2026: R3-Q12 y R3-Q13 ([ADR 0034](../../adr/0034-nivel-por-octante-con-arista-real.md); [celdas por encima del objetivo](../benchmarks/R3_T4_OFFAXIS_05-11-2026.md)).
 
 - [x] Majadas y Belvedere en órbita, en pose rasante y desde dentro de una hoja, a 1, 2, 4 y 8 px. Comparar la pirámide con 256³ solo.
 - [x] Registrar (píxeles vacíos pendientes del render de la Tarea 7):
@@ -142,12 +142,12 @@ Estado: completado · 14-11-2026 (en curso desde el 03-11-2026; enmendado el 05-
   - píxeles vacíos (pendiente, abajo);
   - bytes del corte;
   - frecuencia de `DescendantTooFine`.
-- [x] **Pasa si** no salta ningún criterio de parada de T4: pasa con el nivel por octante y la arista real (R3-Q12) en los dos datasets. El de `DescendantTooFine` (16,7 %, solo en saltos de pose) se revisó en el [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) (R3-Q10).
-- [x] Píxeles vacíos, cuando exista el render (Tarea 7). Medidos en la [Tarea 17](../records/benchmarks/R3_T17_MEASURE_14-11-2026.md) (14-11-2026).
+- [x] **Pasa si** no salta ningún criterio de parada de T4: pasa con el nivel por octante y la arista real (R3-Q12) en los dos datasets. El de `DescendantTooFine` (16,7 %, solo en saltos de pose) se revisó en el [ADR 0033](../../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) (R3-Q10).
+- [x] Píxeles vacíos, cuando exista el render (Tarea 7). Medidos en la [Tarea 17](../benchmarks/R3_T17_MEASURE_14-11-2026.md) (14-11-2026).
 
 ## Tarea 5: spike de GPU
 
-**Parada (05-11-2026), decidida en el [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md) (16 B con W = 16 y Tarea 16 antes de la 6):** [registro](../records/benchmarks/R3_GPU_SPIKE_05-11-2026.md). Belvedere dentro de una hoja a 4 px pasa (7,66 ms), pero Majadas a 4 px tarda 27,96 ms (> 16,7 ms) y la instancia de 12 B cuesta un 34 % más que la de 16 B. Dentro de una hoja solo se ve el 0,75–4 % de las celdas dibujadas.
+**Parada (05-11-2026), decidida en el [ADR 0035](../../adr/0035-instancia-de-16-b-con-w-16.md) (16 B con W = 16 y Tarea 16 antes de la 6):** [registro](../benchmarks/R3_GPU_SPIKE_05-11-2026.md). Belvedere dentro de una hoja a 4 px pasa (7,66 ms), pero Majadas a 4 px tarda 27,96 ms (> 16,7 ms) y la instancia de 12 B cuesta un 34 % más que la de 16 B. Dentro de una hoja solo se ve el 0,75–4 % de las celdas dibujadas.
 
 Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibujar los cortes reales de la Tarea 4 con la instancia de 12 B. Especificación del 05-11-2026, revisada con su pre-mortem. El código es desechable: la decodificación exacta es de la Tarea 6 y el pool de la Tarea 7.
 
@@ -189,9 +189,9 @@ Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibuja
 
 ## Tarea 6: instancia y tabla de páginas
 
-Instancia de 16 B con W = 16 (R3-Q14, [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)) y tabla de páginas con caja ajustada (R3-Q16, [ADR 0036](../adr/0036-hi-z-por-celda.md)). Especificación del 05-11-2026, enmendada con su pre-mortem. Solo empaqueta y decodifica: subir el pool, la residencia y los pases son de la Tarea 7.
+Instancia de 16 B con W = 16 (R3-Q14, [ADR 0035](../../adr/0035-instancia-de-16-b-con-w-16.md)) y tabla de páginas con caja ajustada (R3-Q16, [ADR 0036](../../adr/0036-hi-z-por-celda.md)). Especificación del 05-11-2026, enmendada con su pre-mortem. Solo empaqueta y decodifica: subir el pool, la residencia y los pases son de la Tarea 7.
 
-**Hecha (05-11-2026):** [aceptación](../records/benchmarks/R3_T6_ACCEPT_05-11-2026.md). Decodificación bit a bit en la Radeon 880M (Vulkan y GL) y en llvmpipe; mismas páginas que el spike en los 22 casos; error ≤ 0,0006 px con el origen relativo al ojo.
+**Hecha (05-11-2026):** [aceptación](../benchmarks/R3_T6_ACCEPT_05-11-2026.md). Decodificación bit a bit en la Radeon 880M (Vulkan y GL) y en llvmpipe; mismas páginas que el spike en los 22 casos; error ≤ 0,0006 px con el origen relativo al ojo.
 
 - [x] **Módulo** `crates/viewer_render_wgpu/src/cell_pages.rs`, privado y reexportado desde `lib.rs` como `node_cells`, para que lo use el spike, con sus tests en `cell_pages_tests.rs`. Entrada: un `NodeCellLevel` de `node_cells.rs`, con su nodo, su `CellGrid` y el rango del nodo (`node_range`). Salida: las instancias, ya repartidas en páginas de 512 huecos con los vacíos rellenos, y los datos de cada página en la CPU.
 - [x] **Instancia** (`CellInstance`, 4 × `u32`, `Pod`):
@@ -205,7 +205,7 @@ Instancia de 16 B con W = 16 (R3-Q14, [ADR 0035](../adr/0035-instancia-de-16-b-c
 
   - Hueco vacío: palabras 0 y 1 a `u32::MAX`, 2 y 3 a 0. El bit 15 de los flags siempre es 0, así que una celda nunca coincide con el centinela.
 - [x] **Flags de la instancia:**
-  - bits 0–8: la celda 8³ de la máscara del nodo (`x + 8y + 64z`), calculada en la CPU con aritmética entera desde la coordenada absoluta. Por eje, `m = min((coord − node_range(d).lo) >> (d − nodo − 3), 7)` si `d ≥ nodo + 3`, y `(coord − lo) << (nodo + 3 − d)`, también limitado a 7, si no. Es el mismo límite que `octant_offsets` (`node_cells.rs:253`). Sirve para cualquier profundidad, también las que pasan de 2³² celdas por eje con la clave regional ([ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md));
+  - bits 0–8: la celda 8³ de la máscara del nodo (`x + 8y + 64z`), calculada en la CPU con aritmética entera desde la coordenada absoluta. Por eje, `m = min((coord − node_range(d).lo) >> (d − nodo − 3), 7)` si `d ≥ nodo + 3`, y `(coord − lo) << (nodo + 3 − d)`, también limitado a 7, si no. Es el mismo límite que `octant_offsets` (`node_cells.rs:253`). Sirve para cualquier profundidad, también las que pasan de 2³² celdas por eje con la clave regional ([ADR 0032](../../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md));
   - los niveles con `d < nodo + 3` solo existen en hojas, porque los nodos internos guardan de nodo + 3 a nodo + 8 (`node_cells.rs:181-196`). Una hoja no tiene descendientes en el corte y su máscara es 0. La Tarea 7 da error si un nodo con máscara ≠ 0 tiene uno de esos niveles;
   - bit 9: la celda abarca más de un octante (nivel con profundidad ≤ la del nodo). El shader no hace entonces las pruebas de octante ni de máscara;
   - bits 10–15: reservados, a 0.
@@ -263,7 +263,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 - **las dos rutas son excluyentes** (segunda revisión): solo `upload_cell_level` crea el pool; si esa primera subida falla, el pool se descarta y la escena CPU sigue intacta; si sale bien, se libera la escena CPU. Subir una escena CPU libera el pool;
 - sin test sobre un `SurfaceRenderer` real, que necesita una superficie: que tras la primera subida la escena CPU quede liberada y que las llamadas sin pool den `NoPool`. Los cubren dos tests de las funciones auxiliares y la compilación; se probarán en el humo de la Tarea 11.
 
-- [x] **Soporte:** `SurfaceRenderer::new` pide, sin pasar de lo que da el adaptador, `max_storage_buffers_per_shader_stage` ≥ 8 y `max_storage_buffer_binding_size` y `max_buffer_size` ≥ los bytes del pool ([ADR 0036](../adr/0036-hi-z-por-celda.md)). Además exige cómputo, dibujo indirecto, almacenamiento en la etapa de vértices y texturas de almacenamiento `r32float` (`DownlevelFlags`). Si algo falta, `cells_supported() = false` (R3-Q5).
+- [x] **Soporte:** `SurfaceRenderer::new` pide, sin pasar de lo que da el adaptador, `max_storage_buffers_per_shader_stage` ≥ 8 y `max_storage_buffer_binding_size` y `max_buffer_size` ≥ los bytes del pool ([ADR 0036](../../adr/0036-hi-z-por-celda.md)). Además exige cómputo, dibujo indirecto, almacenamiento en la etapa de vértices y texturas de almacenamiento `r32float` (`DownlevelFlags`). Si algo falta, `cells_supported() = false` (R3-Q5).
 - [x] **La ruta CPU no cambia:** sus comprobaciones de tamaño (`gpu.rs:1364`, `hzb.rs:263-265`) siguen usando los límites de `downlevel_defaults`. Los límites se pueden inyectar en `RendererConfig`, para el test.
 - [x] **Pool perezoso:** se crea al recibir el primer nivel, no en `new()`, y se libera al volver a la ruta CPU. Así sus bytes no cuentan contra el presupuesto de las escenas CPU (`budget.rs:17`).
 - [x] **Cámara:** `OrbitCamera` da una vista-proyección con el ojo en el origen (`look_at` desde 0 hacia `−offset`) y el ojo escalado en `f64`, para `PageFrame` (Tarea 6).
@@ -285,7 +285,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 **Hecha (06-11-2026).** 16 tests con un cargador y una GPU falsos. La GPU falsa falla si se escribe un hueco en uso en el frame actual o en el anterior, si un nivel activo no tiene todas sus páginas o si una máscara no coincide con la de `cell_cut`. Cuatro mutaciones (contadores fijos a 0, sin orden de prioridad, histéresis al 90 % y sin bloqueo por prioridad) hacen fallar los tests. Pendiente de medir con cortes reales en T7c: si la estimación de tamaño recorta de más con la cámara quieta, porque los niveles por encima del límite no se piden y conservan su tamaño estimado.
 
-- [x] **Pool de páginas:** capacidad fija en páginas de 8 KiB (256 MiB = 32.768 páginas, [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)), con lista libre. Clave de un nivel: (sesión, nodo, profundidad, generación de color).
+- [x] **Pool de páginas:** capacidad fija en páginas de 8 KiB (256 MiB = 32.768 páginas, [ADR 0033](../../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)), con lista libre. Clave de un nivel: (sesión, nodo, profundidad, generación de color).
 - [x] **Estados por (nodo, nivel):** pedido → subiendo → residente (R3-Q2: solo cuenta como residente con todas sus páginas). La entrada de datos es asíncrona, `offer(clave, PackedLevel)`, como la entregarán los workers (Tarea 10). Un nivel puede subirse en varios frames, con un presupuesto de bytes por frame. Si sale del corte, se cancela y se liberan sus páginas.
 - [x] **El nivel más grueso de cada nodo del corte está siempre residente y fijado**, también el de los nodos con todos los octantes tapados por la máscara. Si un descendiente pierde residencia y la máscara se abre, el antepasado tiene qué dibujar. Se reserva 1/8 del pool para las transiciones.
 - [x] **Prioridad de subida:** primero el nivel más grueso de los nodos que no tienen ningún nivel dibujable; después, los deseados, del nodo más cercano al más lejano.
@@ -313,7 +313,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 - [x] Pases de `kpc` sobre `k`: Hi-Z sobre la caja ajustada en el pase de páginas, Hi-Z por celda en la fase 2, dos fases y un `drawIndexedIndirect` por fase. Los bits de visibilidad, en doble búfer y por hueco del pool, se ponen a cero cuando se reutiliza un hueco.
 - [x] **Hi-Z propio:** cada texel guarda el máximo de todos sus píxeles. No usa la escala de `hzb.rs`, que no es conservadora fuera de potencias de dos. Se rehace al redimensionar y en `Outdated`.
 - [x] **Margen de profundidad**, derivado y documentado: el pase y el vértice calculan los mismos `clip`, así que solo queda el redondeo de la interpolación del rasterizador. Si no se puede acotar, se mide el peor caso en los tests y se usa el doble.
-- [x] **Dispositivo perdido:** se vacía la residencia y se emite `Evict` de todo. Pasa a la integración de la Tarea 9, que une `cell_pool` con el renderer; los bits y el Hi-Z son estado derivado que se rehace con el renderer. Resuelto en [B5](../records/benchmarks/R3_B5_DEVICE_LOST_14-11-2026.md) (14-11-2026).
+- [x] **Dispositivo perdido:** se vacía la residencia y se emite `Evict` de todo. Pasa a la integración de la Tarea 9, que une `cell_pool` con el renderer; los bits y el Hi-Z son estado derivado que se rehace con el renderer. Resuelto en [B5](../benchmarks/R3_B5_DEVICE_LOST_14-11-2026.md) (14-11-2026).
 - [x] **Tests:**
   - profundidad idéntica con y sin oclusión, en un frame quieto y en 10 frames en movimiento desde un arranque en frío;
   - la fase 1 dibuja algo tras el frame 0 y la fase 2 descarta algo;
@@ -321,7 +321,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 **T7c, medida nativa** (no decide; referencia para la Tarea 11):
 
-**Hecha (06-11-2026), salta la regla de CPU:** [registro](../records/benchmarks/R3_T7C_NATIVE_06-11-2026.md). En la GPU, `kpc` tarda 3,28 ms en Majadas mirando a +y a 4 px (spike en Chrome: 4,39 ms), y todas las poses quietas convergen en ≤ 15 frames. Pero `CellPool::frame` cuesta hasta 8,75 ms de CPU por frame (Majadas a 1 px), por encima de los 2 ms. Además, la estimación de tamaños, unas 2 veces el tamaño real, recorta 29 nodos sin necesidad con la cámara quieta. Se corrige en T7d.
+**Hecha (06-11-2026), salta la regla de CPU:** [registro](../benchmarks/R3_T7C_NATIVE_06-11-2026.md). En la GPU, `kpc` tarda 3,28 ms en Majadas mirando a +y a 4 px (spike en Chrome: 4,39 ms), y todas las poses quietas convergen en ≤ 15 frames. Pero `CellPool::frame` cuesta hasta 8,75 ms de CPU por frame (Majadas a 1 px), por encima de los 2 ms. Además, la estimación de tamaños, unas 2 veces el tamaño real, recorta 29 nodos sin necesidad con la cámara quieta. Se corrige en T7d.
 
 - [x] `coverage_spike --export-pool DIR` escribe los niveles de los cortes exportados ya empaquetados con `cell_pages`. Un ejemplo nuevo, `cell_pool_bench`, los ofrece al pool, en la 880M y con `timestamp-query`:
   - el corte quieto (los casos de la Tarea 16a);
@@ -334,7 +334,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 **T7d, coste de CPU y tamaños exactos** (antes de la Tarea 9; especificación del 06-11-2026):
 
-**Hecha (06-11-2026):** [registro](../records/benchmarks/R3_T7D_CPU_06-11-2026.md). Con R3-Q17 y R3-Q18, pasa: ≤ 1,38 ms de CPU por frame en los casos a 4 px, y ya no hay recorte falso. Majadas a 1 px en movimiento, que es la prueba de carga, sigue en 2,76 / 3,34 ms. La GPU de Majadas +y sube de 3,28 a 3,90 ms porque ahora dibuja el corte sin recortar, así que el criterio del 5 % no se aplica ahí.
+**Hecha (06-11-2026):** [registro](../benchmarks/R3_T7D_CPU_06-11-2026.md). Con R3-Q17 y R3-Q18, pasa: ≤ 1,38 ms de CPU por frame en los casos a 4 px, y ya no hay recorte falso. Majadas a 1 px en movimiento, que es la prueba de carga, sigue en 2,76 / 3,34 ms. La GPU de Majadas +y sube de 3,28 a 3,90 ms porque ahora dibuja el corte sin recortar, así que el criterio del 5 % no se aplica ahí.
 
 - [x] **Tamaños exactos sin subir:** `CellPool::set_level_sizes(nodo, &[(profundidad, páginas)])`. En el visor, todos los niveles de un nodo se construyen a la vez desde sus puntos, así que sus tamaños se conocen aunque no se suban. El ajuste usa el tamaño exacto en cuanto lo tiene; la estimación solo queda para los nodos cuyos puntos no han llegado. El banco los entrega al cargar cada nodo.
 - [x] **Coste por frame:** como mucho una llamada a `cell_cut` por frame en régimen estable. El corte deseado y el ajuste solo se recalculan si cambia el corte de nodos, si llegan tamaños o residencia nuevos, o si la cámara se mueve más de un umbral documentado; si no, se reutilizan. Antes de cambiar nada, se perfila `cell_cut` con el corte de Majadas a 1 px y se mide cuánto cuesta cada parte.
@@ -386,7 +386,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 9 ★: `LodDataset` con celdas
 
-**Hecha (06-11-2026).** Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tarea 7) con el dataset en Rust nativo. **El visor recibe las celdas por el worker en la Tarea 10** (decisión del propietario del 06-11-2026): construir un nodo interno cuesta 26–39 ms en nativo ([T1](../records/benchmarks/R3_T1_ACCEPT_05-11-2026.md)), demasiado para el hilo principal. Esta tarea no toca los bindings. Dos partes, cada una con su commit.
+**Hecha (06-11-2026).** Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tarea 7) con el dataset en Rust nativo. **El visor recibe las celdas por el worker en la Tarea 10** (decisión del propietario del 06-11-2026): construir un nodo interno cuesta 26–39 ms en nativo ([T1](../benchmarks/R3_T1_ACCEPT_05-11-2026.md)), demasiado para el hilo principal. Esta tarea no toca los bindings. Dos partes, cada una con su commit.
 
 **Hechos de partida** (comprobados en el código):
 - El plan visible de `LodTransitionPlanner` no es una antichain: mientras cargan los hijos, contiene al padre y a sus hijos directos alineados ya cargados (`resolve_replacement`; test `partial.node_ids() == [1, 2]` en `viewer_core/tests/lod_transition.rs`). El salto es siempre 1, y la máscara de 8³ lo cubre. Por construcción no hay pares `DescendantTooFine`; se comprueba un salto ≤ 3 en cada actualización y se cuentan los `DescendantTooFine` (deben ser 0).
@@ -453,7 +453,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 - [x] Contador de la retención más larga de un hijo (frames seguidos retenido con su nivel umbral pedido o en vuelo), para el criterio de parada de 120 frames. Un nodo que salió del corte del planificador (fuera de vista) nunca cuenta como perdido.
 - **Hecha la parte del pool (T9c2a, 06-11-2026).** Al alejar, el nodo grueso espera con la misma regla de T9c1 frente a los descendientes que dibujaban. Un nodo excluido que sería demasiado fino para un antepasado del corte no se pide: su antepasado dibuja la zona y cuenta como etapa, no como nodo sin nivel. En el banco de T7d, los contadores son idénticos y la CPU a 4 px sigue por debajo de 2 ms; Majadas a 1 px (carga) pasa de 2,76 a 3,11 ms de mediana en movimiento. Falta T9c2b: el oráculo de zonas perdidas en el banco de `LodDataset` y la medida en Majadas.
 
-**Pasa si** (T9c1 y T9c2) — **pasa** ([registro](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)):
+**Pasa si** (T9c1 y T9c2) — **pasa** ([registro](../benchmarks/R3_T9_CELLS_06-11-2026.md)):
 - tests sintéticos de alejar, salto de pose y bajada del tope, además de los de T9a1 y T9b2a;
 - el oráculo de huecos también mira las zonas de los nodos excluidos o retenidos (`lost_samples`: un punto que se dibujaba y ya no, y sigue en el corte), y el banco lo ejecuta de verdad;
 - un engrosado entre nodos solo cuenta si `después < min(antes, deseado ahora)`; debe ser 0 en todas las poses del banco, también en las órbitas;
@@ -461,11 +461,11 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 **Parar si:** `lost_samples` > 0 al alejar o en un salto de pose; un antepasado retenido más de 120 frames sin que el nivel umbral del hijo esté pedido o en vuelo; `pool_coarsened` o `pool_overflow` por encima de T9b2b durante las retenciones; `nodes_without_level` = 0 con nodos excluidos o retenidos.
 
-**Tarea 9 hecha (06-11-2026)** ([registro](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)): los 9 casos del banco nativo se asientan sin huecos, sin zonas perdidas, sin retener la imagen y con un salto máximo de 1; dentro de una hoja de Majadas a 4 px, las celdas ocupan como mucho 303 MiB. Incluye T9c3: con un recorte del ajuste, el nodo conserva su nivel fino hasta que el recortado está en GPU. La GPU y el navegador se miden en la Tarea 11.
+**Tarea 9 hecha (06-11-2026)** ([registro](../benchmarks/R3_T9_CELLS_06-11-2026.md)): los 9 casos del banco nativo se asientan sin huecos, sin zonas perdidas, sin retener la imagen y con un salto máximo de 1; dentro de una hoja de Majadas a 4 px, las celdas ocupan como mucho 303 MiB. Incluye T9c3: con un recorte del ajuste, el nodo conserva su nivel fino hasta que el recortado está en GPU. La GPU y el navegador se miden en la Tarea 11.
 
 ## Tarea 10 ★: protocolo de workers
 
-**Hecha (07-11-2026).** Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El visor dibuja celdas que construye el worker de construcción (decisión del propietario del 06-11-2026; construir un nodo cuesta hasta 69 ms en p95, [T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)). La ruta de celdas es opt-in; la ruta por defecto la decide la Tarea 17. Cinco partes, cada una con su commit.
+**Hecha (07-11-2026).** Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El visor dibuja celdas que construye el worker de construcción (decisión del propietario del 06-11-2026; construir un nodo cuesta hasta 69 ms en p95, [T9](../benchmarks/R3_T9_CELLS_06-11-2026.md)). La ruta de celdas es opt-in; la ruta por defecto la decide la Tarea 17. Cinco partes, cada una con su commit.
 
 **Hechos de partida:**
 - El wasm vive en dos workers: el de render (`viewer-worker.js`, con `WasmVoxelViewer`, el `SurfaceRenderer` y el lienzo) y el de construcción (`build-worker.js`, con `WasmSceneBuilder` y el `LodDataset`). El hilo principal no carga wasm. Sin worker de construcción, el de render tiene el dataset. Los dos workers no importan módulos (los incrusta `package-local.py`).
@@ -551,7 +551,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 - [x] **Pasa si** con el worker activado y desactivado se obtiene el mismo `cutDigestAtRest`, en Chrome con WebGPU, sobre Belvedere v7.5, servido por http (no `file://`) y con un probe como `probe-orbit-load.mjs`.
 - [x] Verificación con Playwright: consola sin errores, escritorio y móvil (emulado), órbita, cambio de modo de color y vuelta a RGB, y picking.
 - [x] Se miden el p95 del frame del worker de render mientras llegan nodos y `wasmLinearMemoryBytes`.
-- **Hecha (07-11-2026)** ([registro](../records/benchmarks/R3_T10_WORKERS_07-11-2026.md)): mismo `cutDigestAtRest` con el worker de construcción y sin él en Chrome con WebGPU, y verificación con Playwright en escritorio y en móvil emulado. Sin worker de construcción, el frame llegaba a un p95 de 100 ms, y de ahí R3-Q24: las celdas solo van con el worker de construcción.
+- **Hecha (07-11-2026)** ([registro](../benchmarks/R3_T10_WORKERS_07-11-2026.md)): mismo `cutDigestAtRest` con el worker de construcción y sin él en Chrome con WebGPU, y verificación con Playwright en escritorio y en móvil emulado. Sin worker de construcción, el frame llegaba a un p95 de 100 ms, y de ahí R3-Q24: las celdas solo van con el worker de construcción.
 
 **Tarea 10 hecha (07-11-2026).**
 
@@ -564,18 +564,18 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 11: humo en navegador
 
-**Medida (13-11-2026), salta un criterio:** [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md). Se asienta en todas las poses a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido con el presupuesto de CPU de wasm lleno. Corregido el 14-11-2026 (R3-Q27, R3-Q28; [registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md)): Majadas a 1 px dentro de una hoja se asienta engrosado. Belvedere a 1 px tras un salto, que desbordaba el pool de GPU, se asienta con el pool de 512 MiB (R3-Q29; [registro](../records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)): no salta ningún criterio propio de la Tarea 11; queda el de ≤ 16,7 ms de la Tarea 16b.
+**Medida (13-11-2026), salta un criterio:** [registro](../benchmarks/R3_T11_SMOKE_13-11-2026.md). Se asienta en todas las poses a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido con el presupuesto de CPU de wasm lleno. Corregido el 14-11-2026 (R3-Q27, R3-Q28; [registro](../benchmarks/R3_B1C_CPU_FIT_14-11-2026.md)): Majadas a 1 px dentro de una hoja se asienta engrosado. Belvedere a 1 px tras un salto, que desbordaba el pool de GPU, se asienta con el pool de 512 MiB (R3-Q29; [registro](../benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)): no salta ningún criterio propio de la Tarea 11; queda el de ≤ 16,7 ms de la Tarea 16b.
 
 - [x] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0, `poolCoarsened` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
 - [x] Medir la congelación por `DescendantTooFine` (R3-Q10): duración y frecuencia en saltos de pose.
-- [x] Con un presupuesto de CPU del driver por debajo del conjunto de trabajo de la vista, los nodos fuera del corte se olvidan y se reconstruyen en cada frame (hallazgo de T10a2: en Belvedere, el acercamiento no se asienta por debajo del 90 % de su conjunto de trabajo, 54,8 MB). En wasm el presupuesto es de 512 MiB y Majadas a 1 px ocupa 824 MiB ([T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)): medirlo en el navegador y, si se da, añadir histéresis al olvido.
-- [x] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright. **Pasa (14-11-2026):** se asientan todas las poses ([B1d](../records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)) y el tiempo de GPU de la Tarea 16b es p95 7,38 ms ([registro de B1b](../records/benchmarks/R3_B1B_HIZ_14-11-2026.md)).
+- [x] Con un presupuesto de CPU del driver por debajo del conjunto de trabajo de la vista, los nodos fuera del corte se olvidan y se reconstruyen en cada frame (hallazgo de T10a2: en Belvedere, el acercamiento no se asienta por debajo del 90 % de su conjunto de trabajo, 54,8 MB). En wasm el presupuesto es de 512 MiB y Majadas a 1 px ocupa 824 MiB ([T9](../benchmarks/R3_T9_CELLS_06-11-2026.md)): medirlo en el navegador y, si se da, añadir histéresis al olvido.
+- [x] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright. **Pasa (14-11-2026):** se asientan todas las poses ([B1d](../benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)) y el tiempo de GPU de la Tarea 16b es p95 7,38 ms ([registro de B1b](../benchmarks/R3_B1B_HIZ_14-11-2026.md)).
 
 ## Tarea 12 ★: modos de color
 
-**Hecha (14-11-2026):** [registro](../records/benchmarks/R3_B2_COLOR_14-11-2026.md). Todos los modos se dibujan con celdas (R3-Q32, R3-Q33); la vuelta a la ruta CPU de R3-Q23 desaparece.
+**Hecha (14-11-2026):** [registro](../benchmarks/R3_B2_COLOR_14-11-2026.md). Todos los modos se dibujan con celdas (R3-Q32, R3-Q33); la vuelta a la ruta CPU de R3-Q23 desaparece.
 
-- [x] **Pasa si:** (reabierta y cerrada el 14-11-2026: la ruta asíncrona no leía intensidad ni clase en modo RGB; corregido en [B2b](../records/benchmarks/R3_B2B_ASYNC_ATTRS_14-11-2026.md))
+- [x] **Pasa si:** (reabierta y cerrada el 14-11-2026: la ruta asíncrona no leía intensidad ni clase en modo RGB; corregido en [B2b](../benchmarks/R3_B2B_ASYNC_ATTRS_14-11-2026.md))
   - el color por atributo coincide bit a bit con la ruta CPU, salvo intensidad y elevación, con ≤ 1 LSB (R3-Q25);
   - los modos de shader no reconstruyen celdas;
   - las generaciones de color viejas se descartan.
@@ -583,17 +583,17 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 ## Tarea 13 ★: continuidad entre nubes (RF-05) con paginación
 
 - [x] Usar el espaciado de referencia de T0b.
-- [x] **Pasa si** un mismo espaciado por nube no cambia al injertar páginas. **Hecha (14-11-2026):** [registro](../records/benchmarks/R3_B3_CONTINUITY_14-11-2026.md); continuidad por nube con mínimo de 1 × el espaciado de referencia, sin reconstruir celdas al alternar.
+- [x] **Pasa si** un mismo espaciado por nube no cambia al injertar páginas. **Hecha (14-11-2026):** [registro](../benchmarks/R3_B3_CONTINUITY_14-11-2026.md); continuidad por nube con mínimo de 1 × el espaciado de referencia, sin reconstruir celdas al alternar.
 
 ## Tarea 14: modos de px (antes R1-T1b)
 
-- [x] Como en el plan anterior (antes R1-T1b). **Hecha (14-11-2026):** [registro](../records/benchmarks/R3_B4_PX_MODES_14-11-2026.md); fijo progresivo por defecto y dinámico con escalera 1–8 px hacia 16,7 ms.
+- [x] Como en el plan anterior (antes R1-T1b). **Hecha (14-11-2026):** [registro](../benchmarks/R3_B4_PX_MODES_14-11-2026.md); fijo progresivo por defecto y dinámico con escalera 1–8 px hacia 16,7 ms.
 
 ## Tarea 15: nivel por octante (obligatoria desde el 05-11-2026)
 
-Regla en el [ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md). Se hace antes de la Tarea 5. Especificación revisada con el pre-mortem del 05-11-2026.
+Regla en el [ADR 0034](../../adr/0034-nivel-por-octante-con-arista-real.md). Se hace antes de la Tarea 5. Especificación revisada con el pre-mortem del 05-11-2026.
 
-**Hecha (05-11-2026):** [aceptación](../records/benchmarks/R3_T15_ACCEPT_05-11-2026.md): 0 diferencias por octante con el oráculo del spike y cifras idénticas a las registradas. El criterio de rangos de dibujo salta solo en cortes de un nodo; la Tarea 5 medirá con estos recuentos.
+**Hecha (05-11-2026):** [aceptación](../benchmarks/R3_T15_ACCEPT_05-11-2026.md): 0 diferencias por octante con el oráculo del spike y cifras idénticas a las registradas. El criterio de rangos de dibujo salta solo en cortes de un nodo; la Tarea 5 medirá con estos recuentos.
 
 - [x] **Octantes:** los 8 hijos del nodo, partido por la mitad en cada eje. El índice es `o = 4x + 2y + z`, el mismo orden que el Morton de `node_cells.rs` (x es el bit más alto), así que las celdas de un octante quedan contiguas en cada nivel. La relación con la máscara 8³ (bit `x + 8y + 64z`) se documenta y se prueba en un fixture asimétrico.
 - [x] **Desplazamientos por octante:** cada `NodeCellLevel` guarda 9 desplazamientos, con el inicio de cada octante y el final, calculados al construir el nivel. Solo hacen falta en los niveles con profundidad ≥ nodo + 1.
@@ -620,11 +620,11 @@ Regla en el [ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md). Se hac
 
 ## Tarea 16: compactación y oclusión sobre el pool (obligatoria antes de la Tarea 6, R3-Q15)
 
-Decidida en el [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md): compactación con Hi-Z por página (precisada por el [ADR 0036](../adr/0036-hi-z-por-celda.md): Hi-Z por celda); raymarching (OQ-08) solo si con ella Majadas dentro de una hoja a 4 px no baja de 16,7 ms. Especificación del 05-11-2026.
+Decidida en el [ADR 0035](../../adr/0035-instancia-de-16-b-con-w-16.md): compactación con Hi-Z por página (precisada por el [ADR 0036](../../adr/0036-hi-z-por-celda.md): Hi-Z por celda); raymarching (OQ-08) solo si con ella Majadas dentro de una hoja a 4 px no baja de 16,7 ms. Especificación del 05-11-2026.
 
-El pool de producción aún no existe (Tarea 7), así que la técnica se mide primero sobre la página del spike de GPU, con los mismos casos y la misma sonda. El resultado fija qué campos de página añade la Tarea 6 y qué pases lleva la Tarea 7 a `SurfaceRenderer`. Referencias: la Tarea 5 ([registro](../records/benchmarks/R3_GPU_SPIKE_05-11-2026.md)) y las [opciones de oclusión](../records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md).
+El pool de producción aún no existe (Tarea 7), así que la técnica se mide primero sobre la página del spike de GPU, con los mismos casos y la misma sonda. El resultado fija qué campos de página añade la Tarea 6 y qué pases lleva la Tarea 7 a `SurfaceRenderer`. Referencias: la Tarea 5 ([registro](../benchmarks/R3_GPU_SPIKE_05-11-2026.md)) y las [opciones de oclusión](../benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md).
 
-**T16a hecha (05-11-2026):** [registro](../records/benchmarks/R3_T16_OCCLUSION_05-11-2026.md). Pasa con `kpc`. En la peor dirección (Majadas dentro de una hoja mirando a +y, 4 px), 4,39 ms con la cámara quieta y p95 de 8,27 ms en movimiento, frente a 21,66 ms del `draw` por rango; 0 agujeros en los 21 casos con algo en pantalla. Entra el Hi-Z por celda (−42 % y −3,23 ms frente a `k`); el Hi-Z por página no aporta (+0,9 %). `PageEntry` lleva la caja ajustada de la página. El propietario lo aceptó en el [ADR 0036](../adr/0036-hi-z-por-celda.md) (R3-Q16).
+**T16a hecha (05-11-2026):** [registro](../benchmarks/R3_T16_OCCLUSION_05-11-2026.md). Pasa con `kpc`. En la peor dirección (Majadas dentro de una hoja mirando a +y, 4 px), 4,39 ms con la cámara quieta y p95 de 8,27 ms en movimiento, frente a 21,66 ms del `draw` por rango; 0 agujeros en los 21 casos con algo en pantalla. Entra el Hi-Z por celda (−42 % y −3,23 ms frente a `k`); el Hi-Z por página no aporta (+0,9 %). `PageEntry` lleva la caja ajustada de la página. El propietario lo aceptó en el [ADR 0036](../../adr/0036-hi-z-por-celda.md) (R3-Q16).
 
 **T16a, spike (decide):** amplía `examples/web-host/spike-cube-pool.*`, solo con la instancia de 16 B (W = 16). Sigue siendo código desechable. Enmendada con su pre-mortem del 05-11-2026.
 
@@ -691,11 +691,11 @@ El pool de producción aún no existe (Tarea 7), así que la técnica se mide pr
   | Dibujo (vértices): instancias, páginas, visibles | 3 | 3 |
 
   Ni el pase de huecos ni el pool de 256 MiB (ADR 0033) caben en `downlevel_defaults`. Por eso, según el ADR 0036, la Tarea 7 pide `max_storage_buffers_per_shader_stage` ≥ 8, que es el mínimo del estándar WebGPU, y un `max_storage_buffer_binding_size` y un `max_buffer_size` que alojen el pool, sin pasar de lo que da el adaptador. Si el adaptador no llega, la ruta de celdas no se activa y se usa la ruta CPU (R3-Q5).
-- [x] **Pasa si** la profundidad es idéntica con y sin oclusión (Tarea 7b), y Majadas dentro de una hoja a 4 px en el visor wasm, con los límites de producción, sigue en ≤ 16,7 ms (se mide en la Tarea 11). **Pasa (14-11-2026):** tiempo de GPU p95 7,38 ms en reposo (R3-Q31; [registro de B1b](../records/benchmarks/R3_B1B_HIZ_14-11-2026.md)).
+- [x] **Pasa si** la profundidad es idéntica con y sin oclusión (Tarea 7b), y Majadas dentro de una hoja a 4 px en el visor wasm, con los límites de producción, sigue en ≤ 16,7 ms (se mide en la Tarea 11). **Pasa (14-11-2026):** tiempo de GPU p95 7,38 ms en reposo (R3-Q31; [registro de B1b](../benchmarks/R3_B1B_HIZ_14-11-2026.md)).
 
 ## Tarea 17: medida y ruta por defecto
 
-**Medida (14-11-2026):** [registro](../records/benchmarks/R3_T17_MEASURE_14-11-2026.md). RQ-01 y RQ-05 pasan con celdas; RQ-02 pasa salvo +2,7 pp de píxeles vacíos en Majadas. El propietario aceptó los +2,7 pp y la ruta de celdas es la predeterminada desde el 14-11-2026 (R3-Q35).
+**Medida (14-11-2026):** [registro](../benchmarks/R3_T17_MEASURE_14-11-2026.md). RQ-01 y RQ-05 pasan con celdas; RQ-02 pasa salvo +2,7 pp de píxeles vacíos en Majadas. El propietario aceptó los +2,7 pp y la ruta de celdas es la predeterminada desde el 14-11-2026 (R3-Q35).
 
 - [x] Matriz de R0 más RED-REF/HTTP Range. «Alcanzado» se define como en T11. Registrar GPU y GTT.
 - [x] **Pasa si** se cumplen RQ-01, RQ-02 y RQ-05. Entonces `renderPath: "cells"` pasa a ser la ruta por defecto, y se confirman las cifras de ADR 0027 y 0031.
