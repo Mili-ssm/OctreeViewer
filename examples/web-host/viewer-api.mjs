@@ -372,7 +372,7 @@ export function createViewer(hostCanvas, options = {}) {
             }
             return request("setPxMode", { mode: pxMode });
         },
-        // Experimental, temporary (OQ-11, issue #66): "window" (default) or "contiguous" active depths
+        // Experimental, temporary (OQ-11, issue #66): "contiguous" (default) or "window" active depths
         // of a node in cell mode; resolves with the rule now in force. An unknown rule rejects.
         setCellActiveRule(rule) {
             if (rule !== "window" && rule !== "contiguous") {

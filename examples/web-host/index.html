@@ -295,10 +295,10 @@
             <label><input id="depth-shading" type="checkbox" checked /> Depth shading</label>
             <label for="cell-active">Active depths (experimental)</label>
             <select id="cell-active" aria-describedby="cell-active-help" disabled>
+                <option value="contiguous" selected>Contiguous run</option>
                 <option value="window">Window</option>
-                <option value="contiguous">Contiguous run</option>
             </select>
-            <small id="cell-active-help">Temporary comparison option (issue #66). Only acts with per-cell level selection.</small>
+            <small id="cell-active-help">Contiguous run is the default; Window is kept for comparison (issue #66). Only acts with per-cell level selection.</small>
             <label for="min-length-mode">Minimum cube size</label>
             <select id="min-length-mode" aria-describedby="min-length-help" disabled>
                 <option value="length">Length</option>

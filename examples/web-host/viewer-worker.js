@@ -60,7 +60,7 @@ let depthShadingOn = true;
 let continuitySetting = null;
 // Length minimum in dataset units (`undefined` = the viewer's default); re-applied like `continuitySetting`.
 let minLengthSetting = null;
-// "window" | "contiguous" once the host chose one; re-applied to every viewer the worker creates.
+// "contiguous" | "window" once the host chose one; re-applied to every viewer the worker creates.
 let cellActiveRuleSetting = null;
 let cellNodeBytes = 0;
 let builtOpened = null;

@@ -304,10 +304,10 @@ resultados en el [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-
 Ya no hay opción de modo: la API `setCellLod` y el parámetro `?cellLod=` se retiraron (el parámetro se ignora con un
 aviso en consola) y el visor elige siempre por celda. Ver [`examples/web-host/README.md`](../../examples/web-host/README.md).
 
-`cellActive` (experimental) vale `window` (por defecto: la ventana de un nivel por fotograma del ADR 0053) o
-`contiguous` (la tirada residente contigua del rango, de golpe). Se fija con `?cellActive=` o con
-`setCellActiveRule`. Es una opción temporal para que el propietario compare el zoom; tras su decisión se borra la
-regla perdedora (OQ-11, issue #66).
+`cellActive` (experimental) vale `contiguous` (predeterminado desde el 18-11-2026: la tirada residente contigua del
+rango, de golpe, ADR 0055) o `window` (la ventana de un nivel por fotograma del ADR 0053, que se conserva para
+comparar). Se fija con `?cellActive=` o con `setCellActiveRule`. Es una opción temporal para que el propietario
+compare el zoom; queda pendiente su veredicto visual y entonces se borra la regla perdedora (OQ-11, issue #66).
 
 ### Límites conocidos
 

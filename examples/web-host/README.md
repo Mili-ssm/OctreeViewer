@@ -242,9 +242,9 @@ are in source dataset coordinates, with the file's coordinate origin and visual 
 The cells path always selects the drawn level per cell; there is no mode to choose. `?cellLod=` in the page URL
 was removed: any value is ignored with a console warning.
 `setCellActiveRule("window" | "contiguous")` (experimental) picks which range depths a node activates in cell
-mode: `"window"` (default) widens one level per frame, `"contiguous"` activates the resident run of the range
-at once. An unknown rule rejects and keeps the current one; `?cellActive=window|contiguous` in the page URL sets it
-at start, and an invalid value is ignored with a console warning. It is a temporary option so the owner can compare
+mode: `"contiguous"` (default since 18-11-2026) activates the resident run of the range at once, `"window"`
+widens one level per frame (kept for comparison). An unknown rule rejects and keeps the current one; `?cellActive=window|contiguous` in the page URL sets it
+at start, and an invalid value is ignored with a console warning (the default stays). It is a temporary option so the owner can compare
 the zoom; after the decision the losing rule is deleted (OQ-11, issue #66). The demo's "Active depths
 (experimental)" select changes it live.
 `setMinLength(side)` sets the length minimum of the drawn cubes in dataset units: `undefined` restores the
