@@ -141,10 +141,12 @@ antes los arneses en octante. Los tests explícitamente de octante siguen corrie
 
 ### Task 6: Remove the mode from the API and the web host
 
-- [ ] Se borran `setCellLod` y `parse_lod_mode` (wasm), el método de `viewer-api.mjs`, el comando del worker, el
+- [x] (800aa2a, 18-11-2026) Se borran `setCellLod` y `parse_lod_mode` (wasm), el método de `viewer-api.mjs`, el comando del worker, el
   selector `#cell-lod` y la opción `--cell-lod` del probe de paridad; `?cellLod=` se ignora con un aviso. README y
   PROBES actualizados. Comprobación: `node --test`, test de Python del paquete y Playwright (la demo abre, el
-  selector no existe, `?cellLod=octant` avisa y dibuja en modo celda).
+  selector no existe, `?cellLod=octant` avisa y dibuja en modo celda). Hecho: wasm 185 tests (-1,
+  `set_cell_lod_rejects_unknown_modes`), `node --test` 252 (-1, el de `setCellLod`), clippy nativo y wasm32 limpios;
+  el probe conserva `cellLod: "cell"` constante en su informe; Playwright pendiente.
 
 ### Task 7: Delete the explicitly-octant render tests
 
