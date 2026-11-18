@@ -60,6 +60,8 @@ let depthShadingOn = true;
 let continuitySetting = null;
 // "octant" | "cell" once the host chose one; re-applied to every viewer the worker creates.
 let cellLodSetting = null;
+// "window" | "contiguous" once the host chose one; re-applied like `cellLodSetting`.
+let cellActiveRuleSetting = null;
 let cellNodeBytes = 0;
 let builtOpened = null;
 let lastScene = null;
@@ -1321,6 +1323,13 @@ function applyCellLod(mode) {
     return mode;
 }
 
+function applyCellActiveRule(rule) {
+    viewer.setCellActiveRule(rule);
+    cellActiveRuleSetting = rule;
+    advanceSceneGeneration();
+    return rule;
+}
+
 // New adapter, device and surface on the same canvas, then the open dataset again without reading
 // the file anew: the build worker resends cells (driverReplaced) or the last scene is uploaded.
 async function recreateViewer(pose) {
@@ -1339,6 +1348,7 @@ async function recreateViewer(pose) {
     viewer.setDepthShading(depthShadingOn);
     if (continuitySetting) viewer.setContinuity(...continuitySetting);
     if (cellLodSetting) viewer.setCellLod(cellLodSetting);
+    if (cellActiveRuleSetting) viewer.setCellActiveRule(cellActiveRuleSetting);
     viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
     advanceSceneGeneration();
     if (buildOptions && buildOpened && builtOpened) {
@@ -1470,6 +1480,9 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                     case "setCellLod":
                         value = applyCellLod(data.mode);
                         break;
+                    case "setCellActiveRule":
+                        value = applyCellActiveRule(data.rule);
+                        break;
                     case "setGpuFrameTiming":
                         hostGpuTiming = Boolean(data.enabled);
                         viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
@@ -1551,6 +1564,13 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                     applyCellLod(data.mode);
                 } catch (error) {
                     self.postMessage({ type: "warning", operation: "setCellLod", message: String(error) });
+                }
+                break;
+            case "setCellActiveRule":
+                try {
+                    applyCellActiveRule(data.rule);
+                } catch (error) {
+                    self.postMessage({ type: "warning", operation: "setCellActiveRule", message: String(error) });
                 }
                 break;
             case "metrics":

@@ -220,6 +220,11 @@ test("embeddable API converts CSS pick coordinates and disposes its worker resou
         const posted = FakeWorker.instance.messages.length;
         await assert.rejects(viewer.setCellLod("Cell"), /'octant' or 'cell'/);
         assert.equal(FakeWorker.instance.messages.length, posted, "an unknown mode is not sent");
+        await viewer.setCellActiveRule("contiguous");
+        assert.ok(FakeWorker.instance.messages.some((message) => message.operation === "setCellActiveRule" && message.rule === "contiguous"));
+        const postedRule = FakeWorker.instance.messages.length;
+        await assert.rejects(viewer.setCellActiveRule("Window"), /'window' or 'contiguous'/);
+        assert.equal(FakeWorker.instance.messages.length, postedRule, "an unknown rule is not sent");
         FakeWorker.instance.holdApi = true;
         const pending = viewer.getStats();
         const loading = viewer.load(new Blob());

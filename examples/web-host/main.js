@@ -526,6 +526,13 @@ function handleWorkerMessage(event) {
             console.warn(`ignoring ?cellLod=${requestedCellLod}: expected "octant" or "cell"`);
         }
         worker.postMessage({ type: "setCellLod", mode: cellLod });
+        // Experimental, temporary (OQ-11, issue #66): `?cellActive=window|contiguous` (default window).
+        const requestedCellActive = new URLSearchParams(location.search).get("cellActive");
+        if (requestedCellActive === "window" || requestedCellActive === "contiguous") {
+            worker.postMessage({ type: "setCellActiveRule", rule: requestedCellActive });
+        } else if (requestedCellActive !== null) {
+            console.warn(`ignoring ?cellActive=${requestedCellActive}: expected "window" or "contiguous"`);
+        }
         requestFrameOnce();
         if (reopenAfterRecreate) {
             const { file, name, attributes } = reopenAfterRecreate;

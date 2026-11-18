@@ -27,8 +27,8 @@ use std::{
 use viewer_core::{BlockId, NodeId, PointBlock};
 use viewer_format::OctreeReader;
 use viewer_render_wgpu::{
-    CellDriver, CellGrid, CellTarget, CutApply, DriverConfig, FrameReport, LodMode, OrbitCamera,
-    PoolConfig, PoolCounters, ViewProjection, VoxelBuildLimits, cell_cut_digest,
+    ActiveRule, CellDriver, CellGrid, CellTarget, CutApply, DriverConfig, FrameReport, LodMode,
+    OrbitCamera, PoolConfig, PoolCounters, ViewProjection, VoxelBuildLimits, cell_cut_digest,
     decode_node_levels, encode_node_levels,
 };
 
@@ -128,6 +128,17 @@ pub(crate) fn parse_lod_mode(mode: &str) -> Result<LodMode, String> {
         "cell" => Ok(LodMode::Cell),
         other => Err(format!(
             "unknown cell LOD mode {other:?}: expected \"octant\" or \"cell\""
+        )),
+    }
+}
+
+/// The `setCellActiveRule` argument: exactly `"window"` or `"contiguous"`.
+pub(crate) fn parse_active_rule(rule: &str) -> Result<ActiveRule, String> {
+    match rule {
+        "window" => Ok(ActiveRule::Window),
+        "contiguous" => Ok(ActiveRule::Contiguous),
+        other => Err(format!(
+            "unknown cell active rule {other:?}: expected \"window\" or \"contiguous\""
         )),
     }
 }
@@ -536,6 +547,7 @@ pub(crate) struct ViewerCells {
     probe_last: Cell<Option<u64>>,
     continuity: Continuity,
     lod_mode: LodMode,
+    active_rule: ActiveRule,
     /// Reference spacing of the open cloud (`cellsInfo`), for the continuity minimum.
     reference_spacing: Option<f64>,
 }
@@ -572,6 +584,7 @@ impl ViewerCells {
             probe_last: Cell::new(None),
             continuity: Continuity::default(),
             lod_mode: LodMode::Octant,
+            active_rule: ActiveRule::Window,
             reference_spacing: None,
         }
     }
@@ -607,6 +620,15 @@ impl ViewerCells {
     pub(crate) fn set_lod_mode(&mut self, mode: LodMode) {
         self.lod_mode = mode;
         self.driver.set_lod_mode(mode);
+        self.view_dirty = true;
+        self.probe_last.set(None);
+    }
+
+    /// Window or contiguous-run active depths (cell mode); like the mode, applied on the next
+    /// frame without building or sending any node again.
+    pub(crate) fn set_active_rule(&mut self, rule: ActiveRule) {
+        self.active_rule = rule;
+        self.driver.set_active_rule(rule);
         self.view_dirty = true;
         self.probe_last.set(None);
     }
@@ -860,6 +882,7 @@ pub(crate) struct InProcessCells {
     pending_pages: Vec<NodeId>,
     continuity: Continuity,
     lod_mode: LodMode,
+    active_rule: ActiveRule,
 }
 
 /// Where a block read starts and ends, so the caller can account the browser reads it caused.
@@ -900,6 +923,7 @@ impl InProcessCells {
             pending_pages: Vec::new(),
             continuity: Continuity::default(),
             lod_mode: LodMode::Octant,
+            active_rule: ActiveRule::Window,
         }
     }
 
@@ -919,6 +943,13 @@ impl InProcessCells {
     /// Per-octant or per-cell level selection; the next update applies it to the driver.
     pub(crate) fn set_lod_mode(&mut self, mode: LodMode) {
         self.lod_mode = mode;
+        self.dirty = true;
+        *self.probe.get_mut() = CutRestProbe::default();
+    }
+
+    /// Window or contiguous-run active depths; the next update applies it to the driver.
+    pub(crate) fn set_active_rule(&mut self, rule: ActiveRule) {
+        self.active_rule = rule;
         self.dirty = true;
         *self.probe.get_mut() = CutRestProbe::default();
     }
@@ -965,6 +996,7 @@ impl InProcessCells {
                 .effective_min_side(dataset.reference_spacing()),
         );
         self.driver.set_lod_mode(self.lod_mode);
+        self.driver.set_active_rule(self.active_rule);
         let mut rounds = 0;
         loop {
             let mut order = Vec::new();

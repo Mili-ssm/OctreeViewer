@@ -78,6 +78,19 @@ pub enum LodMode {
     Cell,
 }
 
+/// Cell mode: which resident depths of a node's range are active besides the drawn ones.
+/// Temporary option so the owner can compare both rules while zooming (OQ-11, issue #66).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ActiveRule {
+    /// A window around the applied span that widens one level per applied frame at each end
+    /// (ADR 0053).
+    #[default]
+    Window,
+    /// All at once: the resident, non-fresh depths of the range that reach a usable drawn depth
+    /// without a residency gap.
+    Contiguous,
+}
+
 /// Depths `node_depth..=node_depth + MAX_NODE_SPAN` a node may activate in cell mode (E2).
 pub(crate) fn cell_depth_range(node_depth: u8) -> (u8, u8) {
     (

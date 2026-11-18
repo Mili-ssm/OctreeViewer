@@ -4196,6 +4196,57 @@ fn a_node_entering_the_cut_widens_its_window_one_level_per_frame() {
     assert_eq!(spans[2], spans[1], "the range is covered");
 }
 
+#[test]
+fn a_node_activates_the_contiguous_resident_run_of_its_range() {
+    // Only depth 9 serves the node when it enters the cut (range 7..=11), so it draws 9 alone.
+    // A range depth beyond a residency gap stays inactive (ADR 0055, proposed): with 10 missing,
+    // 11 would make the per-cell rule jump over it. Once the range is resident it is all
+    // active at once: no window of one level per frame.
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+    )]);
+    let mut rig = Rig::new(nodes, 4096, 64, 10_000);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    rig.pool.set_active_rule(ActiveRule::Contiguous);
+    seed_resident(&mut rig.pool, 1, &[2, 9]);
+    rig.pool.residency_epoch += 1;
+    let cam = camera("zoom");
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
+    assert_eq!(plan.entries[0].range, Some((7, 11)), "setup");
+    assert_eq!(active_depths(&plan, &rig, 1), [9], "entering the cut");
+    seed_more(&mut rig, 1, &[11]);
+    let gapped = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
+    assert_eq!(gapped, [9], "11 lies beyond the gap at 10");
+    seed_more(&mut rig, 1, &[7, 8, 10]);
+    let full = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
+    assert_eq!(full, [7, 8, 9, 10, 11], "the whole range is resident");
+}
+
+#[test]
+fn switching_the_active_rule_replans_without_a_camera_change() {
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+    )]);
+    let mut rig = Rig::new(nodes, 4096, 64, 10_000);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2, 9]);
+    rig.pool.residency_epoch += 1;
+    let cam = camera("zoom");
+    d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
+    seed_more(&mut rig, 1, &[7, 8, 10, 11]);
+    let windowed = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
+    assert_eq!(windowed, [8, 9, 10], "the window widens one level");
+    rig.pool.set_active_rule(ActiveRule::Contiguous);
+    let contiguous = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
+    assert_eq!(
+        contiguous,
+        [7, 8, 9, 10, 11],
+        "the rule change is applied at once"
+    );
+}
+
 /// Children of node 2 (ids 10..=17) that store depths 4..=10, with node 2 drawing depth 6 under
 /// `[2, 3]` first. Returns the rig and the cut of the children.
 fn children_entering_below_node_2() -> (Rig, Vec<NodeId>) {
