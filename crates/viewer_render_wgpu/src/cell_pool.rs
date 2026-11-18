@@ -1118,7 +1118,8 @@ impl CellPool {
                 let (lo, hi) = (lo.min(*first), hi.max(*last));
                 for anchor in drawn.iter().filter(|depth| usable(**depth)) {
                     wanted.extend((lo..*anchor).rev().take_while(|depth| usable(*depth)));
-                    wanted.extend((anchor.saturating_add(1)..=hi).take_while(|depth| usable(*depth)));
+                    wanted
+                        .extend((anchor.saturating_add(1)..=hi).take_while(|depth| usable(*depth)));
                 }
                 wanted.sort_unstable();
                 wanted.dedup();
