@@ -236,7 +236,7 @@ nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
   sin ella. Decisión: se conserva como ruta de máscara solo de tests (reescribir las ~26 pruebas de render y de
   selección que la usan no compensa); comentarios actualizados en `d53b7e0`.
 - [x] `docs/requirements.md`, `docs/explanation/REGIONAL_VOXEL_LOD.md` y `docs/estado.md` dejan de describir el
-  modo octante como vigente (commit HASH).
+  modo octante como vigente (commit `0838b22`).
 - [ ] Al fusionar, se cierran #59 y #67.
 - [ ] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4.
 - [ ] El plan del ADR 0055 se reescribe sin la restricción del modo octante: su D4 deja de hacer falta.
