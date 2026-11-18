@@ -22,9 +22,9 @@ use viewer_render_wgpu::cell_lod::{
     LodView, MAX_NODE_SPAN, NodeLod, cell_lo, drawn_depth_at, edge_px, refines,
 };
 use viewer_render_wgpu::{
-    CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan, LodMode, MASK_WORDS,
-    NODE_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, SceneBounds,
-    ViewProjection, VoxelBuildLimits, cell_cut_digest, representative_depth,
+    ActiveRule, CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan, LodMode,
+    MASK_WORDS, NODE_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo,
+    SceneBounds, ViewProjection, VoxelBuildLimits, cell_cut_digest, representative_depth,
 };
 
 /// Longest run of `RetainedPrevious` frames the pool may take while blocks stream in.
@@ -611,6 +611,8 @@ struct Harness {
     /// How the pool draws nodes; applied to the driver at the start of every frame, so a
     /// replaced driver keeps it. The octant oracle runs in `Octant`, the sample oracle in `Cell`.
     mode: LodMode,
+    /// Which range depths a cell-mode node activates; applied like `mode`.
+    rule: ActiveRule,
     /// The camera of the frame being checked, for the cell-mode twin.
     cell_ctx: Option<CellCtx>,
     /// Cell mode: what the last evaluation was made over, to skip identical frames.
@@ -765,6 +767,7 @@ impl Harness {
             totals: Totals::default(),
             check_zones: true,
             mode: LodMode::Octant,
+            rule: ActiveRule::Window,
             cell_ctx: None,
             cell_signature: None,
             cell_memory: HashMap::new(),
@@ -1259,6 +1262,7 @@ impl Harness {
 
     fn frame(&mut self, view: &ViewProjection) -> FrameInfo {
         self.driver.set_lod_mode(self.mode);
+        self.driver.set_active_rule(self.rule);
         self.target.eye = view.camera().position();
         let step = CellStep {
             view,
@@ -2549,7 +2553,14 @@ fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in_cell_mode() {
 /// to a depth whose cells measure a fraction of a pixel (black holes).
 #[test]
 fn a_node_holding_the_eye_keeps_contiguous_active_depths_and_no_sub_pixel_cells() {
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        a_node_holding_the_eye_keeps_contiguous_active_depths_under(rule);
+    }
+}
+
+fn a_node_holding_the_eye_keeps_contiguous_active_depths_under(rule: ActiveRule) {
     let (mut h, origin, scale) = sample_harness(LodMode::Cell);
+    h.rule = rule;
     let viewport = [870, 750];
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
     let mk = |eye: [f64; 3], target: [f64; 3]| {

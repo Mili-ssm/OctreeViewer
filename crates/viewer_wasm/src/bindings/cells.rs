@@ -35,7 +35,7 @@ use crate::{
     CellPlanStats, CellUpdateConfig, PoolAck,
     cells_glue::{
         BuilderCells, BuilderOutput, CellsStats, Continuity, TARGET_PIXELS_RANGE, ViewerCells,
-        WASM_CPU_BUDGET_BYTES, driver_config, parse_lod_mode,
+        WASM_CPU_BUDGET_BYTES, driver_config, parse_active_rule, parse_lod_mode,
     },
     scene_builder::SceneBuilderCore,
 };
@@ -589,6 +589,7 @@ impl WasmVoxelViewer {
                     self.continuity = Continuity::default();
                 }
                 cells.set_lod_mode(self.lod_mode);
+                cells.set_active_rule(self.active_rule);
                 self.cells_local = Some(cells);
                 self.cell_path = PATH_ENABLED;
             }
@@ -732,6 +733,7 @@ impl WasmVoxelViewer {
             .set_continuity(self.continuity)
             .map_err(|message| JsValue::from_str(&message))?;
         cells.set_lod_mode(self.lod_mode);
+        cells.set_active_rule(self.active_rule);
         cells.camera_changed(self.view_epoch);
         self.cells_remote = Some(cells);
         self.cell_path = PATH_ENABLED;
@@ -778,6 +780,27 @@ impl WasmVoxelViewer {
             cells.set_lod_mode(mode);
         }
         self.lod_mode = mode;
+        if self.lod_session.is_some() {
+            self.lod_dirty = self.lod_config.is_some();
+        }
+        Ok(())
+    }
+
+    /// Experimental: which range depths a node activates in cell mode, `"window"` (the default,
+    /// one level per frame, ADR 0053) or `"contiguous"` (the resident run at once). Any other
+    /// string is an error and the rule stays as it was. A temporary comparison option (OQ-11,
+    /// issue #66); it survives `beginRemoteCells`, takes effect on the next frame and rebuilds
+    /// nothing.
+    #[wasm_bindgen(js_name = setCellActiveRule)]
+    pub fn set_cell_active_rule(&mut self, rule: &str) -> Result<(), JsValue> {
+        let rule = parse_active_rule(rule).map_err(|message| JsValue::from_str(&message))?;
+        if let Some(cells) = &mut self.cells_remote {
+            cells.set_active_rule(rule);
+        }
+        if let Some(cells) = &mut self.cells_local {
+            cells.set_active_rule(rule);
+        }
+        self.active_rule = rule;
         if self.lod_session.is_some() {
             self.lod_dirty = self.lod_config.is_some();
         }
