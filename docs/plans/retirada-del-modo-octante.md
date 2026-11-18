@@ -1,6 +1,6 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 6 hechas; añadida la 6b (cobertura de celda con rangos anchos)
+Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 6b hechas
 
 **Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
 clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
@@ -176,16 +176,20 @@ retirada, pero al borrar el modo octante dejaría de haber red. Cada test nuevo 
   nivel activo es residente; un contador prueba que hubo un nivel activo solo de rango y una subida parcial.
   Mutación: quitar la comprobación de residencia de `cell_active_depths`. Hecho en ef6dc6d. Evidencia: con
   `usable` siempre verdadero falla (`test_support.rs:301`, «page 3 is active but not uploaded»).
-- [ ] **6b-5** `hold_threshold_is_the_finest_active_depth_end_to_end`: retención con un antepasado de rango ancho.
+- [x] **6b-5** `hold_threshold_is_the_finest_active_depth_end_to_end`: retención con un antepasado de rango ancho.
   Mutación: usar la profundidad nominal dibujada como umbral.
-- [ ] **6b-6** `real_memo_is_recomputed_when_only_the_active_span_changes`: el resumen del corte aplicado no
+  Hecho en `f398319`: falla al usar la profundidad nominal como umbral; con las dos reglas de activos.
+- [x] **6b-6** `real_memo_is_recomputed_when_only_the_active_span_changes`: el resumen del corte aplicado no
   incluye el nivel activo más fino, que las semillas leen. Riesgo sin comprobar: si el test falla sin mutación,
   es un defecto y se para.
-- [ ] **6b-7** `requests_rank_first_step_wanted_range_only_nearest_first`: orden de peticiones con dos nodos y
+  Hecho en `f398319`: **sin defecto**. El test pasa sin mutación; invalidan la decisión memorizada `residency_epoch` y `applied_digest` (`plan.rs`), y quitar cualquiera de las dos lo hace fallar. `RealMemo` no tiene clave propia para el nivel activo más fino: laguna teórica, no observada.
+- [x] **6b-7** `requests_rank_first_step_wanted_range_only_nearest_first`: orden de peticiones con dos nodos y
   niveles solo de rango. Mutación: quitar el rango `range_only` o invertir el desempate por distancia.
-- [ ] **6b-8** El test de presupuesto del driver afirma `coarsened >= 1` y residentes por debajo de la capacidad
+  Hecho en `f398319`: orden fijado (deseados primero; después solo de rango por profundidad, distancia e id); fallan las dos mutaciones. El rango de paso no se ejercita en este arnés.
+- [x] **6b-8** El test de presupuesto del driver afirma `coarsened >= 1` y residentes por debajo de la capacidad
   (hoy afirma un intervalo que siempre se cumple); el arnés afirma que el oráculo de pasos comprobó algo y cuenta
   los nodos que se salta.
+  Hecho en `2089ddd`: el test del driver nunca recortaba en modo celda con capacidad 64 (pasaba por un intervalo siempre cierto); con 40 páginas recorta 5 nodos y lo afirma. El arnés cuenta lo que el oráculo de pasos se salta por motivo y cuatro tests afirman que comprobó algo. Los totales del fichero no se midieron.
 
 Pendiente de la revisión de las tareas 1 a 5 (se resuelve al borrar en la tarea 7): dos tests de retención fijados
 en octante ejecutan sus primeros frames, o su corte, en modo celda (`the_hold_threshold_is_the_depth…`, la mitad de
