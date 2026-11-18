@@ -3829,7 +3829,9 @@ fn min_side_bounds_the_wanted_depth() {
     let mut nodes = root_node();
     nodes.get_mut(&NodeId::new(1)).unwrap().buildable = (3, 25);
     for cap in [None, Some(min_side)] {
-        let mut rig = Rig::new(nodes.clone(), 64, 16, 1);
+        // The pool holds the whole range of the node (every depth is requested and counted by
+        // the fit), so the fit does not cap the wish below the length minimum.
+        let mut rig = Rig::new(nodes.clone(), 4096, 16, 1);
         rig.pool.set_min_side(cap);
         for eye in [
             [ORIGIN[0] + 20.0, ORIGIN[1] + 30.0, ORIGIN[2] + 10.0],
@@ -3932,13 +3934,12 @@ fn cell_mode_requests_missing_depths_across_the_range_down_to_spacing() {
     for depth in [7, 8] {
         assert!(requested.contains(&depth), "{depth} missing: {requested:?}");
     }
-    // 10 lies in the range below the spacing depth and no octant wants it: not built.
-    assert!(!requested.contains(&10), "{requested:?}");
-    // Octant (near) depths keep their behaviour: 11 is wanted by an octant.
+    // The node range is `[7, 11]` and every depth of it is requested (10 included, below the
+    // spacing depth: the range ends at an octant wish, 11).
+    assert!(requested.contains(&10), "{requested:?}");
     assert!(requested.contains(&11), "{requested:?}");
-    // The stepping's adjacent depth (8) goes first, then the octant-wanted 11, then the
-    // range-only 7.
-    assert_eq!(requested, [8, 11, 7]);
+    // Coarse to fine, from one source: the node range.
+    assert_eq!(requested, [7, 8, 10, 11]);
     // Not stored, so nothing is fetched for them.
     let fetched: Vec<u8> = plan.fetch_requests.iter().map(|key| key.depth).collect();
     assert!(
@@ -3987,6 +3988,33 @@ fn cell_mode_fills_gaps_below_spacing_for_a_leaf() {
 }
 
 #[test]
+fn a_node_needs_and_requests_every_depth_of_its_range() {
+    // The octants wish only the ends of the range (7 and 11) and `hi` stops at 10: the node range
+    // is `[7, 11]` and every depth of it is needed, the gap (8, 10) included.
+    let mut rig = range_gap_rig();
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
+    let mut entry = plan.entries[0].clone();
+    entry.wanted = [None; 8];
+    entry.wanted[0] = Some(7);
+    entry.wanted[1] = Some(11);
+    entry.range = Some((7, 10));
+    assert_eq!(CellPool::node_range(&entry), Some((7, 11)));
+    let nodes: FastMap<NodeId, PoolNode> =
+        rig.nodes.iter().map(|(id, n)| (*id, n.clone())).collect();
+    let none = FastMap::default();
+    let entries = [entry];
+    let key = |depth: u8| rig.pool.key(NodeId::new(1), depth);
+    let requested = rig.pool.requested_levels(&entries, &nodes, &none, &grid());
+    // 9 is stored, so it is fetched as the level that serves the whole range, not requested.
+    for depth in [7, 8, 10, 11] {
+        assert!(requested.contains(&key(depth)), "{depth}: {requested:?}");
+    }
+    assert!(!requested.contains(&key(9)), "{requested:?}");
+    let needed = rig.pool.needed_levels(&entries, &nodes, &none, &grid());
+    assert!(needed.contains(&key(9)), "{needed:?}");
+}
+
+#[test]
 fn the_fit_counts_requested_range_depths() {
     let mut rig = range_gap_rig();
     let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
@@ -4007,10 +4035,13 @@ fn the_fit_counts_requested_range_depths() {
         .iter()
         .map(|key| rig.pool.pages_of(*key, &nodes[&key.node], &grid()))
         .sum();
-    for depth in [7, 8] {
+    for depth in [7, 8, 10, 11] {
         assert!(!needed.contains(&rig.pool.key(NodeId::new(1), depth)));
     }
-    assert_eq!(total as usize, needed_pages + pages(7) + pages(8));
+    assert_eq!(
+        total as usize,
+        needed_pages + pages(7) + pages(8) + pages(10) + pages(11)
+    );
 }
 
 // ADR 0053: stepping through pruned residents, timeouts and hops. `Rig::step` checks every frame
@@ -4735,11 +4766,11 @@ fn real_memo_is_recomputed_when_only_the_active_span_changes() {
 }
 
 #[test]
-fn requests_rank_first_step_wanted_range_only_nearest_first() {
+fn requests_rank_first_step_then_coarse_to_fine_nearest_first() {
     // Eight octant nodes store depths {4, 12} (both resident) and can build the ones between; in
-    // the zoom camera the near ones want a range of depths. A range depth no octant wants is
-    // `range_only`: it ranks after every wanted depth of any node, even a finer one, then by
-    // depth, then nearest node first (and by id on an exact tie).
+    // the zoom camera the near ones want a range of depths. Every depth of the node ranges is
+    // requested from one source, so apart from the step depths the requests rank by depth, coarse
+    // to fine, then nearest node first (and by id on an exact tie).
     for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
         let mut nodes = octant_nodes();
         for node in nodes.values_mut() {
@@ -4765,41 +4796,26 @@ fn requests_rank_first_step_wanted_range_only_nearest_first() {
             .iter()
             .map(|key| (key.node.get(), key.depth))
             .collect();
-        let range_only = |(node, depth): &(u64, u8)| {
-            plan.entries.iter().any(|entry| {
-                entry.node.get() == *node
-                    && entry
-                        .range
-                        .is_some_and(|(lo, hi)| (lo..=hi).contains(depth))
-                    && !entry.wanted.iter().flatten().any(|w| w == depth)
-            })
-        };
-        // Guards: both classes occur, the nodes of a class sit at different distances, and a
-        // range-only depth (8) is coarser than wanted ones that rank before it (9, 10, 11).
-        let first_range_only = requests
-            .iter()
-            .position(range_only)
-            .expect("a range-only request");
-        assert!(first_range_only > 0, "{rule:?}: {requests:?}");
-        assert!(
-            requests[first_range_only..].iter().all(range_only),
-            "{rule:?}: {requests:?}"
-        );
         let near = by_distance(&zoom, &CHILDREN);
         let at = |id: u64| near.iter().position(|n| *n == id).expect("node");
         // The nearer node of each pair has the higher id, so the id tie-break cannot give the order.
         assert!(at(3) < at(2) && at(9) < at(8), "{near:?}");
-        let finest_wanted = requests[..first_range_only].iter().map(|r| r.1).max();
-        assert!(finest_wanted > Some(8), "{rule:?}: {requests:?}");
-        // The range-only tail: depth 7 (nodes 3, 2), then depth 8 (nodes 9, 8), nearest first.
-        assert_eq!(
-            requests[first_range_only..],
-            [(3, 7), (2, 7), (9, 8), (8, 8)],
+        // Guard: a node asks for several depths, so the order within a node is exercised.
+        assert!(
+            requests.iter().filter(|r| r.0 == 9).count() > 1,
             "{rule:?}: {requests:?}"
         );
-        // The wanted head is coarse to fine.
-        let head = &requests[..first_range_only];
-        assert!(head.is_sorted_by_key(|r| r.1), "{rule:?}: {head:?}");
+        assert!(requests.is_sorted_by_key(|r| r.1), "{rule:?}: {requests:?}");
+        // Within a depth the nearer node of a pair goes first (here the ranking is by the
+        // distance to the node box, which `by_distance` only approximates for the other nodes).
+        let first = |node: u64, depth: u8| requests.iter().position(|r| *r == (node, depth));
+        for (nearer, farther) in [(9, 8), (3, 2)] {
+            for depth in 4..=12 {
+                if let (Some(a), Some(b)) = (first(nearer, depth), first(farther, depth)) {
+                    assert!(a < b, "{rule:?} depth {depth}: {requests:?}");
+                }
+            }
+        }
     }
 }
 

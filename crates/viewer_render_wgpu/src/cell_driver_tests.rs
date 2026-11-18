@@ -1398,12 +1398,11 @@ fn a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours
         .unwrap();
     assert_eq!(stored_depths(&fx.driver, 2), [4]);
     fx.run(2, &cut, &cam, 1.0);
-    // Cell mode: the wanted depth first, then the depths between it and the stored one. The
-    // dropped wanted depth is still resident (old colours), so it counts as active next to the
-    // stored 4 and the span between them is requested whole (ADR 0053); on a cold start only 4
-    // is active and just the wanted depth is asked for.
-    let mut expected = vec![(id, wanted)];
-    expected.extend((5..wanted).map(|depth| (id, depth)));
+    // Cell mode: the depths from the stored one to the wanted one, coarse to fine. The dropped
+    // wanted depth is still resident (old colours), so it counts as active next to the stored 4
+    // and the span between them is requested whole (ADR 0053); on a cold start only 4 is active
+    // and just the wanted depth is asked for.
+    let expected: Vec<_> = (5..=wanted).map(|depth| (id, depth)).collect();
     assert_eq!(fx.driver.take_level_requests(), Some(expected));
     fx.driver
         .add_packed_levels(g1, on_demand_node(&(5..=wanted).collect::<Vec<u8>>(), 9))

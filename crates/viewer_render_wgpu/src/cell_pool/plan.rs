@@ -520,24 +520,6 @@ impl CellPool {
                 )
                 .collect()
         };
-        // Range depths no octant wants rank after the wanted ones and the step.
-        let range_only: FastSet<LevelKey> = if overflow {
-            FastSet::default()
-        } else {
-            self.real_memo
-                .as_ref()
-                .and_then(|memo| memo.entries.as_deref())
-                .into_iter()
-                .flatten()
-                .flat_map(|entry| {
-                    self.range_depths(entry, &nodes[&entry.node], &self.caps, grid)
-                        .1
-                        .into_iter()
-                        .filter(|d| !entry.wanted.iter().flatten().any(|w| w == d))
-                        .map(|d| self.key(entry.node, d))
-                })
-                .collect()
-        };
         let stored_step = |key: &LevelKey| {
             nodes
                 .get(&key.node)
@@ -689,7 +671,6 @@ impl CellPool {
             (!d5.contains(a))
                 .cmp(&!d5.contains(b))
                 .then((!steps.contains(a)).cmp(&!steps.contains(b)))
-                .then(range_only.contains(a).cmp(&range_only.contains(b)))
                 .then(a.depth.cmp(&b.depth))
                 .then(distance(a).total_cmp(&distance(b)))
                 .then(a.node.cmp(&b.node))
