@@ -1,6 +1,6 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tarea 1 hecha
+Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1, 2 y 4 hechas
 
 **Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
 clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
@@ -60,17 +60,46 @@ todavía usa (pasos, sondas, retención por nodo) se queda para el [plan del ADR
 
 ### Task 2: Dry run, classify what fails in cell mode
 
-- [ ] En un worktree desechable se cambian a celda todos los sitios que fijan el modo, se ejecutan los tests y cada
-  fallo se clasifica: test, fichero, tema (orden de subida, cancelación, expulsión, ajuste y topes, retención y
-  zonas perdidas, reinicio, pasos, selección, registros, solo octante), acción (portar, recalibrar, borrar, posible
-  defecto de celda) y motivo. La tabla se guarda en este plan y las tareas 6 a 8 se reparten con ella.
-  Comprobación: ningún fallo sin clasificar; lista exacta de sitios que fijan el modo.
+- [x] (18-11-2026, rama desechable `explore/octant-dry-run`; salidas en `.superpowers/sdd/retomar-18-11/dry-run/`)
+  Con los diez sitios que fijan el modo cambiados a celda fallan **10 tests** de 595 (7 de render, 3 de wasm) y
+  ninguno apunta a un defecto del modo celda. No hizo falta ningún arreglo de compilación.
+
+Sitios que fijan el modo: `cell_cut.rs` (`#[default]` y el `cell_cut` público), `cell_pool.rs` (`CellPool::new`),
+`cells_glue.rs` (dos), `bindings/mod.rs`, `lod_cells_stream_tests.rs` y `lod_cells_glue_sim_tests.rs` (arneses),
+`BENCH_MODE` (`lod_cells_bench_tests.rs`) y `eval_with` (`cell_pool_tests.rs`). `Rig::new` y las llamadas directas
+a `CellDriver::new` heredan el de `CellPool::new`.
+
+| Test | Tema | Acción | Motivo |
+| --- | --- | --- | --- |
+| `cell_cut::cell_mode_ignores_children_resident_only_outside_their_span` | solo octante | borrar su cola de octante | la mitad de celda pasa |
+| `cell_cut::spanning_levels_promote_octants_to_the_next_buildable_level` | solo octante | borrar | la promoción por octantes que abarcan solo existe en octante |
+| `cell_driver::a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours` | registros | portar | en celda se piden también los niveles del rango (`[(2,7),(2,5),(2,6)]`); antes, entender por qué `a_missing_level_is_requested…` pide solo uno |
+| `cell_driver::driver_in_cell_mode_writes_records_and_uniform` | registros | portar | quitar las fases de octante y conservar las de celda |
+| `cell_driver::octant_mode_writes_no_record_when_only_the_eye_moves` | solo octante | borrar | `anchors_follow_the_eye` cubre el lado de celda |
+| `cell_pool::a_retained_octant_cut_draws_nothing_outside_the_span_after_switching_to_cell_mode` | cambio de modo | borrar | ya no hay cambio de modo |
+| `cell_pool::the_hold_threshold_is_the_depth_the_ancestor_drew_over_the_octant_of_the_child` | retención | borrar | la regla de celda tiene su test, que pasa |
+| `glue::switching_mode_rewrites_the_page_table` y `…_through_the_glue` | cambio de modo | borrar | ya no hay cambio de modo |
+| `the_oracle_reports_a_hidden_cell_whose_refinement_does_not_draw` | oráculo | portar como autotest de `check_cell_cut` | hoy depende de `last_cut`, que solo rellena la rama de octante del arnés |
+
+Quedan aparte unos 28 tests explícitamente de octante (15 mitades de las macros de dos modos, 5 de
+`cell_cut_tests`, 2 de `cell_pool_tests`, 6 sueltos de wasm), que se borran en las tareas 7 y 8.
+
+**Avisos del ensayo.**
+- En modo celda el arnés wasm no ejecuta `CutView::holes`, `gate_octant_steps` ni los contadores de zona; solo
+  `check_cell_cut`, que no tiene autotest. Por eso el último test de la tabla se porta en vez de borrarse.
+- Con el oráculo de pasos activado en celda falla un solo test (`a_leaving_node_hands_back_one_level`) y el fallo
+  es del oráculo: `spec_depth` no aplica el filtro de tramo del nodo (`in_cell_range`) que sí aplica el código.
+- Los temas se etiquetaron por nombre de test, no leyendo los 142 de pool y driver: ningún tema se queda sin tests
+  que pasen, pero el recuento es aproximado.
 
 ### Task 3: A stepping oracle for cell mode
 
-- [ ] `check_stepping` deja de apagarse: versión para modo celda (pasos de un nivel dentro del tramo del nodo, sin
-  la excepción de octantes que abarcan), activa en todos los arneses de celda. Debe pasar en los tests
-  `*_in_cell_mode` de hoy. Si falla en alguno, es un posible defecto: criterio de parada.
+- [ ] `check_stepping` deja de apagarse: versión para modo celda (pasos de un nivel dentro del tramo del nodo,
+  con el filtro `in_cell_range` y sin la excepción de octantes que abarcan), activa en todos los arneses de celda.
+  Debe pasar en todos los tests que ya corren en modo celda y, con el modo cambiado, en
+  `a_leaving_node_hands_back_one_level`. Si falla en alguno, es un posible defecto: criterio de parada.
+- [ ] Autotest de `check_cell_cut`: una mutación del corte de celda (un nivel activo quitado) hace que el oráculo
+  informe; sustituye a `the_oracle_reports_a_hidden_cell_whose_refinement_does_not_draw`.
 
 ### Task 4: Goldens of the paths the deletions will touch
 
@@ -102,7 +131,8 @@ todavía usa (pasos, sondas, retención por nodo) se queda para el [plan del ADR
 
 ### Task 7: Port the render tests to cell mode, by theme
 
-- [ ] Una subtarea por tema de la tabla, con ocho portes como máximo cada una: `cell_pool_tests`, después
+- [ ] Según la tabla de la tarea 2 son dos portes y seis borrados en render, más los tests explícitamente de
+  octante. Una subtarea por fichero, con ocho portes como máximo cada una: `cell_pool_tests`, después
   `cell_driver_tests`, `cell_cut_tests`, `cell_pick_tests` y `cell_driver_gpu_tests`
   (`the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter`, con el gemelo de celda como oráculo y al
   menos un adaptador). Los presupuestos se recalibran con su aritmética en un comentario. La tabla se actualiza en
