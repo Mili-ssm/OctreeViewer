@@ -564,6 +564,8 @@ struct Harness {
     cell_gate_prev: HashMap<(NodeId, u16), (NodeId, u8)>,
     /// Cell mode: the nodes of the last evaluated cut as the twin sees them.
     cell_nodes: Vec<CellNode>,
+    /// Zoom-in lag measurement (ADR 0055 plan, task 7a); off unless a diagnostic turns it on.
+    lag: LagLog,
 }
 
 /// Counters of the ADR 0053 temporal gate (measured, never asserted).
@@ -674,6 +676,7 @@ impl Harness {
             gate: StepGate::default(),
             cell_gate_prev: HashMap::new(),
             cell_nodes: Vec::new(),
+            lag: LagLog::default(),
         }
     }
 
@@ -4259,6 +4262,8 @@ fn print_data_bound_totals(h: &Harness, view: &ViewProjection) {
     let data = hierarchy.stats().data_bounds;
     let (mut tot, mut skipped, mut worst) = ([0_usize; 4], 0, (0_usize, 0_u64));
     let (mut src_pages, mut src_none) = ([0_usize; 9], [0_usize; 9]);
+    // Resident levels finer than the node's `hi_d`, and their pages (task 7a: what the cap frees).
+    let (mut over_nodes, mut over_levels, mut over_pages) = (0_usize, 0_usize, 0_usize);
     for (j, node) in h.cell_nodes.iter().enumerate() {
         let region = SpatialBounds::new(
             std::array::from_fn(|a| node.min[a].max(data.min()[a])),
@@ -4289,6 +4294,14 @@ fn print_data_bound_totals(h: &Harness, view: &ViewProjection) {
             tot[3] += d.resident_pages;
             continue;
         };
+        let finer: Vec<usize> = pages_by_depth(h, node.id)
+            .into_iter()
+            .filter(|(depth, _)| *depth > hi_d)
+            .map(|(_, pages)| pages)
+            .collect();
+        over_nodes += usize::from(!finer.is_empty());
+        over_levels += finer.len();
+        over_pages += finer.iter().sum::<usize>();
         let run = |x: u8| pages_of(&row, lo.min(x)..=x);
         for (s, his) in source_his(h, view, j, &row, &d, None).iter().enumerate() {
             src_none[s] += usize::from(his.is_none());
@@ -4315,6 +4328,11 @@ fn print_data_bound_totals(h: &Harness, view: &ViewProjection) {
         worst.1,
         worst.0
     );
+    println!(
+        "BENCH_OVER_BOUND nodes with a bound {} | nodes holding levels finer than hi_d {over_nodes} | levels finer than hi_d {over_levels} | pages of those levels {over_pages} | resident pages (pool) {}",
+        h.cell_nodes.len() - skipped,
+        h.driver.pool().resident_pages()
+    );
     // Estimated pages of the runs `lo..=hi(source)` (a source without geometry in view counts the
     // run `lo..=lo`), per source, with the number of such nodes.
     let line: Vec<String> = SOURCES
@@ -4323,4 +4341,536 @@ fn print_data_bound_totals(h: &Harness, view: &ViewProjection) {
         .map(|(s, name)| format!("{name} {} (none {})", src_pages[s], src_none[s]))
         .collect();
     println!("BENCH_SRC est pages: {}", line.join(" | "));
+}
+
+// ---------------------------------------------------------------------------------------------
+// ADR 0055 plan, task 7a: what the eye node holds and how late detail arrives when zooming in
+// (ignored diagnostics; the output formats are stable so a later run can be diffed against them)
+// ---------------------------------------------------------------------------------------------
+
+impl Harness {
+    /// A frame followed by what the browser does with the driver's level requests: the set goes
+    /// to the build side, which builds what it can on the next frame. `settle` does not relay
+    /// them (the older diagnostics measure the levels the plan alone builds).
+    fn frame_relayed(&mut self, view: &ViewProjection) -> FrameInfo {
+        let info = self.frame(view);
+        if let Some(requests) = self.driver.take_level_requests() {
+            self.lag.requests = requests.len();
+            self.dataset.apply_level_requests(&requests);
+            self.dirty = true;
+        }
+        info
+    }
+
+    /// `settle` with the requests relayed; also waits for the requests the build side still holds.
+    fn settle_relayed(&mut self, view: &ViewProjection, quiet: usize, max_frames: usize) {
+        let mut calm = 0;
+        for _ in 0..max_frames {
+            let info = self.frame_relayed(view);
+            let settled = !self.dirty
+                && self.stage == Some(self.target_px)
+                && info.apply == CutApply::Applied
+                && info.uploaded_pages == 0
+                && info.pending_blocks == 0
+                && info.built == 0
+                && info.deferred == 0
+                && !self.driver.needs_frame()
+                && !self.dataset.has_pending_level_requests(true);
+            calm = if settled { calm + 1 } else { 0 };
+            if calm >= quiet {
+                return;
+            }
+        }
+        panic!("did not settle in {max_frames} frames (requests relayed)");
+    }
+}
+
+/// The sample settled at `pose` like `settled_sample_pose`, with the level requests relayed when
+/// `relay` is set (what the browser does; the plain harness never answers them).
+fn settled_sample_pose_with(
+    pose: &str,
+    rule: ActiveRule,
+    relay: bool,
+) -> (Harness, ViewProjection, ViewProjection) {
+    let (mut h, origin, scale) = sample_harness();
+    h.rule = rule;
+    let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
+    let data = h.dataset.metadata.hierarchy().stats().data_bounds;
+    let mut fit = OrbitCamera::default();
+    assert!(fit.fit(
+        SceneBounds {
+            min: local(data.min()),
+            max: local(data.max())
+        },
+        DEMO_VIEWPORT
+    ));
+    let initial = ViewProjection::new(fit, DEMO_VIEWPORT, scale, VoxelBuildLimits::default());
+    let view = ViewProjection::new(
+        demo_pose_camera(fit, pose),
+        DEMO_VIEWPORT,
+        scale,
+        VoxelBuildLimits::default(),
+    );
+    if relay {
+        h.settle_relayed(&initial, 3, 5000);
+        h.camera_moved();
+        h.settle_relayed(&view, 3, 5000);
+    } else {
+        h.settle(&initial, 3, 5000);
+        h.camera_moved();
+        h.settle(&view, 3, 5000);
+    }
+    (h, view, initial)
+}
+
+/// `hi_d` of node `j` of the settled cut, derived as `print_data_bound_totals` does (the pool's
+/// own `CellPool::data_bound` is `cfg(test)` of the render crate, out of reach from here).
+fn hi_d_of(h: &Harness, view: &ViewProjection, j: usize) -> Option<u8> {
+    let ctx = h.cell_ctx.as_ref()?;
+    let node = &h.cell_nodes[j];
+    let data = h.dataset.metadata.hierarchy().stats().data_bounds;
+    let region = SpatialBounds::new(
+        std::array::from_fn(|a| node.min[a].max(data.min()[a])),
+        std::array::from_fn(|a| node.max[a].min(data.max()[a])),
+    )
+    .ok();
+    let span = buildable_span(h, node.id)?;
+    let row = NodeRow {
+        id: node.id.get(),
+        node_depth: node.lod.node_depth,
+        span,
+        range: h.last_levels[j].2,
+        candidate: node_view_range(
+            view,
+            &h.dataset.cell_grid(),
+            h.dataset.coordinate_origin(),
+            region,
+            span,
+            f64::from(ctx.lod.target_px),
+            h.driver.pool().min_side(),
+        ),
+        ..NodeRow::default()
+    };
+    data_bound(h, view, j, &row, false).hi_d
+}
+
+/// Pages per resident depth of node `id`, ascending.
+fn pages_by_depth(h: &Harness, id: NodeId) -> Vec<(u8, usize)> {
+    resident_levels(h, id)
+        .into_iter()
+        .map(|(depth, level)| (depth, level.pages.len()))
+        .collect()
+}
+
+/// One line per (pose, rule, relay, node) of the eye node, its neighbour and the totals.
+/// Run: `cargo test --profile fast -p viewer_wasm --offline --lib eye_node_residency_at_poses -- --ignored --nocapture`.
+#[test]
+#[ignore = "diagnostic: eye-node residency on the built-in sample at P1 to P5"]
+fn eye_node_residency_at_poses() {
+    for pose in ["P1", "P2", "P3", "P4", "P5"] {
+        for rule in [ActiveRule::Contiguous, ActiveRule::Window] {
+            // Measured equal with and without relaying the requests (the plan itself builds the
+            // levels it wishes), so only the browser-like variant runs.
+            let (h, view, _) = settled_sample_pose_with(pose, rule, true);
+            print_eye_node_residency(&h, &view, pose, rule, true);
+        }
+    }
+}
+
+fn print_eye_node_residency(
+    h: &Harness,
+    view: &ViewProjection,
+    pose: &str,
+    rule: ActiveRule,
+    relay: bool,
+) {
+    let tag = format!("EYE pose={pose} rule={rule:?} relay={}", u8::from(relay));
+    let (mut over_levels, mut over_pages) = (0_usize, 0_usize);
+    for (j, node) in h.cell_nodes.iter().enumerate() {
+        let hi_d = hi_d_of(h, view, j);
+        let by_depth = pages_by_depth(h, node.id);
+        let resident: Vec<u8> = by_depth.iter().map(|(d, _)| *d).collect();
+        let total: usize = by_depth.iter().map(|(_, p)| p).sum();
+        let (levels_over, pages_over) = hi_d.map_or((0, 0), |bound| {
+            by_depth
+                .iter()
+                .filter(|(d, _)| *d > bound)
+                .fold((0, 0), |(n, p), (_, pages)| (n + 1, p + pages))
+        });
+        over_levels += levels_over;
+        over_pages += pages_over;
+        if ![14, 17].contains(&node.id.get()) {
+            continue;
+        }
+        let (_, depths, range) = &h.last_levels[j];
+        let mut active = depths.clone();
+        active.sort_unstable();
+        let wish = h.last_entries[j].1.iter().flatten().max().copied();
+        println!(
+            "{tag} node={} | resident={resident:?} active={active:?} range={range:?} \
+             wish_max={wish:?} data_bound={hi_d:?} | pages_by_depth={by_depth:?} pages={total} | \
+             levels_over_bound={levels_over} pages_over_bound={pages_over}",
+            node.id.get()
+        );
+    }
+    println!(
+        "{tag} node=ALL | cut_nodes={} pool_pages={} | levels_over_bound={over_levels} \
+         pages_over_bound={over_pages}",
+        h.cell_nodes.len(),
+        h.driver.pool().resident_pages()
+    );
+}
+
+// ---- Zoom-in lag: drawn depth against what the same rule would draw with more levels ----------
+
+/// Default samples per node of the lag measurement (about: see `select_samples`).
+const LAG_SAMPLES_PER_NODE: usize = 64;
+
+/// Per-frame record of the lag of the drawn depth at occupied samples (see `Harness::measure_lag`).
+/// Lag `b` is against the finest BUILDABLE depth, lag `r` against the finest RESIDENT depth of
+/// the node; positive means the frame draws coarser than the reference.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct LagFrame {
+    view_gen: u64,
+    /// Samples judged, samples off screen (outside the side planes of the frustum; the render clip
+    /// distances and the LOD near clamp are not applied: the twin applies the clamp itself), and
+    /// samples the node
+    /// does not draw (hidden under a child or outside every active level).
+    judged: u32,
+    off_screen: u32,
+    undrawn: u32,
+    /// Samples lagging by at least 1, 2 and 3 levels, and the worst lag.
+    b: [u32; 3],
+    b_max: i32,
+    r: [u32; 3],
+    r_max: i32,
+    /// Samples drawn finer than the buildable ideal.
+    finer_b: u32,
+    /// Samples drawn at a depth above the node's `data_bound` (when measured), and the largest
+    /// excess.
+    over_bound: u32,
+    over_bound_max: i32,
+    /// Size of the last level-request set and the pool's resident pages.
+    requests: u32,
+    pages: u32,
+}
+
+#[derive(Default)]
+struct LagLog {
+    on: bool,
+    /// About this many hash-picked samples per node (0: `LAG_SAMPLES_PER_NODE`).
+    per_node: usize,
+    /// Control: draw as if the `drop_top` finest active depths of every node were not active
+    /// (the lag must then be positive where they matter; 0 measures normally).
+    drop_top: u8,
+    /// Also measure `data_bound` per node and frame (costs a walk of the finest level's cells).
+    bound: bool,
+    /// Only these node ids (`None`: every node of the cut).
+    only: Option<Vec<u64>>,
+    view_gen: u64,
+    requests: usize,
+    frames: Vec<LagFrame>,
+    spans: HashMap<NodeId, Option<(u8, u8)>>,
+    /// Sample positions per (node, finest resident depth): scaled frame minus origin.
+    samples: HashMap<(NodeId, u8), Vec<[f64; 3]>>,
+}
+
+/// Occupied cells of `level` chosen by a position hash (so the choice does not move when a finer
+/// level replaces it), about `LAG_SAMPLES_PER_NODE` of them; their centres in the scaled frame
+/// minus the origin.
+fn select_samples(
+    grid: &CellGrid,
+    ctx: &CellCtx,
+    depth: u8,
+    level: &PackedLevel,
+    per_node: usize,
+) -> Vec<[f64; 3]> {
+    let slots: usize = level.pages.iter().map(|p| p.cells as usize).sum();
+    let modulus = (slots / per_node.max(1)).max(1).next_power_of_two() as u64;
+    let side = grid.root_side / 2.0_f64.powi(i32::from(depth)) * ctx.scale;
+    let mut out = Vec::new();
+    for (p, page) in level.pages.iter().enumerate() {
+        for i in 0..page.cells as usize {
+            let instance = level.instances[p * PAGE_SLOTS + i];
+            if instance.is_empty() {
+                continue;
+            }
+            let coordinate: [u64; 3] =
+                std::array::from_fn(|a| page.origin[a] + u64::from(instance.rel()[a]));
+            // Positions at a fixed resolution, whatever the depth.
+            let mixed = coordinate.iter().fold(0_u64, |acc, c| {
+                let fixed = if depth <= 24 {
+                    c << (24 - depth)
+                } else {
+                    c >> (depth - 24)
+                };
+                (acc ^ fixed)
+                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    .rotate_left(29)
+            });
+            if (mixed >> 20) & (modulus - 1) != 0 {
+                continue;
+            }
+            out.push(std::array::from_fn(|a| {
+                (grid.root_min[a] - ctx.origin[a]) * ctx.scale + (coordinate[a] as f64 + 0.5) * side
+            }));
+        }
+    }
+    out
+}
+
+/// Whether an eye-relative point lies inside the side planes of the view frustum, ahead of the
+/// eye, whatever the render clip distances (the sims' cameras clip the cloud to a thin slab; the
+/// rule's decision does not depend on it).
+fn in_frustum(ctx: &CellCtx, rel: [f64; 3]) -> bool {
+    let dot = |v: [f32; 3]| (0..3).map(|a| rel[a] * f64::from(v[a])).sum::<f64>();
+    let depth = dot(ctx.lod.forward);
+    let focal = f64::from(ctx.lod.focal);
+    depth > 0.0
+        && dot(ctx.lod.right).abs() * focal <= depth * ctx.viewport[0] * 0.5
+        && dot(ctx.lod.up).abs() * focal <= depth * ctx.viewport[1] * 0.5
+}
+
+impl Harness {
+    /// Appends the lag of the frame just drawn to `self.lag.frames`.
+    fn record_lag(&mut self, view: &ViewProjection) {
+        let mut log = std::mem::take(&mut self.lag);
+        let frame = self.measure_lag(&mut log, view);
+        log.frames.push(frame);
+        self.lag = log;
+    }
+
+    /// For every node of the applied cut, the occupied cells of its finest resident level (the
+    /// hash-picked ones, on screen) are the samples. The depth the node
+    /// draws at the cell centre (`drawn_depth_at`, the twin of the GPU rule over the real active
+    /// depths) is compared with what the same twin draws if every depth of the node's buildable
+    /// span (`b`) or up to its finest resident depth (`r`) were active. Neither reference knows
+    /// whether a finer cell exists at the sample: they are proxies, `r` the honest floor.
+    fn measure_lag(&self, log: &mut LagLog, view: &ViewProjection) -> LagFrame {
+        let ctx = self.cell_ctx.as_ref().expect("cell mode context");
+        let grid = self.dataset.cell_grid();
+        let mut f = LagFrame {
+            view_gen: log.view_gen,
+            requests: log.requests as u32,
+            pages: self.driver.pool().resident_pages(),
+            ..LagFrame::default()
+        };
+        for (j, node) in self.cell_nodes.iter().enumerate() {
+            if log
+                .only
+                .as_ref()
+                .is_some_and(|ids| !ids.contains(&node.id.get()))
+            {
+                continue;
+            }
+            let levels = resident_levels(self, node.id);
+            let Some(&(finest, level)) = levels.iter().max_by_key(|(d, _)| *d) else {
+                continue;
+            };
+            let Some(span) = *log
+                .spans
+                .entry(node.id)
+                .or_insert_with(|| buildable_span(self, node.id))
+            else {
+                continue;
+            };
+            let per_node = if log.per_node == 0 {
+                LAG_SAMPLES_PER_NODE
+            } else {
+                log.per_node
+            };
+            let bound = if log.bound {
+                hi_d_of(self, view, j)
+            } else {
+                None
+            };
+            let samples = log
+                .samples
+                .entry((node.id, finest))
+                .or_insert_with(|| select_samples(&grid, ctx, finest, level, per_node));
+            let drawn_lod = if log.drop_top == 0 {
+                node.lod
+            } else {
+                let mut active = node.lod.active;
+                for _ in 0..log.drop_top {
+                    active &= !(1_u64 << (63 - active.leading_zeros()));
+                }
+                NodeLod { active, ..node.lod }
+            };
+            let ideal = |rel: [f64; 3], cap: u8| -> Option<u8> {
+                let (lo, hi) = (span.0 - node.lod.node_depth, cap - node.lod.node_depth);
+                let active = ((1_u64 << (hi + 1)) - 1) & !((1_u64 << lo) - 1);
+                let lod = NodeLod { active, ..node.lod };
+                drawn_depth_at(&ctx.lod, &lod, rel, node.lo, node.side)
+            };
+            for position in samples.iter() {
+                let rel: [f64; 3] = std::array::from_fn(|a| position[a] - ctx.eye[a]);
+                if !in_frustum(ctx, rel) {
+                    f.off_screen += 1;
+                    continue;
+                }
+                let Some(drawn) = drawn_depth_at(&ctx.lod, &drawn_lod, rel, node.lo, node.side)
+                else {
+                    f.undrawn += 1;
+                    continue;
+                };
+                let (Some(ideal_b), Some(ideal_r)) =
+                    (ideal(rel, span.1.max(finest)), ideal(rel, finest))
+                else {
+                    f.undrawn += 1;
+                    continue;
+                };
+                f.judged += 1;
+                let (lag_b, lag_r) = (
+                    i32::from(ideal_b) - i32::from(drawn),
+                    i32::from(ideal_r) - i32::from(drawn),
+                );
+                for k in 0..3 {
+                    f.b[k] += u32::from(lag_b > k as i32);
+                    f.r[k] += u32::from(lag_r > k as i32);
+                }
+                f.b_max = f.b_max.max(lag_b);
+                f.r_max = f.r_max.max(lag_r);
+                f.finer_b += u32::from(lag_b < 0);
+                if let Some(bound) = bound {
+                    let over = i32::from(drawn) - i32::from(bound);
+                    f.over_bound += u32::from(over > 0);
+                    f.over_bound_max = f.over_bound_max.max(over);
+                }
+            }
+        }
+        f
+    }
+}
+
+/// Frames after the first one of the last camera position until `key` last changes (0 if it did
+/// not change after the last move).
+fn frames_to_settle<K: PartialEq>(frames: &[LagFrame], key: impl Fn(&LagFrame) -> K) -> usize {
+    let Some(last_gen) = frames.iter().map(|f| f.view_gen).max() else {
+        return 0;
+    };
+    let first = frames.iter().position(|f| f.view_gen == last_gen).unwrap();
+    (first + 1..frames.len())
+        .rev()
+        .find(|&i| key(&frames[i]) != key(&frames[i - 1]))
+        .map_or(0, |i| i - first)
+}
+
+/// Per-frame lines (`LAG`) and the summary (`LAGSUM`) of a run; both stable and diff-friendly.
+fn print_lag(label: &str, frames: &[LagFrame]) {
+    for (i, f) in frames.iter().enumerate() {
+        println!(
+            "LAG {label} f={i} gen={} judged={} off={} undrawn={} b>=1,2,3={},{},{} bmax={} \
+             r>=1,2,3={},{},{} rmax={} finer_b={} over_bound={} over_max={} req={} pages={}",
+            f.view_gen,
+            f.judged,
+            f.off_screen,
+            f.undrawn,
+            f.b[0],
+            f.b[1],
+            f.b[2],
+            f.b_max,
+            f.r[0],
+            f.r[1],
+            f.r[2],
+            f.r_max,
+            f.finer_b,
+            f.over_bound,
+            f.over_bound_max,
+            f.requests,
+            f.pages
+        );
+    }
+    let worst = |pick: &dyn Fn(&LagFrame) -> i32| {
+        frames
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (pick(f), std::cmp::Reverse(i)))
+            .max()
+            .map_or((0, 0), |(lag, std::cmp::Reverse(i))| (lag, i))
+    };
+    let (wb, wr) = (worst(&|f| f.b_max), worst(&|f| f.r_max));
+    let mut requests: Vec<u32> = frames.iter().map(|f| f.requests).collect();
+    requests.sort_unstable();
+    let at = |q: usize| requests.get(q).copied().unwrap_or(0);
+    let sum = |pick: &dyn Fn(&LagFrame) -> u32| frames.iter().map(pick).sum::<u32>();
+    println!(
+        "LAGSUM {label} | frames={} judged_sum={} | settle_b={} settle_r={} | \
+         sample_frames_b1={} b2={} b3={} | sample_frames_r1={} r2={} r3={} | \
+         worst_b={} at f={} worst_r={} at f={} | over_bound_sample_frames={} over_max={} | \
+         requests min={} med={} max={} | pages_end={}",
+        frames.len(),
+        sum(&|f| f.judged),
+        frames_to_settle(frames, |f| (f.judged, f.b, f.b_max)),
+        frames_to_settle(frames, |f| (f.judged, f.r, f.r_max)),
+        sum(&|f| f.b[0]),
+        sum(&|f| f.b[1]),
+        sum(&|f| f.b[2]),
+        sum(&|f| f.r[0]),
+        sum(&|f| f.r[1]),
+        sum(&|f| f.r[2]),
+        wb.0,
+        wb.1,
+        wr.0,
+        wr.1,
+        sum(&|f| f.over_bound),
+        frames.iter().map(|f| f.over_bound_max).max().unwrap_or(0),
+        at(0),
+        at(requests.len() / 2),
+        requests.last().copied().unwrap_or(0),
+        frames.last().map_or(0, |f| f.pages),
+    );
+}
+
+/// Wheel steps and frames between steps of the synthetic zoom-in, and frames held after it.
+const ZOOM_STEPS: usize = 4;
+const ZOOM_GAP_FRAMES: usize = 2;
+const ZOOM_HOLD_FRAMES: usize = 40;
+
+/// The synthetic zoom-in: the sample settled at P2, then `ZOOM_STEPS` wheel steps (the four that
+/// lead from P2 to P3) with `ZOOM_GAP_FRAMES` frames after each, then still. Per frame, the lag
+/// at the occupied samples of nodes 14 (holds the eye) and 17 (its neighbour).
+/// Run: `cargo test --profile fast -p viewer_wasm --offline --lib synthetic_zoom_in_lag -- --ignored --nocapture`.
+#[test]
+#[ignore = "diagnostic: lag of the drawn depth while zooming in on the built-in sample"]
+fn synthetic_zoom_in_lag() {
+    // The last run is a control: the six finest active depths of each node are dropped from what
+    // is drawn, so the lag must show up (if it stayed 0 the metric would measure nothing).
+    for (rule, drop_top) in [
+        (ActiveRule::Contiguous, 0),
+        (ActiveRule::Window, 0),
+        (ActiveRule::Contiguous, 6),
+    ] {
+        let (mut h, p2, _) = settled_sample_pose_with("P2", rule, true);
+        h.lag = LagLog {
+            drop_top,
+            on: true,
+            bound: true,
+            per_node: 1 << 20,
+            only: Some(vec![14, 17]),
+            ..LagLog::default()
+        };
+        let mut camera = p2.camera();
+        let (viewport, scale) = (p2.viewport(), p2.visual_scale());
+        let mut view = p2;
+        // The state before the first step, as a frame of its own.
+        h.frame_relayed(&view);
+        h.record_lag(&view);
+        for step in 1..=ZOOM_STEPS {
+            assert!(camera.zoom(WHEEL_STEP));
+            view = ViewProjection::new(camera, viewport, scale, VoxelBuildLimits::default());
+            h.camera_moved();
+            h.lag.view_gen = step as u64;
+            for _ in 0..ZOOM_GAP_FRAMES {
+                h.frame_relayed(&view);
+                h.record_lag(&view);
+            }
+        }
+        for _ in 0..ZOOM_HOLD_FRAMES {
+            h.frame_relayed(&view);
+            h.record_lag(&view);
+        }
+        let control = if drop_top > 0 { " control" } else { "" };
+        print_lag(&format!("zoom {rule:?}{control}"), &h.lag.frames);
+    }
 }

@@ -303,7 +303,12 @@ impl Sim {
         self.h
             .check_drawn_cut(number, &draw.report.plan, self.digest);
         if let Some(requests) = self.h.driver.take_level_requests() {
+            self.h.lag.requests = requests.len();
             self.level_requests = Some(requests);
+        }
+        if self.h.lag.on {
+            self.h.lag.view_gen = self.view_gen;
+            self.h.record_lag(view);
         }
         self.applied = *epoch;
         self.plans.retain(|e, _| e >= epoch);
@@ -1363,6 +1368,47 @@ fn real_sim_belvedere_orbit_reaches_the_in_process_digest() {
 #[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_sim"]
 fn real_sim_belvedere_dolly_reaches_the_in_process_digest() {
     real_case("dolly", false, 90, &[3], Inject::default());
+}
+
+/// ADR 0055 plan, task 7a: the same runs as `real_case` with the zoom-in lag recorded per draw
+/// (`LAG` and `LAGSUM` lines, see `print_lag`). The measurement only reads, so the sims behave as
+/// in `real_case`; the in-process digest is not recomputed.
+fn real_lag_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64]) {
+    let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20);
+    for rule in RULES {
+        let Some(real) = open() else { return };
+        let views = real_views(&real, orbit);
+        let mut unlimited = with_rule(real.harness, rule);
+        unlimited.driver = driver_for(&unlimited.dataset, u64::MAX);
+        for view in &views {
+            unlimited.frame(view);
+        }
+        unlimited.settle(views.last().unwrap(), 3, 20_000);
+        let budget = unlimited.driver.cpu_bytes() * budget_percent / 100;
+        for seed in seeds {
+            let mut sim = Sim::new(with_rule(open().unwrap().harness, rule), budget, *seed);
+            sim.h.lag.on = true;
+            sim.h.lag.per_node = 8192;
+            sim.run(&views, Inject::default(), 400_000);
+            check_stats(&format!("belvedere {name} {rule:?} seed {seed}"), &sim);
+            print_lag(
+                &format!("belvedere {name} {rule:?} seed {seed}"),
+                &sim.h.lag.frames,
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast -- --ignored real_lag"]
+fn real_lag_belvedere_orbit() {
+    real_lag_case("orbit", true, 50, &[1, 7]);
+}
+
+#[test]
+#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast -- --ignored real_lag"]
+fn real_lag_belvedere_dolly() {
+    real_lag_case("dolly", false, 90, &[3]);
 }
 
 #[test]
