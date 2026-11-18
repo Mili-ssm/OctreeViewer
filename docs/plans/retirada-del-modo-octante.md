@@ -156,16 +156,26 @@ cámara de encuadre el rango de cada nodo se reduce a un nivel y el modo celda s
 comportamiento con rangos anchos solo lo cubren unos 15 tests explícitos. Estas lagunas son anteriores a la
 retirada, pero al borrar el modo octante dejaría de haber red. Cada test nuevo debe fallar con su mutación.
 
-- [ ] **6b-1** `cell_reset_restarts_the_active_window`: tras `reset()` el conjunto activo de un nodo que entra
-  vuelve a empezar. Mutación: quitar `applied_window.clear()`.
-- [ ] **6b-2** `an_active_range_depth_is_never_evicted_under_pressure`: con zoom y un pool justo, ninguna clave
+- [x] **6b-1** `cell_reset_restarts_the_active_window`: tras `reset()` el conjunto activo de un nodo que entra
+  vuelve a empezar. Mutación: quitar `applied_window.clear()`. Hecho en ef6dc6d. Evidencia: quitar
+  `applied_window.clear()` sobrevive (equivalente: `applied_window` se reconstruye desde `applied_span` en el
+  primer corte aplicado, y `applied_span.clear()` es el que importa); quitar `applied_span.clear()` hace fallar
+  `entering the cut` (`[7, 9]` en vez de `[9]`); `applied_finest.clear()` también sobrevive (tampoco se lee antes
+  de reescribirse).
+- [x] **6b-2** `an_active_range_depth_is_never_evicted_under_pressure`: con zoom y un pool justo, ninguna clave
   expulsada está en el conjunto activo anterior ni en el actual. Mutación: quitar los niveles del rango de
-  `needed_levels`.
-- [ ] **6b-3** `cap_clamps_the_range_and_fit_reports_it_with_wide_ranges`: recorte del más lejano primero, informado,
-  y niveles activos no más finos que el tope. Mutación: quitar `capped()` de `range_depths`.
-- [ ] **6b-4** `every_active_depth_is_fully_uploaded_with_a_wide_range`: con subida de una página por frame, todo
+  `needed_levels`. Hecho en ef6dc6d. Evidencia: el criterio se acota a lo expulsado que estaba activo en el plan
+  anterior y sigue en el rango de su nodo (el actual no puede contenerlo: lo activo exige residencia); quitar
+  `range_depths(..).0` de `needed_levels` falla en el frame 76 (nodo 5, profundidad 8, regla `Window`).
+- [x] **6b-3** `cap_clamps_the_range_and_fit_reports_it_with_wide_ranges`: recorte del más lejano primero, informado,
+  y niveles activos no más finos que el tope. Mutación: quitar `capped()` de `range_depths`. Hecho en ef6dc6d
+  (el test pasa; la mutación sobrevive). Evidencia: el test fija el más lejano recortado, caps no más gruesos de lejos
+  a cerca, activos y peticiones no más finos que el tope y un nodo recortado con nivel activo solo de rango; quitar
+  `capped()` (y `capped_range`) de `range_depths` sobrevive porque `entry.range` ya sale recortado del corte.
+- [x] **6b-4** `every_active_depth_is_fully_uploaded_with_a_wide_range`: con subida de una página por frame, todo
   nivel activo es residente; un contador prueba que hubo un nivel activo solo de rango y una subida parcial.
-  Mutación: quitar la comprobación de residencia de `cell_active_depths`.
+  Mutación: quitar la comprobación de residencia de `cell_active_depths`. Hecho en ef6dc6d. Evidencia: con
+  `usable` siempre verdadero falla (`test_support.rs:301`, «page 3 is active but not uploaded»).
 - [ ] **6b-5** `hold_threshold_is_the_finest_active_depth_end_to_end`: retención con un antepasado de rango ancho.
   Mutación: usar la profundidad nominal dibujada como umbral.
 - [ ] **6b-6** `real_memo_is_recomputed_when_only_the_active_span_changes`: el resumen del corte aplicado no
