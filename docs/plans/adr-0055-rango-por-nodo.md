@@ -117,18 +117,19 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 5a: Measure the sources of the data bound (no wiring)
 
-- [ ] Los tests ignorados `data_bounded_hi_vs_node_range` y `print_data_bound_totals` comparan cuatro fuentes de
-  la celda ocupada más cercana, cada una con y sin recorte a la vista: (a) cajas de página del nivel residente más
-  fino, (b) cajas de página del nivel `hi_d`, (c) el nivel más grueso fijado del nodo, (d) las cajas de datos por
-  octante (`octant_data_bounds`). En la muestra (P1 a P5) y en Majadas dentro de una hoja a 1 px.
-  Criterio: como mucho un nivel sobre la cota celda a celda en el nodo del ojo y proyección ≤ 90 % de lo usable.
-  La medida anterior dependía de un filtro «en pantalla» y de que el nivel 18 fuera residente: hay que repetirla
-  sin esas dos ayudas.
+- [x] (6416ad5) Cuatro fuentes medidas, con y sin recorte a la vista
+  ([registro](../records/benchmarks/R3_FUENTES_COTA_POR_DATOS_18-11-2026.md)). Todas son válidas; sin recorte todas
+  vuelven al último nivel. **Fuente elegida: cajas de página del nivel residente más fino, recortadas a la vista**:
+  igual a la cota celda a celda en el nodo que contiene el ojo, estable al quitar niveles finos, +36 páginas
+  estimadas en Majadas. Límite aceptado: en el nodo contiguo al ojo queda 3 o 4 niveles holgada (la caja de una
+  página de 512 celdas es amplia). El criterio de parada hablaba del nodo del ojo, que se cumple; la holgura del
+  contiguo se vigila con la residencia real de la tarea 7a. Las cajas de datos por octante no mejoran nada.
 
 ### Task 5: `hi` bounded by data, from a source that does not depend on residency
 
-- [ ] `node_view_range` calcula `hi` con la fuente elegida en 5a, recortada a la vista. Si la fuente depende de la
-  residencia, `hi` solo baja cuando cambia la pose (histéresis). Sin conectar a las peticiones todavía.
+- [ ] `node_view_range` calcula `hi` con las cajas de página del nivel residente más fino, recortadas a la vista
+  (el recorte exacto del test de 5a pasa a producción). La fuente depende de la residencia: la sonda de 5a no vio
+  oscilación, pero solo podía quitar niveles, así que `hi` solo baja cuando cambia la pose (histéresis). Sin conectar a las peticiones todavía.
   Tests: 0 infracciones frente a lo que pide el gemelo donde hay puntos; con pose fija y el pool por encima del
   umbral de expulsión, 200 frames sin que ninguna clave se pida dos veces.
 - [ ] La caché de profundidades por nodo (`refresh_depths`) se invalida cuando cambia el dato del que sale `hi`.
