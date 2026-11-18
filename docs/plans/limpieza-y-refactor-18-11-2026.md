@@ -1,6 +1,6 @@
 # Limpieza y refactor del proyecto
 
-Estado: en curso · 18-11-2026 · encargo del propietario (18-11-2026); rama local `refactor/limpieza`, sin publicar
+Estado: completado · 18-11-2026 · encargo del propietario (18-11-2026); rama local `refactor/limpieza`, sin publicar; quedan las decisiones del propietario
 
 **Objetivo.** Dejar el repositorio y el código más fáciles de mantener sin cambiar su comportamiento: quitar
 basura, poner al día los documentos vivos y partir los módulos más grandes en submódulos cohesivos. Cada tarea
@@ -63,7 +63,11 @@ deshacer la limpieza. Nada se publica ni se fusiona sin el visto bueno del propi
   y `lod_cells_bench.rs` pasan a terminar en `_tests.rs`.
 - [x] **R1 Quitar los módulos puente de `viewer_convert`** que solo reexportan `viewer_convert_core` bajo la ruta
   antigua.
-- [ ] **L5 Cierre.** `scripts/check.sh` completo, simulaciones reales con `R3_REQUIRE_REAL_DATA=1`, revisión.
+- [x] **L5 Cierre.** `scripts/check.sh`: 23 pasos en verde. Simulaciones reales de Belvedere (6 de 6) con los
+  mismos contadores y huellas que `feat/cell-lod-2b` (órbita s1: 2166, 0, 2627/17741; órbita s7: 343, 0,
+  1857/12267). Navegador: P1–P4 iguales a la compilación previa al refactor (diferencia media de luma ≤ 0,024),
+  sin errores de sombreadores. Revisión independiente: sin hallazgos de comportamiento; los 11 `.wgsl` coinciden
+  byte a byte con los literales antiguos.
 
 ## Resultado de las tareas de código
 
@@ -76,10 +80,10 @@ más el test nuevo de `max_side`.
 | R2 | c93b049 | 13 copias sustituidas en 10 ficheros de 4 crates; un test nuevo |
 | R3 | eee2cd1 | 4 ficheros; `camera.rs` y `viewer_wasm` sin tocar |
 | R5 | b570f09 | `gpu.rs` de 2380 a 329 líneas más 10 submódulos de 99 a 348; ninguna línea de lógica alterada; 17 elementos y 3 campos pasan a `pub(super)` |
-| R6 | (ver `git log`) | `spatial.rs` de 3031 a 412 líneas más 8 submódulos de 126 a 937; ninguna línea de lógica alterada; los tests siguen en `spatial.rs` |
+| R6 | ef8d571 | `spatial.rs` de 3031 a 412 líneas más 8 submódulos de 126 a 937; ninguna línea de lógica alterada; los tests siguen en `spatial.rs` |
 | R4 | f55b2a4 | 11 ficheros `.wgsl` (unas 740 líneas) en `crates/viewer_render_wgpu/src/shaders/`, copiados byte a byte; son fragmentos que el código concatena, no sombreadores completos |
-| R8 | (ver `git log`) | `lod_cells_sim_tests.rs`, `lod_cells_glue_sim_tests.rs`, `lod_cells_bench_tests.rs` |
-| R1 | (ver `git log`) | 8 módulos puente borrados; unas 28 rutas reescritas en 9 ficheros. Quedan dos puentes que además contienen tests (`pipeline/node_job.rs`, `pipeline/point_source.rs`) |
+| R8 | 1cec285 | `lod_cells_sim_tests.rs`, `lod_cells_glue_sim_tests.rs`, `lod_cells_bench_tests.rs` |
+| R1 | 4aa00f5 | 8 módulos puente borrados; unas 28 rutas reescritas en 9 ficheros. Quedan dos puentes que además contienen tests (`pipeline/node_job.rs`, `pipeline/point_source.rs`) |
 
 `pub(super)` en campos de una estructura que pasó a un submódulo no amplía nada: el elemento ya era visible en todo
 el módulo original.
