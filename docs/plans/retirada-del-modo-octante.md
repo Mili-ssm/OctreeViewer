@@ -1,6 +1,6 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 9 hechas
+Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 9 hechas; Task 10 en parte (docs y ruta de máscara hechas; faltan cierre de issues, checks y navegador, y el plan del ADR 0055)
 
 **Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
 clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
@@ -232,9 +232,11 @@ nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
 
 ### Task 10: Shader path without a LOD view, docs, and closing
 
-- [ ] Se comprueba primero si la selección en producción corre siempre con vista de LOD. Si es así, los tests de
-  render y de selección reciben una `LodView` (como `cell_lod_gpu_tests`) y se borra la ruta `lod_mode == 0`; si
-  no, se deja como ruta de máscara.
-- [ ] `docs/requirements.md`, `docs/explanation/REGIONAL_VOXEL_LOD.md` y `docs/estado.md` dejan de describir el
-  modo octante como vigente; se cierran #59 y #67; `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4.
+- [x] Comprobado: la selección en producción corre siempre con vista de LOD; solo los tests y `cell_bench` usan la ruta
+  sin ella. Decisión: se conserva como ruta de máscara solo de tests (reescribir las ~26 pruebas de render y de
+  selección que la usan no compensa); comentarios actualizados en `d53b7e0`.
+- [x] `docs/requirements.md`, `docs/explanation/REGIONAL_VOXEL_LOD.md` y `docs/estado.md` dejan de describir el
+  modo octante como vigente (commit HASH).
+- [ ] Al fusionar, se cierran #59 y #67.
+- [ ] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4.
 - [ ] El plan del ADR 0055 se reescribe sin la restricción del modo octante: su D4 deja de hacer falta.
