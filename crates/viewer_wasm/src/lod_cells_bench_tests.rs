@@ -149,16 +149,9 @@ fn cells_bench() {
     }
     let view = ViewProjection::new(camera, VIEWPORT, real.scale, VoxelBuildLimits::default());
     let h = &mut real.harness;
-    h.count_octant_coarsenings = true;
     h.soft_checks = true;
-    // `BENCH_MODE=cell` and `BENCH_RULE=contiguous` (defaults cell, window) for the residency
-    // measurements of OQ-14; the pool is the production one (65 536 pages = 512 MiB).
-    let cell_mode = env_or("BENCH_MODE", "cell") == "cell";
-    h.mode = if cell_mode {
-        LodMode::Cell
-    } else {
-        LodMode::Octant
-    };
+    // `BENCH_RULE=contiguous` (default window) for the residency measurements of OQ-14; the pool
+    // is the production one (65 536 pages = 512 MiB).
     let contiguous = env_or("BENCH_RULE", "window") == "contiguous";
     if contiguous {
         h.rule = ActiveRule::Contiguous;
@@ -289,7 +282,7 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
             last.cut_nodes,
         );
     }
-    if cell_mode && env_or("BENCH_HI_D", "0") == "1" {
+    if env_or("BENCH_HI_D", "0") == "1" {
         print_data_bound_totals(h, &view);
     }
     let json = format!(
@@ -300,7 +293,7 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
 \"frame_ms\":{{\"median\":{:.3},\"p95\":{:.3},\"max\":{:.3}}},\
 \"driver_cpu_bytes_end\":{cpu_bytes},\"driver_cpu_bytes_peak\":{peak_cpu},\
 \"cpu_cell_bytes_end\":{},\"cpu_cell_bytes_peak\":{peak_cell_cpu},\
-\"mode\":\"{}\",\"rule\":\"{}\",\"pool_capacity_pages\":{},\
+\"mode\":\"cell\",\"rule\":\"{}\",\"pool_capacity_pages\":{},\
 \"pool_resident_mib_end\":{:.1},\"pool_resident_mib_peak\":{:.1},\"pool_overflow_peak\":{overflow_peak},\
 \"pool_coarsened_peak\":{coarsened_peak},\"gpu_coarsened_peak\":{gpu_coarsened_peak},\"cpu_coarsened_peak\":{cpu_coarsened_peak},\
 \"pool_resident_pages_end\":{resident_end},\"dataset_pages_resident\":{pages_used},\
@@ -308,7 +301,7 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
 \"pool_resident_pages_peak\":{},\"fallback_pages_peak\":{},\"held_nodes_peak\":{},\
 \"excluded_nodes_peak\":{},\"hold_age_max\":{},\"hold_unsettled_total\":{},\"wait_frames\":{},\
 \"hole_frames\":{},\"lost_samples\":{},\"first_failure\":{first_failure:?},\
-\"cross_node_coarsenings\":{},\"octant_coarsenings\":{},\"octant_lowered\":{},\"wall_s\":{wall:.1},\
+\"cross_node_coarsenings\":{},\"wall_s\":{wall:.1},\
 \"peak_rss_kib\":{rss},\"final_cut_nodes\":{},\"stages\":{:?}}}\n",
         t.frames,
         settled_at.map_or("null".to_owned(), |n| n.to_string()),
@@ -323,7 +316,6 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
         fm[1],
         fm[2],
         last.cpu_cell_bytes,
-        if cell_mode { "cell" } else { "octant" },
         if contiguous { "contiguous" } else { "window" },
         viewer_render_wgpu::DEFAULT_POOL_PAGES,
         f64::from(last.resident_pages) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1048576.0,
@@ -342,8 +334,6 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
         h.hole_frames,
         h.lost_samples,
         h.zone_coarsenings,
-        h.octant_coarsenings,
-        h.octant_lowered,
         last.cut_nodes,
         t.stages,
     );
@@ -389,7 +379,6 @@ fn leaf_run(dataset: &str, px: f64, cache_mb: usize, budget_mb: u64, frames: usi
     let view = ViewProjection::new(camera, VIEWPORT, real.scale, VoxelBuildLimits::default());
     let h = &mut real.harness;
     h.soft_checks = true;
-    h.count_octant_coarsenings = true;
     let budget = budget_mb << 20;
     h.driver = driver_for(&h.dataset, budget);
     h.config.cpu_budget_bytes = Some(budget);
