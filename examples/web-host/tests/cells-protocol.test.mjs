@@ -331,10 +331,6 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
             if (side !== undefined && !(Number.isFinite(side) && side >= 0)) throw new Error(`invalid minimum length ${side}`);
             log.push(["setMinLength", side]);
         },
-        setCellLod(mode) {
-            if (mode !== "octant" && mode !== "cell") throw new Error(`unknown cell LOD mode ${mode}`);
-            log.push(["setCellLod", mode]);
-        },
         setCellActiveRule(rule) {
             if (rule !== "window" && rule !== "contiguous") throw new Error(`unknown cell active rule ${rule}`);
             log.push(["setCellActiveRule", rule]);
@@ -497,37 +493,6 @@ test("the continuity command reaches the viewer, and the driver starts with the 
     assert.deepEqual(render.calls("setContinuity"), [["setContinuity", true, undefined], ["setContinuity", false, 2]]);
     assert.equal(render.sent(worker, "nodeCells", "open").length, render.sent(worker, "open").length, "no dataset work");
     assert.deepEqual(render.errors, []);
-});
-
-test("the setCellLod command reaches the viewer, an unknown mode is rejected and the setting survives a recreated viewer", async () => {
-    const render = await runRenderWorker();
-    await render.openCells();
-    await render.send("setCellLod", { mode: "cell" });
-    assert.deepEqual(render.calls("setCellLod"), [["setCellLod", "cell"]]);
-    // Through the API: the answer carries the request id; an unknown mode is an error with it.
-    await render.send("api", { operation: "setCellLod", mode: "octant", requestId: 1 });
-    await render.send("api", { operation: "setCellLod", mode: "bogus", requestId: 2 });
-    assert.deepEqual(render.calls("setCellLod"), [["setCellLod", "cell"], ["setCellLod", "octant"]]);
-    const failure = render.messages.find(m => m.type === "error" && m.requestId === 2);
-    assert.match(failure.message, /unknown cell LOD mode bogus/);
-    assert.ok(render.messages.some(m => m.type === "apiResult" && m.requestId === 1 && m.value === "octant"));
-    // The rejected mode did not replace the stored one: a recreated viewer gets the last accepted.
-    await render.send("setCellLod", { mode: "cell" });
-    const errorsBefore = render.messages.filter(m => m.type === "error").length;
-    await render.send("setCellLod", { mode: "bogus" });
-    // Top-level path: a warning, so the page keeps rendering; no error message.
-    assert.equal(render.messages.filter(m => m.type === "error").length, errorsBefore);
-    const rejected = render.messages.filter(m => m.type === "warning");
-    assert.equal(rejected.length, 1);
-    assert.equal(rejected[0].operation, "setCellLod");
-    const callsBeforeLoss = render.calls("setCellLod").length;
-    render.loseDevice();
-    await render.frame();
-    await new Promise(resolve => setTimeout(resolve, 20));
-    await settle();
-    assert.equal(render.creates(), 2);
-    const afterLoss = render.calls("setCellLod").slice(callsBeforeLoss);
-    assert.deepEqual(afterLoss, [["setCellLod", "cell"]], "re-applied once to the new viewer, and only the accepted mode");
 });
 
 test("the minLength command reaches the viewer, an invalid side is a warning, and the setting survives a recreated viewer", async () => {

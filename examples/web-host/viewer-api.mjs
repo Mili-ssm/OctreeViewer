@@ -372,14 +372,6 @@ export function createViewer(hostCanvas, options = {}) {
             }
             return request("setPxMode", { mode: pxMode });
         },
-        // ADR 0050: "octant" (default) or "cell" level selection of the cells path; resolves with the
-        // mode now in force. An unknown mode rejects and keeps the current one.
-        setCellLod(mode) {
-            if (mode !== "octant" && mode !== "cell") {
-                return Promise.reject(new TypeError("cell LOD mode must be 'octant' or 'cell'"));
-            }
-            return request("setCellLod", { mode });
-        },
         // Experimental, temporary (OQ-11, issue #66): "window" (default) or "contiguous" active depths
         // of a node in cell mode; resolves with the rule now in force. An unknown rule rejects.
         setCellActiveRule(rule) {

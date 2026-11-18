@@ -67,8 +67,6 @@ pub struct WasmVoxelViewer {
     cell_node_cap: usize,
     /// RF-05 continuity of the open cloud (off by default); `setContinuity`.
     continuity: Continuity,
-    /// Per-octant or per-cell level selection (`setCellLod`); survives every cells restart.
-    lod_mode: viewer_render_wgpu::LodMode,
     /// Window or contiguous-run active depths (`setCellActiveRule`); survives every cells restart.
     active_rule: viewer_render_wgpu::ActiveRule,
     /// Counts camera moves and resizes (`viewEpoch`): the builder echoes the epoch of the view it
@@ -158,7 +156,6 @@ impl WasmVoxelViewer {
             cells_remote: None,
             cell_node_cap: DEFAULT_NODE_BYTES_PER_FRAME,
             continuity: Continuity::default(),
-            lod_mode: viewer_render_wgpu::LodMode::Cell,
             active_rule: viewer_render_wgpu::ActiveRule::Window,
             view_epoch: 0,
         })

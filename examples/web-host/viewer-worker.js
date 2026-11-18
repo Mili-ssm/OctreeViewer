@@ -60,9 +60,7 @@ let depthShadingOn = true;
 let continuitySetting = null;
 // Length minimum in dataset units (`undefined` = the viewer's default); re-applied like `continuitySetting`.
 let minLengthSetting = null;
-// "octant" | "cell" once the host chose one; re-applied to every viewer the worker creates.
-let cellLodSetting = null;
-// "window" | "contiguous" once the host chose one; re-applied like `cellLodSetting`.
+// "window" | "contiguous" once the host chose one; re-applied to every viewer the worker creates.
 let cellActiveRuleSetting = null;
 let cellNodeBytes = 0;
 let builtOpened = null;
@@ -1323,15 +1321,6 @@ function renderSettingChanged() {
     lastLodProgressKey = "";
 }
 
-// The viewer refuses an unknown mode and keeps its own, so the stored setting only changes after it
-// accepted the new one.
-function applyCellLod(mode) {
-    viewer.setCellLod(mode);
-    cellLodSetting = mode;
-    renderSettingChanged();
-    return mode;
-}
-
 // The viewer refuses an invalid factor and keeps its own, so the stored setting follows only an accepted one.
 function applyContinuity(enabled, factor) {
     viewer.setContinuity(enabled, factor);
@@ -1373,7 +1362,6 @@ async function recreateViewer(pose) {
     viewer.setDepthShading(depthShadingOn);
     if (continuitySetting) viewer.setContinuity(...continuitySetting);
     if (minLengthSetting) viewer.setMinLength(...minLengthSetting);
-    if (cellLodSetting) viewer.setCellLod(cellLodSetting);
     if (cellActiveRuleSetting) viewer.setCellActiveRule(cellActiveRuleSetting);
     viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
     advanceSceneGeneration();
@@ -1503,9 +1491,6 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         setPxMode(data.mode);
                         value = pxStats();
                         break;
-                    case "setCellLod":
-                        value = applyCellLod(data.mode);
-                        break;
                     case "setCellActiveRule":
                         value = applyCellActiveRule(data.rule);
                         break;
@@ -1594,14 +1579,6 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                     applyMinLength(data.side ?? undefined);
                 } catch (error) {
                     self.postMessage({ type: "warning", operation: "minLength", message: String(error) });
-                }
-                break;
-            case "setCellLod":
-                // A rejected mode is a warning, not an error: the host keeps rendering in the old one.
-                try {
-                    applyCellLod(data.mode);
-                } catch (error) {
-                    self.postMessage({ type: "warning", operation: "setCellLod", message: String(error) });
                 }
                 break;
             case "setCellActiveRule":

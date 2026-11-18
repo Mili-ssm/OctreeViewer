@@ -35,7 +35,7 @@ use crate::{
     CellPlanStats, CellUpdateConfig, PoolAck,
     cells_glue::{
         BuilderCells, BuilderOutput, CellsStats, Continuity, TARGET_PIXELS_RANGE, ViewerCells,
-        WASM_CPU_BUDGET_BYTES, driver_config, parse_active_rule, parse_lod_mode,
+        WASM_CPU_BUDGET_BYTES, driver_config, parse_active_rule,
     },
     scene_builder::SceneBuilderCore,
 };
@@ -594,7 +594,6 @@ impl WasmVoxelViewer {
                     // Cannot fail: the length minimum was validated when it was set.
                     let _ = cells.set_continuity(self.continuity, spacing);
                 }
-                cells.set_lod_mode(self.lod_mode);
                 cells.set_active_rule(self.active_rule);
                 self.cells_local = Some(cells);
                 self.cell_path = PATH_ENABLED;
@@ -738,7 +737,6 @@ impl WasmVoxelViewer {
         cells
             .set_continuity(self.continuity)
             .map_err(|message| JsValue::from_str(&message))?;
-        cells.set_lod_mode(self.lod_mode);
         cells.set_active_rule(self.active_rule);
         cells.camera_changed(self.view_epoch);
         self.cells_remote = Some(cells);
@@ -788,26 +786,6 @@ impl WasmVoxelViewer {
             cells.set_continuity(continuity, spacing).map_err(error)?;
         }
         self.continuity = continuity;
-        if self.lod_session.is_some() {
-            self.lod_dirty = self.lod_config.is_some();
-        }
-        Ok(())
-    }
-
-    /// Per-octant (`"octant"`) or per-cell (`"cell"`, the default) level selection of the cells
-    /// path (ADR 0050). Any other string is an error and the mode stays as it was. It survives
-    /// `beginRemoteCells` and dataset changes, takes effect on the next frame and rebuilds
-    /// nothing.
-    #[wasm_bindgen(js_name = setCellLod)]
-    pub fn set_cell_lod(&mut self, mode: &str) -> Result<(), JsValue> {
-        let mode = parse_lod_mode(mode).map_err(|message| JsValue::from_str(&message))?;
-        if let Some(cells) = &mut self.cells_remote {
-            cells.set_lod_mode(mode);
-        }
-        if let Some(cells) = &mut self.cells_local {
-            cells.set_lod_mode(mode);
-        }
-        self.lod_mode = mode;
         if self.lod_session.is_some() {
             self.lod_dirty = self.lod_config.is_some();
         }

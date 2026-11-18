@@ -75,23 +75,21 @@ fail the command; a recorded cache pause or observation cap is a diagnostic outc
 successful target or valid steady-state FPS benchmark. This probe does not measure GPU memory,
 heap JS or a paired performance improvement. Compare equivalent runs separately.
 
-### Cells path parity, octant and cell level selection
+### Cells path parity
 
 `probe-cells-parity.mjs` runs four arms (cells + build worker, cells without it, CPU path, cells + build
-worker again) on two fixed poses and compares the settled digests. `--cell-lod=octant|cell` (default
-`octant`) sets the cells path's level selection at start through `?cellLod=`; it is recorded in the
-report. Run both modes on the same file, serving the repository root on a free port:
+worker again) on two fixed poses and compares the settled digests. Per-cell level selection is the only
+mode; the report's `cellLod` field is the constant `"cell"` so old and new reports stay comparable. Serve
+the repository root on a free port and run it on one file:
 
 ```bash
 PORT=8791 scripts/serve-demo.sh --no-build &
-for mode in octant cell; do
-  node examples/web-host/probe-cells-parity.mjs target/render-data/belvedere-v7.oct target/cells-parity-$mode.json \
-    --url=http://127.0.0.1:8791/examples/web-host/index.html --cell-lod=$mode --rest-timeout-s=120
-done
+node examples/web-host/probe-cells-parity.mjs target/render-data/belvedere-v7.oct target/cells-parity.json \
+  --url=http://127.0.0.1:8791/examples/web-host/index.html --rest-timeout-s=120
 ```
 
 The probe needs a V7 file (the Belvedere one above): a V5 file such as `data/samples/fs_e430_n4008_18.oct`
-(header `OCTVFRM1 0500`) does not reach the cells path, so `--cell-lod=cell` would change nothing. The probe
+(header `OCTVFRM1 0500`) does not reach the cells path. The probe
 takes a file, not the built-in demo sample. Its final `gate`/`parity` summary is written to the report
 (a lookup bug, `arm.name` instead of `arm.arm`, kept it out before). Kill the server and browsers when done.
 

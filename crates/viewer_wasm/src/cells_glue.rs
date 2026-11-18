@@ -141,17 +141,6 @@ impl Continuity {
     }
 }
 
-/// The `setCellLod` argument: exactly `"octant"` or `"cell"` (ADR 0050).
-pub(crate) fn parse_lod_mode(mode: &str) -> Result<LodMode, String> {
-    match mode {
-        "octant" => Ok(LodMode::Octant),
-        "cell" => Ok(LodMode::Cell),
-        other => Err(format!(
-            "unknown cell LOD mode {other:?}: expected \"octant\" or \"cell\""
-        )),
-    }
-}
-
 /// The `setCellActiveRule` argument: exactly `"window"` or `"contiguous"`.
 pub(crate) fn parse_active_rule(rule: &str) -> Result<ActiveRule, String> {
     match rule {
@@ -569,7 +558,6 @@ pub(crate) struct ViewerCells {
     level_requests: Option<Vec<(NodeId, u8)>>,
     probe_last: Cell<Option<u64>>,
     continuity: Continuity,
-    lod_mode: LodMode,
     active_rule: ActiveRule,
     /// Reference spacing of the open cloud (`cellsInfo`), for the continuity minimum.
     reference_spacing: Option<f64>,
@@ -606,7 +594,6 @@ impl ViewerCells {
             level_requests: None,
             probe_last: Cell::new(None),
             continuity: Continuity::default(),
-            lod_mode: LodMode::Cell,
             active_rule: ActiveRule::Window,
             reference_spacing: None,
         }
@@ -640,8 +627,8 @@ impl ViewerCells {
 
     /// Per-octant or per-cell level selection. The driver re-plans and rewrites its node records
     /// and page table on the next frame; no node is built or sent again.
+    #[cfg(test)]
     pub(crate) fn set_lod_mode(&mut self, mode: LodMode) {
-        self.lod_mode = mode;
         self.driver.set_lod_mode(mode);
         self.view_dirty = true;
         self.probe_last.set(None);
@@ -965,6 +952,7 @@ impl InProcessCells {
     }
 
     /// Per-octant or per-cell level selection; the next update applies it to the driver.
+    #[cfg(test)]
     pub(crate) fn set_lod_mode(&mut self, mode: LodMode) {
         self.lod_mode = mode;
         self.dirty = true;
