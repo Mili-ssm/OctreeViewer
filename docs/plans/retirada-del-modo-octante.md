@@ -44,9 +44,12 @@ arneses en octante antes de tocar el predeterminado, y las tareas 4 y 5 los pasa
 
 ### Task 1: Characterize cell mode (R)
 
-- [ ] Golden de `cell_cut_ranged` en `LodMode::Cell` sobre los casos del golden actual (`cell_cut_tests.rs`), y
+- [x] Golden de `cell_cut_ranged` en `LodMode::Cell` sobre los casos del golden actual (`cell_cut_tests.rs`), y
   registro fechado con el resumen de las simulaciones reales de celda y una pasada de `cells_bench` en modo celda.
   Comprobación: el golden nuevo pasa y falla si se altera una profundidad a mano.
+  Hecho en `4116b38` (golden `cell_cut_digest_golden_in_cell_mode`, falla al alterar `range`) y en el registro
+  [R3_LINEA_BASE_CELDA_18-11-2026](../records/benchmarks/R3_LINEA_BASE_CELDA_18-11-2026.md); la pasada de
+  `cells_bench` no se hizo (solo las simulaciones `real_sim`).
 
 ### Task 2: Default flip, with the test rigs pinned to octant
 
