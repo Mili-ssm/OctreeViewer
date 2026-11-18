@@ -1,6 +1,6 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 7 hechas
+Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 8 hechas
 
 **Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
 clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
@@ -209,11 +209,15 @@ nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
 
 ### Task 8: wasm sims and glue tests, one mode (R)
 
-- [ ] Se colapsan las macros de dos modos (queda el test de celda con el nombre simple), se cambian los literales
-  de los arneses wasm y los tests fuera de las macros, se borra el oráculo de octante y se portan
-  `a_digest_is_not_at_rest_right_after_the_pool_was_lost` (`lod_cells_sim_tests.rs`) y los tests con presupuesto
-  en bytes de octante (`synthetic_cpu_bytes(Cell)` con la misma fracción; se anotan las dos cifras).
-  Comprobación: resumen de las simulaciones reales igual que la línea base.
+- [x] (3a8d28e) Las cinco macros de dos modos y el par suelto se colapsan en el test de celda con el nombre simple
+  (22 tests renombrados); se borran los dos tests de cambio de modo y el oráculo de octante; se portan cuatro tests
+  (los tres de presupuesto conservan su fracción: 553 688 bytes en octante antes, 603 272 en celda ahora). 168
+  tests de wasm y 16 ignorados. Las cuatro simulaciones reales de celda dan los mismos contadores y resúmenes que
+  la línea base (cambian la etiqueta, que ya no nombra el modo, y tres campos de octante que eran siempre 0).
+  Se conserva `CutView::holes`, que el modo celda usa en las simulaciones del pegamento.
+- [x] (3a8d28e) Autotest del oráculo de celda ampliado: quitar el nivel más fino de un tramo se detecta; quitar uno
+  de en medio **no** (no hay comprobación de contigüidad): test ignorado e issue
+  [#83](https://github.com/Mili-ssm/OctreeViewer/issues/83).
 
 ### Task 9: Delete the branches and `LodMode`, file by file (R)
 
