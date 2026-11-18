@@ -30,7 +30,7 @@ const FRAME_SAMPLE_CAPACITY = 4096;
 let frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
 let frameRenderSampleCount = 0;
 let nextFrameRenderSample = 0;
-const coalescedCommands = new Set(["resize", "refine", "depthShading", "continuity", "fit", "birdView"]);
+const coalescedCommands = new Set(["resize", "refine", "depthShading", "continuity", "minLength", "fit", "birdView"]);
 
 // Benchmark instrumentation (render plan R0, E2/E3/E5). Aggregates only; read with the "metrics"
 // message. Self-contained on purpose: package-local.py embeds this worker without module imports.
@@ -58,6 +58,8 @@ let renderCanvas = null;
 let framebufferSize = [1, 1];
 let depthShadingOn = true;
 let continuitySetting = null;
+// Length minimum in dataset units (`undefined` = the viewer's default); re-applied like `continuitySetting`.
+let minLengthSetting = null;
 // "octant" | "cell" once the host chose one; re-applied to every viewer the worker creates.
 let cellLodSetting = null;
 // "window" | "contiguous" once the host chose one; re-applied like `cellLodSetting`.
@@ -1314,19 +1316,42 @@ async function recoverFromDeviceLoss(loss) {
     return false;
 }
 
+// A render setting changes the live stats without touching the lodProgress key, so the key is reset to
+// make the next frame re-post them (otherwise they stay stale until the camera moves).
+function renderSettingChanged() {
+    advanceSceneGeneration();
+    lastLodProgressKey = "";
+}
+
 // The viewer refuses an unknown mode and keeps its own, so the stored setting only changes after it
 // accepted the new one.
 function applyCellLod(mode) {
     viewer.setCellLod(mode);
     cellLodSetting = mode;
-    advanceSceneGeneration();
+    renderSettingChanged();
     return mode;
+}
+
+// The viewer refuses an invalid factor and keeps its own, so the stored setting follows only an accepted one.
+function applyContinuity(enabled, factor) {
+    viewer.setContinuity(enabled, factor);
+    continuitySetting = [enabled, factor];
+    renderSettingChanged();
+    return true;
+}
+
+// The viewer refuses an invalid side and keeps its own, so the stored setting follows only an accepted one.
+function applyMinLength(side) {
+    viewer.setMinLength(side);
+    minLengthSetting = [side];
+    renderSettingChanged();
+    return side;
 }
 
 function applyCellActiveRule(rule) {
     viewer.setCellActiveRule(rule);
     cellActiveRuleSetting = rule;
-    advanceSceneGeneration();
+    renderSettingChanged();
     return rule;
 }
 
@@ -1347,6 +1372,7 @@ async function recreateViewer(pose) {
     viewer.resize(framebufferSize[0], framebufferSize[1]);
     viewer.setDepthShading(depthShadingOn);
     if (continuitySetting) viewer.setContinuity(...continuitySetting);
+    if (minLengthSetting) viewer.setMinLength(...minLengthSetting);
     if (cellLodSetting) viewer.setCellLod(cellLodSetting);
     if (cellActiveRuleSetting) viewer.setCellActiveRule(cellActiveRuleSetting);
     viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
@@ -1483,6 +1509,12 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                     case "setCellActiveRule":
                         value = applyCellActiveRule(data.rule);
                         break;
+                    case "setMinLength":
+                        value = applyMinLength(data.side ?? undefined);
+                        break;
+                    case "setContinuity":
+                        value = applyContinuity(Boolean(data.enabled), data.factor ?? undefined);
+                        break;
                     case "setGpuFrameTiming":
                         hostGpuTiming = Boolean(data.enabled);
                         viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
@@ -1554,9 +1586,15 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 break;
             case "continuity":
                 // RF-05: only changes which cell level each octant draws; nothing is rebuilt.
-                continuitySetting = [Boolean(data.enabled), data.factor ?? undefined];
-                viewer.setContinuity(...continuitySetting);
-                advanceSceneGeneration();
+                applyContinuity(Boolean(data.enabled), data.factor ?? undefined);
+                break;
+            case "minLength":
+                // Same as "continuity", but an invalid side is a warning: the old minimum stays.
+                try {
+                    applyMinLength(data.side ?? undefined);
+                } catch (error) {
+                    self.postMessage({ type: "warning", operation: "minLength", message: String(error) });
+                }
                 break;
             case "setCellLod":
                 // A rejected mode is a warning, not an error: the host keeps rendering in the old one.

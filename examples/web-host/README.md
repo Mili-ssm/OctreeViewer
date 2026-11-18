@@ -231,7 +231,7 @@ viewer.on("pick", (hit) => console.log(hit?.position, hit?.voxelCenter));
 ```
 
 The API also provides `setMode("bird" | "observer")`, `setCamera(position, target)`, `fit()`,
-`pick(x, y)`, `getStats()`, `setCellLod("octant" | "cell")`, `on(type, callback)`, and `dispose()`.
+`pick(x, y)`, `getStats()`, `setCellLod("octant" | "cell")`, `setMinLength(side)`, `setContinuity(enabled, factor)`, `on(type, callback)`, and `dispose()`.
 `pick(x, y)` uses CSS pixels relative to the canvas and resolves to `null` or `{ position, voxelCenter, voxelSize, distance,
 instanceIndex, sceneGeneration }`; observer clicks perform the same pick and move the orbit center.
 An instance index is valid only for its returned LOD scene generation. The GPU readback copies at
@@ -242,12 +242,19 @@ are in source dataset coordinates, with the file's coordinate origin and visual 
 `setCellLod` picks the level selection of the cells path: `"octant"` (default) or `"cell"` (per
 cell); an unknown mode rejects and keeps the current one, and the choice survives "Recreate
 viewer". The demo starts in `cell` mode (the library default stays `octant`);
-`?cellLod=octant` in the page URL compares with the per-octant selection. There is no UI control yet.
+`?cellLod=octant` in the page URL sets the initial mode, and the demo's "Level selection" select changes it live.
 `setCellActiveRule("window" | "contiguous")` (experimental) picks which range depths a node activates in cell
 mode: `"window"` (default) widens one level per frame, `"contiguous"` activates the resident run of the range
 at once. An unknown rule rejects and keeps the current one; `?cellActive=window|contiguous` in the page URL sets it
 at start, and an invalid value is ignored with a console warning. It is a temporary option so the owner can compare
-the zoom; after the decision the losing rule is deleted (OQ-11, issue #66). There is no UI control yet.
+the zoom; after the decision the losing rule is deleted (OQ-11, issue #66). The demo's "Active depths
+(experimental)" select changes it live and is disabled in per-octant mode, where the rule does not act.
+`setMinLength(side)` sets the length minimum of the drawn cubes in dataset units: `undefined` restores the
+default 1e-4 (0.1 mm if the unit is metres), `0` turns the length filter off, and a negative or non-finite side
+rejects. `setContinuity(enabled, factor)` turns on the cloud-spacing minimum (`factor` × the reference spacing,
+default 1). The larger of both wins per cell (ADR 0049, 0054). The demo panel "Minimum cube size" offers
+`Length` (value in mm, cm or m), `Cloud spacing` (factor, with the resulting side from `cellStats().continuityMinSide`)
+and `Off · pixels only`; metres are assumed because the CRS unit is not read yet. The stats report `minLength`.
 The cells path never draws cubes smaller than a default length minimum of 0.1 mm (`1e-4` dataset
 units, metres assumed until the CRS unit is read); continuity (cloud spacing x factor) wins when larger.
 `renderedVoxels` reports submitted/current HZB-visible instances; it does not guarantee each voxel

@@ -66,6 +66,9 @@ pub(crate) const DEFAULT_MIN_SIDE: f64 = 1e-4;
 pub(crate) struct Continuity {
     pub enabled: bool,
     pub factor: f64,
+    /// Length minimum of the drawn cubes in dataset units (`setMinLength`); 0 turns it off.
+    /// It travels with the continuity because both feed the one minimum side of the driver.
+    pub min_length: f64,
 }
 
 impl Default for Continuity {
@@ -73,6 +76,7 @@ impl Default for Continuity {
         Self {
             enabled: false,
             factor: DEFAULT_CONTINUITY_FACTOR,
+            min_length: DEFAULT_MIN_SIDE,
         }
     }
 }
@@ -82,9 +86,24 @@ impl Continuity {
     pub(crate) fn new(enabled: bool, factor: Option<f64>) -> Result<Self, String> {
         let factor = factor.unwrap_or(DEFAULT_CONTINUITY_FACTOR);
         if factor.is_finite() && factor > 0.0 {
-            Ok(Self { enabled, factor })
+            Ok(Self {
+                enabled,
+                factor,
+                min_length: DEFAULT_MIN_SIDE,
+            })
         } else {
             Err("the continuity factor must be finite and positive".to_owned())
+        }
+    }
+
+    /// The same continuity with another length minimum: `None` is the default, 0 is off; a
+    /// negative or non-finite value is an error.
+    pub(crate) fn with_min_length(self, min_length: Option<f64>) -> Result<Self, String> {
+        let min_length = min_length.unwrap_or(DEFAULT_MIN_SIDE);
+        if min_length.is_finite() && min_length >= 0.0 {
+            Ok(Self { min_length, ..self })
+        } else {
+            Err("the minimum length must be finite and not negative".to_owned())
         }
     }
 
@@ -103,13 +122,14 @@ impl Continuity {
         }
     }
 
-    /// The minimum side the driver gets: the default length minimum, or the continuity side
-    /// when that is larger. Always `Some`, so a new viewer already stops at 0.1 mm.
+    /// The minimum side the driver gets: the length minimum, or the continuity side when that is
+    /// larger (ADR 0054). `None` (no minimum, the pixel target alone) only when the length
+    /// minimum is 0 and the continuity gives no side; a new viewer stops at 0.1 mm.
     pub(crate) fn effective_min_side(&self, reference_spacing: Option<f64>) -> Option<f64> {
-        Some(
-            self.min_side(reference_spacing)
-                .map_or(DEFAULT_MIN_SIDE, |side| side.max(DEFAULT_MIN_SIDE)),
-        )
+        let side = self
+            .min_side(reference_spacing)
+            .map_or(self.min_length, |side| side.max(self.min_length));
+        (side > 0.0).then_some(side)
     }
 
     /// The continuity minimum cell side: `None` in literal mode and for a cloud whose reference
@@ -209,8 +229,11 @@ pub(crate) struct CellsStats {
     /// Continuity requested for the cloud (render side and in-process path).
     pub continuity: bool,
     pub continuity_factor: f64,
-    /// Effective minimum cell side the driver applies; `None` in literal mode.
+    /// Effective minimum cell side the driver applies (the larger of the length minimum and the
+    /// continuity side); `None` when both are off.
     pub continuity_min_side: Option<f64>,
+    /// Length minimum requested (`setMinLength`), in dataset units; 0 is off.
+    pub min_length: f64,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -860,6 +883,7 @@ impl ViewerCells {
             continuity: self.continuity.enabled,
             continuity_factor: self.continuity.factor,
             continuity_min_side: self.driver.pool().min_side(),
+            min_length: self.continuity.min_length,
         }
     }
 }
@@ -1127,6 +1151,7 @@ impl InProcessCells {
             continuity: self.continuity.enabled,
             continuity_factor: self.continuity.factor,
             continuity_min_side: self.driver.pool().min_side(),
+            min_length: self.continuity.min_length,
             ..CellsStats::default()
         }
     }

@@ -70,6 +70,8 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
             lod = makeLod(8, targetVoxelPixels);
         },
         setDepthShading() {},
+        setMinLength(side) { lodExtra = { ...lodExtra, minLength: side }; },
+        setContinuity(enabled, factor) { lodExtra = { ...lodExtra, continuity: [enabled, factor] }; },
         replacePoints() {},
         fitScene() {},
         openLodDataset() {
@@ -316,6 +318,24 @@ test("cells path reports the first frame once a cut is applied and pool pages ar
 test("cells path keeps the first frame pending without an applied cut or resident pages (#42)", async () => {
     assert.equal(await firstCoarseAfterCellsFrame({ cutApply: null, poolResidentPages: 3 }), null);
     assert.equal(await firstCoarseAfterCellsFrame({ cutApply: "applied", poolResidentPages: 0 }), null);
+});
+
+test("a render setting changed at rest re-posts lodProgress with the live stats", async () => {
+    const worker = await runWorker(undefined, null, { initFields: { cells: false } });
+    worker.setLodExtra({ cellPath: "enabled", visiblePoints: 0, cutApply: "applied", poolResidentPages: 3 });
+    await worker.send("openFile", { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    for (let i = 0; i < 3; i++) await worker.send("frame", { camera: CELLS_CAMERA });
+    const count = () => worker.messages.filter((message) => message.type === "lodProgress").length;
+    for (const [command, payload, field, expected] of [
+        ["minLength", { side: 0.2 }, "minLength", 0.2],
+        ["continuity", { enabled: true, factor: 2 }, "continuity", [true, 2]],
+    ]) {
+        const before = count();
+        await worker.send(command, payload);
+        await worker.send("frame", { camera: CELLS_CAMERA });
+        assert.equal(count(), before + 1, `${command} posts a new lodProgress`);
+        assert.deepEqual(latestProgress(worker.messages).lod[field], expected);
+    }
 });
 
 test("worker starts scoped refinement timers after successful color changes", async () => {

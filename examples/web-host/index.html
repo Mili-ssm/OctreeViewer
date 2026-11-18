@@ -293,8 +293,40 @@
                 <option value="classification">Classification</option>
             </select>
             <label><input id="depth-shading" type="checkbox" checked /> Depth shading</label>
-            <label><input id="continuity" type="checkbox" aria-describedby="continuity-help" /> Continuity</label>
-            <small id="continuity-help">Cells path only. Draws no cell smaller than the cloud's reference spacing, so occupied neighbouring cells touch; off keeps the literal look (gaps where the scan has no samples).</small>
+            <label for="cell-lod">Level selection</label>
+            <select id="cell-lod" aria-describedby="cell-lod-help" disabled>
+                <option value="cell">Per cell</option>
+                <option value="octant">Per octant</option>
+            </select>
+            <small id="cell-lod-help">Cells path only. Per cell picks the drawn level of each cell on its own; per octant uses one level for a whole octant.</small>
+            <label for="cell-active">Active depths (experimental)</label>
+            <select id="cell-active" aria-describedby="cell-active-help" disabled>
+                <option value="window">Window</option>
+                <option value="contiguous">Contiguous run</option>
+            </select>
+            <small id="cell-active-help">Temporary comparison option (issue #66). Only acts with per-cell level selection.</small>
+            <label for="min-length-mode">Minimum cube size</label>
+            <select id="min-length-mode" aria-describedby="min-length-help" disabled>
+                <option value="length">Length</option>
+                <option value="spacing">Cloud spacing</option>
+                <option value="off">Off · pixels only</option>
+            </select>
+            <div id="min-length-length-fields">
+                <label for="min-length-value">Length</label>
+                <input id="min-length-value" type="number" value="0.1" step="any" aria-describedby="min-length-help" disabled />
+                <label for="min-length-unit">Unit</label>
+                <select id="min-length-unit" aria-describedby="min-length-help" disabled>
+                    <option value="mm">mm</option>
+                    <option value="cm">cm</option>
+                    <option value="m">m</option>
+                </select>
+            </div>
+            <div id="min-length-spacing-fields" hidden>
+                <label for="continuity-factor">× cloud spacing</label>
+                <input id="continuity-factor" type="number" value="1" min="0.25" step="0.25" aria-describedby="min-length-help" disabled />
+            </div>
+            <small id="min-length-help">Cells cubes are never drawn smaller than this, whatever the pixel target asks for (the larger of both wins). Metres are assumed because the CRS unit is not read yet.</small>
+            <small id="min-length-spacing-info" role="status"></small>
             <small id="render-options-help">Missing intensity falls back to grayscale RGB; missing classification keeps RGB.</small>
         </section>
         <p id="renderer-status" role="status" aria-live="polite">Waiting for WebGPU…</p>

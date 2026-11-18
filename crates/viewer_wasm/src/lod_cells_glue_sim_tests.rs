@@ -1780,3 +1780,122 @@ fn continuity_wins_when_larger() {
     // A continuity side below the default does not lower it.
     assert_eq!(on.effective_min_side(Some(1e-6)), Some(DEFAULT_MIN_SIDE));
 }
+
+#[test]
+fn the_length_minimum_defaults_to_the_constant_and_the_larger_of_it_and_continuity_wins() {
+    use crate::cells_glue::{Continuity, DEFAULT_MIN_SIDE};
+    assert_eq!(Continuity::default().min_length, DEFAULT_MIN_SIDE);
+    let on = Continuity::new(true, None).unwrap();
+    assert_eq!(on.min_length, DEFAULT_MIN_SIDE);
+    let set = on.with_min_length(Some(0.5)).unwrap();
+    // A length above the continuity side wins; a continuity side above the length wins.
+    assert_eq!(set.effective_min_side(Some(0.25)), Some(0.5));
+    assert_eq!(set.effective_min_side(Some(2.0)), Some(2.0));
+    assert_eq!(set.effective_min_side(None), Some(0.5));
+    // Continuity off: the length alone.
+    let literal = Continuity::default().with_min_length(Some(0.5)).unwrap();
+    assert_eq!(literal.effective_min_side(Some(2.0)), Some(0.5));
+    // `None` restores the default.
+    assert_eq!(
+        set.with_min_length(None).unwrap().min_length,
+        DEFAULT_MIN_SIDE
+    );
+}
+
+#[test]
+fn length_off_and_continuity_off_is_no_minimum_for_the_driver() {
+    use crate::cells_glue::Continuity;
+    let off = Continuity::default().with_min_length(Some(0.0)).unwrap();
+    assert_eq!(off.effective_min_side(Some(0.25)), None);
+    assert_eq!(off.effective_min_side(None), None);
+    // With continuity on, the spacing side still applies.
+    let spaced = Continuity::new(true, None)
+        .unwrap()
+        .with_min_length(Some(0.0))
+        .unwrap();
+    assert_eq!(spaced.effective_min_side(Some(0.25)), Some(0.25));
+    assert_eq!(spaced.effective_min_side(None), None);
+
+    // The driver gets the literal mode of before ADR 0054: the pool has no minimum.
+    let h = synthetic_harness(1 << 20, 2.0);
+    let mut viewer = ViewerCells::new(
+        driver_config(
+            h.dataset.cell_grid(),
+            h.dataset.coordinate_origin(),
+            u64::MAX,
+        ),
+        1 << 20,
+    );
+    viewer.set_continuity(off).unwrap();
+    assert_eq!(viewer.driver().pool().min_side(), None);
+    let stats = viewer.stats(&StrictTarget::default());
+    assert_eq!(stats.continuity_min_side, None);
+    assert_eq!(stats.min_length, 0.0);
+    // The default comes back with `None`.
+    viewer
+        .set_continuity(off.with_min_length(None).unwrap())
+        .unwrap();
+    assert_eq!(viewer.driver().pool().min_side(), Some(1e-4));
+    assert_eq!(viewer.stats(&StrictTarget::default()).min_length, 1e-4);
+}
+
+#[test]
+fn invalid_length_minimums_are_rejected() {
+    use crate::cells_glue::Continuity;
+    let base = Continuity::default();
+    for bad in [-1.0, -1e-9, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(base.with_min_length(Some(bad)).is_err(), "{bad}");
+    }
+    assert!(base.with_min_length(Some(0.0)).is_ok());
+}
+
+#[test]
+fn the_length_minimum_survives_continuity_changes_and_a_new_in_process_update() {
+    use crate::cells_glue::Continuity;
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    let set = Continuity::new(true, Some(2.0))
+        .unwrap()
+        .with_min_length(Some(0.125))
+        .unwrap();
+    let mut cells = InProcessCells::new(&h.dataset, h.config);
+    cells.set_continuity(set, None).unwrap();
+    let view = synth_orbit().remove(0);
+    let mut target = StrictTarget {
+        eye: view.camera().position(),
+        ..StrictTarget::default()
+    };
+    let (blocks, pages) = (&mut h.blocks, &mut h.pages);
+    cells
+        .update(
+            &mut h.dataset,
+            &view,
+            2.0,
+            true,
+            &mut target,
+            Some(&mut ()),
+            false,
+            &mut |_: &mut (), id| blocks(id),
+            &mut |_: &mut (), anchor| pages(anchor),
+        )
+        .unwrap();
+    let stats = cells.stats(&h.dataset, &target);
+    assert_eq!(stats.min_length, 0.125);
+    assert_eq!(stats.continuity_min_side, Some(0.125));
+
+    // The render side keeps it too, and a fresh viewer is re-applied the same `Continuity`.
+    let mut viewer = ViewerCells::new(
+        driver_config(
+            h.dataset.cell_grid(),
+            h.dataset.coordinate_origin(),
+            u64::MAX,
+        ),
+        1 << 20,
+    );
+    viewer.set_continuity(set).unwrap();
+    assert_eq!(viewer.stats(&target).min_length, 0.125);
+    assert_eq!(viewer.driver().pool().min_side(), Some(0.125));
+    // A new spacing (dataset change) keeps the length.
+    let viewer = viewer.with_reference_spacing(Some(1.0));
+    assert_eq!(viewer.stats(&target).min_length, 0.125);
+    assert_eq!(viewer.driver().pool().min_side(), Some(2.0));
+}
