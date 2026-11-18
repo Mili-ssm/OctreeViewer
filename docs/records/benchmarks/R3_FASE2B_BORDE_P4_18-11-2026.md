@@ -3,7 +3,8 @@
 **Estado: medido; no hace falta la cadena entre nodos.** En la pose P4 de la muestra integrada, las celdas
 dibujadas a los dos lados de cada borde de nodo visible difieren como mucho en un nivel, con las dos reglas de
 niveles activos (`ActiveRule::Window` y `Contiguous`). El borde se ve porque el rango del nodo que contiene el ojo
-empieza un nivel más fino de lo que pide su parte visible; por qué sale ese extremo no está comprobado.
+empieza un nivel más fino de lo que pide su parte visible: lo fija una esquina de su caja que queda fuera de
+pantalla, donde la perspectiva plana estira las celdas.
 
 Medida nativa, sin GPU: el gemelo en CPU de la regla de la GPU sobre la muestra integrada, en modo celda. Cierra
 la casilla 2c de la [fase 2b](../../plans/fase-2b-rango-de-niveles-y-transiciones.md) («P4 straight border
@@ -64,13 +65,27 @@ Comprobado:
   [plan de la fase 2b](../../plans/fase-2b-rango-de-niveles-y-transiciones.md)) y se ven como puntos sueltos: por
   eso parece una línea.
 
-Sin comprobar: por qué `far` vale 11 en esa esquina. Está sobre el propio borde, en su extremo izquierdo y más
-lejos del ojo que el centro, donde el nodo 8 dibuja nivel 10; habría que evaluar `node_far_depth` paso a paso.
+Comprobado después con el diagnóstico `far_diagnosis` del mismo test (revisión `52e56e5`, rama
+`feat/adr-0055-tramo-a`; salida en `p4_far.out`):
+
+| Punto del borde (y = 32, suelo) | x en pantalla | Hija más pequeña de la celda de nivel 10 | ¿Refina el nivel 10? |
+| --- | --- | --- | --- |
+| Esquina lejana del nodo 14, x = 16 | −1174 px (fuera) | 5,28 px | Sí: `far` = 11 |
+| x = 20 | −774 px (fuera) | 4,22 px | Sí |
+| x = 24, centro del borde | −370 px (fuera) | 3,24 px | No: pide nivel 10 |
+| x = 28 a 32, parte visible | 35 a 439 px | 3,18 px | No: pide nivel 10 |
+
+- La esquina que usa `node_far_depth` está a la misma profundidad de vista que el resto del borde (14,0), pero
+  1174 px a la izquierda del lienzo. Con proyección plana una celda mide más cuanto más lejos está del eje de la
+  vista: allí la hija de la celda de nivel 10 mide 5,28 px y en la parte visible 3,18 px.
+- La sonda y el gemelo de la GPU dan el mismo valor en la esquina: no es un error de la sonda, sino que «la esquina
+  más lejana según la vista» no es donde las celdas miden menos.
 
 ## Consecuencias
 
 - **La cadena entre nodos (antiguo F4) no hace falta para P4**: no hay pares visibles con más de un nivel.
-- El defecto está en cómo se calcula el extremo grueso del rango de un nodo. Corresponde al paso 1 de «Fuera de
+- El defecto está en cómo se calcula el extremo grueso del rango de un nodo: se evalúa en un punto fuera de
+  pantalla. Corresponde al paso 1 de «Fuera de
   esta sesión» del [replanteamiento](../../plans/replanteamiento-lod-por-celda-18-11-2026.md#tareas) (rango por
   nodo, [ADR 0055](../../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md)), que sustituye ese cálculo; P4
   es su caso de prueba.
