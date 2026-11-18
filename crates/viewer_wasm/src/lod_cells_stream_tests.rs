@@ -2651,3 +2651,219 @@ fn a_node_holding_the_eye_keeps_contiguous_active_depths_under(rule: ActiveRule)
     assert_eq!(seen, 2, "nodes 14 and 17 are drawn");
     assert!(checked > 100, "too few lattice samples measured: {checked}");
 }
+
+/// Diagnostic (prints, asserts nothing): the built-in sample at pose P4 of the web demo (close
+/// pose: from the initial fit, 8 wheel steps of -0.3 zoom each, then a right drag of 120 px
+/// upward on an 870 x 750 canvas). For every face of every node of the cut it takes a grid of
+/// point pairs straddling the face, asks the twin of the GPU rule (`drawn_depth_at`) which node
+/// draws each side and at which depth, and prints, per active rule, the nodes' active, resident,
+/// wanted and drawn depths and ranges, a histogram of the level differences of the pairs where
+/// both samples are on screen, and the worst pairs with their screen position.
+/// Run: `cargo test --offline --profile fast -p viewer_wasm p4_border_levels -- --ignored --nocapture`.
+#[test]
+#[ignore = "diagnostic: prints the level difference across the P4 node borders"]
+fn p4_border_levels() {
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        p4_border_levels_under(rule);
+    }
+}
+
+fn p4_border_levels_under(rule: ActiveRule) {
+    let (mut h, origin, scale) = sample_harness(LodMode::Cell);
+    h.rule = rule;
+    let viewport = [870, 750];
+    let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
+    // The host fits the camera to the data extent (`LodDataset::fit_camera`).
+    let root = h.dataset.metadata.hierarchy().stats().data_bounds;
+    let mut camera = OrbitCamera::default();
+    assert!(camera.fit(
+        SceneBounds {
+            min: local(root.min()),
+            max: local(root.max())
+        },
+        viewport
+    ));
+    let initial = ViewProjection::new(camera, viewport, scale, VoxelBuildLimits::default());
+    // The web host sums the wheel deltas (deltaY * 0.001) and the pointer deltas (normalised by
+    // the canvas size) of a frame and applies zoom, then orbit.
+    let mut p4_camera = camera;
+    assert!(p4_camera.zoom(-0.3 * 8.0));
+    assert!(p4_camera.orbit(0.0, -120.0 / 750.0));
+    let p4 = ViewProjection::new(p4_camera, viewport, scale, VoxelBuildLimits::default());
+    println!(
+        "== rule {rule:?}: P4 eye {:?} target {:?} (dataset frame of the close-pose test: eye \
+         [31.958, 38.760, 6.118] target [31.958, 31.958, 1.9995])",
+        p4_camera.position(),
+        p4_camera.target()
+    );
+    h.settle(&initial, 3, 5000);
+    h.camera_moved();
+    h.settle(&p4, 3, 5000);
+
+    let ctx = h.cell_ctx.as_ref().expect("cell mode context");
+    let grid = h.dataset.cell_grid();
+    let hierarchy = h.dataset.metadata.hierarchy();
+    let nodes = &h.cell_nodes;
+    let to_eye = |p: [f64; 3]| -> [f64; 3] {
+        std::array::from_fn(|a| (p[a] - ctx.origin[a]) * ctx.scale - ctx.eye[a])
+    };
+    // The unique drawer of a point: (node index, depth).
+    let drawer = |p: [f64; 3]| -> Option<(usize, u8)> {
+        let rel = to_eye(p);
+        let mut found = None;
+        for (j, node) in nodes.iter().enumerate() {
+            if !(0..3).all(|a| p[a] >= node.min[a] && p[a] <= node.max[a]) {
+                continue;
+            }
+            if let Some(depth) = drawn_depth_at(&ctx.lod, &node.lod, rel, node.lo, node.side) {
+                found = Some((j, depth));
+            }
+        }
+        found
+    };
+    // Projected edge of the cell of node `j` at `depth` that holds `rel`.
+    let cell_px = |j: usize, depth: u8, rel: [f64; 3]| -> f32 {
+        let node = &nodes[j];
+        let level = depth - node.lod.node_depth;
+        let cells = (1_u64 << level) as f64;
+        let side = node.side / cells;
+        let min: [f32; 3] = std::array::from_fn(|a| {
+            (node.lo[a]
+                + ((rel[a] - node.lo[a]) / side)
+                    .floor()
+                    .clamp(0.0, cells - 1.0)
+                    * side) as f32
+        });
+        edge_px(&ctx.lod, min, side as f32)
+    };
+    let screen = |rel: [f64; 3]| -> [f64; 2] {
+        let dot = |v: [f32; 3]| (0..3).map(|a| rel[a] * f64::from(v[a])).sum::<f64>();
+        let depth = dot(ctx.lod.forward);
+        let focal = f64::from(ctx.lod.focal);
+        [
+            ctx.viewport[0] * 0.5 + dot(ctx.lod.right) * focal / depth,
+            ctx.viewport[1] * 0.5 - dot(ctx.lod.up) * focal / depth,
+        ]
+    };
+
+    println!("-- nodes of the cut ({})", nodes.len());
+    for (j, node) in nodes.iter().enumerate() {
+        let (_, depths, range) = &h.last_levels[j];
+        let (_, wanted, drawn) = &h.last_entries[j];
+        let mut depths = depths.clone();
+        depths.sort_unstable();
+        let resident: Vec<u8> = (node.lod.node_depth..=node.lod.node_depth + MAX_NODE_SPAN)
+            .filter(|d| {
+                h.driver
+                    .pool()
+                    .is_resident(h.driver.pool().key(node.id, *d))
+            })
+            .collect();
+        let bounds = hierarchy.node(node.id).unwrap().bounds();
+        println!(
+            "node {:>3} depth {} bounds {:.1?}..{:.1?} active {depths:?} resident {resident:?} \
+             range {range:?}\n          wanted {wanted:?}\n          drawn {drawn:?}",
+            node.id.get(),
+            representative_depth(&grid, bounds).saturating_sub(3),
+            bounds.min(),
+            bounds.max(),
+        );
+    }
+
+    // Only the data matters on screen: the cells above and below the point cloud draw nothing.
+    let data = h.dataset.metadata.hierarchy().stats().data_bounds;
+    println!("data bounds {:?}..{:?}", data.min(), data.max());
+    let mut bands: std::collections::BTreeMap<usize, std::collections::BTreeMap<u8, usize>> =
+        Default::default();
+    // `P4_DUMP=<dir>` writes every visible pair as `x y z depth_a depth_b node_a node_b` lines.
+    let mut dump = String::new();
+    const N: usize = 48;
+    let mut histogram: std::collections::BTreeMap<u8, usize> = Default::default();
+    // (node a, depth a, node b, depth b) -> (pairs, min xy, max xy)
+    type Group = (usize, [f64; 2], [f64; 2]);
+    let mut groups: std::collections::BTreeMap<(u64, u8, u64, u8), Group> = Default::default();
+    for node in nodes {
+        for axis in 0..3 {
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            for upper in [false, true] {
+                for i in 0..N {
+                    for j in 0..N {
+                        let extent: [f64; 3] = std::array::from_fn(|a| node.max[a] - node.min[a]);
+                        let eps = extent[axis] * 1e-4;
+                        let mut inside = [0.0; 3];
+                        inside[u] = node.min[u] + extent[u] * (i as f64 + 0.5) / N as f64;
+                        inside[v] = node.min[v] + extent[v] * (j as f64 + 0.5) / N as f64;
+                        let mut outside = inside;
+                        let face = if upper {
+                            node.max[axis]
+                        } else {
+                            node.min[axis]
+                        };
+                        let sign = if upper { 1.0 } else { -1.0 };
+                        inside[axis] = face - sign * eps;
+                        outside[axis] = face + sign * eps;
+                        let (Some((ja, da)), Some((jb, db))) = (drawer(inside), drawer(outside))
+                        else {
+                            continue;
+                        };
+                        if ja == jb {
+                            continue;
+                        }
+                        if !(0..3).all(|a| inside[a] >= data.min()[a] && inside[a] <= data.max()[a])
+                        {
+                            continue;
+                        }
+                        let (ra, rb) = (to_eye(inside), to_eye(outside));
+                        if !(ctx.on_screen(ra) && ctx.on_screen(rb)) {
+                            continue;
+                        }
+                        *histogram.entry(da.abs_diff(db)).or_default() += 1;
+                        let at = screen(ra);
+                        *bands
+                            .entry((at[1] / 50.0).floor().max(0.0) as usize * 50)
+                            .or_default()
+                            .entry(da.abs_diff(db))
+                            .or_default() += 1;
+                        dump.push_str(&format!(
+                            "{:.1} {:.1} {:.3} {da} {db} {} {} {:.2} {:.2}\n",
+                            at[0],
+                            at[1],
+                            inside[2],
+                            nodes[ja].id.get(),
+                            nodes[jb].id.get(),
+                            cell_px(ja, da, ra),
+                            cell_px(jb, db, rb)
+                        ));
+                        let entry = groups
+                            .entry((nodes[ja].id.get(), da, nodes[jb].id.get(), db))
+                            .or_insert((0, at, at));
+                        entry.0 += 1;
+                        for k in 0..2 {
+                            entry.1[k] = entry.1[k].min(at[k]);
+                            entry.2[k] = entry.2[k].max(at[k]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    println!("-- visible border pairs by level difference: {histogram:?}");
+    if let Ok(dir) = std::env::var("P4_DUMP") {
+        std::fs::write(format!("{dir}/pairs-{rule:?}.txt"), dump).unwrap();
+    }
+    println!("-- level differences per 50 px screen row band: {bands:?}");
+    let mut worst: Vec<_> = groups.iter().collect();
+    worst.sort_by_key(|((_, da, _, db), (n, ..))| {
+        (std::cmp::Reverse(da.abs_diff(*db)), std::cmp::Reverse(*n))
+    });
+    for ((a, da, b, db), (n, lo, hi)) in worst.into_iter().take(25) {
+        println!(
+            "diff {} : node {a} @ depth {da} | node {b} @ depth {db} : {n} pairs, screen x {:.0}..{:.0} y {:.0}..{:.0}",
+            da.abs_diff(*db),
+            lo[0],
+            hi[0],
+            lo[1],
+            hi[1]
+        );
+    }
+}
