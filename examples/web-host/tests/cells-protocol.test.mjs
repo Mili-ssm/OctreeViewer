@@ -327,6 +327,10 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         setCellNodeBytesPerFrame(bytes) { log.push(["setCellNodeBytesPerFrame", bytes]); },
         cellPoolPages() { return poolPages; },
         setContinuity(enabled, factor) { log.push(["setContinuity", enabled, factor]); },
+        setMinLength(side) {
+            if (side !== undefined && !(Number.isFinite(side) && side >= 0)) throw new Error(`invalid minimum length ${side}`);
+            log.push(["setMinLength", side]);
+        },
         setCellLod(mode) {
             if (mode !== "octant" && mode !== "cell") throw new Error(`unknown cell LOD mode ${mode}`);
             log.push(["setCellLod", mode]);
@@ -524,6 +528,29 @@ test("the setCellLod command reaches the viewer, an unknown mode is rejected and
     assert.equal(render.creates(), 2);
     const afterLoss = render.calls("setCellLod").slice(callsBeforeLoss);
     assert.deepEqual(afterLoss, [["setCellLod", "cell"]], "re-applied once to the new viewer, and only the accepted mode");
+});
+
+test("the minLength command reaches the viewer, an invalid side is a warning, and the setting survives a recreated viewer", async () => {
+    const render = await runRenderWorker();
+    await render.openCells();
+    await render.send("minLength", { side: 0 });
+    await render.send("api", { operation: "setMinLength", side: 0.5, requestId: 1 });
+    await render.send("api", { operation: "setMinLength", side: -1, requestId: 2 });
+    await render.send("api", { operation: "setContinuity", enabled: true, factor: 2, requestId: 3 });
+    assert.deepEqual(render.calls("setMinLength"), [["setMinLength", 0], ["setMinLength", 0.5]]);
+    assert.deepEqual(render.calls("setContinuity"), [["setContinuity", true, 2]]);
+    assert.match(render.messages.find(m => m.type === "error" && m.requestId === 2).message, /invalid minimum length -1/);
+    assert.ok(render.messages.some(m => m.type === "apiResult" && m.requestId === 1 && m.value === 0.5));
+    await render.send("minLength", { side: 0.25 });
+    await render.send("minLength", { side: Number.NaN });
+    const warnings = render.messages.filter(m => m.type === "warning" && m.operation === "minLength");
+    assert.equal(warnings.length, 1);
+    const callsBeforeLoss = render.calls("setMinLength").length;
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await settle();
+    assert.deepEqual(render.calls("setMinLength").slice(callsBeforeLoss), [["setMinLength", 0.25]], "re-applied once, only the accepted side");
 });
 
 test("the setCellActiveRule command reaches the viewer, an unknown rule is a warning and the setting survives a recreated viewer", async () => {

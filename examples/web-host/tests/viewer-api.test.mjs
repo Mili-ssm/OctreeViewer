@@ -225,6 +225,17 @@ test("embeddable API converts CSS pick coordinates and disposes its worker resou
         const postedRule = FakeWorker.instance.messages.length;
         await assert.rejects(viewer.setCellActiveRule("Window"), /'window' or 'contiguous'/);
         assert.equal(FakeWorker.instance.messages.length, postedRule, "an unknown rule is not sent");
+        await viewer.setMinLength(0.5);
+        assert.ok(FakeWorker.instance.messages.some((message) => message.operation === "setMinLength" && message.side === 0.5));
+        await viewer.setMinLength(0);
+        await viewer.setMinLength();
+        await viewer.setContinuity(true, 2);
+        assert.ok(FakeWorker.instance.messages.some((message) => message.operation === "setContinuity" && message.enabled === true && message.factor === 2));
+        const postedLength = FakeWorker.instance.messages.length;
+        for (const bad of [-1, Number.NaN, Infinity, "1"]) await assert.rejects(viewer.setMinLength(bad), /minimum length/);
+        await assert.rejects(viewer.setContinuity("yes"), /boolean/);
+        await assert.rejects(viewer.setContinuity(true, 0), /factor/);
+        assert.equal(FakeWorker.instance.messages.length, postedLength, "invalid values are not sent");
         FakeWorker.instance.holdApi = true;
         const pending = viewer.getStats();
         const loading = viewer.load(new Blob());
