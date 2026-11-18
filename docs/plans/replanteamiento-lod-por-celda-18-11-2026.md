@@ -1,6 +1,6 @@
 # Replanteamiento del LOD por celda: la GPU decide el nivel, la CPU solo la residencia
 
-Estado: propuesta del agente · 18-11-2026 · pendiente de validar por el propietario · continúa la [fase 2b](fase-2b-rango-de-niveles-y-transiciones.md)
+Estado: aprobado · 18-11-2026 · dirección validada por el propietario ([respuestas](retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026)); continúa la [fase 2b](fase-2b-rango-de-niveles-y-transiciones.md)
 
 **Conclusión.** La fase 2b se atascó porque la CPU decide por octante qué niveles activa cada nodo, y esa
 estimación falla en cada pose nueva (P4, P2). La regla por celda de la GPU (E4) ya dibuja lo que el propietario

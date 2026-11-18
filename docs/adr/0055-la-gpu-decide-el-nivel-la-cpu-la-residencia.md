@@ -1,6 +1,6 @@
 # 0055 En modo celda la GPU decide el nivel dibujado y la CPU solo la residencia
 
-Estado: Propuesta · Fecha: 18-11-2026 · Decide: propietario (propone el agente) · Precisaría [ADR 0050](0050-nivel-por-celda-segun-distancia.md) y [ADR 0053](0053-transiciones-de-un-nivel.md); cambiaría la lectura de R3-Q21 y de RF-31
+Estado: Aceptada · Fecha: 18-11-2026 · Decide: propietario (propuso el agente; aceptada el 18-11-2026) · Precisa [ADR 0050](0050-nivel-por-celda-segun-distancia.md) y [ADR 0053](0053-transiciones-de-un-nivel.md); cambia la lectura de R3-Q21 y de RF-31
 
 ## Contexto
 - La regla E4 de la GPU (`cell_draws` en `shaders/cell_compute.wgsl`, gemelo `cell_lod.rs::draws`) dibuja, entre los niveles
@@ -12,7 +12,7 @@ Estado: Propuesta · Fecha: 18-11-2026 · Decide: propietario (propone el agente
   ([diagnóstico](../plans/replanteamiento-lod-por-celda-18-11-2026.md#por-qué-se-atascó)).
 - El propietario (18-11-2026) pide seguir la intención de los requisitos antes que su literalidad.
 
-## Decisión (propuesta)
+## Decisión
 - **Activo = tramo contiguo.** Los niveles activos de un nodo son un tramo contiguo de niveles residentes: un
   nivel no se activa si entre él y lo que ya se dibuja falta un nivel residente. Lo que ya se dibuja no se suelta
   para cerrar un hueco (engrosaría la imagen).
@@ -22,7 +22,9 @@ Estado: Propuesta · Fecha: 18-11-2026 · Decide: propietario (propone el agente
 - **Transiciones:** con el tramo sin huecos, dos celdas vecinas del mismo nodo difieren como mucho en un nivel;
   en el tiempo, los niveles entran conforme se hacen residentes. No hay ventana de un nivel por frame ni, al
   completar la propuesta, estado de pasos por octante.
-- El modo octante queda congelado y no condiciona el modo celda.
+- El modo octante queda congelado y no condiciona el modo celda; se retira tras validar la fase 2b en el
+  navegador (propietario, 18-11-2026).
+- La ventana de un nivel por frame se quita a prueba: si en la demo se ven saltos, vuelve (propietario, 18-11-2026).
 
 ## Alternativas
 | Opción | Por qué no |

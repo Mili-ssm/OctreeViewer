@@ -103,6 +103,9 @@ el módulo original.
 
 ## Decisiones del propietario
 
+Respondidas el 18-11-2026: las respuestas y su estado están en
+[Cómo retomar](retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026).
+
 | # | Decisión | Datos |
 | --- | --- | --- |
 | D1 | Borrar las salidas de experimentos guardadas dentro de `target/` | Unos 215 GB: datasets convertidos del 24 y 25-10-2026 (`v7-writer-comparison*`, `v7-cross-corpus-repeat*`, `albuera-current-v5`, `majadas-current-v5`…, unos 190 GB) y perfiles de Firefox y capturas de octubre (unos 5 GB). Se regeneran con horas de conversión desde `data/datasets/`. `target/render-data` (38 GB) lo usan los tests y se queda |
