@@ -194,8 +194,9 @@ impl CellPool {
                 let probes = std::array::from_fn(|octant| data.probe_box(octant));
                 // `lo` of the node's range: the on-axis bound of `node_view_range` (ADR 0055
                 // plan, task 4); a node wholly behind the eye or without data wants the coarsest
-                // depth. Its `hi_c` is not used yet: `hi` stays as the octants want it (task 5).
-                let far = node_view_range(
+                // depth. Its `hi_c` is not used yet (task 5), so only `lo` is searched. It is
+                // already capped by `min_side` like `continuity_depth` would, so no second cap.
+                let far = view_range_lo(
                     view,
                     grid,
                     origin,
@@ -204,12 +205,8 @@ impl CellPool {
                     target_px,
                     self.min_side,
                 )
-                .map_or(data.buildable.0, |(lo, _)| lo);
-                (
-                    finest_allowed
-                        .map_or(far, |limit| continuity_depth(data.buildable, far, limit)),
-                    octants_in_front(view, origin, data.bounds, probes),
-                )
+                .unwrap_or(data.buildable.0);
+                (far, octants_in_front(view, origin, data.bounds, probes))
             } else {
                 (0, 0)
             };

@@ -87,8 +87,8 @@ use crate::{
     cell_cut::{
         FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_octants,
         behind_wanted, cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels,
-        in_cell_range, node_view_range, octant_wanted_depth_in, octant_wanted_depth_near,
-        octants_in_front, probe_region, served_depth,
+        in_cell_range, octant_wanted_depth_in, octant_wanted_depth_near, octants_in_front,
+        probe_region, served_depth, view_range_lo,
     },
     representative_depth,
 };

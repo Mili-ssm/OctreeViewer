@@ -508,40 +508,100 @@ pub fn node_view_range(
     target_px: f64,
     min_side: Option<f64>,
 ) -> Option<(u8, u8)> {
-    debug_assert!(buildable.0 <= buildable.1, "buildable range is ordered");
-    let relative = relative_bounds(region?, coordinate_origin)?;
-    let eye = view_eye(view);
-    let forward = view.camera().forward();
-    let [width, height] = view.viewport();
-    let aspect = f64::from(width) / f64::from(height.max(1));
-    let tan_corner = (crate::camera::VERTICAL_FOV * 0.5).tan() * (1.0 + aspect * aspect).sqrt();
-    let stretch = (1.0 + tan_corner * tan_corner).sqrt();
-    let near = view.camera().lod_near_depth() / view.visual_scale();
-    let nearest = near.max(nearest_visible_depth(view, &relative, eye));
-    let farthest = farthest_corner_depth(&relative, eye, forward);
-    if farthest <= nearest {
-        return None;
-    }
-    let cap = min_side.map_or(buildable.1, |side| {
-        representative_depth_for_spacing(grid, side).clamp(buildable.0, buildable.1)
-    });
-    let on_axis = |depth: f64, target_px: f64| {
-        let meets = OctantProbe {
+    let span = ViewSpan::new(view, grid, coordinate_origin, region, buildable, min_side)?;
+    let lo = span.lo(target_px);
+    Some((lo, span.hi(target_px).max(lo)))
+}
+
+/// `lo_c` of `node_view_range` alone: one search instead of two, for callers that ignore `hi_c`.
+pub(crate) fn view_range_lo(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    region: Option<SpatialBounds>,
+    buildable: (u8, u8),
+    target_px: f64,
+    min_side: Option<f64>,
+) -> Option<u8> {
+    ViewSpan::new(view, grid, coordinate_origin, region, buildable, min_side)
+        .map(|span| span.lo(target_px))
+}
+
+/// What `node_view_range` and `view_range_lo` share: the region's view depths and the depth cap.
+struct ViewSpan<'a> {
+    view: &'a ViewProjection,
+    grid: &'a CellGrid,
+    relative: SpatialBounds,
+    eye: [f64; 3],
+    buildable: (u8, u8),
+    cap: u8,
+    nearest: f64,
+    farthest: f64,
+    stretch: f64,
+}
+
+impl<'a> ViewSpan<'a> {
+    fn new(
+        view: &'a ViewProjection,
+        grid: &'a CellGrid,
+        coordinate_origin: [f64; 3],
+        region: Option<SpatialBounds>,
+        buildable: (u8, u8),
+        min_side: Option<f64>,
+    ) -> Option<Self> {
+        debug_assert!(buildable.0 <= buildable.1, "buildable range is ordered");
+        let relative = relative_bounds(region?, coordinate_origin)?;
+        let eye = view_eye(view);
+        let forward = view.camera().forward();
+        let [width, height] = view.viewport();
+        let aspect = f64::from(width) / f64::from(height.max(1));
+        let tan_corner = (crate::camera::VERTICAL_FOV * 0.5).tan() * (1.0 + aspect * aspect).sqrt();
+        let stretch = (1.0 + tan_corner * tan_corner).sqrt();
+        let near = view.camera().lod_near_depth() / view.visual_scale();
+        let nearest = near.max(nearest_visible_depth(view, &relative, eye));
+        let farthest = farthest_corner_depth(&relative, eye, forward);
+        if farthest <= nearest {
+            return None;
+        }
+        let cap = min_side.map_or(buildable.1, |side| {
+            representative_depth_for_spacing(grid, side).clamp(buildable.0, buildable.1)
+        });
+        Some(Self {
             view,
             grid,
-            octant_box: relative,
-            anchor: eye,
+            relative,
+            eye,
+            buildable,
+            cap,
+            nearest,
+            farthest,
+            stretch,
+        })
+    }
+
+    fn on_axis(&self, depth: f64, target_px: f64) -> u8 {
+        let meets = OctantProbe {
+            view: self.view,
+            grid: self.grid,
+            octant_box: self.relative,
+            anchor: self.eye,
             on_axis: Some(depth),
             target_px,
         };
-        (buildable.0..=buildable.1)
+        (self.buildable.0..=self.buildable.1)
             .find(|d| meets.at(*d))
-            .unwrap_or(buildable.1)
-            .min(cap)
-    };
-    let lo = on_axis(farthest, target_px);
-    let hi = on_axis(nearest, target_px / stretch).max(lo);
-    Some((lo, hi))
+            .unwrap_or(self.buildable.1)
+            .min(self.cap)
+    }
+
+    fn lo(&self, target_px: f64) -> u8 {
+        self.on_axis(self.farthest, target_px)
+    }
+
+    /// Not yet raised to `lo`.
+    fn hi(&self, target_px: f64) -> u8 {
+        self.on_axis(self.nearest, target_px / self.stretch)
+    }
 }
 
 /// Lower bound of the view depth of any point of `bounds` inside the view frustum: its

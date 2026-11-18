@@ -1539,7 +1539,7 @@ fn ranged_entry(
         Some(&|_, data| {
             let probes = [ProbeBox::Geometric; 8];
             (
-                node_view_range(
+                view_range_lo(
                     view,
                     grid,
                     [0.0; 3],
@@ -1548,7 +1548,7 @@ fn ranged_entry(
                     target,
                     None,
                 )
-                .map_or(data.buildable.0, |(lo, _)| lo),
+                .unwrap_or(data.buildable.0),
                 octants_in_front(view, [0.0; 3], bounds, probes),
             )
         }),
@@ -1562,6 +1562,50 @@ fn posed(eye: [f64; 3], at: [f64; 3]) -> ViewProjection {
     let mut camera = cameras().remove(0).1;
     assert!(camera.set_pose(eye, at));
     view(&camera)
+}
+
+#[test]
+fn the_far_wanted_depth_is_never_finer_than_the_near_one() {
+    let grid = huge_grid();
+    let mut state = 0x2545_F491_4F6C_DD1D_u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1_u64 << 53) as f64
+    };
+    let mut checked = 0;
+    for _ in 0..800 {
+        let eye: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1600.0);
+        let at: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1000.0);
+        let mut camera = cameras().remove(0).1;
+        if !camera.set_pose(eye, at) {
+            continue;
+        }
+        let view = view(&camera);
+        let target = [1.0, 4.0, 16.0][(next() * 3.0) as usize % 3];
+        // A random box inside the grid: the root or one of its octants.
+        let side = 2000.0 / f64::from(1_u32 << ((next() * 3.0) as u32));
+        let min: [f64; 3] = std::array::from_fn(|_| {
+            -1000.0 + ((next() * 2000.0 / side).floor() * side).min(2000.0 - side)
+        });
+        let bounds = SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
+        let far =
+            view_range_lo(&view, &grid, [0.0; 3], Some(bounds), (3, 12), target, None).unwrap_or(3);
+        let front = octants_in_front(&view, [0.0; 3], bounds, [ProbeBox::Geometric; 8]);
+        let near = (0..8)
+            .filter(|o| front >> o & 1 == 1)
+            .map(|o| octant_wanted_depth(&view, &grid, [0.0; 3], bounds, o, (3, 12), target))
+            .max();
+        if let Some(near) = near {
+            assert!(
+                far <= near,
+                "far {far} > near {near}: eye {eye:?} at {at:?} box {bounds:?} target {target}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 300, "{checked} poses checked");
 }
 
 /// Eye at `x = -900` looking along `+x` over `huge_grid`: view depth = `x + 900`.
