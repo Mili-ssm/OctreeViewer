@@ -331,6 +331,10 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
             if (mode !== "octant" && mode !== "cell") throw new Error(`unknown cell LOD mode ${mode}`);
             log.push(["setCellLod", mode]);
         },
+        setCellActiveRule(rule) {
+            if (rule !== "window" && rule !== "contiguous") throw new Error(`unknown cell active rule ${rule}`);
+            log.push(["setCellActiveRule", rule]);
+        },
         beginRemoteCells(origin, rootMin, rootSide, referenceSpacing, dataMin, dataMax) {
             log.push(["beginRemoteCells", rootSide, dataMin?.[0], dataMax?.[0]]);
             log.push(["referenceSpacing", referenceSpacing]);
@@ -520,6 +524,26 @@ test("the setCellLod command reaches the viewer, an unknown mode is rejected and
     assert.equal(render.creates(), 2);
     const afterLoss = render.calls("setCellLod").slice(callsBeforeLoss);
     assert.deepEqual(afterLoss, [["setCellLod", "cell"]], "re-applied once to the new viewer, and only the accepted mode");
+});
+
+test("the setCellActiveRule command reaches the viewer, an unknown rule is a warning and the setting survives a recreated viewer", async () => {
+    const render = await runRenderWorker();
+    await render.openCells();
+    await render.send("setCellActiveRule", { rule: "contiguous" });
+    await render.send("api", { operation: "setCellActiveRule", rule: "window", requestId: 1 });
+    await render.send("api", { operation: "setCellActiveRule", rule: "bogus", requestId: 2 });
+    assert.deepEqual(render.calls("setCellActiveRule"), [["setCellActiveRule", "contiguous"], ["setCellActiveRule", "window"]]);
+    assert.match(render.messages.find(m => m.type === "error" && m.requestId === 2).message, /unknown cell active rule bogus/);
+    assert.ok(render.messages.some(m => m.type === "apiResult" && m.requestId === 1 && m.value === "window"));
+    await render.send("setCellActiveRule", { rule: "contiguous" });
+    await render.send("setCellActiveRule", { rule: "bogus" });
+    assert.equal(render.messages.filter(m => m.type === "warning" && m.operation === "setCellActiveRule").length, 1);
+    const callsBeforeLoss = render.calls("setCellActiveRule").length;
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await settle();
+    assert.deepEqual(render.calls("setCellActiveRule").slice(callsBeforeLoss), [["setCellActiveRule", "contiguous"]]);
 });
 
 test("every open sends the build worker the render side's pool pages, also on a respawned worker", async () => {
