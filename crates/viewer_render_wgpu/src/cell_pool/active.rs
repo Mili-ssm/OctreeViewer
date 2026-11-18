@@ -21,10 +21,7 @@ impl CellPool {
         node_depth: u8,
         new_d5: Option<u8>,
     ) -> Vec<u8> {
-        let usable = |depth: u8| {
-            let key = self.key(entry.node, depth);
-            self.is_resident(key) && !self.fresh.contains(&key)
-        };
+        let usable = |depth: u8| self.is_usable(self.key(entry.node, depth));
         let mut wanted = entry.required_levels();
         if self.active_rule == ActiveRule::Contiguous {
             // The resident depths of the range that reach a drawn one without a residency gap

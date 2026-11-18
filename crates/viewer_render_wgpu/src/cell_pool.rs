@@ -747,6 +747,11 @@ impl CellPool {
         self.levels.get(&key).is_some_and(Level::is_resident)
     }
 
+    /// Resident and not uploaded this frame: the levels `cell_active_depths` may activate.
+    pub fn is_usable(&self, key: LevelKey) -> bool {
+        self.is_resident(key) && !self.fresh.contains(&key)
+    }
+
     /// Packed data of a requested, uploading or resident level, for the GPU glue.
     pub fn level(&self, key: LevelKey) -> Option<&PackedLevel> {
         self.levels.get(&key)?.data.as_deref()

@@ -814,6 +814,7 @@ impl Harness {
             .filter(|id| self.driver.has_node(**id))
             .filter_map(|id| hierarchy.node(*id).map(SpatialNode::bounds))
             .collect();
+        self.check_active_runs(number, plan, &nodes);
         let mut memory = HashMap::new();
         let mut seen = HashMap::new();
         let mut gate_prev = HashMap::new();
@@ -966,6 +967,51 @@ impl Harness {
         self.cell_counters.evaluations += 1;
         self.cell_nodes = nodes;
         self.cell_ctx = Some(ctx);
+    }
+
+    /// ADR 0055 ("Decision"): the active depths of a node are a contiguous run of resident depths.
+    /// Between the coarsest and the finest active depth of a node, every depth that is resident,
+    /// usable and inside the node's span is active (`cell_active_depths` under both
+    /// `ActiveRule`s), except the D5 depth of a node with a mask, which the pool appends
+    /// apart from the run (`d5_active`: the smallest resident depth from `node_depth + 3`), so it
+    /// is left out of the run and never reported itself. Usable is the pool's own (`is_usable`:
+    /// resident and not uploaded this frame).
+    fn check_active_runs(&mut self, number: usize, plan: &FramePlan, nodes: &[CellNode]) {
+        let rule = self.rule;
+        let pool = self.driver.pool();
+        let mut problems = Vec::new();
+        for node in nodes {
+            let base = node.lod.node_depth;
+            let resident = |depth: u8| pool.is_usable(pool.key(node.id, depth));
+            let d5 = (node.lod.mask.iter().any(|word| *word != 0))
+                .then(|| {
+                    (base + 3..=base + MAX_NODE_SPAN)
+                        .find(|depth| pool.is_resident(pool.key(node.id, *depth)))
+                })
+                .flatten();
+            let run: Vec<u8> = (base..=base + MAX_NODE_SPAN)
+                .filter(|depth| node.lod.active >> (depth - base) & 1 == 1 && Some(*depth) != d5)
+                .collect();
+            let (Some(&first), Some(&last)) = (run.first(), run.last()) else {
+                continue;
+            };
+            let missing: Vec<u8> = (first..=last)
+                .filter(|depth| !run.contains(depth) && Some(*depth) != d5 && resident(*depth))
+                .collect();
+            if !missing.is_empty() {
+                let entry = plan.entries.iter().find(|entry| entry.node == node.id);
+                let range = entry.and_then(|entry| entry.range);
+                let drawn = entry.map(CellCutEntry::required_levels);
+                problems.push(format!(
+                    "frame {number}: node {:?} (rule {:?}) has resident usable depths {missing:?} \
+                     missing inside its active run {run:?} (D5 {d5:?}, range {range:?}, drawn {drawn:?})",
+                    node.id, rule
+                ));
+            }
+        }
+        for problem in problems {
+            self.fail(problem);
+        }
     }
 
     /// Cell mode: the frame of reference of the twin for the frame about to be checked.
@@ -1440,11 +1486,9 @@ fn a_missing_depth_of_a_run_is_reported(pick: impl Fn(&[u8]) -> u8) {
 }
 
 // Observed on the synthetic ladder (node 14, active depths 9..=19, depth 14 removed while 31 lattice
-// samples drew it): `check_cell_cut` reports nothing, because the per-cell twin falls back on a
-// neighbouring depth that is not coarser than `min(before, wanted)` and the oracle never asserts
-// that a node's active depths stay contiguous. A gap of the oracle, to fix in a later task.
+// samples drew it): the per-cell twin falls back on a neighbouring depth that is not coarser than
+// `min(before, wanted)`, so only the contiguity check of `check_active_runs` reports it.
 #[test]
-#[ignore = "gap of the cell oracle: a single missing middle depth is not reported (no contiguity check)"]
 fn the_cell_oracle_reports_a_middle_depth_missing_from_a_run() {
     a_missing_depth_of_a_run_is_reported(|depths| depths[depths.len() / 2]);
 }
