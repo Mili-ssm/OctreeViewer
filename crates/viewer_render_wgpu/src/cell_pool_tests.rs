@@ -4954,3 +4954,79 @@ fn the_cached_depths_look_at_the_data_bound_again_when_the_finest_resident_level
     assert_eq!(rig.pool.depths[&id].finest, Some(finest));
     assert!(rig.pool.data_bound(id) >= bound);
 }
+
+#[test]
+fn the_active_set_has_no_gap_between_a_drawn_depth_and_the_range() {
+    // (range, drawn, resident, window, expected under `Contiguous`, expected under `Window`).
+    type Case = (
+        (u8, u8),
+        u8,
+        &'static [u8],
+        (u8, u8),
+        &'static [u8],
+        &'static [u8],
+    );
+    let cases: [Case; 4] = [
+        // Drawn coarser than the range: depth 11 is resident, usable and inside the window.
+        (
+            (12, 12),
+            10,
+            &[2, 7, 10, 11, 12],
+            (10, 13),
+            &[10, 11, 12],
+            &[10, 11, 12],
+        ),
+        // Drawn finer than the range.
+        (
+            (8, 9),
+            11,
+            &[2, 8, 9, 10, 11],
+            (7, 12),
+            &[8, 9, 10, 11],
+            &[8, 9, 10, 11],
+        ),
+        // A residency gap between the drawn depth and the range: `Contiguous` stops at it. The
+        // `Window` rule does not: it keeps the range depth across the gap (ADR 0055 forbids it;
+        // pinned here as the known gap of that rule, not as intended behaviour).
+        ((12, 12), 10, &[2, 10, 12], (10, 13), &[10], &[10, 12]),
+        // A drawn depth below the window (a hop of several levels): the window clamp leaves 8 and
+        // 9 out of the `Window` set, a known gap as above.
+        (
+            (12, 12),
+            7,
+            &[2, 7, 8, 9, 10, 11, 12],
+            (10, 13),
+            &[7, 8, 9, 10, 11, 12],
+            &[7, 10, 11, 12],
+        ),
+    ];
+    for (n, (range, drawn, resident, window, contiguous, windowed)) in cases.into_iter().enumerate()
+    {
+        for (rule, expected) in [
+            (ActiveRule::Contiguous, contiguous),
+            (ActiveRule::Window, windowed),
+        ] {
+            let mut nodes = octant_nodes();
+            nodes.insert(
+                NodeId::new(1),
+                d5_node(SIDE, &(2..=12).collect::<Vec<u8>>()),
+            );
+            let mut rig = d5_rig(nodes);
+            rig.pool.set_active_rule(rule);
+            seed_resident(&mut rig.pool, 1, resident);
+            rig.pool.applied_window.insert(NodeId::new(1), window);
+            let entry = CellCutEntry {
+                node: NodeId::new(1),
+                wanted: [Some(7); 8],
+                drawn: [Some(drawn); 8],
+                stage: [false; 8],
+                step: [None; 8],
+                range: Some(range),
+                mask: [0; 8],
+            };
+            let node_depth = CellPool::node_depth(&grid(), rig.nodes[&NodeId::new(1)].bounds);
+            let active = rig.pool.cell_active_depths(&entry, node_depth, None);
+            assert_eq!(active, expected, "case {n} under {rule:?}");
+        }
+    }
+}

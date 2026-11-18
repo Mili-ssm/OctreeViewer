@@ -67,6 +67,7 @@ impl CellPool {
                 // that holds the eye draws beyond `hi`, and a gap makes the per-cell rule jump from
                 // the range to that depth, whose far cells measure a fraction of a pixel.
                 let hi = hi.max(wanted.last().copied().unwrap_or(hi));
+                let lo = lo.min(wanted.first().copied().unwrap_or(lo));
                 wanted.extend(lo.max(wlo)..=hi.min(whi));
                 wanted.sort_unstable();
                 wanted.dedup();
