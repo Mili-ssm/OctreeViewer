@@ -1262,6 +1262,19 @@ fn run_cell_mode(
     origin: [f64; 3],
     target: f64,
 ) -> Vec<CellCutEntry> {
+    run_cell_mode_from(cut, nodes, camera, grid, origin, target, None)
+}
+
+/// `run_cell_mode` stepping from `prev`, what each node drew in the last applied cut.
+fn run_cell_mode_from(
+    cut: &[NodeId],
+    nodes: &HashMap<NodeId, CellCutNode>,
+    camera: &OrbitCamera,
+    grid: &CellGrid,
+    origin: [f64; 3],
+    target: f64,
+    prev: Option<&PrevDrawn<'_>>,
+) -> Vec<CellCutEntry> {
     let view = view(camera);
     cell_cut_ranged(
         cut,
@@ -1294,7 +1307,7 @@ fn run_cell_mode(
                 octants_in_front(&view, origin, data.bounds, [ProbeBox::Geometric; 8]),
             )
         }),
-        None,
+        prev,
     )
     .unwrap()
 }
@@ -1416,6 +1429,256 @@ fn cell_cut_digest_golden_in_cell_mode() {
             .collect();
         panic!("cell-mode digest table changed; actual:\n{table}");
     }
+}
+
+/// Every fixture of the cell-mode goldens: name, nodes, cut.
+fn cell_mode_fixtures() -> Vec<(String, HashMap<NodeId, CellCutNode>, Vec<NodeId>)> {
+    let replacement = fixture_nodes(&fixture(HierarchySemantics::Replacement));
+    let mut fixtures: Vec<_> = fixture_cuts()
+        .into_iter()
+        .map(|(name, cut)| (name.to_string(), replacement.clone(), cut))
+        .collect();
+    let mut wide = chain(ORIGIN, 3, 0);
+    for node in wide.values_mut() {
+        let first = node.stored[0];
+        node.stored = (first..first + 8).collect();
+        node.buildable = (first, first + 7);
+        node.resident = node.stored.clone();
+    }
+    fixtures.push(("wide_chain".to_string(), wide, ids(&[1, 2, 3])));
+    fixtures
+}
+
+fn assert_cell_mode_table(actual: &[(String, u64)], golden: &[(&str, u64)]) {
+    let matches = actual.len() == golden.len()
+        && actual
+            .iter()
+            .zip(golden)
+            .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
+    if !matches {
+        let table: String = actual
+            .iter()
+            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
+            .collect();
+        panic!("cell-mode digest table changed; actual:\n{table}");
+    }
+}
+
+const CELL_PLAIN_GOLDEN: &[(&str, u64)] = &[
+    ("root/fit/2px", 0xaef9278de422fa18),
+    ("root/fit/4px", 0xc9795d92d4ea0be0),
+    ("root/fit/8px", 0x7e082615b8d74e41),
+    ("root/orbit/2px", 0xb85afe41b7e69ddd),
+    ("root/orbit/4px", 0x604b7e5536d32620),
+    ("root/orbit/8px", 0x8c838d17c9729a00),
+    ("root/zoom/2px", 0xa38496980a71a6d6),
+    ("root/zoom/4px", 0x68cf892ae254e4af),
+    ("root/zoom/8px", 0x2b7aaf21a6be7b9c),
+    ("root/pan/2px", 0xb9fef7bf8443b724),
+    ("root/pan/4px", 0x5fc56024d0132c8a),
+    ("root/pan/8px", 0x3b7df96d8b68ad99),
+    ("children/fit/2px", 0x037adad8de9fe4bb),
+    ("children/fit/4px", 0x037adad8de9fe4bb),
+    ("children/fit/8px", 0x037adad8de9fe4bb),
+    ("children/orbit/2px", 0x037adad8de9fe4bb),
+    ("children/orbit/4px", 0x037adad8de9fe4bb),
+    ("children/orbit/8px", 0x037adad8de9fe4bb),
+    ("children/zoom/2px", 0x037adad8de9fe4bb),
+    ("children/zoom/4px", 0x037adad8de9fe4bb),
+    ("children/zoom/8px", 0x037adad8de9fe4bb),
+    ("children/pan/2px", 0x037adad8de9fe4bb),
+    ("children/pan/4px", 0x037adad8de9fe4bb),
+    ("children/pan/8px", 0x037adad8de9fe4bb),
+    ("mixed/fit/2px", 0x4faa2ba082dd7c5e),
+    ("mixed/fit/4px", 0x61994f65d21e119c),
+    ("mixed/fit/8px", 0x1d4a879a36dccefa),
+    ("mixed/orbit/2px", 0x6ff2242df0e3ea77),
+    ("mixed/orbit/4px", 0xa850a06eea9f0a23),
+    ("mixed/orbit/8px", 0xa97a938e709d65eb),
+    ("mixed/zoom/2px", 0x6fbaf3008d0c0e58),
+    ("mixed/zoom/4px", 0x6fbaf3008d0c0e58),
+    ("mixed/zoom/8px", 0x4faa2ba082dd7c5e),
+    ("mixed/pan/2px", 0x30c7dedfc2986571),
+    ("mixed/pan/4px", 0x435ad8cbd0999bb2),
+    ("mixed/pan/8px", 0xd86263a68ac2fb37),
+    ("wide_chain/fit/2px", 0x8c8444837cfa64a2),
+    ("wide_chain/fit/4px", 0xe3bcd88762b1ce2f),
+    ("wide_chain/fit/8px", 0xca00b8b6aacb2e20),
+    ("wide_chain/orbit/2px", 0xbdfe2431a72fe990),
+    ("wide_chain/orbit/4px", 0x02fecc09d5d4a459),
+    ("wide_chain/orbit/8px", 0x8b0bf8214166cea4),
+    ("wide_chain/zoom/2px", 0x981196c8652708ae),
+    ("wide_chain/zoom/4px", 0x57ebc499b2d144f6),
+    ("wide_chain/zoom/8px", 0x7dd6d7bde743beb4),
+    ("wide_chain/pan/2px", 0x907628ca0a00650c),
+    ("wide_chain/pan/4px", 0x64dd4a0b49245970),
+    ("wide_chain/pan/8px", 0x31a8cc73280abf9e),
+];
+
+/// The plain `cell_cut` computes through `cell_cut_with` (no range input, no previous state).
+/// Once octant mode is retired it does so in cell mode: this pins what it will return.
+#[test]
+fn cell_cut_digest_golden_of_the_plain_cut_in_cell_mode() {
+    let grid = dataset_grid(ORIGIN);
+    let mut actual = Vec::new();
+    for (name, nodes, cut) in cell_mode_fixtures() {
+        for (camera_name, camera) in cameras() {
+            for target in TARGETS {
+                let view = view(&camera);
+                let entries = cell_cut_with(
+                    &cut,
+                    &|id| nodes.get(&id).cloned(),
+                    &grid,
+                    LodMode::Cell,
+                    &|_, octant, data| {
+                        octant_wanted_depth(
+                            &view,
+                            &grid,
+                            ORIGIN,
+                            data.bounds,
+                            octant,
+                            data.buildable,
+                            target,
+                        )
+                    },
+                )
+                .unwrap();
+                actual.push((
+                    format!("{name}/{camera_name}/{target}px"),
+                    cell_mode_digest(&entries),
+                ));
+            }
+        }
+    }
+    assert_cell_mode_table(&actual, CELL_PLAIN_GOLDEN);
+}
+
+const CELL_STEPPING_GOLDEN: &[(&str, u64)] = &[
+    ("root/fit>orbit/8>2px/all_resident", 0xafbbad41b3073b15),
+    ("root/fit>orbit/8>2px/only_drawn", 0xafbbad41b3073b15),
+    ("root/fit>orbit/2>8px/all_resident", 0x95373c17ce63458c),
+    ("root/fit>orbit/2>8px/only_drawn", 0x95373c17ce63458c),
+    ("root/orbit>zoom/8>2px/all_resident", 0xac3f07980f6807b6),
+    ("root/orbit>zoom/8>2px/only_drawn", 0xac3f07980f6807b6),
+    ("root/orbit>zoom/2>8px/all_resident", 0x34132421ab97fce2),
+    ("root/orbit>zoom/2>8px/only_drawn", 0x34132421ab97fce2),
+    ("root/zoom>pan/8>2px/all_resident", 0xc29416bf891a7071),
+    ("root/zoom>pan/8>2px/only_drawn", 0xc29416bf891a7071),
+    ("root/zoom>pan/2>8px/all_resident", 0x32c6e06d86751818),
+    ("root/zoom>pan/2>8px/only_drawn", 0x32c6e06d86751818),
+    ("root/pan>fit/8>2px/all_resident", 0xb7a6108de90de984),
+    ("root/pan>fit/8>2px/only_drawn", 0xb7a6108de90de984),
+    ("root/pan>fit/2>8px/all_resident", 0x75547f15b3e6b04d),
+    ("root/pan>fit/2>8px/only_drawn", 0x75547f15b3e6b04d),
+    ("children/fit>orbit/8>2px/all_resident", 0x13bde445aeb00213),
+    ("children/fit>orbit/8>2px/only_drawn", 0x13bde445aeb00213),
+    ("children/fit>orbit/2>8px/all_resident", 0x13bde445aeb00213),
+    ("children/fit>orbit/2>8px/only_drawn", 0x13bde445aeb00213),
+    ("children/orbit>zoom/8>2px/all_resident", 0x13bde445aeb00213),
+    ("children/orbit>zoom/8>2px/only_drawn", 0x13bde445aeb00213),
+    ("children/orbit>zoom/2>8px/all_resident", 0x13bde445aeb00213),
+    ("children/orbit>zoom/2>8px/only_drawn", 0x13bde445aeb00213),
+    ("children/zoom>pan/8>2px/all_resident", 0x13bde445aeb00213),
+    ("children/zoom>pan/8>2px/only_drawn", 0x13bde445aeb00213),
+    ("children/zoom>pan/2>8px/all_resident", 0x13bde445aeb00213),
+    ("children/zoom>pan/2>8px/only_drawn", 0x13bde445aeb00213),
+    ("children/pan>fit/8>2px/all_resident", 0x13bde445aeb00213),
+    ("children/pan>fit/8>2px/only_drawn", 0x13bde445aeb00213),
+    ("children/pan>fit/2>8px/all_resident", 0x13bde445aeb00213),
+    ("children/pan>fit/2>8px/only_drawn", 0x13bde445aeb00213),
+    ("mixed/fit>orbit/8>2px/all_resident", 0xfc02a455261eb685),
+    ("mixed/fit>orbit/8>2px/only_drawn", 0xfc02a455261eb685),
+    ("mixed/fit>orbit/2>8px/all_resident", 0xa3e5ba3f2093d275),
+    ("mixed/fit>orbit/2>8px/only_drawn", 0xa3e5ba3f2093d275),
+    ("mixed/orbit>zoom/8>2px/all_resident", 0x8324526e8e5a7e4a),
+    ("mixed/orbit>zoom/8>2px/only_drawn", 0x8324526e8e5a7e4a),
+    ("mixed/orbit>zoom/2>8px/all_resident", 0xeab80e4d1b711be2),
+    ("mixed/orbit>zoom/2>8px/only_drawn", 0xeab80e4d1b711be2),
+    ("mixed/zoom>pan/8>2px/all_resident", 0xc7742bad8a78b466),
+    ("mixed/zoom>pan/8>2px/only_drawn", 0xc7742bad8a78b466),
+    ("mixed/zoom>pan/2>8px/all_resident", 0x59bd7b46b6b800c8),
+    ("mixed/zoom>pan/2>8px/only_drawn", 0x59bd7b46b6b800c8),
+    ("mixed/pan>fit/8>2px/all_resident", 0x694d8cc7c5da4624),
+    ("mixed/pan>fit/8>2px/only_drawn", 0x694d8cc7c5da4624),
+    ("mixed/pan>fit/2>8px/all_resident", 0xab84b87227b8b910),
+    ("mixed/pan>fit/2>8px/only_drawn", 0xab84b87227b8b910),
+    (
+        "wide_chain/fit>orbit/8>2px/all_resident",
+        0x8d3223155e8f482c,
+    ),
+    ("wide_chain/fit>orbit/8>2px/only_drawn", 0x788076b222402e2e),
+    (
+        "wide_chain/fit>orbit/2>8px/all_resident",
+        0x682f9061b683c852,
+    ),
+    ("wide_chain/fit>orbit/2>8px/only_drawn", 0x7cee8d33d4ffc355),
+    (
+        "wide_chain/orbit>zoom/8>2px/all_resident",
+        0xee2c298f8bcb4adb,
+    ),
+    ("wide_chain/orbit>zoom/8>2px/only_drawn", 0x620048accc8ff08d),
+    (
+        "wide_chain/orbit>zoom/2>8px/all_resident",
+        0x1bac65e298f4eaa1,
+    ),
+    ("wide_chain/orbit>zoom/2>8px/only_drawn", 0xac5b719e1b7ceab5),
+    ("wide_chain/zoom>pan/8>2px/all_resident", 0x05c921c96aa71456),
+    ("wide_chain/zoom>pan/8>2px/only_drawn", 0x5ac037099eb560e3),
+    ("wide_chain/zoom>pan/2>8px/all_resident", 0x2d8b2dd759a88572),
+    ("wide_chain/zoom>pan/2>8px/only_drawn", 0x182bac955a61f15b),
+    ("wide_chain/pan>fit/8>2px/all_resident", 0xe0c0be99c6cfcaed),
+    ("wide_chain/pan>fit/8>2px/only_drawn", 0x80af7c903eae8489),
+    ("wide_chain/pan>fit/2>8px/all_resident", 0x2f1e84445534ba62),
+    ("wide_chain/pan>fit/2>8px/only_drawn", 0xeaba2ebeffca6ae0),
+];
+
+/// Two frames in cell mode: frame 2 steps from what frame 1 drew, as the pool passes it, with
+/// every depth resident and with only the depths frame 1 drew resident.
+#[test]
+fn cell_cut_digest_golden_with_a_previous_cut_in_cell_mode() {
+    let grid = dataset_grid(ORIGIN);
+    let cams = cameras();
+    let mut actual = Vec::new();
+    let (mut stepping, mut staged) = (0, 0);
+    for (name, nodes, cut) in cell_mode_fixtures() {
+        for (i, (from, camera1)) in cams.iter().enumerate() {
+            let (to, camera2) = &cams[(i + 1) % cams.len()];
+            for (t1, t2) in [(8.0, 2.0), (2.0, 8.0)] {
+                let frame1 = run_cell_mode(&cut, &nodes, camera1, &grid, ORIGIN, t1);
+                let drawn: HashMap<NodeId, [Option<u8>; 8]> =
+                    frame1.iter().map(|e| (e.node, e.drawn)).collect();
+                let prev = |id: NodeId| PrevState {
+                    drawn: drawn.get(&id).copied().unwrap_or([None; 8]),
+                    timed_out: [false; 8],
+                };
+                let mut only_drawn = nodes.clone();
+                for entry in &frame1 {
+                    only_drawn.get_mut(&entry.node).unwrap().resident = entry.required_levels();
+                }
+                for (variant, resident) in [("all_resident", &nodes), ("only_drawn", &only_drawn)] {
+                    let entries =
+                        run_cell_mode_from(&cut, resident, camera2, &grid, ORIGIN, t2, Some(&prev));
+                    stepping += entries
+                        .iter()
+                        .map(|e| e.step.iter().flatten().count())
+                        .sum::<usize>();
+                    staged += entries
+                        .iter()
+                        .map(|e| e.stage.iter().filter(|s| **s).count())
+                        .sum::<usize>();
+                    actual.push((
+                        format!("{name}/{from}>{to}/{t1}>{t2}px/{variant}"),
+                        cell_mode_digest(&entries),
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        stepping > 0 && staged > 0,
+        "the golden no longer covers stepping: {stepping} steps, {staged} stages"
+    );
+    assert_cell_mode_table(&actual, CELL_STEPPING_GOLDEN);
 }
 
 fn level_with_offsets(offsets: [u32; 9]) -> NodeCellLevel {
