@@ -143,10 +143,10 @@ impl ConversionMetrics {
     pub(super) fn print(&self) -> io::Result<()> {
         println!("process_io_enabled={}", self.initial_io.is_some());
         for (index, interval) in self.intervals.iter().enumerate() {
-            let name = interval
-                .stage
-                .map(|stage| format!("{stage:?}"))
-                .unwrap_or_else(|| "BeforeFirstProgress".to_owned());
+            let name = interval.stage.map_or_else(
+                || "BeforeFirstProgress".to_owned(),
+                |stage| format!("{stage:?}"),
+            );
             // Retain legacy stage timing keys. Ordinals distinguish repeated stages.
             println!("stage_{name}_ms={:.3}", interval.elapsed_ms);
             if self.initial_io.is_some() {

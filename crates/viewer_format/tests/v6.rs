@@ -354,12 +354,12 @@ impl Seek for GatedReader {
     }
 }
 
-fn parallel_readers(bytes: Vec<u8>, count: usize) -> Vec<FormatReader<Cursor<Vec<u8>>>> {
-    let base = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
+fn parallel_readers(bytes: &[u8], count: usize) -> Vec<FormatReader<Cursor<Vec<u8>>>> {
+    let base = FormatReader::new(Cursor::new(bytes.to_vec())).unwrap();
     let mut readers = Vec::with_capacity(count);
     readers.push(base);
     for _ in 1..count {
-        let fork = readers[0].fork_reader(Cursor::new(bytes.clone()));
+        let fork = readers[0].fork_reader(Cursor::new(bytes.to_vec()));
         readers.push(fork);
     }
     readers
@@ -536,20 +536,20 @@ fn parallel_reads_deliver_in_order_with_one_or_two_readers() {
         (BLOCK_ID, ReadSelection::Geometry),
     ];
     for reader_count in [1, 2] {
-        let mut readers = parallel_readers(bytes.clone(), reader_count);
+        let mut readers = parallel_readers(&bytes, reader_count);
         let budget = viewer_format::ReadBudget::new(u64::MAX);
         let mut delivered = Vec::new();
         let progress = read_selected_parallel(&mut readers, &requests, &budget, |index, result| {
             delivered.push(index);
             match (index, result) {
                 (0, SelectedRead::DisplayColors(colors)) => {
-                    assert_eq!(colors.as_slice(), COLORS.as_slice())
+                    assert_eq!(colors.as_slice(), COLORS.as_slice());
                 }
                 (1, SelectedRead::Positions(points)) => {
-                    assert_eq!(points.len(), POINTS.len())
+                    assert_eq!(points.len(), POINTS.len());
                 }
                 (2, SelectedRead::Attribute(column)) => {
-                    assert_values_bits_eq(column.values(), fixture_attributes()[6].values())
+                    assert_values_bits_eq(column.values(), fixture_attributes()[6].values());
                 }
                 (3, SelectedRead::Geometry(points)) => {
                     assert_eq!(points.len(), POINTS.len());
@@ -644,7 +644,7 @@ fn parallel_quota_blocks_or_reduces_window_and_callback_break_counts_result() {
         .peak_bytes();
     let requests = [(BLOCK_ID, ReadSelection::Positions); 2];
 
-    let mut readers = parallel_readers(bytes.clone(), 2);
+    let mut readers = parallel_readers(&bytes, 2);
     let budget = viewer_format::ReadBudget::new(peak);
     let mut delivered = Vec::new();
     let progress = read_selected_parallel(&mut readers, &requests, &budget, |index, result| {
@@ -659,7 +659,7 @@ fn parallel_quota_blocks_or_reduces_window_and_callback_break_counts_result() {
     assert_eq!(budget.peak_reserved_bytes(), peak);
     assert_eq!(budget.reserved_bytes(), 0);
 
-    let mut readers = parallel_readers(bytes.clone(), 2);
+    let mut readers = parallel_readers(&bytes, 2);
     let budget = viewer_format::ReadBudget::new(peak);
     let external = budget.try_reserve(peak).unwrap().unwrap();
     let blocked = read_selected_parallel(&mut readers, &requests[..1], &budget, |_, _| {
@@ -677,7 +677,7 @@ fn parallel_quota_blocks_or_reduces_window_and_callback_break_counts_result() {
     assert_eq!(resumed.delivered, 1);
     assert_eq!(budget.reserved_bytes(), 0);
 
-    let mut readers = parallel_readers(bytes, 2);
+    let mut readers = parallel_readers(&bytes, 2);
     let budget = viewer_format::ReadBudget::new(u64::MAX);
     let cancelled = read_selected_parallel(&mut readers, &requests, &budget, |index, _| {
         assert_eq!(index, 0);
@@ -773,7 +773,7 @@ fn parallel_crc_worker_and_callback_panics_release_every_reservation() {
         .ranges()[0];
     let mut corrupt = original.clone();
     corrupt[range.offset() as usize] ^= 1;
-    let mut readers = parallel_readers(corrupt, 2);
+    let mut readers = parallel_readers(&corrupt, 2);
     let budget = viewer_format::ReadBudget::new(u64::MAX);
     assert!(matches!(
         read_selected_parallel(
@@ -796,7 +796,7 @@ fn parallel_crc_worker_and_callback_panics_release_every_reservation() {
         .ranges()[0];
     let mut bad_colors = original;
     bad_colors[color_range.offset() as usize] ^= 1;
-    let mut readers = parallel_readers(bad_colors, 2);
+    let mut readers = parallel_readers(&bad_colors, 2);
     let budget = viewer_format::ReadBudget::new(u64::MAX);
     let mut delivered_indices = Vec::new();
     assert!(matches!(
@@ -877,7 +877,7 @@ fn parallel_crc_worker_and_callback_panics_release_every_reservation() {
     ));
     assert_eq!(budget.reserved_bytes(), 0);
 
-    let mut readers = parallel_readers(bytes, 2);
+    let mut readers = parallel_readers(&bytes, 2);
     let budget = viewer_format::ReadBudget::new(u64::MAX);
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = read_selected_parallel(
@@ -960,7 +960,7 @@ fn read_plans_are_selective_io_free_and_match_selected_payload_ranges() {
                         ReadSource::Primary
                     };
                     let preceding_bytes = if split {
-                        let start = if payload_index == 0 { 0 } else { 1 };
+                        let start = usize::from(payload_index != 0);
                         payload_stats[start..payload_index]
                             .iter()
                             .map(|payload| payload.stored_bytes)
@@ -1645,10 +1645,10 @@ fn pre2_physically_selects_occupied_arrays_and_preserves_every_payload_row() {
         };
         assert_eq!(
             reader.block_storage_stats().unwrap()[0].geometry_encoding,
-            if version != FormatVersion::V6_PRE2 {
-                GeometryEncoding::CompactOccupied
-            } else {
+            if version == FormatVersion::V6_PRE2 {
                 GeometryEncoding::Occupied
+            } else {
+                GeometryEncoding::CompactOccupied
             }
         );
         let geometry_plan = reader
@@ -1763,7 +1763,7 @@ fn pre2_sidecars_prepared_blocks_and_forks_keep_exact_revision_identity() {
 
 fn pre3_fixture() -> (SourcePointBlock, FormatMetadata) {
     let rows = 4096;
-    let mut state = 0x91ab032f_u32;
+    let mut state = 0x91ab_032f_u32;
     let indices: Vec<usize> = (0..rows)
         .map(|_| {
             state ^= state << 13;
@@ -1788,7 +1788,7 @@ fn pre3_fixture() -> (SourcePointBlock, FormatMetadata) {
             AttributeDescriptor::new("constant_nan_vector", AttributeDataType::F64, 2).unwrap(),
             AttributeValues::F64(
                 (0..rows)
-                    .flat_map(|_| [f64::from_bits(0x7ff8000000000042), -0.0])
+                    .flat_map(|_| [f64::from_bits(0x7ff8_0000_0000_0042), -0.0])
                     .collect(),
             ),
             rows,
@@ -1966,8 +1966,8 @@ fn pre4_byte_planes_are_selective_exact_and_rejected_by_older_revisions() {
         let values = AttributeValues::F64(
             (0..rows)
                 .map(|_| {
-                    state = state.wrapping_mul(1664525).wrapping_add(1013904223);
-                    f64::from_bits(0x7ff8000000000000 | u64::from(state))
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    f64::from_bits(0x7ff8_0000_0000_0000 | u64::from(state))
                 })
                 .collect(),
         );

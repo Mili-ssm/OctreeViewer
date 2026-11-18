@@ -27,7 +27,7 @@ impl OccupiedCellIndex {
             && cells
                 .size_hint()
                 .1
-                .is_some_and(|upper| upper <= u32::MAX as usize)
+                .is_some_and(|upper| u32::try_from(upper).is_ok())
         {
             let mut entries = cells
                 .enumerate()

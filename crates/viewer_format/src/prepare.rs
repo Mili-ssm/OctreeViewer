@@ -42,6 +42,10 @@ pub(crate) fn prepare_point_block_for_version_with_diagnostics(
         .map(|(block, diagnostics)| (block, diagnostics.expect("diagnostics enabled")))
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "takes ownership of the block, which the caller no longer needs"
+)]
 pub(crate) fn prepare_point_block_for_version_impl(
     version: FormatVersion,
     block: SourcePointBlock,
@@ -734,6 +738,10 @@ pub(crate) fn append_payload(
     append_encoded_payload(encoded, raw.len(), bytes, payloads)
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the encoded block is consumed by value so it cannot be reused after its payload is appended"
+)]
 pub(crate) fn append_encoded_payload(
     encoded: crate::EncodedBlock,
     raw_length: usize,
@@ -890,6 +898,7 @@ impl FormatWriterOptions {
 
     /// `v7.5-pre` only: the size a page may reach before the writer lowers its level count `k`
     /// (default [`crate::TARGET_PAGE_BYTES`]). A page never has fewer than one level.
+    #[must_use]
     pub fn with_page_target_bytes(mut self, bytes: usize) -> Self {
         self.page_target_bytes = bytes;
         self
@@ -898,6 +907,7 @@ impl FormatWriterOptions {
     /// Requests a row order of each block. Unset, the format's fixed order applies (`v7` is
     /// always hybrid) or else [`RowOrder::Source`]; a different explicit order for a format
     /// that fixes one fails when blocks are prepared.
+    #[must_use]
     pub fn with_row_order(mut self, row_order: RowOrder) -> Self {
         self.row_order = Some(row_order);
         self

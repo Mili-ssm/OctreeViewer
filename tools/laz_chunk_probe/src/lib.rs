@@ -241,7 +241,7 @@ impl OpenedLaz {
 /// Chunk sizes of [`synthetic_variable_chunk_laz`].
 pub const SYNTHETIC_CHUNK_SIZES: [usize; 6] = [7, 13, 5, 11, 50_000, 3];
 
-/// A complete LAS 1.2 format-0 LAZ file (viewer_convert input) with variable-size chunks
+/// A complete LAS 1.2 format-0 LAZ file (`viewer_convert` input) with variable-size chunks
 /// [`SYNTHETIC_CHUNK_SIZES`] and pseudo-random points spread over a 1000 x 1000 x 100 box.
 /// Deterministic: fixed seed and a fixed header creation date.
 pub fn synthetic_variable_chunk_laz() -> Result<Vec<u8>, Error> {

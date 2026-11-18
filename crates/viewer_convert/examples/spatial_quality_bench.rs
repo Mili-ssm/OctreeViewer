@@ -70,6 +70,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the budgets are handed over by the caller"
+)]
 fn analyze(
     source: &Path,
     dataset: &Path,
@@ -193,7 +197,11 @@ fn analyze(
             let config = LodSelectionConfig::new(0.0, *budget)?;
             Ok::<_, Box<dyn std::error::Error>>((
                 *budget,
-                hierarchy.select_lod(&frustum, config, |node| node.geometric_error())?,
+                hierarchy.select_lod(
+                    &frustum,
+                    config,
+                    viewer_core::SpatialNode::geometric_error,
+                )?,
             ))
         })
         .collect::<Result<Vec<_>, _>>()?;

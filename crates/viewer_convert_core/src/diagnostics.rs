@@ -8,7 +8,7 @@ use viewer_format::{GeometryCandidateDiagnostics, OccupancyBuildDiagnostics};
 pub struct ConversionDiagnostics {
     /// Aggregated V7 geometry candidate attempts across prepared blocks.
     pub geometry_candidates: Option<Vec<GeometryCandidateDiagnostics>>,
-    /// Shared QuantizedOccupancy construction costs, grouped by residual bit depth.
+    /// Shared `QuantizedOccupancy` construction costs, grouped by residual bit depth.
     pub occupancy_builds: Option<Vec<OccupancyBuildDiagnostics>>,
     /// Includes input spooling when used and construction/finalization of the spatial plan.
     pub spatial_planning: Option<DiagnosticWindow>,
@@ -19,7 +19,7 @@ pub struct ConversionDiagnostics {
     /// With pipelining, preparation and write intervals overlap; do not sum them.
     /// Ordered writes, spool release, and progress reporting across batches.
     pub ordered_write_and_release_elapsed_ns: Option<u128>,
-    /// Index/footer finalization and sync_all of both candidate files, before validation/publication.
+    /// Index/footer finalization and `sync_all` of both candidate files, before validation/publication.
     pub finalize_and_sync_elapsed_ns: Option<u128>,
     /// Validation setup and worker execution/join; does not attribute RSS to readers.
     pub output_validation: Option<DiagnosticWindow>,

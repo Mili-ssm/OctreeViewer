@@ -1,9 +1,9 @@
 //! Writes 4 planned source blocks of a real LAS/LAZ conversion (default CLI options) to a file in
 //! the format documented on `format_parity::serialize_blocks`: the 3 largest leaf (source-point)
 //! blocks, then 1 LOD block. The first planned blocks are small LOD samples (< 64 KiB of
-//! geometry) where lz4_flex's 32/64-bit hash tables agree, so they could not reveal a divergence;
+//! geometry) where `lz4_flex`'s 32/64-bit hash tables agree, so they could not reveal a divergence;
 //! hence the leaves must exceed `MIN_LEAF_POINTS` (the synthetic fixture's size, above 64 KiB).
-//! Usage: dump_blocks INPUT.laz OUT.blocks
+//! Usage: `dump_blocks` INPUT.laz OUT.blocks
 use std::{env, fs, path::PathBuf};
 
 use viewer_convert::ConvertOptions;

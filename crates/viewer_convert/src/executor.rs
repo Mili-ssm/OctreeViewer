@@ -194,6 +194,10 @@ impl Drop for CloseOnDrop<'_> {
     }
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the sender is owned by the worker and dropped when it ends, which closes the channel"
+)]
 fn work<S: PlanStore>(
     ctx: &JobContext,
     store: &S,

@@ -11,10 +11,10 @@ use viewer_format::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let output = env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("examples/web-host/sample-v5.oct"));
+    let output = env::args_os().nth(1).map_or_else(
+        || PathBuf::from("examples/web-host/sample-v5.oct"),
+        PathBuf::from,
+    );
     let version = env::args()
         .nth(2)
         .map(|value| value.parse::<FormatVersion>())

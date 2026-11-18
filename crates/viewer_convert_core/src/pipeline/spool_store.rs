@@ -136,6 +136,10 @@ pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// Looks `id` up and requires it to be in `want`.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "internal helper; every caller uses the default hasher"
+)]
 pub fn entry_in<'a, T>(
     entries: &'a mut HashMap<SpoolId, T>,
     id: SpoolId,

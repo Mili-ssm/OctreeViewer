@@ -101,7 +101,9 @@ impl LodTransitionPlanner {
                 if !branch_nodes.insert(id) {
                     break;
                 }
-                current = hierarchy.node(id).and_then(|node| node.parent());
+                current = hierarchy
+                    .node(id)
+                    .and_then(super::spatial::SpatialNode::parent);
             }
         }
         let retain_previous = target.node_ids().iter().any(|node_id| {
@@ -201,7 +203,9 @@ impl LodTransitionPlanner {
                     if admitted_node_ids.contains(&id) {
                         return false;
                     }
-                    parent = hierarchy.node(id).and_then(|ancestor| ancestor.parent());
+                    parent = hierarchy
+                        .node(id)
+                        .and_then(super::spatial::SpatialNode::parent);
                 }
                 true
             })
@@ -531,10 +535,14 @@ fn combine(results: impl IntoIterator<Item = ResolvedCut>) -> ResolvedCut {
 
 /// Strict ancestors of `node_id`, nearest first.
 fn ancestors(hierarchy: &SpatialHierarchy, node_id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
-    let mut current = hierarchy.node(node_id).and_then(|node| node.parent());
+    let mut current = hierarchy
+        .node(node_id)
+        .and_then(super::spatial::SpatialNode::parent);
     std::iter::from_fn(move || {
         let id = current?;
-        current = hierarchy.node(id).and_then(|node| node.parent());
+        current = hierarchy
+            .node(id)
+            .and_then(super::spatial::SpatialNode::parent);
         Some(id)
     })
 }

@@ -41,20 +41,24 @@ fn note_allocation(size: usize) {
 unsafe impl GlobalAlloc for TrackingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         note_allocation(layout.size());
+        // SAFETY: the caller upholds the `GlobalAlloc` contract for `layout`, and the call is forwarded unchanged to `System`.
         unsafe { System.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: `ptr` was allocated by this allocator, i.e. by `System` with the same `layout`, and the caller upholds the rest of the `GlobalAlloc` contract.
         unsafe { System.dealloc(ptr, layout) }
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         note_allocation(layout.size());
+        // SAFETY: the caller upholds the `GlobalAlloc` contract for `layout`, and the call is forwarded unchanged to `System`.
         unsafe { System.alloc_zeroed(layout) }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         note_allocation(new_size);
+        // SAFETY: `ptr` was allocated by this allocator, i.e. by `System` with the same `layout`, and the caller upholds the rest of the `GlobalAlloc` contract.
         unsafe { System.realloc(ptr, layout, new_size) }
     }
 }
@@ -105,7 +109,7 @@ fn column_values(block: u64, column: usize, count: usize) -> AttributeValues {
         3 => AttributeValues::U64((0..count).map(|_| random.next().unwrap()).collect()),
         _ => AttributeValues::F32(
             (0..count)
-                .map(|_| random.next().unwrap() as u16 as f32 / 8.0)
+                .map(|_| f32::from(random.next().unwrap() as u16) / 8.0)
                 .collect(),
         ),
     }
@@ -413,7 +417,7 @@ struct Field {
     offset: usize,
     width: usize,
     integer: bool,
-    /// Setting this field to u32/u64::MAX must make the file unreadable.
+    /// Setting this field to `u32/u64::MAX` must make the file unreadable.
     max_is_fatal: bool,
 }
 
@@ -683,6 +687,10 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
                     if largest > ALLOCATION_CEILING {
                         violations.push(format!("{context}: allocated {largest} bytes"));
                     }
+                    #[expect(
+                        clippy::match_same_arms,
+                        reason = "the arms document distinct outcomes even where the bodies coincide"
+                    )]
                     match result {
                         // Every field must fail through format validation: the fixtures
                         // are in-memory cursors, so `Io` (including `UnexpectedEof`) would

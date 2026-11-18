@@ -154,7 +154,7 @@ fn a_duplicate_point_across_a_range_boundary_keeps_the_earlier_one() {
     });
     let expected = convert(&bytes, options(4096, 2, 0)).unwrap();
     for ranges in [1, 2, 3] {
-        assert!(convert(&bytes, options(4096, 2, ranges)).unwrap() == expected);
+        assert_eq!(convert(&bytes, options(4096, 2, ranges)).unwrap(), expected);
     }
 }
 

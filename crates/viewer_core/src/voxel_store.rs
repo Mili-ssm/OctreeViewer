@@ -72,8 +72,7 @@ fn f32_rounding_error(value: f32) -> f64 {
         .checked_add(1)
         .map(f32::from_bits)
         .filter(|next| next.is_finite())
-        .map(|next| f64::from(next) - magnitude)
-        .unwrap_or(lower_gap);
+        .map_or(lower_gap, |next| f64::from(next) - magnitude);
     lower_gap.max(upper_gap) / 2.0
 }
 

@@ -72,7 +72,7 @@ impl PageSource {
             }),
         };
         let graft = source.lock().add_page(&root, None)?;
-        source.root_unloaded = graft.unloaded.clone();
+        source.root_unloaded.clone_from(&graft.unloaded);
         Ok((Arc::new(source), graft))
     }
 
@@ -107,7 +107,7 @@ impl PageSource {
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// File range of the page hanging from `anchor`; the anchor's page must be resident.
@@ -194,7 +194,10 @@ impl State {
                 bounds,
                 node.point_count(),
                 node.geometric_error(),
-                node.blocks().iter().map(|block| block.id()).collect(),
+                node.blocks()
+                    .iter()
+                    .map(super::page_codec::PageBlock::id)
+                    .collect(),
             )?
             .with_spacing(node.spacing())
             .map_err(|_| FormatError::MalformedIndex("invalid node spacing"))?;

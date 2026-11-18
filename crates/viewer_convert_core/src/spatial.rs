@@ -53,6 +53,10 @@ const HEADER_BOUNDS_MAX_TOLERANCE: f64 = 0.5;
 /// All temporary files for a source share these attributes and transforms.
 /// Source coordinates stay on the exact LAS integer grid; generated LOD centers use f64.
 #[derive(Clone, Copy)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent layout flags of the spool record"
+)]
 pub struct SpoolLayout {
     transforms: las::Vector<las::Transform>,
     source_coordinates: bool,
@@ -90,6 +94,7 @@ impl SpoolLayout {
         }
     }
 
+    #[must_use]
     pub fn lod(self) -> Self {
         Self {
             source_coordinates: false,
@@ -388,7 +393,10 @@ pub struct SpatialPlan {
     pub spatial_phases: Option<SpatialPhaseDiagnostics>,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
+)]
 pub fn build_spatial_plan<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     source: &SourceInfo,
     options: ConvertOptions,
@@ -426,7 +434,10 @@ pub fn build_spatial_plan<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
 
 /// Plans from `first`, a source positioned at the start of the points; `factory` reopens the
 /// input when the root has to be read again.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
+)]
 pub fn build_spatial_plan_from_source<S, C, F, X>(
     first: &mut F::Source,
     factory: &F,
@@ -459,7 +470,10 @@ where
 }
 
 /// `build_root` plans the root node into the builder.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
+)]
 fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     source: &SourceInfo,
     options: ConvertOptions,
@@ -516,7 +530,10 @@ fn discard_spools(store: &impl SpoolStore, next_id: u64, keep_source: bool) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
+)]
 fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     source: &SourceInfo,
     options: ConvertOptions,
@@ -1094,6 +1111,10 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         }
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "the progress value is handed over by the job callback"
+    )]
     pub fn emit_job_progress(&mut self, progress: JobProgress) -> Result<(), ConvertError> {
         match progress {
             JobProgress::NodeHeartbeat => self.emit_plan_progress(),
@@ -1165,7 +1186,9 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                         done[range] = points;
                         self.emit_job_progress(JobProgress::SourcePoints(done.iter().sum()))
                     }
-                    other => self.emit_job_progress(other),
+                    JobProgress::NodeHeartbeat => {
+                        self.emit_job_progress(JobProgress::NodeHeartbeat)
+                    }
                 }
             });
         merge_root_ranges(&ctx, bounds, first_output, results, store)
@@ -1325,6 +1348,10 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
 
     /// Runs one node job, releases its spools, commits the node and then its children in key
     /// order, so node and block ids follow the preorder.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "the job is consumed by its commit"
+    )]
     fn run_and_commit(
         &mut self,
         job: NodeJob,
@@ -2034,8 +2061,7 @@ pub fn visit_source_points(
             .as_mut()
             .map(|values| values.next().ok_or(ConvertError::InvalidAttributeSchema))
             .transpose()?
-            .map(|(red, green, blue)| [red, green, blue])
-            .unwrap_or_default();
+            .map_or_default(|(red, green, blue)| [red, green, blue]);
         let display_color = if source.point_format.has_color {
             ColorRgb::new(
                 (rgb[0] >> 8) as u8,
@@ -2174,7 +2200,7 @@ pub fn read_records(
         match reader.read(&mut buffer[bytes_read..]) {
             Ok(0) => break,
             Ok(count) => bytes_read += count,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => return Err(error),
         }
     }
@@ -2207,6 +2233,10 @@ fn read_point(reader: &mut impl Read, layout: SpoolLayout) -> Result<SpoolPoint,
 }
 
 // Hot loop: `inline(always)` saves ~0.55% Ir over `inline` (M1_R7 record, diagnosis).
+#[expect(
+    clippy::inline_always,
+    reason = "hot loop: measured gain over `inline` (see the comment above)"
+)]
 #[inline(always)]
 pub fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
     let mut offset = 0;
@@ -2277,6 +2307,10 @@ pub fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
 }
 
 /// Position of a source-layout record: the first half of [`decode_point`] without the rest.
+#[expect(
+    clippy::inline_always,
+    reason = "hot loop: the same measured gain as `decode_point`"
+)]
 #[inline(always)]
 pub fn decode_position(bytes: &[u8], layout: SpoolLayout) -> [f64; 3] {
     debug_assert!(layout.source_coordinates);
@@ -2513,8 +2547,7 @@ pub fn center_rounding_error(bounds: SpatialBounds, frame: viewer_core::Coordina
                 .checked_add(1)
                 .map(f32::from_bits)
                 .filter(|next| next.is_finite())
-                .map(|next| f64::from(next) - magnitude)
-                .unwrap_or(lower);
+                .map_or(lower, |next| f64::from(next) - magnitude);
             lower.max(upper) / 2.0
         })
         .map(|error| error * error)
@@ -2953,7 +2986,7 @@ mod partition_tests {
                         let key = (x * divisions_usize + y) * divisions_usize + z;
                         let child = child_bounds(bounds, key, divisions);
                         let position = std::array::from_fn(|axis| {
-                            (child.min()[axis] + child.max()[axis]) / 2.0
+                            f64::midpoint(child.min()[axis], child.max()[axis])
                         });
                         assert_eq!(child_index(position, bounds, divisions), key);
                         for axis in 0..3 {

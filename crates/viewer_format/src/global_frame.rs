@@ -154,7 +154,7 @@ pub enum CrsRaw {
     None,
     /// Payload of the WKT VLR (`LASF_Projection`, record 2112), UTF-8.
     Wkt(String),
-    /// Payloads of GeoTIFF records 34735 (key directory), 34736 (doubles) and 34737 (ASCII).
+    /// Payloads of `GeoTIFF` records 34735 (key directory), 34736 (doubles) and 34737 (ASCII).
     GeoTiff {
         key_directory: Vec<u8>,
         doubles: Vec<u8>,

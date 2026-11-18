@@ -14,9 +14,8 @@ thiserror.workspace = true
 viewer_core = { path = "../viewer_core", features = ["laz"] }
 viewer_format = { path = "../viewer_format" }
 
-[lints.clippy]
-disallowed_methods = "deny"
-disallowed_types = "deny"
+[lints]
+workspace = true
 
 [dev-dependencies]
 # Reference decoder and generator of the variable-chunk fixture (S2 probe).

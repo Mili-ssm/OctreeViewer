@@ -396,7 +396,7 @@ pub(crate) fn convert_file_inner(
             .expect("non-checkpoint conversion has a temporary output")
             .geometry
             .path
-            .to_owned()
+            .clone()
     };
     let file = if let Some(temporary) = temporary.as_mut() {
         temporary
@@ -712,6 +712,10 @@ where
 /// the window instead of a whole batch. In-order consumption means a spool shared by several
 /// items is released (by its final item) only after all its other readers were consumed.
 /// An error or panic stops the workers before the scope joins them.
+#[expect(
+    clippy::items_after_statements,
+    reason = "the helper types are declared next to the only code that uses them"
+)]
 pub(crate) fn process_batches<T: Sync, P: Send>(
     items: &[T],
     width: usize,

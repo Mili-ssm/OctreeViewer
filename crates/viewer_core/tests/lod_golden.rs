@@ -18,509 +18,509 @@ use viewer_core::{
 
 /// Captured from the code before the frontier refactor (6d67a1d).
 const EXPECTED: &[(&str, u64)] = &[
-    ("select/2k/Replacement/overview", 0x7c05ec4a61ea8f52),
-    ("select/2k/Replacement/closeup", 0xb6236e16a797a0af),
-    ("select/2k/Replacement/oblique", 0x79895c069b6b25be),
-    ("select/2k/Replacement/ties", 0x02fe4ae133121b09),
-    ("select/2k/Additive/overview", 0x4d5cf13d7e116447),
-    ("select/2k/Additive/closeup", 0xb47ec349837f3cee),
-    ("select/2k/Additive/oblique", 0xcb5d2fadeae1b2df),
-    ("select/2k/Additive/ties", 0x16f9b85bbb97eba9),
+    ("select/2k/Replacement/overview", 0x7c05_ec4a_61ea_8f52),
+    ("select/2k/Replacement/closeup", 0xb623_6e16_a797_a0af),
+    ("select/2k/Replacement/oblique", 0x7989_5c06_9b6b_25be),
+    ("select/2k/Replacement/ties", 0x02fe_4ae1_3312_1b09),
+    ("select/2k/Additive/overview", 0x4d5c_f13d_7e11_6447),
+    ("select/2k/Additive/closeup", 0xb47e_c349_837f_3cee),
+    ("select/2k/Additive/oblique", 0xcb5d_2fad_eae1_b2df),
+    ("select/2k/Additive/ties", 0x16f9_b85b_bb97_eba9),
     (
         "transition/2k/Replacement/overview-closeup/initial",
-        0xbcdb218b51925bf5,
+        0xbcdb_218b_5192_5bf5,
     ),
     (
         "transition/2k/Replacement/overview-closeup/waiting",
-        0xd44033329b70966f,
+        0xd440_3332_9b70_966f,
     ),
     (
         "transition/2k/Replacement/overview-closeup/waiting-commit",
-        0xd44033329b70966f,
+        0xd440_3332_9b70_966f,
     ),
     (
         "transition/2k/Replacement/overview-closeup/done",
-        0x8a07a85f1e4040b3,
+        0x8a07_a85f_1e40_40b3,
     ),
     (
         "transition/2k/Replacement/overview-closeup/tight",
-        0xd528faaa788ac9ee,
+        0xd528_faaa_788a_c9ee,
     ),
     (
         "transition/2k/Replacement/closeup-oblique/initial",
-        0x8a07a85f1e4040b3,
+        0x8a07_a85f_1e40_40b3,
     ),
     (
         "transition/2k/Replacement/closeup-oblique/waiting",
-        0x0317704156ec8285,
+        0x0317_7041_56ec_8285,
     ),
     (
         "transition/2k/Replacement/closeup-oblique/waiting-commit",
-        0x0317704156ec8285,
+        0x0317_7041_56ec_8285,
     ),
     (
         "transition/2k/Replacement/closeup-oblique/done",
-        0x3e4ca7a8c99f0f2f,
+        0x3e4c_a7a8_c99f_0f2f,
     ),
     (
         "transition/2k/Replacement/closeup-oblique/tight",
-        0xa007dd3fdd52e8d5,
+        0xa007_dd3f_dd52_e8d5,
     ),
     (
         "transition/2k/Replacement/oblique-overview/initial",
-        0x3e4ca7a8c99f0f2f,
+        0x3e4c_a7a8_c99f_0f2f,
     ),
     (
         "transition/2k/Replacement/oblique-overview/waiting",
-        0x8e1c5fab3ed8c335,
+        0x8e1c_5fab_3ed8_c335,
     ),
     (
         "transition/2k/Replacement/oblique-overview/waiting-commit",
-        0x8e1c5fab3ed8c335,
+        0x8e1c_5fab_3ed8_c335,
     ),
     (
         "transition/2k/Replacement/oblique-overview/done",
-        0xbcdb218b51925bf5,
+        0xbcdb_218b_5192_5bf5,
     ),
     (
         "transition/2k/Replacement/oblique-overview/tight",
-        0x6d0a8cd1e6d4d78b,
+        0x6d0a_8cd1_e6d4_d78b,
     ),
     (
         "transition/2k/Replacement/ties-closeup/initial",
-        0xa04cfc686e146d22,
+        0xa04c_fc68_6e14_6d22,
     ),
     (
         "transition/2k/Replacement/ties-closeup/waiting",
-        0x152b82effcce9b30,
+        0x152b_82ef_fcce_9b30,
     ),
     (
         "transition/2k/Replacement/ties-closeup/waiting-commit",
-        0x152b82effcce9b30,
+        0x152b_82ef_fcce_9b30,
     ),
     (
         "transition/2k/Replacement/ties-closeup/done",
-        0x8a07a85f1e4040b3,
+        0x8a07_a85f_1e40_40b3,
     ),
     (
         "transition/2k/Replacement/ties-closeup/tight",
-        0x7779e89f13657512,
+        0x7779_e89f_1365_7512,
     ),
     (
         "transition/2k/Additive/overview-closeup/initial",
-        0x467095b91580013b,
+        0x4670_95b9_1580_013b,
     ),
     (
         "transition/2k/Additive/overview-closeup/waiting",
-        0x538868a999e2569f,
+        0x5388_68a9_99e2_569f,
     ),
     (
         "transition/2k/Additive/overview-closeup/waiting-commit",
-        0x538868a999e2569f,
+        0x5388_68a9_99e2_569f,
     ),
     (
         "transition/2k/Additive/overview-closeup/done",
-        0xc8a696270a304237,
+        0xc8a6_9627_0a30_4237,
     ),
     (
         "transition/2k/Additive/overview-closeup/tight",
-        0x51a734080f83911c,
+        0x51a7_3408_0f83_911c,
     ),
     (
         "transition/2k/Additive/closeup-oblique/initial",
-        0xc8a696270a304237,
+        0xc8a6_9627_0a30_4237,
     ),
     (
         "transition/2k/Additive/closeup-oblique/waiting",
-        0x8316f3c165f26dab,
+        0x8316_f3c1_65f2_6dab,
     ),
     (
         "transition/2k/Additive/closeup-oblique/waiting-commit",
-        0x8316f3c165f26dab,
+        0x8316_f3c1_65f2_6dab,
     ),
     (
         "transition/2k/Additive/closeup-oblique/done",
-        0xe9d57b9456edb5fd,
+        0xe9d5_7b94_56ed_b5fd,
     ),
     (
         "transition/2k/Additive/closeup-oblique/tight",
-        0xa21960a8d4c14fb2,
+        0xa219_60a8_d4c1_4fb2,
     ),
     (
         "transition/2k/Additive/oblique-overview/initial",
-        0xe9d57b9456edb5fd,
+        0xe9d5_7b94_56ed_b5fd,
     ),
     (
         "transition/2k/Additive/oblique-overview/waiting",
-        0x5311cf594ebf6008,
+        0x5311_cf59_4ebf_6008,
     ),
     (
         "transition/2k/Additive/oblique-overview/waiting-commit",
-        0x5311cf594ebf6008,
+        0x5311_cf59_4ebf_6008,
     ),
     (
         "transition/2k/Additive/oblique-overview/done",
-        0x467095b91580013b,
+        0x4670_95b9_1580_013b,
     ),
     (
         "transition/2k/Additive/oblique-overview/tight",
-        0x0967b7f9c17cbb53,
+        0x0967_b7f9_c17c_bb53,
     ),
     (
         "transition/2k/Additive/ties-closeup/initial",
-        0x1e842aaccb5c8f2e,
+        0x1e84_2aac_cb5c_8f2e,
     ),
     (
         "transition/2k/Additive/ties-closeup/waiting",
-        0x527f0279aeb0c3b3,
+        0x527f_0279_aeb0_c3b3,
     ),
     (
         "transition/2k/Additive/ties-closeup/waiting-commit",
-        0x527f0279aeb0c3b3,
+        0x527f_0279_aeb0_c3b3,
     ),
     (
         "transition/2k/Additive/ties-closeup/done",
-        0xc8a696270a304237,
+        0xc8a6_9627_0a30_4237,
     ),
     (
         "transition/2k/Additive/ties-closeup/tight",
-        0x51a734080f83911c,
+        0x51a7_3408_0f83_911c,
     ),
-    ("select/100k/Replacement/overview", 0x3fbe3ab1edd8bea1),
-    ("select/100k/Replacement/closeup", 0xde88a6e00dad46db),
-    ("select/100k/Replacement/oblique", 0xd1885ac2448d0b8d),
-    ("select/100k/Replacement/ties", 0xbbed16de1225327b),
-    ("select/1m/Replacement/overview", 0x3fbe3ab1edd8bea1),
-    ("select/100k/Additive/overview", 0xfdbd331cb37a8c07),
-    ("select/100k/Additive/closeup", 0x9468c5519a444dc2),
-    ("select/1m/Replacement/closeup", 0x6fbdd97de89c251b),
-    ("select/100k/Additive/oblique", 0xd3338791a35c013a),
-    ("select/100k/Additive/ties", 0xae85aa599e3cca2b),
-    ("select/1m/Replacement/oblique", 0xd1885ac2448d0b8d),
+    ("select/100k/Replacement/overview", 0x3fbe_3ab1_edd8_bea1),
+    ("select/100k/Replacement/closeup", 0xde88_a6e0_0dad_46db),
+    ("select/100k/Replacement/oblique", 0xd188_5ac2_448d_0b8d),
+    ("select/100k/Replacement/ties", 0xbbed_16de_1225_327b),
+    ("select/1m/Replacement/overview", 0x3fbe_3ab1_edd8_bea1),
+    ("select/100k/Additive/overview", 0xfdbd_331c_b37a_8c07),
+    ("select/100k/Additive/closeup", 0x9468_c551_9a44_4dc2),
+    ("select/1m/Replacement/closeup", 0x6fbd_d97d_e89c_251b),
+    ("select/100k/Additive/oblique", 0xd333_8791_a35c_013a),
+    ("select/100k/Additive/ties", 0xae85_aa59_9e3c_ca2b),
+    ("select/1m/Replacement/oblique", 0xd188_5ac2_448d_0b8d),
     (
         "transition/100k/Replacement/overview-closeup/initial",
-        0x823394fb6711cc5f,
+        0x8233_94fb_6711_cc5f,
     ),
     (
         "transition/100k/Replacement/overview-closeup/waiting",
-        0x57801523b6b1c350,
+        0x5780_1523_b6b1_c350,
     ),
     (
         "transition/100k/Replacement/overview-closeup/waiting-commit",
-        0x57801523b6b1c350,
+        0x5780_1523_b6b1_c350,
     ),
     (
         "transition/100k/Replacement/overview-closeup/done",
-        0x35600c8912bf01fb,
+        0x3560_0c89_12bf_01fb,
     ),
-    ("select/1m/Replacement/ties", 0xbbed16de1225327b),
+    ("select/1m/Replacement/ties", 0xbbed_16de_1225_327b),
     (
         "transition/100k/Replacement/overview-closeup/tight",
-        0x11de1cf4c1c4791d,
+        0x11de_1cf4_c1c4_791d,
     ),
     (
         "transition/100k/Replacement/closeup-oblique/initial",
-        0x35600c8912bf01fb,
+        0x3560_0c89_12bf_01fb,
     ),
     (
         "transition/100k/Replacement/closeup-oblique/waiting",
-        0x479e2efaba7d785d,
+        0x479e_2efa_ba7d_785d,
     ),
     (
         "transition/100k/Replacement/closeup-oblique/waiting-commit",
-        0x479e2efaba7d785d,
+        0x479e_2efa_ba7d_785d,
     ),
     (
         "transition/100k/Replacement/closeup-oblique/done",
-        0xafcbc155b4cfe79f,
+        0xafcb_c155_b4cf_e79f,
     ),
     (
         "transition/100k/Replacement/closeup-oblique/tight",
-        0x54f53119ba52b448,
+        0x54f5_3119_ba52_b448,
     ),
     (
         "transition/100k/Replacement/oblique-overview/initial",
-        0xafcbc155b4cfe79f,
+        0xafcb_c155_b4cf_e79f,
     ),
     (
         "transition/100k/Replacement/oblique-overview/waiting",
-        0x5605ae0c17523a41,
+        0x5605_ae0c_1752_3a41,
     ),
     (
         "transition/100k/Replacement/oblique-overview/waiting-commit",
-        0x5605ae0c17523a41,
+        0x5605_ae0c_1752_3a41,
     ),
     (
         "transition/100k/Replacement/oblique-overview/done",
-        0x823394fb6711cc5f,
+        0x8233_94fb_6711_cc5f,
     ),
     (
         "transition/100k/Replacement/oblique-overview/tight",
-        0x03040426e0ed6ce1,
+        0x0304_0426_e0ed_6ce1,
     ),
     (
         "transition/100k/Replacement/ties-closeup/initial",
-        0x9636a34164778977,
+        0x9636_a341_6477_8977,
     ),
     (
         "transition/100k/Replacement/ties-closeup/waiting",
-        0x542756993df8cbda,
+        0x5427_5699_3df8_cbda,
     ),
     (
         "transition/100k/Replacement/ties-closeup/waiting-commit",
-        0x542756993df8cbda,
+        0x5427_5699_3df8_cbda,
     ),
     (
         "transition/100k/Replacement/ties-closeup/done",
-        0x35600c8912bf01fb,
+        0x3560_0c89_12bf_01fb,
     ),
-    ("select/1m/Additive/overview", 0xfdbd331cb37a8c07),
+    ("select/1m/Additive/overview", 0xfdbd_331c_b37a_8c07),
     (
         "transition/100k/Replacement/ties-closeup/tight",
-        0x20992c4dd3c8a0f3,
+        0x2099_2c4d_d3c8_a0f3,
     ),
-    ("select/1m/Additive/closeup", 0x6a6e1de1373571bf),
-    ("select/1m/Additive/oblique", 0xd3338791a35c013a),
-    ("select/1m/Additive/ties", 0xae85aa599e3cca2b),
+    ("select/1m/Additive/closeup", 0x6a6e_1de1_3735_71bf),
+    ("select/1m/Additive/oblique", 0xd333_8791_a35c_013a),
+    ("select/1m/Additive/ties", 0xae85_aa59_9e3c_ca2b),
     (
         "transition/100k/Additive/overview-closeup/initial",
-        0x8f7ccc90bc2ad8db,
+        0x8f7c_cc90_bc2a_d8db,
     ),
     (
         "transition/100k/Additive/overview-closeup/waiting",
-        0x399f574a57a789aa,
+        0x399f_574a_57a7_89aa,
     ),
     (
         "transition/100k/Additive/overview-closeup/waiting-commit",
-        0x399f574a57a789aa,
+        0x399f_574a_57a7_89aa,
     ),
     (
         "transition/100k/Additive/overview-closeup/done",
-        0xb9ad4121e3ac7133,
+        0xb9ad_4121_e3ac_7133,
     ),
     (
         "transition/100k/Additive/overview-closeup/tight",
-        0x7d0fd509cef06dc2,
+        0x7d0f_d509_cef0_6dc2,
     ),
     (
         "transition/100k/Additive/closeup-oblique/initial",
-        0xb9ad4121e3ac7133,
+        0xb9ad_4121_e3ac_7133,
     ),
     (
         "transition/100k/Additive/closeup-oblique/waiting",
-        0x35cfecccb1ace7ee,
+        0x35cf_eccc_b1ac_e7ee,
     ),
     (
         "transition/100k/Additive/closeup-oblique/waiting-commit",
-        0x35cfecccb1ace7ee,
+        0x35cf_eccc_b1ac_e7ee,
     ),
     (
         "transition/100k/Additive/closeup-oblique/done",
-        0x267d250c1899962f,
+        0x267d_250c_1899_962f,
     ),
     (
         "transition/100k/Additive/closeup-oblique/tight",
-        0x22abc8b75cf59e4a,
+        0x22ab_c8b7_5cf5_9e4a,
     ),
     (
         "transition/100k/Additive/oblique-overview/initial",
-        0x267d250c1899962f,
+        0x267d_250c_1899_962f,
     ),
     (
         "transition/100k/Additive/oblique-overview/waiting",
-        0xa964a807a23aa414,
+        0xa964_a807_a23a_a414,
     ),
     (
         "transition/100k/Additive/oblique-overview/waiting-commit",
-        0xa964a807a23aa414,
+        0xa964_a807_a23a_a414,
     ),
     (
         "transition/100k/Additive/oblique-overview/done",
-        0x8f7ccc90bc2ad8db,
+        0x8f7c_cc90_bc2a_d8db,
     ),
     (
         "transition/100k/Additive/oblique-overview/tight",
-        0x0487d4f40db68634,
+        0x0487_d4f4_0db6_8634,
     ),
     (
         "transition/100k/Additive/ties-closeup/initial",
-        0xaf396de96db90f6f,
+        0xaf39_6de9_6db9_0f6f,
     ),
     (
         "transition/100k/Additive/ties-closeup/waiting",
-        0xa7efe1ea61f952d5,
+        0xa7ef_e1ea_61f9_52d5,
     ),
     (
         "transition/100k/Additive/ties-closeup/waiting-commit",
-        0xa7efe1ea61f952d5,
+        0xa7ef_e1ea_61f9_52d5,
     ),
     (
         "transition/100k/Additive/ties-closeup/done",
-        0xb9ad4121e3ac7133,
+        0xb9ad_4121_e3ac_7133,
     ),
     (
         "transition/100k/Additive/ties-closeup/tight",
-        0x7d0fd509cef06dc2,
+        0x7d0f_d509_cef0_6dc2,
     ),
     (
         "transition/1m/Replacement/overview-closeup/initial",
-        0x823394fb6711cc5f,
+        0x8233_94fb_6711_cc5f,
     ),
     (
         "transition/1m/Replacement/overview-closeup/waiting",
-        0x0452ea6dcfc6e2f8,
+        0x0452_ea6d_cfc6_e2f8,
     ),
     (
         "transition/1m/Replacement/overview-closeup/waiting-commit",
-        0x0452ea6dcfc6e2f8,
+        0x0452_ea6d_cfc6_e2f8,
     ),
     (
         "transition/1m/Replacement/overview-closeup/done",
-        0xb8951dad5a294f88,
+        0xb895_1dad_5a29_4f88,
     ),
     (
         "transition/1m/Replacement/overview-closeup/tight",
-        0x8427a43bca07325d,
+        0x8427_a43b_ca07_325d,
     ),
     (
         "transition/1m/Replacement/closeup-oblique/initial",
-        0xb8951dad5a294f88,
+        0xb895_1dad_5a29_4f88,
     ),
     (
         "transition/1m/Replacement/closeup-oblique/waiting",
-        0xc2d19f1efaaf7a22,
+        0xc2d1_9f1e_faaf_7a22,
     ),
     (
         "transition/1m/Replacement/closeup-oblique/waiting-commit",
-        0xc2d19f1efaaf7a22,
+        0xc2d1_9f1e_faaf_7a22,
     ),
     (
         "transition/1m/Replacement/closeup-oblique/done",
-        0xafcbc155b4cfe79f,
+        0xafcb_c155_b4cf_e79f,
     ),
     (
         "transition/1m/Replacement/closeup-oblique/tight",
-        0x54f53119ba52b448,
+        0x54f5_3119_ba52_b448,
     ),
     (
         "transition/1m/Replacement/oblique-overview/initial",
-        0xafcbc155b4cfe79f,
+        0xafcb_c155_b4cf_e79f,
     ),
     (
         "transition/1m/Replacement/oblique-overview/waiting",
-        0x5605ae0c17523a41,
+        0x5605_ae0c_1752_3a41,
     ),
     (
         "transition/1m/Replacement/oblique-overview/waiting-commit",
-        0x5605ae0c17523a41,
+        0x5605_ae0c_1752_3a41,
     ),
     (
         "transition/1m/Replacement/oblique-overview/done",
-        0x823394fb6711cc5f,
+        0x8233_94fb_6711_cc5f,
     ),
     (
         "transition/1m/Replacement/oblique-overview/tight",
-        0x03040426e0ed6ce1,
+        0x0304_0426_e0ed_6ce1,
     ),
     (
         "transition/1m/Replacement/ties-closeup/initial",
-        0x9636a34164778977,
+        0x9636_a341_6477_8977,
     ),
     (
         "transition/1m/Replacement/ties-closeup/waiting",
-        0xe1634a147c56e722,
+        0xe163_4a14_7c56_e722,
     ),
     (
         "transition/1m/Replacement/ties-closeup/waiting-commit",
-        0xe1634a147c56e722,
+        0xe163_4a14_7c56_e722,
     ),
     (
         "transition/1m/Replacement/ties-closeup/done",
-        0xb8951dad5a294f88,
+        0xb895_1dad_5a29_4f88,
     ),
     (
         "transition/1m/Replacement/ties-closeup/tight",
-        0x3be6a9abd9dcf9af,
+        0x3be6_a9ab_d9dc_f9af,
     ),
     (
         "transition/1m/Additive/overview-closeup/initial",
-        0x8f7ccc90bc2ad8db,
+        0x8f7c_cc90_bc2a_d8db,
     ),
     (
         "transition/1m/Additive/overview-closeup/waiting",
-        0xa36f494e9bae06a2,
+        0xa36f_494e_9bae_06a2,
     ),
     (
         "transition/1m/Additive/overview-closeup/waiting-commit",
-        0xa36f494e9bae06a2,
+        0xa36f_494e_9bae_06a2,
     ),
     (
         "transition/1m/Additive/overview-closeup/done",
-        0x3401fd7877d65cd7,
+        0x3401_fd78_77d6_5cd7,
     ),
     (
         "transition/1m/Additive/overview-closeup/tight",
-        0x4c7b51836a1858f0,
+        0x4c7b_5183_6a18_58f0,
     ),
     (
         "transition/1m/Additive/closeup-oblique/initial",
-        0x3401fd7877d65cd7,
+        0x3401_fd78_77d6_5cd7,
     ),
     (
         "transition/1m/Additive/closeup-oblique/waiting",
-        0xb0425d9114a8c6fb,
+        0xb042_5d91_14a8_c6fb,
     ),
     (
         "transition/1m/Additive/closeup-oblique/waiting-commit",
-        0xb0425d9114a8c6fb,
+        0xb042_5d91_14a8_c6fb,
     ),
     (
         "transition/1m/Additive/closeup-oblique/done",
-        0x267d250c1899962f,
+        0x267d_250c_1899_962f,
     ),
     (
         "transition/1m/Additive/closeup-oblique/tight",
-        0x22abc8b75cf59e4a,
+        0x22ab_c8b7_5cf5_9e4a,
     ),
     (
         "transition/1m/Additive/oblique-overview/initial",
-        0x267d250c1899962f,
+        0x267d_250c_1899_962f,
     ),
     (
         "transition/1m/Additive/oblique-overview/waiting",
-        0xa964a807a23aa414,
+        0xa964_a807_a23a_a414,
     ),
     (
         "transition/1m/Additive/oblique-overview/waiting-commit",
-        0xa964a807a23aa414,
+        0xa964_a807_a23a_a414,
     ),
     (
         "transition/1m/Additive/oblique-overview/done",
-        0x8f7ccc90bc2ad8db,
+        0x8f7c_cc90_bc2a_d8db,
     ),
     (
         "transition/1m/Additive/oblique-overview/tight",
-        0x0487d4f40db68634,
+        0x0487_d4f4_0db6_8634,
     ),
     (
         "transition/1m/Additive/ties-closeup/initial",
-        0xaf396de96db90f6f,
+        0xaf39_6de9_6db9_0f6f,
     ),
     (
         "transition/1m/Additive/ties-closeup/waiting",
-        0x72020fd04fa31d56,
+        0x7202_0fd0_4fa3_1d56,
     ),
     (
         "transition/1m/Additive/ties-closeup/waiting-commit",
-        0x72020fd04fa31d56,
+        0x7202_0fd0_4fa3_1d56,
     ),
     (
         "transition/1m/Additive/ties-closeup/done",
-        0x3401fd7877d65cd7,
+        0x3401_fd78_77d6_5cd7,
     ),
     (
         "transition/1m/Additive/ties-closeup/tight",
-        0x4c7b51836a1858f0,
+        0x4c7b_5183_6a18_58f0,
     ),
 ];
 
@@ -611,18 +611,18 @@ fn synthetic(n: usize, semantics: HierarchySemantics) -> SpatialHierarchy {
         }
         let (parent_id, level, min, max) = (parent.id, parent.level, parent.min, parent.max);
         let axis = (level % 3) as usize;
-        let width = (max[axis] - min[axis]) / children.max(1) as f64;
+        let width = (max[axis] - min[axis]) / f64::from(children.max(1));
         for slot in 0..children {
             if specs.len() >= bfs_target {
                 break;
             }
             let mut child_min = min;
             let mut child_max = max;
-            child_min[axis] = min[axis] + slot as f64 * width;
+            child_min[axis] = min[axis] + f64::from(slot) * width;
             child_max[axis] = if slot + 1 == children {
                 max[axis]
             } else {
-                min[axis] + (slot + 1) as f64 * width
+                min[axis] + f64::from(slot + 1) * width
             };
             specs.push(Spec {
                 id: id_of(specs.len()),
@@ -730,7 +730,7 @@ fn project(camera: Camera, node: &SpatialNode) -> f64 {
     let bounds = node.bounds();
     let distance = (0..3)
         .map(|axis| {
-            let center = (bounds.min()[axis] + bounds.max()[axis]) / 2.0;
+            let center = f64::midpoint(bounds.min()[axis], bounds.max()[axis]);
             (center - eye[axis]).powi(2)
         })
         .sum::<f64>()

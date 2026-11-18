@@ -150,7 +150,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "distinct benchmark inputs; bundling them would add a single-use struct"
+)]
 fn convert(
     input: &Path,
     output: &Path,
@@ -480,14 +483,14 @@ fn select_blocks<T>(blocks: &mut [T], order: ReadOrder) -> Result<&[T], &'static
     Ok(&blocks[..count])
 }
 
-/// Deterministic Fisher-Yates permutation using a fixed SplitMix64 sequence.
+/// Deterministic Fisher-Yates permutation using a fixed `SplitMix64` sequence.
 /// The fixed generator and modulo mapping preserve block order across platforms.
 fn shuffle<T>(values: &mut [T], mut seed: u64) {
     for index in (1..values.len()).rev() {
-        seed = seed.wrapping_add(0x9e3779b97f4a7c15);
+        seed = seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut value = seed;
-        value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-        value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
+        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         value ^= value >> 31;
         values.swap(index, (value % (index as u64 + 1)) as usize);
     }
@@ -525,9 +528,7 @@ fn read(
     order: ReadOrder,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let geometry_bytes = fs::metadata(output)?.len();
-    let attributes_bytes = fs::metadata(output.with_extension("octattrs"))
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let attributes_bytes = fs::metadata(output.with_extension("octattrs")).map_or(0, |m| m.len());
     let output_bytes = geometry_bytes
         .checked_add(attributes_bytes)
         .ok_or("size overflow")?;
@@ -559,8 +560,8 @@ fn read(
     let selection_elapsed = selection_started.elapsed();
     let order_checksum = selected
         .iter()
-        .fold(0xcbf29ce484222325_u64, |checksum, block| {
-            (checksum ^ block.id.get()).wrapping_mul(0x100000001b3)
+        .fold(0xcbf2_9ce4_8422_2325_u64, |checksum, block| {
+            (checksum ^ block.id.get()).wrapping_mul(0x0100_0000_01b3)
         });
     // The benchmark retains one u64 per block for exact nearest-rank percentiles.
     // These samples and the stats vectors are benchmark overhead, not reader memory.
@@ -713,9 +714,7 @@ fn summarize_output(
     input_bytes: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let geometry_bytes = fs::metadata(output)?.len();
-    let attributes_bytes = fs::metadata(output.with_extension("octattrs"))
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let attributes_bytes = fs::metadata(output.with_extension("octattrs")).map_or(0, |m| m.len());
     let output_bytes = geometry_bytes
         .checked_add(attributes_bytes)
         .ok_or("size overflow")?;

@@ -2,6 +2,10 @@
 use crate::NodeAttributeRange;
 use viewer_core::{AttributeColumn, AttributeValues};
 
+#[expect(
+    clippy::cast_lossless,
+    reason = "the macro also covers u64/i64, which have no `From` for f64"
+)]
 pub(crate) fn column_range(index: u32, column: &AttributeColumn) -> Option<NodeAttributeRange> {
     let width = column.descriptor().component_count() as usize;
     macro_rules! range {
