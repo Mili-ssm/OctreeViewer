@@ -248,6 +248,40 @@ fn cells_bench() {
     let resident_end = last.resident_pages;
     let first_failure = h.first_failure.clone().unwrap_or_default();
     let pages_used = h.dataset.pages.as_ref().map_or(0, |p| p.pages());
+    {
+        // Camera and cut diagnostics (follow-up of the grazing check): printed, not asserted.
+        let (near, far) = camera.clip_distances();
+        let (eye, tgt) = (camera.position(), camera.target());
+        let fwd: [f64; 3] = std::array::from_fn(|a| tgt[a] - eye[a]);
+        let n = fwd.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let hs = h.dataset.metadata.hierarchy().stats();
+        let (rb, db) = (hs.root_bounds, hs.data_bounds);
+        let to_local = |p: [f64; 3]| -> [f64; 3] {
+            std::array::from_fn(|a| (p[a] - real.origin[a]) * real.scale)
+        };
+        let (mut cells, mut levels) = (0u64, 0usize);
+        for (node, depths, _) in &h.last_levels {
+            for depth in depths {
+                let key = viewer_render_wgpu::LevelKey { session: 0, node: *node, depth: *depth, color_gen: 0 };
+                if let Some(level) = h.driver.pool().level(key) {
+                    levels += 1;
+                    cells += level.pages.iter().map(|p| u64::from(p.cells)).sum::<u64>();
+                }
+            }
+        }
+        println!(
+            "BENCH_DIAG pose {pose} eye {eye:?} target {tgt:?} forward {:?} near {near} far {far} scale {} \
+root_local min {:?} max {:?} data_local min {:?} max {:?} cut_nodes {} active_levels {levels} \
+active_level_cells {cells} (sum over active levels, overlapping depths counted each)",
+            fwd.map(|v| v / n),
+            real.scale,
+            to_local(rb.min()),
+            to_local(rb.max()),
+            to_local(db.min()),
+            to_local(db.max()),
+            last.cut_nodes,
+        );
+    }
     let json = format!(
         "{{\"dataset\":\"{dataset}\",\"pose\":\"{pose}\",\"px\":{px},\"viewport\":[1280,720],\
 \"stop\":{stop:?},\"updates\":{},\"updates_to_settle\":{},\"nodes_built\":{nodes_built},\
