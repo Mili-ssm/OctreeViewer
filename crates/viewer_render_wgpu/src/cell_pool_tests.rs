@@ -1115,7 +1115,7 @@ fn a_still_pose_is_exact_after_a_moving_sequence() {
         .expect("frame");
     };
     for _ in 0..20 {
-        cam.orbit(0.004, 0.002);
+        cam.orbit(-0.03, -0.02);
         run(&mut pool, &cam);
     }
     // R3-Q18: one settled frame redoes every hinted entry with the full search.
@@ -4640,5 +4640,206 @@ fn every_active_depth_is_fully_uploaded_with_a_wide_range() {
             partial > 0,
             "{rule:?}: no level was ever observed partially uploaded"
         );
+    }
+}
+
+/// Root 1 (stored 2..=14) with its eight children 2..=9 (stored 5..=14). Only depths 2..=11 of
+/// the root are resident, so its active range stops at 11 and stays there once it leaves the cut.
+fn hold_rig(rule: ActiveRule) -> Rig {
+    let mut nodes = octant_nodes();
+    nodes.insert(
+        NodeId::new(1),
+        d5_node(SIDE, &(2..=14).collect::<Vec<u8>>()),
+    );
+    for id in CHILDREN {
+        let child = nodes.get_mut(&NodeId::new(id)).expect("child");
+        child.stored = (5..=14).collect();
+        child.buildable = (5, 14);
+    }
+    let mut rig = d5_rig(nodes);
+    rig.pool.set_active_rule(rule);
+    seed_resident(&mut rig.pool, 1, &(2..=11).collect::<Vec<u8>>());
+    rig.pool.residency_epoch += 1;
+    rig
+}
+
+#[test]
+fn hold_threshold_is_the_finest_active_depth_end_to_end() {
+    // Root 1 draws, in the zoom camera, a range of depths 7..=11 whose octant over child 2 draws
+    // depth 8 but whose finest active depth is 11 (the GPU picks per cell among the active
+    // ones). Child 2 wants 12: with only 9 or 10 resident it would draw below what the ancestor
+    // showed there, so it stays held; it takes over once it can draw the ancestor's finest
+    // active depth (11), although that is below the 12 it wants.
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        let mut rig = hold_rig(rule);
+        let zoom = camera("zoom");
+        let mut plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+        for _ in 0..8 {
+            plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+        }
+        let root = NodeId::new(1);
+        let (lo, hi) = plan.entries[0].range.expect("a cell-mode node has a range");
+        let finest = rig.pool.applied_finest[&root];
+        // Child 2 sits under octant 0 of the root.
+        let nominal = rig.pool.applied_drawn[&root][0].expect("octant 0 draws");
+        // Guards: a wide range whose finest active depth is finer than the octant's drawn one.
+        assert!(lo < hi, "{rule:?}: range {lo}..{hi}");
+        assert!(active_depths(&plan, &rig, 1).len() > 1, "{rule:?}");
+        assert!(
+            nominal + 2 < finest,
+            "{rule:?}: nominal {nominal}, finest {finest}"
+        );
+        let cut = ids(&CHILDREN);
+        let child = NodeId::new(2);
+        for (resident, held) in [
+            (vec![nominal + 1], true),
+            (vec![finest - 1], true),
+            (vec![finest], false),
+        ] {
+            seed_more(&mut rig, 2, &resident);
+            for frame in 0..2 {
+                let plan = d5_step_at(&mut rig, &cut, &zoom, 0.125);
+                let entry = plan
+                    .entries
+                    .iter()
+                    .find(|e| e.node == child)
+                    .expect("child");
+                let wanted = entry.wanted[0].expect("child wants a depth");
+                assert!(finest < wanted, "{rule:?}: the child wants {wanted}");
+                assert_eq!(
+                    rig.pool.hold.contains(&child),
+                    held,
+                    "{rule:?} resident {resident:?} frame {frame}"
+                );
+                assert_eq!(entry.drawn[0].is_some(), !held, "{rule:?} {resident:?}");
+                assert_eq!(
+                    rig.pool.applied_finest[&root], finest,
+                    "{rule:?}: threshold moved"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn real_memo_is_recomputed_when_only_the_active_span_changes() {
+    // Root 1 shows depths 7..=11 and child 2 (resident 10, wants 12) is held under its finest
+    // active depth 11 until the memo of the real cut is reused. Then root's level 11 goes away:
+    // the finest active depth falls to 10 with the pose, the cut and every level of the child
+    // unchanged. The next frame must read the new span and release the child; the memo must not
+    // keep the decision taken under the old one.
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        let mut rig = hold_rig(rule);
+        let zoom = camera("zoom");
+        let root = NodeId::new(1);
+        let child = NodeId::new(2);
+        let mut plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+        for _ in 0..8 {
+            plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+        }
+        let finest = rig.pool.applied_finest[&root];
+        assert!(
+            active_depths(&plan, &rig, 1).len() > 1,
+            "{rule:?}: no wide range"
+        );
+        seed_more(&mut rig, 2, &[finest - 1]);
+        let cut = ids(&CHILDREN);
+        let mut reused = false;
+        for frame in 0..10 {
+            let plan = d5_step_at(&mut rig, &cut, &zoom, 0.125);
+            reused |= plan.counters.real_reused;
+            assert!(
+                rig.pool.hold.contains(&child),
+                "{rule:?} frame {frame}: held"
+            );
+        }
+        // Guards: the decision was memoised, and it depends on the span (finest - 1 is below it).
+        assert!(reused, "{rule:?}: the real cut was never reused");
+        assert_eq!(rig.pool.applied_finest[&root], finest, "{rule:?}");
+        let gone = rig.pool.key(root, finest);
+        assert!(rig.pool.levels.remove(&gone).is_some());
+        rig.pool.residency_epoch += 1;
+        // The frame that applies the smaller span still judges against what was on screen; the
+        // next one must judge against the new span.
+        let first = d5_step_at(&mut rig, &cut, &zoom, 0.125);
+        assert!(!first.counters.real_reused, "{rule:?}: stale real cut");
+        assert!(rig.pool.applied_finest[&root] < finest, "{rule:?}");
+        let plan = d5_step_at(&mut rig, &cut, &zoom, 0.125);
+        assert!(!rig.pool.hold.contains(&child), "{rule:?}: still held");
+        let entry = plan
+            .entries
+            .iter()
+            .find(|e| e.node == child)
+            .expect("child");
+        assert_eq!(entry.drawn[0], Some(finest - 1), "{rule:?}");
+    }
+}
+
+#[test]
+fn requests_rank_first_step_wanted_range_only_nearest_first() {
+    // Eight octant nodes store depths {4, 12} (both resident) and can build the ones between; in
+    // the zoom camera the near ones want a range of depths. A range depth no octant wants is
+    // `range_only`: it ranks after every wanted depth of any node, even a finer one, then by
+    // depth, then nearest node first (and by id on an exact tie).
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        let mut nodes = octant_nodes();
+        for node in nodes.values_mut() {
+            node.stored = vec![4, 12];
+            node.buildable = (4, 12);
+        }
+        let mut rig = d5_rig(nodes);
+        rig.pool.set_active_rule(rule);
+        for id in CHILDREN {
+            seed_resident(&mut rig.pool, id, &[4, 12]);
+        }
+        rig.pool.residency_epoch += 1;
+        // Off the symmetry axis, so no two nodes of a pair are at the same distance.
+        let mut zoom = camera("zoom");
+        zoom.orbit(-0.03, 0.02);
+        let cut = ids(&CHILDREN);
+        let mut plan = d5_step_at(&mut rig, &cut, &zoom, 2.0);
+        for _ in 0..3 {
+            plan = d5_step_at(&mut rig, &cut, &zoom, 2.0);
+        }
+        let requests: Vec<(u64, u8)> = plan
+            .level_requests
+            .iter()
+            .map(|key| (key.node.get(), key.depth))
+            .collect();
+        let range_only = |(node, depth): &(u64, u8)| {
+            plan.entries.iter().any(|entry| {
+                entry.node.get() == *node
+                    && entry
+                        .range
+                        .is_some_and(|(lo, hi)| (lo..=hi).contains(depth))
+                    && !entry.wanted.iter().flatten().any(|w| w == depth)
+            })
+        };
+        // Guards: both classes occur, the nodes of a class sit at different distances, and a
+        // range-only depth (8) is coarser than wanted ones that rank before it (9, 10, 11).
+        let first_range_only = requests
+            .iter()
+            .position(range_only)
+            .expect("a range-only request");
+        assert!(first_range_only > 0, "{rule:?}: {requests:?}");
+        assert!(
+            requests[first_range_only..].iter().all(range_only),
+            "{rule:?}: {requests:?}"
+        );
+        let near = by_distance(&zoom, &CHILDREN);
+        let at = |id: u64| near.iter().position(|n| *n == id).expect("node");
+        // The nearer node of each pair has the higher id, so the id tie-break cannot give the order.
+        assert!(at(3) < at(2) && at(9) < at(8), "{near:?}");
+        let finest_wanted = requests[..first_range_only].iter().map(|r| r.1).max();
+        assert!(finest_wanted > Some(8), "{rule:?}: {requests:?}");
+        // The range-only tail: depth 7 (nodes 3, 2), then depth 8 (nodes 9, 8), nearest first.
+        assert_eq!(
+            requests[first_range_only..],
+            [(3, 7), (2, 7), (9, 8), (8, 8)],
+            "{rule:?}: {requests:?}"
+        );
+        // The wanted head is coarse to fine.
+        let head = &requests[..first_range_only];
+        assert!(head.is_sorted_by_key(|r| r.1), "{rule:?}: {head:?}");
     }
 }
