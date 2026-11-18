@@ -3,6 +3,7 @@ import {
     FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,
     renderPathStatsLines, summarizeFrameReplies,
 } from "./benchmark-metrics.mjs";
+import { lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";
 import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
@@ -48,7 +49,15 @@ let latestPxStats = null;
 const voxelPixels = document.getElementById("voxel-pixels");
 const voxelPixelsValue = document.getElementById("voxel-pixels-value");
 const depthShading = document.getElementById("depth-shading");
-const continuity = document.getElementById("continuity");
+const minLengthMode = document.getElementById("min-length-mode");
+const minLengthValue = document.getElementById("min-length-value");
+const minLengthUnit = document.getElementById("min-length-unit");
+const minLengthFields = document.getElementById("min-length-length-fields");
+const spacingFields = document.getElementById("min-length-spacing-fields");
+const spacingInfo = document.getElementById("min-length-spacing-info");
+const continuityFactor = document.getElementById("continuity-factor");
+const cellLodSelect = document.getElementById("cell-lod");
+const cellActiveSelect = document.getElementById("cell-active");
 const cameraMode = document.getElementById("camera-mode");
 const cameraModeHelp = document.getElementById("camera-mode-help");
 
@@ -175,6 +184,7 @@ window.__renderBench = {
         viewEpoch: latestLodStats.viewEpoch ?? null, cutEpochSent: latestLodStats.cutEpochSent ?? null,
         cutEpochApplied: latestLodStats.cutEpochApplied ?? null,
         continuity: latestLodStats.continuity ?? null, continuityMinSide: latestLodStats.continuityMinSide ?? null,
+        minLength: latestLodStats.minLength ?? null,
         wasmLinearMemoryBytes: latestLodStats.wasmLinearMemoryBytes ?? null,
     },
     openTimings: () => benchmarkRun && {
@@ -505,6 +515,7 @@ function handleWorkerMessage(event) {
     } else if (data.type === "ready") {
         ready = true;
         pxMode.disabled = false;
+        syncCellControls();
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
@@ -516,23 +527,12 @@ function handleWorkerMessage(event) {
             });
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
-        // The demo draws with per-cell level selection (owner, 16-11-2026); `?cellLod=octant` compares
-        // with the library default. No UI control yet.
-        const requestedCellLod = new URLSearchParams(location.search).get("cellLod");
-        let cellLod = "cell";
-        if (requestedCellLod === "octant" || requestedCellLod === "cell") {
-            cellLod = requestedCellLod;
-        } else if (requestedCellLod !== null) {
-            console.warn(`ignoring ?cellLod=${requestedCellLod}: expected "octant" or "cell"`);
-        }
-        worker.postMessage({ type: "setCellLod", mode: cellLod });
-        // Experimental, temporary (OQ-11, issue #66): `?cellActive=window|contiguous` (default window).
-        const requestedCellActive = new URLSearchParams(location.search).get("cellActive");
-        if (requestedCellActive === "window" || requestedCellActive === "contiguous") {
-            worker.postMessage({ type: "setCellActiveRule", rule: requestedCellActive });
-        } else if (requestedCellActive !== null) {
-            console.warn(`ignoring ?cellActive=${requestedCellActive}: expected "window" or "contiguous"`);
-        }
+        // Per-cell selection and the contiguous rule are initialised from the URL (`?cellLod=`,
+        // `?cellActive=`, OQ-11 issue #66) and then follow the selects; a recreated worker gets them again.
+        syncCellControls();
+        worker.postMessage({ type: "setCellLod", mode: cellLodSelect.value });
+        worker.postMessage({ type: "setCellActiveRule", rule: cellActiveSelect.value });
+        sendMinLength();
         requestFrameOnce();
         if (reopenAfterRecreate) {
             const { file, name, attributes } = reopenAfterRecreate;
@@ -566,6 +566,7 @@ function handleWorkerMessage(event) {
         if (pendingProject) shownProject = pendingProject;
         updateAttributeChoices(data.opened);
         latestLodStats = data.lod;
+        updateSpacingInfo();
         updateProgressiveLoadState(data.lod);
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
@@ -582,12 +583,14 @@ function handleWorkerMessage(event) {
         statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes${data.opened.paged ? " (declared, paged)" : ""} · selecting visible blocks…`;
     } else if (data.type === "lod") {
         latestLodStats = data.lod;
+        updateSpacingInfo();
         updateProgressiveLoadState(data.lod);
         statusRoot.textContent = `LOD stage ${data.lod.lodStagePixels} px · finest target ${data.lod.targetVoxelPixels} px`;
     } else if (data.type === "lodProgress") {
         if (data.refinement?.id !== requestedRefinementId) return;
         observedRefinementId = data.refinement.id;
         latestLodStats = data.lod;
+        updateSpacingInfo();
         updateStats(data);
         if (benchmarkRun) {
             benchmarkRun.refinement = data.refinement;
@@ -629,6 +632,7 @@ function handleWorkerMessage(event) {
             if (lastFrameStatus) statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
         }
         latestLodStats = data.lod ?? latestLodStats;
+        updateSpacingInfo();
         if (benchmarkRun) {
             benchmarkRun.latestGpuStats = data.gpu;
             benchmarkRun.latestMemoryStats = data.memory ?? null;
@@ -872,10 +876,85 @@ depthShading.addEventListener("change", () => {
     if (benchmarkRun) benchmarkRun.settingsChanged = true;
     queueWorkerCommand("depthShading", { value: depthShading.checked });
 });
-continuity.addEventListener("change", () => {
+// Minimum cube size (ADR 0049/0054). Invalid numbers are not sent: the last valid value stays and the
+// input is marked.
+const initialParams = new URLSearchParams(location.search);
+const initialCellLod = initialParams.get("cellLod");
+if (initialCellLod === "octant" || initialCellLod === "cell") {
+    cellLodSelect.value = initialCellLod;
+} else if (initialCellLod !== null) {
+    console.warn(`ignoring ?cellLod=${initialCellLod}: expected "octant" or "cell"`);
+}
+const initialCellActive = initialParams.get("cellActive");
+if (initialCellActive === "window" || initialCellActive === "contiguous") {
+    cellActiveSelect.value = initialCellActive;
+} else if (initialCellActive !== null) {
+    console.warn(`ignoring ?cellActive=${initialCellActive}: expected "window" or "contiguous"`);
+}
+
+const lastValid = { side: lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value), factor: 1 };
+
+function syncCellControls() {
+    cellLodSelect.disabled = !ready;
+    cellActiveSelect.disabled = !ready || cellLodSelect.value === "octant";
+    minLengthMode.disabled = !ready;
+    minLengthValue.disabled = !ready;
+    minLengthUnit.disabled = !ready;
+    continuityFactor.disabled = !ready;
+}
+
+function syncMinLengthMode() {
+    minLengthFields.hidden = minLengthMode.value !== "length";
+    spacingFields.hidden = minLengthMode.value !== "spacing";
+    updateSpacingInfo();
+}
+
+function updateSpacingInfo() {
+    spacingInfo.hidden = minLengthMode.value !== "spacing";
+    if (spacingInfo.hidden) return;
+    const side = latestLodStats?.continuityMinSide;
+    if (!ready || !latestLodStats) {
+        spacingInfo.textContent = "The resulting side shows once a cloud is open.";
+    } else if (!latestLodStats.continuity || typeof side !== "number") {
+        spacingInfo.textContent = "This cloud has no reference spacing: the mode has no effect.";
+    } else {
+        spacingInfo.textContent = `Resulting minimum side: ${side.toPrecision(3)} (dataset units, metres assumed).`;
+    }
+}
+
+function sendMinLength() {
+    const side = lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value);
+    const factor = parseSpacingFactor(Number(continuityFactor.value));
+    minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(side)));
+    continuityFactor.setAttribute("aria-invalid", String(Number.isNaN(factor)));
+    if (!Number.isNaN(side)) lastValid.side = side;
+    if (!Number.isNaN(factor)) lastValid.factor = factor;
+    for (const [type, values] of minLengthCommands(minLengthMode.value, lastValid.side, lastValid.factor)) {
+        queueWorkerCommand(type, values);
+    }
+}
+
+function onMinLengthChange() {
     resetBenchmarkWindow();
-    queueWorkerCommand("continuity", { enabled: continuity.checked });
+    syncMinLengthMode();
+    sendMinLength();
+}
+for (const control of [minLengthMode, minLengthValue, minLengthUnit, continuityFactor]) {
+    control.addEventListener("change", onMinLengthChange);
+}
+minLengthValue.addEventListener("input", () => {
+    minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value))));
 });
+cellLodSelect.addEventListener("change", () => {
+    resetBenchmarkWindow();
+    syncCellControls();
+    worker.postMessage({ type: "setCellLod", mode: cellLodSelect.value });
+});
+cellActiveSelect.addEventListener("change", () => {
+    resetBenchmarkWindow();
+    worker.postMessage({ type: "setCellActiveRule", rule: cellActiveSelect.value });
+});
+syncMinLengthMode();
 for (const version of FORMAT_VERSIONS) {
     optionFields.formatVersion.append(new Option(version, version, false, version === OPTION_DEFAULTS.formatVersion));
 }
