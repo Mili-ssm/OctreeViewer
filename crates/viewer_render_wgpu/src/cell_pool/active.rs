@@ -3,23 +3,18 @@
 use super::*;
 
 impl CellPool {
-    /// The stored depths of a node that can draw: all of them in octant mode, those inside the
-    /// node's span in cell mode (E2). Cell-mode callers only: octant callers use `stored` itself.
+    /// The stored depths of a node that can draw: those inside the node's span (E2).
     pub(super) fn drawable_stored(
         &self,
         stored: &[u8],
         grid: &CellGrid,
         bounds: SpatialBounds,
     ) -> Vec<u8> {
-        match self.lod_mode {
-            LodMode::Octant => stored.to_vec(),
-            LodMode::Cell => in_cell_range(stored, Self::node_depth(grid, bounds)),
-        }
+        in_cell_range(stored, Self::node_depth(grid, bounds))
     }
 
-    /// Cell mode: the depths of `entry` emitted as active levels: the drawn ones that are
-    /// resident and inside the node's span (a retained cut may hold depths of another mode or
-    /// span), plus the node's D5 depth when its mask is set (see `d5_active`).
+    /// The depths of `entry` emitted as active levels: the drawn ones that are
+    /// resident and inside the node's span (a retained cut may hold depths of another span), plus the node's D5 depth when its mask is set (see `d5_active`).
     pub(super) fn cell_active_depths(
         &self,
         entry: &CellCutEntry,

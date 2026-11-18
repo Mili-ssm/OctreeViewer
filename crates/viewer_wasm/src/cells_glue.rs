@@ -27,8 +27,8 @@ use std::{
 use viewer_core::{BlockId, NodeId, PointBlock};
 use viewer_format::OctreeReader;
 use viewer_render_wgpu::{
-    ActiveRule, CellDriver, CellGrid, CellTarget, CutApply, DriverConfig, FrameReport, LodMode,
-    OrbitCamera, PoolConfig, PoolCounters, ViewProjection, VoxelBuildLimits, cell_cut_digest,
+    ActiveRule, CellDriver, CellGrid, CellTarget, CutApply, DriverConfig, FrameReport, OrbitCamera,
+    PoolConfig, PoolCounters, ViewProjection, VoxelBuildLimits, cell_cut_digest,
     decode_node_levels, encode_node_levels,
 };
 
@@ -625,15 +625,6 @@ impl ViewerCells {
         Ok(())
     }
 
-    /// Per-octant or per-cell level selection. The driver re-plans and rewrites its node records
-    /// and page table on the next frame; no node is built or sent again.
-    #[cfg(test)]
-    pub(crate) fn set_lod_mode(&mut self, mode: LodMode) {
-        self.driver.set_lod_mode(mode);
-        self.view_dirty = true;
-        self.probe_last.set(None);
-    }
-
     /// Window or contiguous-run active depths (cell mode); like the mode, applied on the next
     /// frame without building or sending any node again.
     pub(crate) fn set_active_rule(&mut self, rule: ActiveRule) {
@@ -892,7 +883,6 @@ pub(crate) struct InProcessCells {
     /// Pages the last update needed and lacked (`pendingPageAnchors`).
     pending_pages: Vec<NodeId>,
     continuity: Continuity,
-    lod_mode: LodMode,
     active_rule: ActiveRule,
 }
 
@@ -933,7 +923,6 @@ impl InProcessCells {
             probe: RefCell::new(CutRestProbe::default()),
             pending_pages: Vec::new(),
             continuity: Continuity::default(),
-            lod_mode: LodMode::Cell,
             active_rule: ActiveRule::Window,
         }
     }
@@ -949,14 +938,6 @@ impl InProcessCells {
         self.continuity = continuity;
         self.dirty = true;
         Ok(())
-    }
-
-    /// Per-octant or per-cell level selection; the next update applies it to the driver.
-    #[cfg(test)]
-    pub(crate) fn set_lod_mode(&mut self, mode: LodMode) {
-        self.lod_mode = mode;
-        self.dirty = true;
-        *self.probe.get_mut() = CutRestProbe::default();
     }
 
     /// Window or contiguous-run active depths; the next update applies it to the driver.
@@ -1007,7 +988,6 @@ impl InProcessCells {
             self.continuity
                 .effective_min_side(dataset.reference_spacing()),
         );
-        self.driver.set_lod_mode(self.lod_mode);
         self.driver.set_active_rule(self.active_rule);
         let mut rounds = 0;
         loop {

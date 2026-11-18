@@ -2,14 +2,6 @@
 
 use super::*;
 
-/// The first depth of `stored` truncated to the cap, if any.
-pub(super) fn coarsest(stored: &[u8], cap: Option<&u8>) -> Option<u8> {
-    stored
-        .first()
-        .copied()
-        .filter(|depth| cap.is_none_or(|cap| depth <= cap))
-}
-
 /// `wanted` limited to the finest buildable depth at or below `limit` (cells of that depth or
 /// coarser have a side of at least the continuity minimum); the coarsest buildable depth when all
 /// are finer.
@@ -182,16 +174,13 @@ impl CellPool {
         }
         // Cell mode reasons about the depths it can use: stored levels and wanted depth are
         // restricted to the node's span, as `cell_cut_with` does.
-        let (stored, span) = match self.lod_mode {
-            LodMode::Octant => (node.stored.clone(), None),
-            LodMode::Cell => {
-                let (lo, hi) = cell_depth_range(Self::node_depth(ctx.grid, node.bounds));
-                let (lo, hi) = (lo.max(node.buildable.0), hi.min(node.buildable.1));
-                (
-                    in_cell_range(&node.stored, Self::node_depth(ctx.grid, node.bounds)),
-                    (lo <= hi).then_some((lo, hi)),
-                )
-            }
+        let (stored, span) = {
+            let (lo, hi) = cell_depth_range(Self::node_depth(ctx.grid, node.bounds));
+            let (lo, hi) = (lo.max(node.buildable.0), hi.min(node.buildable.1));
+            (
+                in_cell_range(&node.stored, Self::node_depth(ctx.grid, node.bounds)),
+                (lo <= hi).then_some((lo, hi)),
+            )
         };
         if stored.is_empty() {
             return None;
@@ -223,19 +212,15 @@ impl CellPool {
         self.size_epoch += 1;
     }
 
-    /// Does any stored level of the node, below its fit cap, have pages resident? In cell mode
-    /// only the levels inside the node's span count (E2); octant mode scans `stored` as is.
+    /// Does any stored level of the node, below its fit cap, have pages resident? Only the
+    /// levels inside the node's span count (E2).
     pub(super) fn has_resident_level(&self, id: NodeId, node: &PoolNode, grid: &CellGrid) -> bool {
         let cap = self.caps.get(&id);
         let resident = |depth: &u8| {
             cap.is_none_or(|cap| *depth <= *cap) && self.is_resident(self.key(id, *depth))
         };
-        match self.lod_mode {
-            LodMode::Octant => node.stored.iter().any(resident),
-            LodMode::Cell => self
-                .drawable_stored(&node.stored, grid, node.bounds)
-                .iter()
-                .any(resident),
-        }
+        self.drawable_stored(&node.stored, grid, node.bounds)
+            .iter()
+            .any(resident)
     }
 }

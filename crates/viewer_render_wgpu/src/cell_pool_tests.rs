@@ -2207,7 +2207,6 @@ fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
             })
         },
         &grid,
-        LodMode::Cell,
         &|_, _, _| wanted,
     )
     .unwrap();
@@ -4283,7 +4282,6 @@ fn the_stepping_oracle_runs_in_cell_mode() {
     // The children enter at 6 or 7 and want 10 through resident levels: they step one level per
     // frame, and the cell branch of the oracle checks every one of those frames.
     let (mut rig, cut) = children_entering_below_node_2();
-    assert_eq!(rig.pool.lod_mode, LodMode::Cell, "setup");
     let before = rig.cell_checked;
     let (_, first) = first_drawn_children(&mut rig, &cut, 0.25);
     let mut deepest = first.into_iter().max().expect("children draw");

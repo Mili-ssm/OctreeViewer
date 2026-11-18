@@ -1,8 +1,8 @@
 //! R3 Task 7c: native measurement of the production cell path (`CellPool` residency + `CellRenderer`
 //! with Hi-Z occlusion) on a real GPU. Throwaway like `coverage_spike`; not part of `check.sh`.
 //!
-//! Usage: cell_pool_bench [--out FILE.json] [--cell-lod] [--counters] CASE_DIR|ROOT_DIR...
-//! `--cell-lod` runs the pool in per-cell mode (`LodMode::Cell`; without it, octant). `--counters` only converges
+//! Usage: cell_pool_bench [--out FILE.json] [--counters] CASE_DIR|ROOT_DIR...
+//! `--counters` only converges
 //! the still pose, then draws once with the per-depth counters on and reports them with the instances
 //! drawn (plain pass), skipping the timing rounds and the moving run (R3 phase 2a record).
 //! A case directory is one written by `coverage_spike --export-pool` (format in that file's header);
@@ -581,14 +581,8 @@ fn num(value: &Value, key: &str) -> f64 {
 
 // ---- One case ----
 
-fn run_case(case: &Case, gpu: &Gpu, cell_lod: bool, counters_only: bool) -> Result<Value> {
+fn run_case(case: &Case, gpu: &Gpu, counters_only: bool) -> Result<Value> {
     let mut rig = Rig::new(case, gpu)?;
-    // The library default is per-cell; without the flag the bench still measures octant mode.
-    rig.driver.set_lod_mode(if cell_lod {
-        viewer_render_wgpu::LodMode::Cell
-    } else {
-        viewer_render_wgpu::LodMode::Octant
-    });
     let camera = case.camera;
 
     // d. Convergence with a still camera.
@@ -655,7 +649,8 @@ fn run_case(case: &Case, gpu: &Gpu, cell_lod: bool, counters_only: bool) -> Resu
         return Ok(json!({
             "case": case.name,
             "target_px": case.target_px,
-            "lod_mode": if cell_lod { "cell" } else { "octant" },
+            // Constant: keeps old and new outputs comparable.
+            "lod_mode": "cell",
             "cut_nodes": case.cut.len(),
             "active_levels": plan.active.len(),
             "converged": converge["converged"],
@@ -907,10 +902,11 @@ fn main() -> Result<()> {
         let at = args.iter().position(|a| a == name);
         at.map(|at| args.remove(at)).is_some()
     };
-    let cell_lod = flag("--cell-lod");
     let counters_only = flag("--counters");
     if args.is_empty() {
-        return Err("usage: cell_pool_bench [--out FILE.json] [--cell-lod] [--counters] CASE_DIR|ROOT_DIR...".into());
+        return Err(
+            "usage: cell_pool_bench [--out FILE.json] [--counters] CASE_DIR|ROOT_DIR...".into(),
+        );
     }
     if cfg!(debug_assertions) {
         eprintln!("# warning: debug build; run with --profile perf for the numbers");
@@ -946,7 +942,7 @@ fn main() -> Result<()> {
     let mut results = Vec::new();
     for dir in &dirs {
         let case = load_case(dir)?;
-        let result = run_case(&case, &gpu, cell_lod, counters_only)?;
+        let result = run_case(&case, &gpu, counters_only)?;
         if counters_only {
             println!("{}", serde_json::to_string(&result)?);
             results.push(result);

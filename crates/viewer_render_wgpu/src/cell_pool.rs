@@ -77,7 +77,7 @@ use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc, sync::Arc};
 
 use viewer_core::{NodeId, SpatialBounds};
 
-pub use crate::cell_cut::{ActiveRule, LodMode};
+pub use crate::cell_cut::ActiveRule;
 
 use crate::camera::VERTICAL_FOV;
 use crate::node_cells::{node_range, representative_depth_for_spacing};
@@ -214,8 +214,8 @@ pub struct PageUpload {
 pub struct MaskUpdate {
     pub slot: u32,
     pub mask: [u64; 8],
-    /// Bit `d - node_depth`: depth `d` is active in the node. Cell mode: the depths emitted as
-    /// active levels; octant mode: the depths it draws that lie within 63 of `node_depth`.
+    /// Bit `d - node_depth`: depth `d` is active in the node: the depths emitted as
+    /// active levels.
     pub active: u64,
     /// Depth whose levels span the octants of the node.
     pub node_depth: u8,
@@ -316,8 +316,8 @@ struct Pose {
 struct NodeDepths {
     node: PoolNode,
     depths: [u8; 8],
-    /// Cell mode: the node's far wanted depth and the octants in front of the eye
-    /// (`node_view_range`, `octants_in_front`); `(0, 0)` in octant mode, which never reads them.
+    /// The node's far wanted depth and the octants in front of the eye
+    /// (`node_view_range`, `octants_in_front`).
     far: (u8, u8),
     pose: Pose,
     /// Effective view depth of the node at that pose, in scaled units: the depth of its nearest
@@ -601,7 +601,6 @@ pub struct CellPool {
     /// Levels whose upload completed in the current plan: a level is first drawn one frame after
     /// its last page is written, so cell mode does not activate them yet (the D5 depth included).
     fresh: FastSet<LevelKey>,
-    lod_mode: LodMode,
     active_rule: ActiveRule,
     free_masks: BTreeSet<u32>,
     next_mask: u32,
@@ -668,7 +667,6 @@ impl CellPool {
             pinned: FastSet::default(),
             mask_slots: FastMap::default(),
             fresh: FastSet::default(),
-            lod_mode: LodMode::Cell,
             active_rule: ActiveRule::Window,
             free_masks: BTreeSet::new(),
             next_mask: 0,
@@ -686,29 +684,10 @@ impl CellPool {
         self.min_side = min_side.filter(|side| side.is_finite() && *side > 0.0);
     }
 
-    /// Chooses how nodes draw their levels (`LodMode`). A change drops the memos of the cuts
-    /// planned under the old mode and marks every mask slot stale, so the next plan sends a
-    /// fresh `MaskUpdate` for each node; no level is rebuilt or re-uploaded.
-    pub fn set_lod_mode(&mut self, mode: LodMode) {
-        if self.lod_mode == mode {
-            return;
-        }
-        self.lod_mode = mode;
-        self.wanted_memo = None;
-        self.real_memo = None;
-        // The cached far depths are only computed in cell mode.
-        self.depths.clear();
-        for slot in self.mask_slots.values_mut() {
-            slot.stale = true;
-        }
-    }
-
-    pub fn lod_mode(&self) -> LodMode {
-        self.lod_mode
-    }
-
-    /// Cell mode: chooses which range depths are active (`ActiveRule`). Invalidates like
-    /// `set_lod_mode`: the next plan re-derives the active depths and re-sends every record.
+    /// Chooses which range depths are active (`ActiveRule`). A change drops the memos of the
+    /// cuts planned under the old rule and marks every mask slot stale, so the next plan
+    /// re-derives the active depths and sends a fresh `MaskUpdate` for each node; no level is
+    /// rebuilt or re-uploaded.
     pub fn set_active_rule(&mut self, rule: ActiveRule) {
         if self.active_rule == rule {
             return;

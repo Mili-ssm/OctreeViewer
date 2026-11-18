@@ -854,7 +854,6 @@ fn the_closest_level_avoids_coarsening_within_a_node() {
         &ids(&[1]),
         &|id| nodes.get(&id).cloned(),
         &dataset_grid(ORIGIN),
-        LodMode::Cell,
         &|_, octant, _| if octant < 4 { 4 } else { 6 },
     )
     .unwrap();
@@ -1242,7 +1241,6 @@ fn run_cell_mode_from(
         cut,
         &|id| nodes.get(&id).cloned(),
         grid,
-        LodMode::Cell,
         &|_, octant, data| {
             octant_wanted_depth(
                 &view,
@@ -1491,7 +1489,6 @@ fn cell_cut_digest_golden_of_the_plain_cut_in_cell_mode() {
                     &cut,
                     &|id| nodes.get(&id).cloned(),
                     &grid,
-                    LodMode::Cell,
                     &|_, octant, data| {
                         octant_wanted_depth(
                             &view,
@@ -1727,7 +1724,6 @@ fn cell_mode_cut(nodes: &HashMap<NodeId, CellCutNode>, wanted: [u8; 8]) -> CellC
         &ids(&[1]),
         &|id| nodes.get(&id).cloned(),
         &dataset_grid(ORIGIN),
-        LodMode::Cell,
         &|_, octant, _| wanted[octant],
     )
     .unwrap()
@@ -1812,7 +1808,6 @@ fn cell_mode_ignores_children_resident_only_outside_their_span() {
             &ids(cut),
             &|id| nodes.get(&id).cloned(),
             &grid,
-            LodMode::Cell,
             &|_, _, data| data.buildable.1,
         )
     };
@@ -1909,7 +1904,6 @@ fn ranged_entry(
         &ids(&[1]),
         &|_| Some(node.clone()),
         grid,
-        LodMode::Cell,
         &|_, octant, data| {
             octant_wanted_depth(view, grid, [0.0; 3], bounds, octant, data.buildable, target)
         },
@@ -2134,7 +2128,6 @@ fn an_octant_behind_the_eye_does_not_widen_the_range() {
             &ids(&[1]),
             &|id| nodes.get(&id).cloned(),
             &dataset_grid(ORIGIN),
-            LodMode::Cell,
             &|_, octant, _| if octant < 4 { 12 } else { 5 },
             Some(&|_, _| (4, front)),
             None,
@@ -2176,7 +2169,6 @@ fn step_one(prev: Option<u8>, w: u8, stored: &[u8], resident: &[u8]) -> (Option<
         },
         // A node depth whose span holds every stored depth here.
         0,
-        LodMode::Cell,
     );
     (drawn[0], step[0])
 }
@@ -2241,7 +2233,6 @@ fn cell_mode_keeps_the_stepped_depth_active() {
             timed_out: [false; 8],
         },
         7,
-        LodMode::Cell,
     );
     assert_eq!(drawn, [Some(10); 8]);
     assert_eq!(step, [Some(9); 8]);
