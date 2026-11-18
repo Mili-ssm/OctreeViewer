@@ -18,7 +18,7 @@ use crate::cell_render::{
     cells_supported_for, plan_device_limits, pool_pages_for_limits, pool_pages_within_budget,
     pool_resource_bytes, shader_sources,
 };
-use crate::gpu::{CUBE_INDICES, ViewProjection, create_pipeline_resources};
+use crate::gpu::{CUBE_INDICES, ViewUniform, create_pipeline_resources};
 use crate::{
     CellGrid, InstanceRaw, NodeCell, NodeCellLevel, OrbitCamera, PAGE_SLOTS, RendererConfig,
     SceneBounds, decode_cell, pack_level,
@@ -336,7 +336,7 @@ fn render_cpu_styled(
     h.queue.write_buffer(
         &resources.uniform_buffer,
         0,
-        bytemuck::bytes_of(&ViewProjection {
+        bytemuck::bytes_of(&ViewUniform {
             matrix: frame.view_projection,
             render_origin: origin,
             style,

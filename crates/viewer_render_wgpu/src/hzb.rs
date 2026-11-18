@@ -3,7 +3,7 @@ use std::{mem::size_of, num::NonZeroU64};
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::{GpuRendererError, gpu::ViewProjection};
+use crate::{GpuRendererError, gpu::ViewUniform};
 
 pub(crate) const MIN_OCCLUSION_CANDIDATES: usize = 4_096;
 const CULL_WORKGROUP_SIZE: u32 = 64;
@@ -109,7 +109,7 @@ impl HzbResources {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: NonZeroU64::new(size_of::<ViewProjection>() as u64),
+                    min_binding_size: NonZeroU64::new(size_of::<ViewUniform>() as u64),
                 },
                 count: None,
             }],
@@ -1012,7 +1012,7 @@ mod tests {
             };
             let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("octree-viewer-hzb-test-camera"),
-                size: size_of::<super::ViewProjection>() as u64,
+                size: size_of::<super::ViewUniform>() as u64,
                 usage: wgpu::BufferUsages::UNIFORM,
                 mapped_at_creation: false,
             });
@@ -1077,7 +1077,7 @@ mod tests {
             else {
                 return;
             };
-            let uniform = super::ViewProjection {
+            let uniform = super::ViewUniform {
                 matrix: [
                     [1.0, 0.0, 0.0, 0.0],
                     [0.0, 1.0, 0.0, 0.0],
@@ -1272,7 +1272,7 @@ mod tests {
             else {
                 return;
             };
-            let uniform = super::ViewProjection {
+            let uniform = super::ViewUniform {
                 matrix: [
                     [1.0, 0.0, 0.0, 0.0],
                     [0.0, 1.0, 0.0, 0.0],

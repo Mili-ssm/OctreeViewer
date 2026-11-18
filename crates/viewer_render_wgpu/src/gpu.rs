@@ -130,7 +130,7 @@ pub enum FrameStatus {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-pub(crate) struct ViewProjection {
+pub(crate) struct ViewUniform {
     pub(crate) matrix: [[f32; 4]; 4],
     pub(crate) render_origin: [f32; 4],
     pub(crate) style: [f32; 4],
@@ -1565,7 +1565,7 @@ impl<'window> SurfaceRenderer<'window> {
         self.queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::bytes_of(&ViewProjection {
+            bytemuck::bytes_of(&ViewUniform {
                 matrix: view_projection,
                 render_origin,
                 style: [
@@ -2031,7 +2031,7 @@ pub(crate) async fn create_pipeline_resources(
     });
     let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("octree-viewer-view-projection"),
-        size: std::mem::size_of::<ViewProjection>() as u64,
+        size: std::mem::size_of::<ViewUniform>() as u64,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -2043,7 +2043,7 @@ pub(crate) async fn create_pipeline_resources(
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: NonZeroU64::new(std::mem::size_of::<ViewProjection>() as u64),
+                min_binding_size: NonZeroU64::new(std::mem::size_of::<ViewUniform>() as u64),
             },
             count: None,
         }],
