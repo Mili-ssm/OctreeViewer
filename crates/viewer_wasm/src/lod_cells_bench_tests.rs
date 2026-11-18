@@ -36,6 +36,9 @@ pub(super) struct Frame {
     pub(super) leaf_eye: [f64; 3],
     pub(super) fitted: OrbitCamera,
     pub(super) step: f64,
+    /// `coverage_spike`'s grazing pose: 5 degrees above the horizontal plane through the root
+    /// centre at the fitted distance, looking at the centre.
+    pub(super) grazing: OrbitCamera,
 }
 
 pub(super) fn spike_frame(path: &std::path::Path) -> Frame {
@@ -73,6 +76,20 @@ pub(super) fn spike_frame(path: &std::path::Path) -> Frame {
     };
     let mut fitted = OrbitCamera::default();
     assert!(fitted.fit(root_local, VIEWPORT));
+    let mut grazing = fitted;
+    {
+        let (pos, centre) = (fitted.position(), fitted.target());
+        let offset: [f64; 3] = std::array::from_fn(|a| pos[a] - centre[a]);
+        let distance = offset.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let horizontal = offset[0].hypot(offset[1]).max(1e-12);
+        let elevation = 5.0_f64.to_radians();
+        let eye = [
+            centre[0] + distance * elevation.cos() * offset[0] / horizontal,
+            centre[1] + distance * elevation.cos() * offset[1] / horizontal,
+            centre[2] + distance * elevation.sin(),
+        ];
+        assert!(grazing.set_pose(eye, centre));
+    }
     let leaf = hierarchy
         .query(root)
         .filter(|n| leaf_flags[&n.id()])
@@ -84,6 +101,7 @@ pub(super) fn spike_frame(path: &std::path::Path) -> Frame {
         leaf_eye,
         fitted,
         step: root_side * scale / 16.0,
+        grazing,
     }
 }
 
@@ -117,7 +135,9 @@ fn cells_bench() {
     let mut real = open_real(&file, px, 256 << 20).unwrap();
     real.viewport = VIEWPORT;
     let mut camera = frame.fitted;
-    if pose != "orbit" {
+    if pose == "grazing" {
+        camera = frame.grazing;
+    } else if pose != "orbit" {
         let dir: [f64; 3] = match pose.as_str() {
             "px" => [1.0, 0.0, 0.0],
             "py" => [0.0, 1.0, 0.0],
@@ -131,6 +151,18 @@ fn cells_bench() {
     let h = &mut real.harness;
     h.count_octant_coarsenings = true;
     h.soft_checks = true;
+    // `BENCH_MODE=cell` and `BENCH_RULE=contiguous` (defaults octant, window) for the residency
+    // measurements of OQ-14; the pool is the production one (65 536 pages = 512 MiB).
+    let cell_mode = env_or("BENCH_MODE", "octant") == "cell";
+    if cell_mode {
+        h.mode = LodMode::Cell;
+    }
+    let contiguous = env_or("BENCH_RULE", "window") == "contiguous";
+    if contiguous {
+        h.rule = ActiveRule::Contiguous;
+    }
+    let (mut overflow_peak, mut coarsened_peak, mut gpu_coarsened_peak) = (0u32, 0u32, 0usize);
+    let mut cpu_coarsened_peak = 0usize;
     // Peak RSS counts only the run, not the leaf search above.
     let _ = std::fs::write("/proc/self/clear_refs", "5");
 
@@ -168,6 +200,10 @@ fn cells_bench() {
             build_ms_nonzero.push(info.build_ms);
         }
         nodes_built += info.built;
+        overflow_peak = overflow_peak.max(info.pool_overflow);
+        coarsened_peak = coarsened_peak.max(info.pool_coarsened);
+        gpu_coarsened_peak = gpu_coarsened_peak.max(info.gpu_coarsened);
+        cpu_coarsened_peak = cpu_coarsened_peak.max(info.cpu_coarsened);
         cpu_bytes = h.driver.cpu_bytes();
         peak_cpu = peak_cpu.max(cpu_bytes);
         peak_cell_cpu = peak_cell_cpu.max(info.cpu_cell_bytes);
@@ -212,6 +248,45 @@ fn cells_bench() {
     let resident_end = last.resident_pages;
     let first_failure = h.first_failure.clone().unwrap_or_default();
     let pages_used = h.dataset.pages.as_ref().map_or(0, |p| p.pages());
+    {
+        // Camera and cut diagnostics (follow-up of the grazing check): printed, not asserted.
+        let (near, far) = camera.clip_distances();
+        let (eye, tgt) = (camera.position(), camera.target());
+        let fwd: [f64; 3] = std::array::from_fn(|a| tgt[a] - eye[a]);
+        let n = fwd.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let hs = h.dataset.metadata.hierarchy().stats();
+        let (rb, db) = (hs.root_bounds, hs.data_bounds);
+        let to_local = |p: [f64; 3]| -> [f64; 3] {
+            std::array::from_fn(|a| (p[a] - real.origin[a]) * real.scale)
+        };
+        let (mut cells, mut levels) = (0u64, 0usize);
+        for (node, depths, _) in &h.last_levels {
+            for depth in depths {
+                let key = viewer_render_wgpu::LevelKey {
+                    session: 0,
+                    node: *node,
+                    depth: *depth,
+                    color_gen: 0,
+                };
+                if let Some(level) = h.driver.pool().level(key) {
+                    levels += 1;
+                    cells += level.pages.iter().map(|p| u64::from(p.cells)).sum::<u64>();
+                }
+            }
+        }
+        println!(
+            "BENCH_DIAG pose {pose} eye {eye:?} target {tgt:?} forward {:?} near {near} far {far} scale {} \
+root_local min {:?} max {:?} data_local min {:?} max {:?} cut_nodes {} active_levels {levels} \
+active_level_cells {cells} (sum over active levels, overlapping depths counted each)",
+            fwd.map(|v| v / n),
+            real.scale,
+            to_local(rb.min()),
+            to_local(rb.max()),
+            to_local(db.min()),
+            to_local(db.max()),
+            last.cut_nodes,
+        );
+    }
     let json = format!(
         "{{\"dataset\":\"{dataset}\",\"pose\":\"{pose}\",\"px\":{px},\"viewport\":[1280,720],\
 \"stop\":{stop:?},\"updates\":{},\"updates_to_settle\":{},\"nodes_built\":{nodes_built},\
@@ -220,6 +295,9 @@ fn cells_bench() {
 \"frame_ms\":{{\"median\":{:.3},\"p95\":{:.3},\"max\":{:.3}}},\
 \"driver_cpu_bytes_end\":{cpu_bytes},\"driver_cpu_bytes_peak\":{peak_cpu},\
 \"cpu_cell_bytes_end\":{},\"cpu_cell_bytes_peak\":{peak_cell_cpu},\
+\"mode\":\"{}\",\"rule\":\"{}\",\"pool_capacity_pages\":{},\
+\"pool_resident_mib_end\":{:.1},\"pool_resident_mib_peak\":{:.1},\"pool_overflow_peak\":{overflow_peak},\
+\"pool_coarsened_peak\":{coarsened_peak},\"gpu_coarsened_peak\":{gpu_coarsened_peak},\"cpu_coarsened_peak\":{cpu_coarsened_peak},\
 \"pool_resident_pages_end\":{resident_end},\"dataset_pages_resident\":{pages_used},\
 \"longest_retained_streak\":{},\"max_gap\":{},\"gaps_over_one\":{},\"dtf\":{},\
 \"pool_resident_pages_peak\":{},\"fallback_pages_peak\":{},\"held_nodes_peak\":{},\
@@ -240,6 +318,11 @@ fn cells_bench() {
         fm[1],
         fm[2],
         last.cpu_cell_bytes,
+        if cell_mode { "cell" } else { "octant" },
+        if contiguous { "contiguous" } else { "window" },
+        viewer_render_wgpu::DEFAULT_POOL_PAGES,
+        f64::from(last.resident_pages) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1048576.0,
+        f64::from(t.resident_peak) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1048576.0,
         t.longest_retained,
         t.max_gap,
         t.gaps_over_one,

@@ -516,6 +516,7 @@ struct FrameInfo {
     cpu_coarsened: usize,
     gpu_coarsened: usize,
     pool_overflow: u32,
+    pool_coarsened: u32,
 }
 
 #[derive(Default, Debug)]
@@ -1341,6 +1342,7 @@ impl Harness {
             cpu_coarsened: stats.cpu_coarsened,
             gpu_coarsened: stats.gpu_coarsened,
             pool_overflow: stats.counters.pool_overflow,
+            pool_coarsened: stats.counters.pool_coarsened,
         };
         {
             let c = &stats.counters;
