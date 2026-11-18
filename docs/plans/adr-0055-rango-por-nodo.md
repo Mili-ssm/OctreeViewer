@@ -127,12 +127,17 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 5: `hi` bounded by data, from a source that does not depend on residency
 
-- [ ] `node_view_range` calcula `hi` con las cajas de página del nivel residente más fino, recortadas a la vista
-  (el recorte exacto del test de 5a pasa a producción). La fuente depende de la residencia: la sonda de 5a no vio
-  oscilación, pero solo podía quitar niveles, así que `hi` solo baja cuando cambia la pose (histéresis). Sin conectar a las peticiones todavía.
-  Tests: 0 infracciones frente a lo que pide el gemelo donde hay puntos; con pose fija y el pool por encima del
-  umbral de expulsión, 200 frames sin que ninguna clave se pida dos veces.
-- [ ] La caché de profundidades por nodo (`refresh_depths`) se invalida cuando cambia el dato del que sale `hi`.
+- [x] (6a29ea5) `nearest_occupied_depth` (`cell_range.rs`): profundidad de vista mínima de las cajas de página
+  recortadas a la vista, con el recorte exacto medido en 5a; `node_view_range_at` evalúa `hi` ahí (con `None` se
+  comporta como antes). Siete tests unitarios, entre ellos la caja junto al ojo que está cerca en distancia y lejos
+  en profundidad. El diagnóstico de 5a llama ya al código de producción y da las mismas cifras en P2 y P4.
+- [x] (6a29ea5, 85d6554) El pool guarda `hi_d` por nodo en la caché de profundidades, sin usarlo en ninguna
+  decisión: con la pose exacta sin cambios solo sube (histéresis) y se recalcula al moverse; se vuelve a mirar
+  cuando cambia el nivel residente más fino (por `residency_epoch`), sin refrescar la entrada ni tocar las claves
+  memorizadas. Tres tests de pool; quitar la histéresis o el disparador los hace fallar. Nada observable cambia:
+  goldens intactos y simulaciones reales idénticas. Un nivel residente siempre tiene sus cajas en producción.
+  Sin medir: páginas por nodo y coste del recorte por frame. El test de «200 frames sin repetir petición» pasa a la
+  tarea 7a, que es donde `hi` se conecta.
 
 ### Task 6: The sim oracle checks the node range, not per-octant fields
 
