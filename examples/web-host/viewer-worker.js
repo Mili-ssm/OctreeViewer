@@ -580,8 +580,12 @@ function pickFramebufferCoordinates(cssX, cssY, cssWidth, cssHeight) {
 function postLodProgress(lod, afterRenderFrame = false) {
     if (!lod) return;
     const now = performance.now();
-    const hasVisiblePoints = Number(lod.visiblePoints) > 0;
-    if (afterRenderFrame && firstCoarseMs === null && hasVisiblePoints) {
+    // Cells path: `visiblePoints` is a CPU-path counter that stays 0, so the first frame is the first
+    // render with an applied cut and resident pool pages.
+    const hasDrawnContent = lod.cellPath === "enabled"
+        ? lod.cutApply != null && Number(lod.poolResidentPages) > 0
+        : Number(lod.visiblePoints) > 0;
+    if (afterRenderFrame && firstCoarseMs === null && hasDrawnContent) {
         firstCoarseMs = now - targetLodStartedAt;
     }
     // Cells path: the T11 definition replaces coverageComplete (self-contained copy of cellsTargetReached).

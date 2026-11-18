@@ -121,3 +121,34 @@ export function lodStillLoading(lod) {
         && (lod.pendingBlockIds?.length || lod.pendingPageAnchors?.length
             || lod.lodStagePixels > lod.targetVoxelPixels));
 }
+
+const dash = (value) => (value === undefined || value === null || Number.isNaN(value) ? "—" : String(value));
+
+// Stats-panel lines that depend on the active render path, keyed by their slot in the panel. The
+// CPU path keeps its voxel counters; the cells path replaces them with the cut and pool counters
+// (the CPU ones stay 0 there). Keys absent from the result are not shown.
+export function renderPathStatsLines(lod, gpu, viewer) {
+    if (lod?.cellPath === "enabled") {
+        return {
+            path: "render path: cells",
+            cut: `cut: ${dash(lod.cutApply)} · epoch ${dash(lod.cutEpochSent)} of ${dash(lod.cutEpochApplied)}`,
+            pool: `pool pages: ${dash(lod.poolResidentPages)} / ${dash(lod.poolCapacityPages)} resident`,
+            poolBytes: `pool bytes uploaded this frame: ${dash(lod.poolUploadedBytes)}`,
+            poolWork: "nodes without level / coarsened / stages: "
+                + `${dash(lod.poolNodesWithoutLevel)} / ${dash(lod.poolCoarsened)} / ${dash(lod.poolStages)}`,
+            queued: `queued node cells: ${dash(lod.queuedNodeCells)}`,
+        };
+    }
+    const coverage = lod
+        ? `${lod.coverageComplete ? "complete" : "incomplete"} (${lod.uncoveredNodes} uncovered)`
+        : "not using LOD";
+    const reason = typeof lod?.cellPath === "string" ? ` (${lod.cellPath})` : "";
+    return {
+        path: `render path: CPU voxels${reason}`,
+        points: `visible points: ${lod?.visiblePoints ?? viewer?.point_count}`,
+        voxels: `visible voxels: ${lod?.renderedVoxels ?? gpu.visibleInstances}`,
+        blocks: `visible blocks: ${gpu.visibleBlocks}`,
+        coverage: `LOD coverage: ${coverage}`,
+        uploaded: `uploaded instance bytes: ${gpu.uploadedBytes}`,
+    };
+}
