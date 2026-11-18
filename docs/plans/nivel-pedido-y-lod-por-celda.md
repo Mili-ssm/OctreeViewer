@@ -1,6 +1,6 @@
 # Nivel pedido, LOD por celda y tamaño mínimo del cubo
 
-Estado: en curso · 16-11-2026 · aprobado por el propietario (pre-mortem aplicado); fase 1 hecha salvo el p95 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)), fase 2a en la rama `feat/cell-lod`
+Estado: en curso · 18-11-2026 · aprobado por el propietario (pre-mortem aplicado); fase 1 fusionada (PR #55) salvo el p95 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)); fase 2a fusionada (PR #56); fase 2b en pausa y replanteada en el [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md)
 
 **Objetivo:** que el render dibuje en cada celda el nivel que pide su distancia, construyendo a demanda los niveles
 que la cadena podada no guarda, con transiciones graduales en bandas alrededor del ojo, y que el usuario elija el
@@ -39,18 +39,18 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   profundidad máxima pedida y peticiones por segundo de zoom. Comprobación: registro en `docs/records/benchmarks/`.
 - [x] **0b. Pregunta al propietario:** R3-Q19, R3-Q21 y R3-Q11 por celda. Resuelta en el
   [ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md) (15-11-2026).
-- [ ] **1. Niveles a demanda (ADR 0048, #35)** ([plan detallado](fase-1-niveles-a-demanda.md); implementado y verificado el 16-11-2026 salvo el p95 de petición a residente, que pasa a la fase 2 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)); [registro](../records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md)). D1. El corte y el pool dejan de suponer «deseado ∈ guardados» y ya
+- [x] **1. Niveles a demanda (ADR 0048, #35)** ([plan detallado](fase-1-niveles-a-demanda.md); implementado y verificado el 16-11-2026 salvo el p95 de petición a residente, que pasa a la fase 2 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)); [registro](../records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md)). D1. El corte y el pool dejan de suponer «deseado ∈ guardados» y ya
   envían un rango de profundidades y una prioridad. Comprobación: `fs_e430` (#35) se dibuja como superficie en la
   demo; tests del protocolo y del corte; p95 de petición a residente medido; dorados regenerados con su motivo;
   `scripts/check.sh` completo.
-- [ ] **2a. Selección por celda tras una opción `cellLod: octant|cell` (predeterminada `octant`)** (en curso en `feat/cell-lod`; la métrica es la arista real, [registro](../records/benchmarks/R3_FASE2A_METRICA_16-11-2026.md)). D2, D3 y D5 (D8 solo si sale gratis) sobre
+- [x] **2a. Selección por celda tras una opción `cellLod: octant|cell` (predeterminada `octant`)** (fusionada, PR #56; la métrica es la arista real, [registro](../records/benchmarks/R3_FASE2A_METRICA_16-11-2026.md)). D2, D3 y D5 (D8 solo si sale gratis) sobre
   niveles residentes, con el gemelo Rust, el picking y una prueba de partición en GPU (patrón de
   `cell_render_tests.rs`): leer `visible` y comprobar una sola celda dibujada por punto, con ≥3 niveles, profundidades
   no contiguas, un nivel que abarca octantes con máscara, oclusión activada y desactivada, ≥1000 poses aleatorias con
   bordes de banda y ojo dentro de una celda. Contadores de GPU (instancias por profundidad, celdas por encima del
   objetivo) leídos en `perf`; la señal «en reposo» pasa a un resumen del gemelo (aplazado a la fase 2c: en la 2a sigue siendo el resumen del corte por octantes); se actualizan
   `probe-cells-parity`, `PROBES.md` y `REGIONAL_VOXEL_LOD.md`.
-- [ ] **2b. Residencia D4 y transiciones de un nivel ([ADR 0053](../adr/0053-transiciones-de-un-nivel.md), RF-31).** Conjunto de niveles por nodo contiguo entre el más grueso y el más fino dibujado (intermedios a demanda), como mucho un nivel por frame al acercarse y al alejarse, evaluar la derivación de niveles gruesos desde los hijos residentes (sin releer bloques), y medida de la cola bajo la separación (pendiente de revisión).
+- [ ] **2b. Residencia D4 y transiciones de un nivel ([ADR 0053](../adr/0053-transiciones-de-un-nivel.md), RF-31)** (en pausa; ver [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md)). Conjunto de niveles por nodo contiguo entre el más grueso y el más fino dibujado (intermedios a demanda), como mucho un nivel por frame al acercarse y al alejarse, evaluar la derivación de niveles gruesos desde los hijos residentes (sin releer bloques), y medida de la cola bajo la separación (pendiente de revisión).
 - [ ] **2c. Activar `cell` por defecto tras medir.** Adelantado en la demo (propietario, 16-11-2026: «fusiónala activando el modo de celdas así podré ver qué tal funciona en la demo»): la demo arranca en `cell` y `?cellLod=octant` compara; el predeterminado de la librería sigue en `octant` hasta cerrar las comprobaciones de esta fase. Comprobación según el ADR 0050: Playwright acercándose a la
   muestra (bandas), y ningún octante **ni nodo** cambia entero en un frame, medido con una diferencia de frames
   cuando entra un nodo hijo, y ninguna celda cambia más de un nivel entre frames ni difiere en más de uno de sus vecinas (ADR 0053); si la máscara por nodo no lo permite, abrir una pregunta antes de seguir.

@@ -1,6 +1,6 @@
 # Fase 2a: selección por celda en la GPU (#44) Implementation Plan
 
-Estado: implementado · 16-11-2026 · fase 2a del [plan maestro](nivel-pedido-y-lod-por-celda.md) (pre-mortem aplicado); [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-2026.md); revisión final hecha y `scripts/check.sh` 24/24 (`d47695a`); pendiente de fusión. La señal «en reposo» sigue siendo el resumen del corte por octantes: pasa a la fase 2c
+Estado: completado · 16-11-2026 · fusionado (PR #56) · fase 2a del [plan maestro](nivel-pedido-y-lod-por-celda.md) (pre-mortem aplicado); [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-2026.md); revisión final hecha y `scripts/check.sh` 24/24 (`d47695a`); fusionado. La señal «en reposo» sigue siendo el resumen del corte por octantes: pasa a la fase 2c
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

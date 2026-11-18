@@ -46,6 +46,7 @@ scripts/serve-demo.sh
 | `examples/web-host` | Web demo and embeddable API |
 | `tools/` | Parity and probe tools (`convert_parity`, `format_parity`, `laz_chunk_probe`) |
 | `fuzz/` | Fuzz targets |
+| `target/`, `pkg/`, `artifacts/` | Generated output, git-ignored |
 | `scripts/` | Local checks and demo scripts |
 | `data/` | Small sample files and dataset provenance |
 | `vendor/lz4_flex` | Vendored fork of `lz4_flex` |

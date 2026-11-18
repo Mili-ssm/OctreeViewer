@@ -32,7 +32,7 @@ que no es de esta línea de trabajo.
 
 - Se revisa la cifra de conversión de RQ-07 ([ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)).
   D3c ya no está bloqueado.
-- Remoto `origin` = `https://github.com/Mili-ssm/OctreeViewer.git` (privado). Su historial (9 commits de 2023,
+- Remoto `origin` = `https://github.com/Mili-ssm/OctreeViewer.git` (público desde el 15-11-2026). Su historial (9 commits de 2023,
   otro proyecto) no tiene relación con este y se sobrescribe; antes se guarda en la ref local
   `refs/legacy/octreeviewer-2023`. `master` se publica como `main` y `feat/r3-v75` se integra por PR.
 
@@ -127,7 +127,7 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
   8 lecturas remotas por defecto (−15 a −30 % hasta alcanzar el objetivo en la ruta CPU); `maxGap`
   queda en 0. De paso se corrigió el orden de lectura asíncrono de las celdas (Belvedere remoto no
   llegaba al objetivo).
-- [ ] D3. Congelar V7 final (ADR 0022) con el orden de filas libre por bloque ([ADR 0041](../adr/0041-orden-de-filas-libre-por-bloque.md),
+- [x] D3. Congelar V7 final (ADR 0022) con el orden de filas libre por bloque ([ADR 0041](../adr/0041-orden-de-filas-libre-por-bloque.md),
   [registro de OQ-09](../records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md)).
   - [x] D3a. Causa de la construcción más rápida con ficheros Morton ([registro](../records/benchmarks/D3A_CELL_SORT_ORDER_14-11-2026.md)):
     el constructor ordenaba con pdqsort; con un radix estable, construir las celdas cuesta un 13–46 %
