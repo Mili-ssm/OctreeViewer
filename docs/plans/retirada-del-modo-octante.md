@@ -69,17 +69,17 @@ Sitios que fijan el modo: `cell_cut.rs` (`#[default]` y el `cell_cut` público),
 `BENCH_MODE` (`lod_cells_bench_tests.rs`) y `eval_with` (`cell_pool_tests.rs`). `Rig::new` y las llamadas directas
 a `CellDriver::new` heredan el de `CellPool::new`.
 
-| Test | Tema | Acción | Motivo |
-| --- | --- | --- | --- |
-| `cell_cut::cell_mode_ignores_children_resident_only_outside_their_span` | solo octante | borrar su cola de octante | la mitad de celda pasa |
-| `cell_cut::spanning_levels_promote_octants_to_the_next_buildable_level` | solo octante | borrar | la promoción por octantes que abarcan solo existe en octante |
-| `cell_driver::a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours` | registros | portar | en celda se piden también los niveles del rango (`[(2,7),(2,5),(2,6)]`); antes, entender por qué `a_missing_level_is_requested…` pide solo uno |
-| `cell_driver::driver_in_cell_mode_writes_records_and_uniform` | registros | portar | quitar las fases de octante y conservar las de celda |
-| `cell_driver::octant_mode_writes_no_record_when_only_the_eye_moves` | solo octante | borrar | `anchors_follow_the_eye` cubre el lado de celda |
-| `cell_pool::a_retained_octant_cut_draws_nothing_outside_the_span_after_switching_to_cell_mode` | cambio de modo | borrar | ya no hay cambio de modo |
-| `cell_pool::the_hold_threshold_is_the_depth_the_ancestor_drew_over_the_octant_of_the_child` | retención | borrar | la regla de celda tiene su test, que pasa |
-| `glue::switching_mode_rewrites_the_page_table` y `…_through_the_glue` | cambio de modo | borrar | ya no hay cambio de modo |
-| `the_oracle_reports_a_hidden_cell_whose_refinement_does_not_draw` | oráculo | portar como autotest de `check_cell_cut` | hoy depende de `last_cut`, que solo rellena la rama de octante del arnés |
+| Test | Tema | Acción | Motivo | Hecho |
+| --- | --- | --- | --- | --- |
+| `cell_cut::cell_mode_ignores_children_resident_only_outside_their_span` | solo octante | borrar su cola de octante | la mitad de celda pasa | cola borrada (la mitad de celda pasa) |
+| `cell_cut::spanning_levels_promote_octants_to_the_next_buildable_level` | solo octante | borrar | la promoción por octantes que abarcan solo existe en octante | fijado en octante (`run_octant`); se borra en la tarea 7 |
+| `cell_driver::a_level_added_and_dropped_is_requested_again_and_returns_with_the_new_colours` | registros | portar | en celda se piden también los niveles del rango (`[(2,7),(2,5),(2,6)]`); antes, entender por qué `a_missing_level_is_requested…` pide solo uno | portado (`[(2,7),(2,5),(2,6)]` en celda) |
+| `cell_driver::driver_in_cell_mode_writes_records_and_uniform` | registros | portar | quitar las fases de octante y conservar las de celda | fijado en octante; se borra o porta en la tarea 7 |
+| `cell_driver::octant_mode_writes_no_record_when_only_the_eye_moves` | solo octante | borrar | `anchors_follow_the_eye` cubre el lado de celda | fijado en octante; se borra en la tarea 7 |
+| `cell_pool::a_retained_octant_cut_draws_nothing_outside_the_span_after_switching_to_cell_mode` | cambio de modo | borrar | ya no hay cambio de modo | fijado en octante; se borra en la tarea 7 |
+| `cell_pool::the_hold_threshold_is_the_depth_the_ancestor_drew_over_the_octant_of_the_child` | retención | borrar | la regla de celda tiene su test, que pasa | fijado en octante; se borra en la tarea 7 |
+| `glue::switching_mode_rewrites_the_page_table` y `…_through_the_glue` | cambio de modo | borrar | ya no hay cambio de modo | fijados en octante (`in_mode(Octant)` y `set_lod_mode`); se borran en la tarea 8 |
+| `the_oracle_reports_a_hidden_cell_whose_refinement_does_not_draw` | oráculo | portar como autotest de `check_cell_cut` | hoy depende de `last_cut`, que solo rellena la rama de octante del arnés | fijado en octante (`in_mode(Octant)`); el autotest de celda es `the_cell_oracle_reports_a_node_whose_active_depths_are_missing` (tarea 3); se borra en la tarea 9 con `CutView` |
 
 Quedan aparte unos 28 tests explícitamente de octante (15 mitades de las macros de dos modos, 5 de
 `cell_cut_tests`, 2 de `cell_pool_tests`, 6 sueltos de wasm), que se borran en las tareas 7 y 8.
@@ -128,13 +128,16 @@ Quedan aparte unos 28 tests explícitamente de octante (15 mitades de las macros
 Replanteada tras el ensayo: como solo fallan 10 tests y el oráculo de pasos ya corre en celda, no hace falta fijar
 antes los arneses en octante. Los tests explícitamente de octante siguen corriendo hasta las tareas 8 y 9.
 
-- [ ] **5a, render.** Cambian a celda `CellPool::new`, el `#[default]`, el `cell_cut` público y `eval_with`. Los
+- [x] **5a, render.** Cambian a celda `CellPool::new`, el `#[default]`, el `cell_cut` público y `eval_with`. Los
   siete fallos de render de la tabla de la tarea 2 se resuelven como dice la tabla (dos portes, cinco borrados con
   su motivo). Comprobación: la lista de tests solo pierde los borrados; goldens de las tareas 1 y 4 intactos.
-- [ ] **5b, wasm (R).** Cambian a celda `cells_glue.rs` (dos), `bindings/mod.rs`, los arneses
+  Hecho en `71344b5` (con 5b): render 413 tests, cuatro goldens intactos; los tests de octante se fijan en vez de borrarse.
+- [x] **5b, wasm (R).** Cambian a celda `cells_glue.rs` (dos), `bindings/mod.rs`, los arneses
   `lod_cells_stream_tests.rs` y `lod_cells_glue_sim_tests.rs` y `BENCH_MODE`. Se borran los dos tests de cambio de
   modo; el autotest del oráculo de octante ya tiene sustituto (tarea 3). Comprobación: simulaciones reales iguales
   a la línea base.
+  Hecho en `71344b5`: wasm 186 tests, lista de tests idéntica a la previa, simulaciones reales idénticas (`SIMS-IDENTICAL`).
+  Hallazgo: el pegamento de wasm no aplicaba su modo al primer driver, por eso 5a y 5b van en un solo commit.
 
 ### Task 6: Remove the mode from the API and the web host
 
