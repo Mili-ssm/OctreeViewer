@@ -32,6 +32,9 @@ struct Rig {
     /// `(node, octant)` pairs the cell-mode branch of the stepping oracle checked against a
     /// drawn depth: proves that branch ran.
     cell_checked: usize,
+    /// `(node, octant)` pairs with a wanted depth that the cell-mode branch did not check, by
+    /// reason: the size of what the oracle leaves unproven.
+    cell_skipped: HashMap<&'static str, usize>,
 }
 
 impl Rig {
@@ -58,6 +61,7 @@ impl Rig {
             frame: 0,
             waits: HashMap::new(),
             cell_checked: 0,
+            cell_skipped: HashMap::new(),
         }
     }
 
@@ -188,6 +192,11 @@ impl Rig {
                 let (lo, hi) = cell_depth_range(node_depth);
                 buildable = (buildable.0.max(lo), buildable.1.min(hi));
                 if stored.is_empty() {
+                    let pairs = entry.wanted.iter().flatten().count();
+                    *self
+                        .cell_skipped
+                        .entry("no stored depth in the span")
+                        .or_default() += pairs;
                     continue;
                 }
             }
@@ -215,6 +224,16 @@ impl Rig {
                 let w = served_depth(&stored, wanted);
                 let drawn = entry.drawn[o];
                 let step = spec_next(drawn, w, buildable, &resident);
+                if cell && (plan.apply != CutApply::Applied || exempt) {
+                    let reason = if plan.apply != CutApply::Applied {
+                        "retained frame"
+                    } else if self.pool.caps.contains_key(&entry.node) {
+                        "fit cap"
+                    } else {
+                        "hold"
+                    };
+                    *self.cell_skipped.entry(reason).or_default() += 1;
+                }
                 if plan.apply == CutApply::Applied && !exempt {
                     let waited = before.waits.get(&(entry.node, o)).map_or(0, |(_, f)| *f);
                     let timed_out = waited >= STEP_WAIT_FRAMES;
@@ -258,6 +277,16 @@ impl Rig {
             assert_eq!(plan.counters.step_hops, hops, "counted timeout hops");
         }
         self.waits = waits;
+    }
+
+    /// A cell-mode test that stepped this rig must have had the stepping oracle check something:
+    /// without it a rig whose pairs are all exempt (caps, holds, retained frames) proves nothing.
+    fn assert_stepping_was_checked(&self) {
+        assert!(
+            self.cell_checked > 0,
+            "the cell-mode stepping oracle checked nothing; skipped {:?}",
+            self.cell_skipped
+        );
     }
 
     /// Pages owned on the GPU equal the pages of the resident levels and of the partial uploads.
@@ -4358,6 +4387,7 @@ fn the_stepping_oracle_runs_in_cell_mode() {
         rig.cell_checked > before,
         "the cell branch of the oracle checked nothing"
     );
+    rig.assert_stepping_was_checked();
 }
 
 #[test]
@@ -4511,6 +4541,7 @@ fn an_active_range_depth_is_never_evicted_under_pressure_with(rule: ActiveRule) 
     assert!(range_only > 0, "no range-only active depth occurred");
     assert!(previously_active > 0, "no active level was ever evicted");
     rig.assert_gpu_matches_pool();
+    rig.assert_stepping_was_checked();
 }
 
 #[test]
@@ -4593,6 +4624,7 @@ fn cap_clamps_the_range_and_fit_reports_it_with_wide_ranges() {
             capped_range_only > 0,
             "{rule:?}: no capped node had a range-only active depth"
         );
+        rig.assert_stepping_was_checked();
     }
 }
 
@@ -4640,6 +4672,7 @@ fn every_active_depth_is_fully_uploaded_with_a_wide_range() {
             partial > 0,
             "{rule:?}: no level was ever observed partially uploaded"
         );
+        rig.assert_stepping_was_checked();
     }
 }
 

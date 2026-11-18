@@ -652,7 +652,8 @@ fn a_frame_after_a_target_error_recovers_when_the_target_drops_its_pool() {
 /// Max over 80 frames of the coarsening and overflow counters, and whether the driver still asks
 /// for frames at the end.
 fn pressure(capacity: u32) -> (u32, u32, bool, u32) {
-    // Eight nodes of 13 pages each (104), a coarsest level of 1 page.
+    // Eight nodes of 13 pages each at their finest stored level (104), a coarsest level of 1 page;
+    // in cell mode the zoom camera's cut takes 48 pages, which a pool of 64 holds without fitting.
     let mut fx = Fixture::new(octant_nodes(), config(capacity, 8, u64::MAX));
     let cam = camera("zoom");
     let cut = ids(&CHILDREN);
@@ -672,9 +673,14 @@ fn pressure(capacity: u32) -> (u32, u32, bool, u32) {
 
 #[test]
 fn a_cut_larger_than_the_pool_fits_coarser_levels_and_then_settles() {
-    let (coarsened, overflow, needs_frame, resident) = pressure(64);
-    // The fit chose coarser levels than the 104 pages the full cut would take.
-    assert!((1..=64).contains(&resident), "{resident}");
+    // 40 pages (35 usable) are fewer than the 48 the cut takes, so the fit has to coarsen: some
+    // node is coarsened, and the resident pages stay within what the pool lets it use.
+    let (coarsened, overflow, needs_frame, resident) = pressure(40);
+    assert!(coarsened >= 1, "the fit coarsened nothing");
+    assert!(
+        resident >= 1 && u64::from(resident) <= crate::cell_pool::usable_pages(40),
+        "{resident}"
+    );
     assert_eq!(overflow, 0, "coarsened {coarsened}");
     assert!(!needs_frame);
 }
