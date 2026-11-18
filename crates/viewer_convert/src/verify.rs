@@ -7,11 +7,10 @@ use std::{
     path::Path,
 };
 
+use viewer_convert_core::error::ConvertError;
 use viewer_format::{
     FormatError, FormatReader, FormatReaderLimits, FormatVersion, PagedStats, probe_format,
 };
-
-use crate::error::ConvertError;
 
 /// Verifying is an offline pass that holds every page, so it accepts far more nodes and blocks
 /// than the interactive reader's defaults (2 M each).

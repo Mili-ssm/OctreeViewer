@@ -23,12 +23,15 @@ use std::{
     time::Instant,
 };
 
+use viewer_convert_core::{
+    pipeline::executor::{BatchPlanner, RangeRunner},
+    spatial::{BranchOutput, OpenNodeEvent, SpatialBuilder},
+};
 use viewer_core::NodeId;
 
 use crate::ConvertError;
 use crate::pipeline::{
     clock::{Clock, SystemClock},
-    executor::{BatchPlanner, RangeRunner},
     node_job::{
         ChildOutput, JobContext, JobProgress, NodeJob, NodeJobOutput, NodePath, RangeJob,
         RangePartition, run_node_job, run_root_partition_range,
@@ -36,7 +39,6 @@ use crate::pipeline::{
     point_source::{PointRange, SourceFactory},
     spool_store::{PlanStore, SpoolId},
 };
-use crate::spatial::{BranchOutput, OpenNodeEvent, SpatialBuilder};
 
 /// Plans batches on one thread per root child with a ready queue of node jobs.
 pub(crate) struct ThreadedExecutor;

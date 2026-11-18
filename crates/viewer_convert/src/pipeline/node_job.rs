@@ -17,8 +17,7 @@ mod tests {
         point_source::LasPointSource,
         spool_store::{MemSpoolStore, SpoolAccounting},
     };
-    use crate::source::SourceInfo;
-    use crate::spatial::SpoolLayout;
+    use viewer_convert_core::{source::SourceInfo, spatial::SpoolLayout};
 
     const LIMIT: u64 = 16;
 

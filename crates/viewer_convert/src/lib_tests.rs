@@ -9,6 +9,7 @@ use std::{
 };
 
 use las::{Builder, Color, Point, Writer, point::Format};
+use viewer_convert_core::options::{DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS};
 use viewer_core::{AttributeValues, BlockId, DatasetSource, NodeId, SpatialBounds};
 use viewer_format::{FormatReader, OctreeReader};
 
@@ -16,7 +17,6 @@ use super::{
     CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions, convert_file,
     convert_file_with_checkpoint, convert_file_with_diagnostics, convert_file_with_progress,
 };
-use crate::options::{DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS};
 use crate::test_options::{v5_budget, v5_default, v5_new};
 
 #[test]
@@ -2484,8 +2484,8 @@ fn failing_plan(
     use crate::{
         las_source::{inspect_source, open_las_reader},
         pipeline::spool_store::MemSpoolStore,
-        spatial::SpoolLayout,
     };
+    use viewer_convert_core::spatial::SpoolLayout;
     let reader = open_las_reader(input).unwrap();
     let source = inspect_source(&reader).unwrap();
     let store = FailingStore {
@@ -2504,17 +2504,17 @@ fn failing_plan(
 fn plan_from_reader<S: crate::pipeline::spool_store::PlanStore>(
     reader: las::Reader,
     input: &std::path::Path,
-    source: &crate::source::SourceInfo,
+    source: &viewer_convert_core::source::SourceInfo,
     options: ConvertOptions,
     store: &S,
     on_progress: &mut dyn FnMut(super::ConversionProgress) -> bool,
     collect: bool,
-) -> Result<crate::spatial::SpatialPlan, ConvertError> {
+) -> Result<viewer_convert_core::spatial::SpatialPlan, ConvertError> {
     let factory = crate::pipeline::point_source::LasFactory::new(crate::las_source::FileBytes {
         path: input.to_owned(),
         len: std::fs::metadata(input).unwrap().len(),
     });
-    crate::spatial::build_spatial_plan_from_source(
+    viewer_convert_core::spatial::build_spatial_plan_from_source(
         &mut crate::pipeline::point_source::RangeSource::Las(
             crate::pipeline::point_source::LasPointSource::full(reader),
         ),
@@ -2696,11 +2696,12 @@ fn the_serial_executor_plans_like_the_ready_queue() {
         las_source::{inspect_source, open_las_reader},
         pipeline::{
             clock::SystemClock,
-            executor::SerialExecutor,
             point_source::{LasFactory, LasPointSource, MemBytes, RangeSource},
             spool_store::MemSpoolStore,
         },
-        spatial::build_spatial_plan_from_source,
+    };
+    use viewer_convert_core::{
+        pipeline::executor::SerialExecutor, spatial::build_spatial_plan_from_source,
     };
 
     let tmp = test_dir();
@@ -2738,7 +2739,7 @@ fn the_serial_executor_plans_like_the_ready_queue() {
             true,
         )
         .unwrap();
-        let shape = |plan: &crate::spatial::SpatialPlan| {
+        let shape = |plan: &viewer_convert_core::spatial::SpatialPlan| {
             plan.blocks
                 .iter()
                 .map(|block| (block.id, block.point_count(), block.is_source_points))
