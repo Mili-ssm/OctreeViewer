@@ -376,7 +376,9 @@ needs measurement in Chrome and Firefox with Albuera.
 The stats panel reports visible source points, deduplicated voxels/blocks, deepest visible LOD level, LOD coverage,
 pending block count, decoded CPU cache usage/budget, cumulative bytes written to instance buffers, and
 the synchronous CPU time spent inside the worker's `renderFrame()`. This does not measure GPU
-execution or display latency. File reads report unique
+execution or display latency. Its `render path` line names the active path; on the cells path the
+point, voxel, block, coverage and instance-byte lines are replaced by the applied cut, the resident
+pool pages, the bytes uploaded to the pool and the nodes still waiting for a level. File reads report unique
 bytes fetched in 256 KiB ranges. This is not a completion percentage: the reader seeks through
 metadata and selected blocks, so it may never read the full file. Cancel terminates the
 worker, replaces its transferred canvas, and starts a fresh viewer; select the file again to retry.
