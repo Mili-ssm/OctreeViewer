@@ -145,9 +145,16 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
   un `hi` que se ajusta con la cámara quieta no cuente como caída en puntos de aire. Deja de leer `wanted` y
   `stage` por octante. Comprobación: la mutación que deja de proteger los niveles aplicados da
   `unexcused_drops > 0`.
-- [ ] Regla de contigüidad del conjunto activo escrita y comprobada
-  ([#83](https://github.com/Mili-ssm/OctreeViewer/issues/83)): contiguo respecto de los niveles residentes, con la
-  excepción del nivel D5. Se activa `the_cell_oracle_reports_a_middle_depth_missing_from_a_run`.
+- [x] (da47822) Regla de contigüidad en el oráculo ([#83](https://github.com/Mili-ssm/OctreeViewer/issues/83)):
+  entre el nivel activo más grueso y el más fino de un nodo, todo nivel residente y usable dentro del tramo del nodo
+  está activo; el nivel D5 queda exento. Corre en cada frame de todas las simulaciones, que ahora aplican de verdad
+  su regla de activos y corren con las dos. `the_cell_oracle_reports_a_middle_depth_missing_from_a_run` activado.
+  **La regla destapó un defecto** ([#87](https://github.com/Mili-ssm/OctreeViewer/issues/87)): con `Window`, un
+  nodo que dibuja por debajo de su rango dejaba un hueco (`[10, 12]` con el 11 residente). Arreglado en `3839ab1`
+  (el extremo grueso del tramo baja hasta el nivel dibujado más grueso), con test unitario que falla antes;
+  simulaciones reales idénticas a la línea base en contadores y resúmenes. Quedan fijados en test, sin arreglar,
+  dos huecos más de `Window` que ninguna simulación dispara: activa un nivel al otro lado de uno no residente, y
+  deja huecos si lo dibujado cae más de un nivel bajo la ventana. `Contiguous` no tiene ninguno.
 
 ### Task 7a: Cap the per-octant wish at the data bound (R)
 
