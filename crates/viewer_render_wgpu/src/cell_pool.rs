@@ -1103,6 +1103,10 @@ impl CellPool {
                     let last = drawn.last().copied().unwrap_or(0);
                     (first.saturating_sub(1), last.saturating_add(1))
                 });
+            // The active set stays contiguous up to the finest drawn depth (ADR 0053): an octant
+            // that holds the eye draws beyond `hi`, and a gap makes the per-cell rule jump from
+            // the range to that depth, whose far cells measure a fraction of a pixel.
+            let hi = hi.max(wanted.last().copied().unwrap_or(hi));
             wanted.extend(lo.max(wlo)..=hi.min(whi));
             wanted.sort_unstable();
             wanted.dedup();
