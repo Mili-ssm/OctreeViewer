@@ -119,7 +119,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 
 1. W1: la etapa 4 está integrada en `main`, sin evidencia registrada del chequeo previo a la integración.
 2. Escala: R4 (pirámide densa y rejilla global) → R3 (cubos en GPU; [ADR 0028](adr/0028-r4-antes-que-r3.md), 01-11-2026) → R5 (jerarquía paginada y
-   remoto) → congelar V7 final ([plan de render](plans/render-y-carga-escala.md)).
+   remoto) → congelar V7 final ([plan de render](records/archive/render-y-carga-escala.md)).
 3. API pública y funciones RF-10 a RF-15.
 4. Conversor web: M6 (Majadas) con un worker; M4/M5 solo si M6 supera 60 min o la experiencia lo pide.
 
@@ -144,7 +144,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | Orden de V7 final | Incluye R4, R5 y la rejilla global. | ADR 0022 |
 | LZ4 | Codificador propio. | ADR 0025 |
 | Límite de atributos | El escritor rechaza más de 256. | ADR 0007 |
-| Plan de render | Cancelar R1-T2; R2b absorbida por R4; R1-T6 dentro de R5; R1-T1b pasa a modos de px. | [Plan de render](plans/render-y-carga-escala.md) |
+| Plan de render | Cancelar R1-T2; R2b absorbida por R4; R1-T6 dentro de R5; R1-T1b pasa a modos de px. | [Plan de render](records/archive/render-y-carga-escala.md) |
 | Pool web | Medir M6 con un worker antes de M4/M5. | [Spec](plans/conversor-web-paralelo.md) |
 | Potree | Paridad cualitativa; abierta a métricas. | OQ-02 |
 
@@ -153,7 +153,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | Pregunta | Resolución | Registro |
 | --- | --- | --- |
 | Orden de escala | R4 antes que R3. | ADR 0028 |
-| R4-Q1 a R4-Q4 | Coordenadas enteras globales de cuanto 2⁻¹⁵ con octree implícito en sus bits (ADR 0029); límite de hoja medido (16/32/64 k); espaciado ÷2 por nivel; PROJ fuera de `v7.4-pre`. | [Plan de R4](plans/render-r4-piramide-densa.md#resoluciones-del-propietario-01-11-2026) |
+| R4-Q1 a R4-Q4 | Coordenadas enteras globales de cuanto 2⁻¹⁵ con octree implícito en sus bits (ADR 0029); límite de hoja medido (16/32/64 k); espaciado ÷2 por nivel; PROJ fuera de `v7.4-pre`. | [Plan de R4](records/archive/render-r4-piramide-densa.md#resoluciones-del-propietario-01-11-2026) |
 
 ## Resoluciones del 05-11-2026
 

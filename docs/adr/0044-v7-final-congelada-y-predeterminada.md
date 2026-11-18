@@ -19,7 +19,7 @@ Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Sustituye al [AD
   queda para las `-pre`. Un cambio futuro de la política del escritor sigue el [ADR 0041](0041-orden-de-filas-libre-por-bloque.md):
   no cambia la versión del formato, porque el lector admite cualquier orden por bloque.
 - **Predeterminado:** `FormatVersion::DEFAULT_OUTPUT` pasa a `V7` en el CLI, el wasm y la app web, una vez medido
-  RQ-07 con V7 (condición del ADR 0022; [plan](../plans/d3c-congelado-v7-final.md), Tarea 3). Las
+  RQ-07 con V7 (condición del ADR 0022; [plan](../records/archive/d3c-congelado-v7-final.md), Tarea 3). Las
   conversiones con checkpoint y la entrada EPT fallan con V7 y su error indica `--format-version v5`.
 - **Sin cambio:** V5, V6 y las identidades `v6.N-pre` y `v7.N-pre` se siguen leyendo y escribiendo hasta la
   retirada ([ADR 0004](0004-retirar-v5-v6-tras-v7.md)). El codificador LZ4 propio va después del congelado.

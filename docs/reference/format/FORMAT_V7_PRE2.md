@@ -30,5 +30,5 @@ revisions and keeps the chosen version in its manifest.
 ## Status
 
 This is a performance experiment, not a promoted default. Majadas and Albuera profiles, logical
-checksums, determinism, and recovery checks are recorded in the [V7 plan](../../plans/format-v7-plan.md).
+checksums, determinism, and recovery checks are recorded in the [V7 plan](../../records/archive/format-v7-plan.md).
 Conversion time is still being optimized before any promotion decision.

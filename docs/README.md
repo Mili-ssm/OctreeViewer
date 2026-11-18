@@ -21,31 +21,20 @@ Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [est
 
 ## Planes y specs
 
-Cada plan lleva en la línea 3 `Estado: activo | pendiente | en pausa | cerrado · dd-mm-aaaa`
-(`grep -n '^Estado:' docs/plans/*.md` da el estado de todos). Los cerrados no se reescriben: el
-trabajo nuevo va en un plan nuevo.
+Cada plan lleva en la línea 3 `Estado: activo | en curso | aprobado | pendiente | en pausa | completado | cerrado · dd-mm-aaaa`
+(`grep -n '^Estado:' docs/plans/*.md` da el estado de todos). Un plan cerrado (`cerrado` o `completado`; uno «completado salvo…» sigue aquí hasta cerrar lo que le falta)
+pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos en el mismo cambio
+(decisión del propietario, 18-11-2026); no se reescribe: el trabajo nuevo va en un plan nuevo.
 
 | Documento | Contenido | Estado |
 | --- | --- | --- |
-| [Plan V7](plans/format-v7-plan.md) | Contrato, recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | activo |
-| [Render y carga a escala](plans/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | activo |
 | [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho y fusionado en `main`, sigue D4) |
-| [D3c: congelado de V7 final](plans/d3c-congelado-v7-final.md) | Identidad final V7 sobre v7.5-pre con el escritor híbrido, salida predeterminada y regeneración de datasets y referencias (ADR 0044). | completado |
-| [Publicación del repositorio](plans/publicacion-del-repositorio.md) | Repositorio público: portada, documentación, demo experimental en GitHub Pages y ajustes de GitHub (ADR 0045). | completado |
-| [Muestra de la demo en V7](plans/muestra-de-la-demo-en-v7.md) | La muestra integrada pasa a V7 y a 589.824 puntos; V5 queda como heredado hasta V8 (ADR 0047). | completado |
 | [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050, 0052 y 0053); fase 1 y 2a fusionadas; 2b en pausa. | en curso |
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
-| [Fase 2a: LOD por celda en la GPU](plans/fase-2a-lod-por-celda-en-gpu.md) | Plan detallado de la fase 2a (#44): gemelo Rust de la decisión por celda, medida de la métrica, corte en modo celda, decisión en el paso de ranuras y opción `cellLod`. | completado |
 | [Fase 2b: rango de niveles y transiciones](plans/fase-2b-rango-de-niveles-y-transiciones.md) | Plan de la fase 2b (#44): rango de niveles por nodo (de la celda más lejana a la más cercana), un nivel por frame (ADR 0053) y residencia D4. | en pausa |
 | [Replanteamiento del LOD por celda](plans/replanteamiento-lod-por-celda-18-11-2026.md) | Estado de la fase 2b, requisitos replanteados según su intención, experimentos en ramas `explore/` y preguntas para el propietario (ADR 0055, aceptado el 18-11-2026). | aprobado |
-| [Limpieza y refactor](plans/limpieza-y-refactor-18-11-2026.md) | Limpieza de disco y git, puesta al día de documentos vivos y división mecánica de los módulos más grandes, sin cambios de comportamiento; decisiones pendientes del propietario. | completado |
 | [Cómo retomar (18-11-2026)](plans/retomar-18-11-2026.md) | Ramas locales y su estado, cómo comprobarlas, las respuestas del propietario a Q1–Q5 y D1–D6 y el siguiente trabajo en orden. | en curso |
-| [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | completado |
-| [R3: anchura de región, layout, máscaras y flags](plans/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | completado |
-| [R4: pirámide densa y rejilla global](plans/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | completado |
-| [R5: jerarquía paginada](plans/render-r5-jerarquia-paginada.md) | Revisión `v7.5-pre`: páginas por niveles desde anclas, k por página, lector perezoso local y HTTP Range; flags LAS y Extra Bytes. | completado |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
-| [Etapa 1](plans/conversor-web-paralelo-etapa1.md), [2](plans/conversor-web-paralelo-etapa2.md), [3](plans/conversor-web-paralelo-etapa3.md), [4](plans/conversor-web-paralelo-etapa4.md) del conversor web | S0/M0/S1; trabajos por nodo, S8, S9 y M1; S2, S10, M2 y M3a; M3b con zonas OPFS y retirada del conversor antiguo. | cerrado |
 
 ## Explicación
 
@@ -174,8 +163,20 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Evaluación 24-10-2026](records/archive/CODE_ASSESSMENT_2026-10-24.md) | Contraste de documentación, checks y próximos pasos. | histórico |
 | [Evaluación de render 30-10-2026](records/archive/RENDER_ASSESSMENT_2026-10-30.md) | Carga y render a escala (cientos de GB, 1–8 px): mapa, hallazgos B1–B7, investigación externa y mejoras Q1–Q8. | histórico |
 | [Evaluación 28-10-2026](records/archive/CODE_ASSESSMENT_2026-10-28.md) | Revisión por áreas, plan de 15 tareas, decisiones, verificación y pendientes. | histórico |
-| [Dependencias del renderer](records/archive/RENDERER_DEPENDENCIES.md) | Migración a wgpu 30/glam 0.34 (14-10-2026), checks y validación parcial de navegador; decisión en el ADR 0010. | histórico |
 | [Historial técnico](records/archive/DEVELOPMENT_HISTORY.md) | Snapshot anterior a v5. | histórico |
+| [Plan V7](records/archive/format-v7-plan.md) | Contrato, recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | histórico |
+| [Render y carga a escala](records/archive/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | histórico |
+| [D3c: congelado de V7 final](records/archive/d3c-congelado-v7-final.md) | Identidad final V7 sobre v7.5-pre con el escritor híbrido, salida predeterminada y regeneración de datasets y referencias (ADR 0044). | histórico |
+| [Publicación del repositorio](records/archive/publicacion-del-repositorio.md) | Repositorio público: portada, documentación, demo experimental en GitHub Pages y ajustes de GitHub (ADR 0045). | histórico |
+| [Muestra de la demo en V7](records/archive/muestra-de-la-demo-en-v7.md) | La muestra integrada pasa a V7 y a 589.824 puntos; V5 queda como heredado hasta V8 (ADR 0047). | histórico |
+| [Fase 2a: LOD por celda en la GPU](records/archive/fase-2a-lod-por-celda-en-gpu.md) | Plan detallado de la fase 2a (#44): gemelo Rust de la decisión por celda, medida de la métrica, corte en modo celda, decisión en el paso de ranuras y opción `cellLod`. | histórico |
+| [Limpieza y refactor](records/archive/limpieza-y-refactor-18-11-2026.md) | Limpieza de disco y git, puesta al día de documentos vivos y división mecánica de los módulos más grandes, sin cambios de comportamiento; decisiones pendientes del propietario. | histórico |
+| [R3: cubos por nodo en GPU](records/archive/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | histórico |
+| [R3: anchura de región, layout, máscaras y flags](records/archive/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | histórico |
+| [R4: pirámide densa y rejilla global](records/archive/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | histórico |
+| [R5: jerarquía paginada](records/archive/render-r5-jerarquia-paginada.md) | Revisión `v7.5-pre`: páginas por niveles desde anclas, k por página, lector perezoso local y HTTP Range; flags LAS y Extra Bytes. | histórico |
+| [Etapa 1](records/archive/conversor-web-paralelo-etapa1.md), [2](records/archive/conversor-web-paralelo-etapa2.md), [3](records/archive/conversor-web-paralelo-etapa3.md), [4](records/archive/conversor-web-paralelo-etapa4.md) del conversor web | S0/M0/S1; trabajos por nodo, S8, S9 y M1; S2, S10, M2 y M3a; M3b con zonas OPFS y retirada del conversor antiguo. | histórico |
+| [Dependencias del renderer](records/archive/RENDERER_DEPENDENCIES.md) | Migración a wgpu 30/glam 0.34 (14-10-2026), checks y validación parcial de navegador; decisión en el ADR 0010. | histórico |
 
 ## Decisiones
 
@@ -191,10 +192,10 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | --- | --- | --- |
 | Requisito, restricción, supuesto o pregunta abierta para el propietario | [requirements.md](requirements.md) | IDs estables (`RF-`, `RQ-`, `CON-`, `ASM-`, `OQ-`); no se renumeran |
 | Decisión de diseño duradera | [adr/](adr/README.md) | `Estado:` en la línea 3; una aceptada se sustituye o enmienda con un ADR nuevo |
-| Spec o plan de implementación | [plans/](plans/) | `Estado:` en la línea 3; enlazarlo en este índice |
+| Spec o plan de implementación | [plans/](plans/) | `Estado:` en la línea 3; enlazarlo en este índice; al cerrarlo pasa a `records/archive/` |
 | Contrato vigente (formato, API, límites) | [reference/](reference/) | Se actualiza en el mismo cambio que el código |
 | Por qué funciona algo así, sin pasos | [explanation/](explanation/) | Vivo; los resultados fechados van a registros |
 | Medida, spike, evaluación o diagnóstico | [records/benchmarks/](records/benchmarks/) | `NOMBRE_dd-mm-aaaa.md`, inmutable; perfil, equipo y revisión dentro |
-| Documento retirado o sustituido | [records/archive/](records/archive/) | Inmutable salvo enlaces rotos |
+| Documento retirado o sustituido, o plan cerrado | [records/archive/](records/archive/) | Inmutable salvo enlaces rotos |
 | Estado y prioridades activas | [Estado](estado.md#prioridades-pendientes) | Resumen con enlaces a issues |
 | Tarea pendiente, fallo, hallazgo aparcado o decisión que espera al propietario | [Issue de GitHub](https://github.com/Mili-ssm/OctreeViewer/issues) | Plantillas y etiquetas en [CONTRIBUTING](../CONTRIBUTING.md#issues-y-prs); el `.md` enlaza la issue |

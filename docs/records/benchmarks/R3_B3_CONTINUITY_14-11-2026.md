@@ -6,7 +6,7 @@ nube (factor 1 por defecto). Activarla o desactivarla no reconstruye celdas, y e
 referencia no cambia al injertar páginas. En Belvedere y Majadas el mínimo apenas actúa: solo cambia la
 imagen de Majadas dentro de una hoja, y a simple vista no se distingue del modo literal.
 
-| Criterio de la Tarea 13 ([plan](../../plans/render-r3-cubos-en-gpu.md#tarea-13--continuidad-entre-nubes-rf-05-con-paginación)) | Resultado |
+| Criterio de la Tarea 13 ([plan](../archive/render-r3-cubos-en-gpu.md#tarea-13--continuidad-entre-nubes-rf-05-con-paginación)) | Resultado |
 | --- | --- |
 | Usar el espaciado de referencia de T0b | **Pasa:** mínimo = factor × `reference_spacing` de la nube (metadatos v7.5) |
 | Un mismo espaciado por nube no cambia al injertar páginas | **Pasa:** el test con los dos workers compara el espaciado antes y después de injertar páginas |

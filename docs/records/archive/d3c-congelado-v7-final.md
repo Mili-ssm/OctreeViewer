@@ -1,6 +1,6 @@
 # D3c: congelado de V7 final — plan de implementación
 
-Estado: completado · 15-11-2026 · tarea D3c del [plan de mejoras](mejoras-pendientes-13-11-2026.md#fase-d-fuente-remota-y-v7-final); enmendado por su pre-mortem el mismo día
+Estado: completado · 15-11-2026 · tarea D3c del [plan de mejoras](../../plans/mejoras-pendientes-13-11-2026.md#fase-d-fuente-remota-y-v7-final); enmendado por su pre-mortem el mismo día
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -10,13 +10,13 @@ salida predeterminada del CLI, el wasm y la app web, con datasets y referencias 
 **Architecture:** V7 es un `StorageLayout` nuevo con las capacidades de `V7Pre5` y magics propios; la E/S paginada
 deja de fijar `V7Pre5` y toma la disposición del pie. `ConvertOptions` guarda lo que el usuario pidió y resuelve
 contra el formato los valores que este fija (hoja, rejilla, divisiones, orden de filas), sin depender del orden de
-los setters. El valor por defecto cambia en un solo punto (`DEFAULT_OUTPUT`, [ADR 0006](../adr/0006-politica-de-version-solo-en-viewer-format.md))
+los setters. El valor por defecto cambia en un solo punto (`DEFAULT_OUTPUT`, [ADR 0006](../../adr/0006-politica-de-version-solo-en-viewer-format.md))
 y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 
 **Tech Stack:** Rust nightly (workspace), wasm32, JS del host web, Python de los scripts de checks.
 
-**Spec:** [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md) (decisión), [ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md)
-(escritor), [ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md) (RQ-07), [especificación v7.5-pre](../reference/format/FORMAT_V7_PRE5.md).
+**Spec:** [ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md) (decisión), [ADR 0042](../../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md)
+(escritor), [ADR 0043](../../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md) (RQ-07), [especificación v7.5-pre](../../reference/format/FORMAT_V7_PRE5.md).
 
 ## Global Constraints
 
@@ -92,7 +92,7 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 - Create: `docs/records/benchmarks/D3C_RQ07_V7_<fecha>.md` (+ JSON en `docs/records/benchmarks/data/`)
 
 - [x] **Step 1:** compilar `viewer_convert` con perfil `perf`; Belvedere con `--format-version v7` frente a `v5`, ≥ 5 rondas intercaladas con la máquina libre, salidas en `target/` (borrarlas antes de cada conversión); tiempo total y RSS pico en KiB con `/usr/bin/time`; medianas sin redondear; tamaño del par frente a V5.
-- [x] **Step 2:** pasa si tiempo ≤ 2,1× y RSS ≤ +40 % ([ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)); si no, criterio de parada.
+- [x] **Step 2:** pasa si tiempo ≤ 2,1× y RSS ≤ +40 % ([ADR 0043](../../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)); si no, criterio de parada.
 - [x] **Step 3:** registro con entorno, comandos, medianas y rangos; commit `docs(records): measure RQ-07 with the final V7`.
 
 ### Task 4: Tests que prueban V5, EPT o checkpoints fijan `v5` (sin cambio de comportamiento)
@@ -144,13 +144,13 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 
 - [x] **Step 1:** convertir Belvedere y Majadas por defecto; pie `OCTVEND7`; la app llega al objetivo (`probe-orbit-load.mjs --rest-first`, servidor `python3 -m http.server 8767 --bind 127.0.0.1` en la raíz del worktree).
 - [x] **Step 2:** `R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --offline cells` pasa con las rutas nuevas.
-- [x] **Step 3:** SHA con el CLI por defecto sobre las entradas de [R1](../records/benchmarks/R1_REFERENCE_SHA_2026-10-29.md#comandos) y SHA del corpus de fuzz; registro con entorno, comandos y resultados.
+- [x] **Step 3:** SHA con el CLI por defecto sobre las entradas de [R1](../benchmarks/R1_REFERENCE_SHA_2026-10-29.md#comandos) y SHA del corpus de fuzz; registro con entorno, comandos y resultados.
 - [x] **Step 4:** `scripts/check.sh --offline` verde; commit `test(data): regenerate V7 datasets, references and fuzz seeds`.
 
 ### Task 8: Documentación del congelado
 
 **Files:**
-- Modify: `README.md` (formato predeterminado, «Prioridades pendientes»), `CONTRIBUTING.md:68-70`, `docs/reference/inventory.md`, `docs/plans/format-v7-plan.md:440-447` (inventario de promoción: qué queda para la retirada), `docs/plans/mejoras-pendientes-13-11-2026.md` (D3c hecho), este plan (estado)
+- Modify: `README.md` (formato predeterminado, «Prioridades pendientes»), `CONTRIBUTING.md:68-70`, `docs/reference/inventory.md`, `docs/records/archive/format-v7-plan.md:440-447` (inventario de promoción: qué queda para la retirada), `docs/plans/mejoras-pendientes-13-11-2026.md` (D3c hecho), este plan (estado)
 
 - [x] **Step 1:** buscar afirmaciones que el cambio vuelve falsas: `grep -rn 'V5 sigue\|predetermin\|DEFAULT_OUTPUT\|v7.5-pre' README.md CONTRIBUTING.md docs --include='*.md' | grep -v docs/records/`; corregir cada una o enlazarla al ADR 0044.
 - [x] **Step 2:** `python3 scripts/check_docs_links.py && python3 scripts/check_docs_index.py` verdes.
@@ -158,7 +158,7 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 
 ## Resultado
 
-Commits `4523c09..HEAD` en `feat/r3-v75`; decisión en el [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md). Registros: [RQ-07 con V7](../records/benchmarks/D3C_RQ07_V7_15-11-2026.md) (x2,015 en tiempo, +35,8 % de RSS: pasa el ADR 0043), [Belvedere web](../records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md) (x1,869) y [referencias](../records/benchmarks/D3C_V7_REFERENCES_15-11-2026.md).
+Commits `4523c09..HEAD` en `feat/r3-v75`; decisión en el [ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md). Registros: [RQ-07 con V7](../benchmarks/D3C_RQ07_V7_15-11-2026.md) (x2,015 en tiempo, +35,8 % de RSS: pasa el ADR 0043), [Belvedere web](../benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md) (x1,869) y [referencias](../benchmarks/D3C_V7_REFERENCES_15-11-2026.md).
 - Desviación 1: los casos R1 no predeterminados no se pueden reproducir con V7, porque fija hoja, rejilla y divisiones.
 - Desviación 2: se corrigió un desbordamiento de `consume_rank` con profundidades globales > 33 (panic en debug; en release solo envolvía una pista), `71660fc`.
 - Desviación 3: RQ-07 (Task 3) se midió con carga a 1 min de 2,9 al empezar (máquina no ociosa); los rangos de V5 y V7 no se solapan y el margen es del 4 %.

@@ -4,7 +4,7 @@ Estado: Aceptada · Fecha: 01-11-2026 · Decide: propietario · Precisa [ADR 002
 
 ## Contexto
 - ADR 0021 ancla la rejilla en el CRS para que las celdas de dos nubes coincidan, pero deja pendientes el ancla, la unidad y los ejes.
-- El pre-mortem del [plan de R4](../plans/render-r4-piramide-densa.md) mostró dos fallos de una rejilla anclada solo en la cuantización: los nodos seguían saliendo de la caja de cada nube (`cube_bounds`, `viewer_convert_core/src/spatial.rs:1953`), y una caja que cruza una potencia de 2 grande obligaba a agrandar la raíz.
+- El pre-mortem del [plan de R4](../records/archive/render-r4-piramide-densa.md) mostró dos fallos de una rejilla anclada solo en la cuantización: los nodos seguían saliendo de la caja de cada nube (`cube_bounds`, `viewer_convert_core/src/spatial.rs:1953`), y una caja que cruza una potencia de 2 grande obligaba a agrandar la raíz.
 
 ## Decisión
 - Cada punto se convierte a un entero global por eje: `q = round(c × 2^15)`, con `c` en unidades del CRS (cuanto 2⁻¹⁵, ~0,03 mm si la unidad es el metro). Es una multiplicación exacta por una potencia de 2; el entero es `i64`.

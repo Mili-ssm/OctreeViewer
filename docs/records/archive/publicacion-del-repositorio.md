@@ -7,7 +7,7 @@ documentación, la portada y la demo en orden, y un flujo de desarrollo sin fric
 mantenedor. El desarrollo de producto sigue después, en otra petición.
 
 **Decisiones del propietario (15-11-2026):** fusionar las PR #1 y #29 en `main`; demo a criterio del
-agente (se publica como demo experimental, [ADR 0045](../adr/0045-demo-experimental-publica-antes-de-la-1-0.md));
+agente (se publica como demo experimental, [ADR 0045](../../adr/0045-demo-experimental-publica-antes-de-la-1-0.md));
 el email del historial se mantiene; protección ligera de `main`; las imágenes de SensOFOREST salen del
 árbol actual sin reescribir el historial; el README principal pasa al inglés.
 
@@ -30,5 +30,5 @@ es un registro interno; demo: abre la muestra, pero una conversión V7 pequeña 
   antiguas y las ramas ya fusionadas. Comprobación: `gh api repos/Mili-ssm/OctreeViewer`.
 - [x] Hacer público el repositorio y comprobarlo sin sesión. Comprobación: la portada y la demo cargan sin login.
 Fuera del plan: [#35](https://github.com/Mili-ssm/OctreeViewer/issues/35) (una nube con puntos muy juntos se ve como un punto) sigue abierta; causa raíz establecida; el propietario decidió que el
-  render derive el nivel pedido ([ADR 0046](../adr/0046-la-poda-de-niveles-no-limita-el-render.md)). Su implementación
+  render derive el nivel pedido ([ADR 0046](../../adr/0046-la-poda-de-niveles-no-limita-el-render.md)). Su implementación
   pasa al desarrollo, en la issue.

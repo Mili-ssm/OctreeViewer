@@ -5,33 +5,33 @@ Estado: cerrado · 30-10-2026
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Progreso (29-10-2026):** Tareas 1–3 hechas ([modelo por nodos](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md), [cuota OPFS](../records/benchmarks/OPFS_QUOTA_2026-10-29.md)); S0 con bloques reales de Belvedere corre en `check.sh`. La Tarea 1 activó el criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (un fichero OPFS por spool) tras el spike S9 (Tarea 5). La Tarea 5 está hecha; en la web, S9 llevó al híbrido RAM/OPFS ([decisión 2](#tarea-5-spike-s9--ficheros-opfs-por-spool)). Tarea 4 (M1): pasos 1–4 y 6 hechos; R7 pasa con la cola de listos, que es el planificador por defecto, también en la sesión final sobre el candidato a merge (paso 5, [registro](../records/benchmarks/M1_R7_2026-10-29.md#sesión-final-sobre-el-candidato-a-merge)).
+**Progreso (29-10-2026):** Tareas 1–3 hechas ([modelo por nodos](../benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md), [cuota OPFS](../benchmarks/OPFS_QUOTA_2026-10-29.md)); S0 con bloques reales de Belvedere corre en `check.sh`. La Tarea 1 activó el criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (un fichero OPFS por spool) tras el spike S9 (Tarea 5). La Tarea 5 está hecha; en la web, S9 llevó al híbrido RAM/OPFS ([decisión 2](#tarea-5-spike-s9--ficheros-opfs-por-spool)). Tarea 4 (M1): pasos 1–4 y 6 hechos; R7 pasa con la cola de listos, que es el planificador por defecto, también en la sesión final sobre el candidato a merge (paso 5, [registro](../benchmarks/M1_R7_2026-10-29.md#sesión-final-sobre-el-candidato-a-merge)).
 
 **Objetivo:** cerrar las tres incógnitas que dejó la etapa 1 (pico de los trabajos por nodo, S0
 con bloques reales, cuota real) y llegar a M1: el pipeline nativo expresado con traits y trabajos
 por nodo dentro de `viewer_convert`, con los mismos bytes y sin regresión.
 
-**Arquitectura:** la [spec](conversor-web-paralelo.md) es la autoridad. Decisiones del propietario
+**Arquitectura:** la [spec](../../plans/conversor-web-paralelo.md) es la autoridad. Decisiones del propietario
 del 29-10-2026 que este plan aplica: **trabajos por nodo** (cada trabajo lee la entrada de un nodo y
 escribe un spool por hijo; el host libera cada spool cuando termina el trabajo que lo consume, y LOD y hojas se
 retienen hasta la fase de bloques: variante c; en nativo, un fichero por spool; en la web, híbrido: segmentos en RAM
 volcados a su propio fichero OPFS al superar un presupuesto, decisión 2 tras S9), **Chrome `file://` solo con spools en RAM** (R8) y **medir la cuota real** antes de M6
 (S8). Etapa anterior: [etapa 1](conversor-web-paralelo-etapa1.md); evidencia:
-[referencia M0](../records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) y
-[spike S1](../records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md).
+[referencia M0](../benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) y
+[spike S1](../benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md).
 
 **Tecnología:** Rust nightly fijado, `viewer_convert` (planificador en `src/spatial.rs`),
 `tools/format_parity` (digest nativo/wasm32 bajo node), OPFS `FileSystemSyncAccessHandle`,
 Playwright para los navegadores.
 
-**Spec:** [conversor-web-paralelo.md](conversor-web-paralelo.md).
+**Spec:** [conversor-web-paralelo.md](../../plans/conversor-web-paralelo.md).
 
 ## Restricciones globales
 
 - `scripts/check.sh` en verde (todos los pasos) al cerrar cada tarea.
 - No cambiar la fecha del nightly ni añadir `#![feature]`.
 - `FormatVersion::V<n>` solo en `crates/viewer_format`.
-- R1: los SHA de salida del CLI no cambian; referencia: [M0](../records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) (LAS pequeño `413858a9…`, Belvedere `6ca0f86d…`, Belvedere divisiones 8 `fb90a490…`, Majadas `74226286…`).
+- R1: los SHA de salida del CLI no cambian; referencia: [M0](../benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) (LAS pequeño `413858a9…`, Belvedere `6ca0f86d…`, Belvedere divisiones 8 `fb90a490…`, Majadas `74226286…`).
 - R7: mediana pareada de `real_dataset_bench convert` en Belvedere (4 workers, perfil `perf`), ≥ 5 rondas A/B alternadas, dentro de ±3% de la rama base medida en la misma sesión.
 - Registros nuevos fechados con el día de ejecución (`dd-mm-aaaa` en el texto, `<aaaa-mm-dd>` ISO en el nombre), en español; no editar registros ya mergeados; no trasladar cifras entre revisiones, perfiles ni equipos.
 - Commits convencionales en inglés sin líneas de atribución; sin push.
@@ -107,7 +107,7 @@ Decisión del propietario (29-10-2026): la Tarea 4 sigue con la variante c; este
 - [x] **Criterio de parada:** si algún navegador falla por debajo de 700 ficheros vivos o de 8 × 81 handles abiertos, o el rendimiento cae más de 2 × frente a la arena única, volver al propietario antes del paso 3 de la Tarea 4.
 - [x] **Paso 4: commit** — `docs(bench): record OPFS per-spool file spike`.
 
-**Progreso (29-10-2026):** hecha ([registro](../records/benchmarks/OPFS_SPOOL_FILES_2026-10-29.md)). Un fichero por spool funciona en Chrome y Firefox sin errores, pero con un coste fijo por fichero que incumple el criterio de 2 × (cifras en el registro). **Decisión del propietario 2:** los spools web siguen el híbrido de la spec (segmentos en RAM que se vuelcan a su propio fichero al superar un presupuesto); el `SpoolStore` nativo no cambia, así que el paso 3 de la Tarea 4 sigue. Un spike S10 mide el pico de RAM del híbrido antes de M3b.
+**Progreso (29-10-2026):** hecha ([registro](../benchmarks/OPFS_SPOOL_FILES_2026-10-29.md)). Un fichero por spool funciona en Chrome y Firefox sin errores, pero con un coste fijo por fichero que incumple el criterio de 2 × (cifras en el registro). **Decisión del propietario 2:** los spools web siguen el híbrido de la spec (segmentos en RAM que se vuelcan a su propio fichero al superar un presupuesto); el `SpoolStore` nativo no cambia, así que el paso 3 de la Tarea 4 sigue. Un spike S10 mide el pico de RAM del híbrido antes de M3b.
 
 ---
 
@@ -297,7 +297,7 @@ R19 cerrada: S9 no encontró límite de ficheros vivos, así que no hace falta e
 - [x] **Paso 2: `Clock` y `PointSource`** sin cambio de bytes; tests existentes y SHA M0.
 - [x] **Paso 3: `SpoolStore` nativo** con un fichero por spool (desbloqueado: decisión 2 tras S9); SHA M0.
 - [x] **Paso 4: planificador por trabajos de nodo** (sustituye el paralelismo solo en hijos raíz); tests de independencia de la etapa 1 (`lib_tests.rs`) y los casos del Review Focus 1, 2 y 5. Antes de 4b, escribir tests de caracterización sobre la ruta actual: serie; W = 2 con comprobaciones locales de rama; y un presupuesto de lote que falla, con `requested` fijado.
-- [x] **Paso 5: R7** — ≥ 5 rondas A/B alternadas frente a la rama base en la misma sesión; registro fechado. Criterio de parada (spec): regresión > 3% tras dos intentos → revertir la extracción. Puerta pasada con la cola de listos y valor por defecto conmutado ([registro](../records/benchmarks/M1_R7_2026-10-29.md)); sesión final sobre el candidato a merge (29-10-2026): pasa en el caso por defecto y en divisiones 8 ([cifras](../records/benchmarks/M1_R7_2026-10-29.md#sesión-final-sobre-el-candidato-a-merge)).
+- [x] **Paso 5: R7** — ≥ 5 rondas A/B alternadas frente a la rama base en la misma sesión; registro fechado. Criterio de parada (spec): regresión > 3% tras dos intentos → revertir la extracción. Puerta pasada con la cola de listos y valor por defecto conmutado ([registro](../benchmarks/M1_R7_2026-10-29.md)); sesión final sobre el candidato a merge (29-10-2026): pasa en el caso por defecto y en divisiones 8 ([cifras](../benchmarks/M1_R7_2026-10-29.md#sesión-final-sobre-el-candidato-a-merge)).
 - [x] **Paso 6: commits** por paso, convencionales.
 
 ---

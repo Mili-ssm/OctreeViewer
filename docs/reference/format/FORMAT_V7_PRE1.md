@@ -2,7 +2,7 @@
 
 Development identity: major **7**, revision **1**, explicitly selected as `v7.1-pre`.
 Unimplemented revisions are rejected. This is a working migration
-baseline, not the final V7 storage design. The final [v7](FORMAT_V7.md) is the default output ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md)); V5/V6 are scheduled for retirement ([plan](../../plans/format-v7-plan.md)).
+baseline, not the final V7 storage design. The final [v7](FORMAT_V7.md) is the default output ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md)); V5/V6 are scheduled for retirement ([plan](../../records/archive/format-v7-plan.md)).
 
 ## Binary contract
 
@@ -64,4 +64,4 @@ cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct \
 
 V7 changes that alter physical interpretation will require another exact development revision;
 the final identity must not be enabled by accepting every major-7 header. See the
-[plan](../../plans/format-v7-plan.md) for async integration, format candidates and retirement gates.
+[plan](../../records/archive/format-v7-plan.md) for async integration, format candidates and retirement gates.

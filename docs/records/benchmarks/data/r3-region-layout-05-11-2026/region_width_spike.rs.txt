@@ -1,6 +1,6 @@
 //! Throwaway R3 spike: for every stored level of a real v7.5 dataset, models the GPU page layout
 //! per region width `W` (bits per axis) and flag placement, and prints machine-readable TSV.
-//! Not part of `scripts/check.sh`. See `docs/plans/r3-anchura-de-region.md`, task 1.
+//! Not part of `scripts/check.sh`. See `docs/records/archive/r3-anchura-de-region.md`, task 1.
 //!
 //! Usage: region_width_spike INPUT.oct [MAX_NODES=0]   (0 = all nodes)
 use std::{

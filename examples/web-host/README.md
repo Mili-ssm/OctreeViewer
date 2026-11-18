@@ -336,7 +336,7 @@ converter.dispose();
 
 The host decides whether to download or open `result.file`. Extra Bytes and CRS are omitted.
 `timings.totalMs` is a browser wall-clock measurement. Large-file behaviour and quotas per browser are
-recorded in the [stage 4 plan](../../docs/plans/conversor-web-paralelo-etapa4.md).
+recorded in the [stage 4 plan](../../docs/records/archive/conversor-web-paralelo-etapa4.md).
 
 Use the keyboard-accessible **Open built-in sample** button to load the included `v7` file, or focus
 the labeled file picker to choose another local dataset. The sample is a synthetic wave surface

@@ -4,7 +4,7 @@ Fecha: 01-11-2026. Rama: `feat/render-r3-node-cells`. Estado: **criterios de par
 
 ## Método
 
-`cargo run --release -p viewer_render_wgpu --example node_cells_bench -- target/render-data/<dataset>.oct` recorre todos los nodos con `PointNodeCellSource` (Tarea 1 del [plan de R3](../../plans/render-r3-cubos-en-gpu.md)). Los bytes de la cadena se calculan con instancias de 16 B y los de los puntos con `size_of::<Point>()` × puntos. Se usan los mismos datasets que en el [registro T7](RENDER_R1_T7_01-11-2026.md) (SHA-256 en su `environment.txt`). Salida completa: [Majadas](data/render-r3-t1-node-cells-majadas-01-11-2026.txt), [Belvedere](data/render-r3-t1-node-cells-belvedere-01-11-2026.txt).
+`cargo run --release -p viewer_render_wgpu --example node_cells_bench -- target/render-data/<dataset>.oct` recorre todos los nodos con `PointNodeCellSource` (Tarea 1 del [plan de R3](../archive/render-r3-cubos-en-gpu.md)). Los bytes de la cadena se calculan con instancias de 16 B y los de los puntos con `size_of::<Point>()` × puntos. Se usan los mismos datasets que en el [registro T7](RENDER_R1_T7_01-11-2026.md) (SHA-256 en su `environment.txt`). Salida completa: [Majadas](data/render-r3-t1-node-cells-majadas-01-11-2026.txt), [Belvedere](data/render-r3-t1-node-cells-belvedere-01-11-2026.txt).
 
 ## Resultados
 

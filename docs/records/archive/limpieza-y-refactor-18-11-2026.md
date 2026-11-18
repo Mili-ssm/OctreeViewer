@@ -8,14 +8,14 @@ de código es un movimiento mecánico comprobado con los tests de antes y de des
 
 **Rama.** `refactor/limpieza` parte de `explore/2b-contiguous-active` (fase 2b más el arreglo del conjunto
 activo) e integra `origin/main` (lints de Clippy, PR #58). No parte del experimento E-B1
-([replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md#experimentos)), para que rechazarlo no obligue a
+([replanteamiento](../../plans/replanteamiento-lod-por-celda-18-11-2026.md#experimentos)), para que rechazarlo no obligue a
 deshacer la limpieza. Nada se publica ni se fusiona sin el visto bueno del propietario.
 
 ## Restricciones
 
 - Sin cambios de comportamiento: ningún test, dorado ni aserción cambia. Si una tarea lo exige, se para y se anota.
 - No se toca la lógica de selección de nivel por celda (`cell_cut.rs`, y en `cell_pool.rs` los pasos, la retención
-  y el conjunto activo): está pendiente del [ADR 0055](../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md).
+  y el conjunto activo): está pendiente del [ADR 0055](../../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md).
   Se puede mover de fichero tal cual.
 - Los ADR aceptados siguen vigentes (V5 heredado hasta V8, literales de versión solo en `viewer_format`, núcleo de
   conversión sin I/O).
@@ -104,7 +104,7 @@ el módulo original.
 ## Decisiones del propietario
 
 Respondidas el 18-11-2026: las respuestas y su estado están en
-[Cómo retomar](retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026).
+[Cómo retomar](../../plans/retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026).
 
 | # | Decisión | Datos |
 | --- | --- | --- |

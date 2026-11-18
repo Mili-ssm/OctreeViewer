@@ -1,13 +1,13 @@
 # R3: experimento de anchura de región, layout, máscaras y flags
 
-Estado: completado · 05-11-2026 · decidido en [ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md); código en `experiment/r3-region-widths`
+Estado: completado · 05-11-2026 · decidido en [ADR 0032](../../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md); código en `experiment/r3-region-widths`
 
 ## Objetivo
 
 Elegir, con datos del dataset completo, la anchura de página `W` (bits por eje) que **equilibra**
 memoria de GPU, memoria de CPU y cálculo (criterio del propietario, 05-11-2026). Candidatas: 8, 10,
-12, 16, 21, 24 y 32. El [ADR 0031](../adr/0031-celdas-por-nodo-en-v7-5.md) fija hoy 10 bits e
-instancia de 16 B; el [ADR 0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md) sigue fijando
+12, 16, 21, 24 y 32. El [ADR 0031](../../adr/0031-celdas-por-nodo-en-v7-5.md) fija hoy 10 bits e
+instancia de 16 B; el [ADR 0027](../../adr/0027-celdas-por-nodo-en-pool-paginado.md) sigue fijando
 páginas de 8 KiB. 32 bits equivale a «clave más ancha» sin subregiones.
 
 El resultado entra en un ADR nuevo junto con la **continuación adaptativa de las hojas** (decisión del
@@ -44,7 +44,7 @@ Instancia = palabras de 32 bits para la posición (3W bits, más 3 si los flags 
 
 ## Tarea 1: spike `region_width_spike`
 
-**Hecha (05-11-2026):** [resultado](../records/benchmarks/R3_REGION_LAYOUT_05-11-2026.md). Gana W = 10 con flags por página (instancia de 12 B).
+**Hecha (05-11-2026):** [resultado](../benchmarks/R3_REGION_LAYOUT_05-11-2026.md). Gana W = 10 con flags por página (instancia de 12 B).
 
 - [x] Ejemplo `crates/viewer_render_wgpu/examples/region_width_spike.rs`, que recorre **todos** los nodos y niveles guardados de un `.oct` v7.5.
 - [x] Dos modelos de página, ambos con capacidad `8192 / instancia`:

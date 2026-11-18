@@ -4,7 +4,7 @@ Fecha: 02-11-2026. Rama: `feat/render-r3-node-cells`. Estado: **ninguna combinac
 
 ## Método
 
-`cargo run --release -p viewer_convert --example density_spike -- <LAZ> <dir> --leaf-points N --sample-grid G` convierte a `v7.3-pre` y emite un JSON con disco (`.oct` + atributos), tiempo de pared, RSS pico, nodos, puntos por hoja y salto de espaciado hoja/padre en niveles (Tarea 1 del [plan de R4](../../plans/render-r4-piramide-densa.md)). Matriz: hoja {16, 32, 64} k × `sample_grid` {32, 64, 128, 256}, más el control actual (hoja 262 144, g = 8). Una ejecución por combinación, en serie, en el mismo equipo; carga previa en cada `.pre.txt`. Datos: [r4-density-spike-01-11-2026/](data/r4-density-spike-01-11-2026/).
+`cargo run --release -p viewer_convert --example density_spike -- <LAZ> <dir> --leaf-points N --sample-grid G` convierte a `v7.3-pre` y emite un JSON con disco (`.oct` + atributos), tiempo de pared, RSS pico, nodos, puntos por hoja y salto de espaciado hoja/padre en niveles (Tarea 1 del [plan de R4](../archive/render-r4-piramide-densa.md)). Matriz: hoja {16, 32, 64} k × `sample_grid` {32, 64, 128, 256}, más el control actual (hoja 262 144, g = 8). Una ejecución por combinación, en serie, en el mismo equipo; carga previa en cada `.pre.txt`. Datos: [r4-density-spike-01-11-2026/](data/r4-density-spike-01-11-2026/).
 
 Regla de elección, fijada antes de medir: **mínimo disco con salto hoja/padre ≤ 1 nivel en p95 y RSS ≤ `DEFAULT_MEMORY_BUDGET_BYTES` (512 MiB = 537 MB)**.
 

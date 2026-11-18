@@ -56,5 +56,5 @@ Decisión 5 del propietario (30-10-2026):
 ## Evidencia
 [Zonas OPFS](../records/benchmarks/OPFS_ZONES_2026-10-30.md) ·
 [Política](../records/benchmarks/HYBRID_POLICY_2026-10-30.md) ·
-[Etapa 4](../plans/conversor-web-paralelo-etapa4.md) ·
+[Etapa 4](../records/archive/conversor-web-paralelo-etapa4.md) ·
 [ADR 0014](0014-nucleo-de-conversion-sin-io.md) · [ADR 0015](0015-pool-de-workers-sin-memoria-compartida.md)

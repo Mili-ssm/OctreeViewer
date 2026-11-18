@@ -10,7 +10,7 @@ locales dan el primer paso: el cuadrante negro de la pose P2 desaparece. Nada se
 propietario.
 
 Glosario: **E4** es la regla de dibujo por celda de la GPU y **D5** la puerta que cubre la zona libre de una celda
-gruesa con máscara ([plan de la fase 2a](fase-2a-lod-por-celda-en-gpu.md)); **F2** y **F4** son decisiones del
+gruesa con máscara ([plan de la fase 2a](../records/archive/fase-2a-lod-por-celda-en-gpu.md)); **F2** y **F4** son decisiones del
 [plan de la fase 2b](fase-2b-rango-de-niveles-y-transiciones.md); **P1–P5** son las poses de cámara de la muestra
 integrada que usa ese plan; **Q1–Q5** son las preguntas de este documento.
 

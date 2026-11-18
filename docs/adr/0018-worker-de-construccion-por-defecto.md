@@ -34,4 +34,4 @@ Estado: Aceptada · Fecha: 30-10-2026
 - Una medición en Firefox o en otra GPU incumple RQ-01 con el worker activo.
 
 ## Evidencia
-[Preguntas P7 y P8](../requirements.md#resoluciones-del-30-10-2026) · [Plan de render, R2](../plans/render-y-carga-escala.md) · [Requisitos RF-08](../requirements.md)
+[Preguntas P7 y P8](../requirements.md#resoluciones-del-30-10-2026) · [Plan de render, R2](../records/archive/render-y-carga-escala.md) · [Requisitos RF-08](../requirements.md)

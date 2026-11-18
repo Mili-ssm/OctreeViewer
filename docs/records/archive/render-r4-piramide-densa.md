@@ -6,17 +6,17 @@ Estado: completado · 02-11-2026
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
 **Objetivo:** nueva revisión `v7.4-pre` con las coordenadas como enteros globales de cuanto 2⁻¹⁵ y un
-octree implícito en sus bits ([ADR 0029](../adr/0029-octree-global-por-bits-de-enteros.md)). La pirámide
+octree implícito en sus bits ([ADR 0029](../../adr/0029-octree-global-por-bits-de-enteros.md)). La pirámide
 divide el espaciado entre 2 en cada nivel hasta hojas pequeñas, con el espaciado explícito por nodo. El CRS
 se conserva completo.
 
 **Por qué:** las hojas de hasta 262 144 puntos aplastan varios niveles de densidad en uno (B2): se leen
 1 100–2 700 puntos por vóxel dibujado, Belvedere no llega a 4 px en 300 s y la cadena de hoja de R3 llega
-al tope en el 78–99 % de las hojas ([registro R3-T1](../records/benchmarks/RENDER_R3_T1_NODE_CELLS_01-11-2026.md)).
+al tope en el 78–99 % de las hojas ([registro R3-T1](../benchmarks/RENDER_R3_T1_NODE_CELLS_01-11-2026.md)).
 
-**Spec:** [ADR 0020](../adr/0020-piramide-lod-densa.md), [ADR 0021](../adr/0021-rejilla-global-determinista-y-crs.md)
-precisada por [ADR 0029](../adr/0029-octree-global-por-bits-de-enteros.md), [ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md),
-[ADR 0028](../adr/0028-r4-antes-que-r3.md); [requisitos](../requirements.md) RF-02, RF-21, RF-23, RF-24,
+**Spec:** [ADR 0020](../../adr/0020-piramide-lod-densa.md), [ADR 0021](../../adr/0021-rejilla-global-determinista-y-crs.md)
+precisada por [ADR 0029](../../adr/0029-octree-global-por-bits-de-enteros.md), [ADR 0022](../../adr/0022-alcance-y-congelacion-de-v7-final.md),
+[ADR 0028](../../adr/0028-r4-antes-que-r3.md); [requisitos](../../requirements.md) RF-02, RF-21, RF-23, RF-24,
 RQ-02, RQ-07, RQ-08, RQ-09.
 
 **Progreso (01-11-2026):** redactado y enmendado tras su pre-mortem. Ninguna tarea empezada.
@@ -25,7 +25,7 @@ RQ-02, RQ-07, RQ-08, RQ-09.
 
 | Id | Resolución |
 | --- | --- |
-| R4-Q1 | Coordenadas enteras globales con cuanto binario 2⁻¹⁵ y octree implícito en sus bits; se omite la cadena superior de nodos con un solo hijo ([ADR 0029](../adr/0029-octree-global-por-bits-de-enteros.md)) |
+| R4-Q1 | Coordenadas enteras globales con cuanto binario 2⁻¹⁵ y octree implícito en sus bits; se omite la cadena superior de nodos con un solo hijo ([ADR 0029](../../adr/0029-octree-global-por-bits-de-enteros.md)) |
 | R4-Q2 | El límite de puntos por hoja se fija **midiendo** 16, 32 y 64 k (Tarea 1) |
 | R4-Q3 | «Un nivel por ×2 de densidad» = **el espaciado se divide entre 2 en cada nivel** (como Potree/COPC) |
 | R4-Q4 | La reproyección con PROJ (RF-22) queda **fuera** de `v7.4-pre`: es una opción posterior del CLI que no cambia el formato |
@@ -95,11 +95,11 @@ RQ-02, RQ-07, RQ-08, RQ-09.
   salto de espaciado. El bench de R3-T1 se repite en la Tarea 6.
 - [x] Registro `R4_DENSITY_SPIKE_<fecha>.md`. **Puerta del propietario:** fija el límite de hoja y `sample_grid`.
 
-Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +24 % de tiempo, 207 MB de RSS, +18 % de disco frente a V5 ([registro](../records/benchmarks/R4_CONVERT_TIME_2_02-11-2026.md)).
+Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +24 % de tiempo, 207 MB de RSS, +18 % de disco frente a V5 ([registro](../benchmarks/R4_CONVERT_TIME_2_02-11-2026.md)).
 
 ## Tarea 2: spec de `v7.4-pre`
 
-**Archivos:** crear [`docs/reference/format/FORMAT_V7_PRE4.md`](../reference/format/FORMAT_V7_PRE4.md) (a partir de `FORMAT_V7_PRE3.md`); borrador escrito el 02-11-2026, pendiente de revisión.
+**Archivos:** crear [`docs/reference/format/FORMAT_V7_PRE4.md`](../../reference/format/FORMAT_V7_PRE4.md) (a partir de `FORMAT_V7_PRE3.md`); borrador escrito el 02-11-2026, pendiente de revisión.
 
 - [x] Marco (ADR 0029): `q = round(c × 2^15)` en `i64`; raíz guardada = primer nodo con más de un hijo
   (nivel y prefijo); bloques con desplazamientos `u32` respecto al origen de su nodo; los nodos de más de
@@ -139,7 +139,7 @@ Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +
 ## Tarea 4b: medida intermedia de conversión
 
 - [x] Majadas en `v7.4-pre`: tiempo, RSS y disco de conversión frente a V5 (criterio de parada).
-  Resultado (02-11-2026): tiempo +92 % (Majadas) y +96 % (Belvedere, tras optimizar) frente a V5; RSS y disco dentro. El propietario acepta seguir con la Tarea 5 y optimizar la conversión aparte antes de promover V7 ([registro](../records/benchmarks/R4_T4B_CONVERSION_02-11-2026.md)).
+  Resultado (02-11-2026): tiempo +92 % (Majadas) y +96 % (Belvedere, tras optimizar) frente a V5; RSS y disco dentro. El propietario acepta seguir con la Tarea 5 y optimizar la conversión aparte antes de promover V7 ([registro](../benchmarks/R4_T4B_CONVERSION_02-11-2026.md)).
 
 ## Tarea 5: el visor sobre el octree global
 
@@ -156,11 +156,11 @@ Resultado (02-11-2026): visor sobre `spacing` por nodo y límites locales; las n
 ## Tarea 6: medida y regeneración
 
 - [x] Regenerar Majadas y Belvedere en `v7.4-pre`; matriz R0 (arnés de T7) frente al
-  [registro T7](../records/benchmarks/RENDER_R1_T7_01-11-2026.md).
+  [registro T7](../benchmarks/RENDER_R1_T7_01-11-2026.md).
 - [x] **Pasa si:** disco ≤ V5 + 35 %, conversión ≤ +30 % (RQ-07), y nodos sin cubrir y píxeles vacíos sin
   regresión (RQ-02). Si no pasa, parar antes de reanudar R3.
 - [x] Repetir el bench de R3-T1. Si menos del 1 % de las hojas llegan al tope, R3 se reanuda (ADR 0028).
-Resultado (02-11-2026): render sin regresión y con menos píxeles vacíos; disco +2–8 %; conversión +87–99 % (aceptado); R3-T1 con 1,4–2,0 % de hojas en el tope, por encima del 1 %: R3 sigue en pausa ([registro](../records/benchmarks/R4_T6B_MEASUREMENT_02-11-2026.md)).
+Resultado (02-11-2026): render sin regresión y con menos píxeles vacíos; disco +2–8 %; conversión +87–99 % (aceptado); R3-T1 con 1,4–2,0 % de hojas en el tope, por encima del 1 %: R3 sigue en pausa ([registro](../benchmarks/R4_T6B_MEASUREMENT_02-11-2026.md)).
 
 ## Fuera de este plan
 

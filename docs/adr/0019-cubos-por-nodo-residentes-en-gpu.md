@@ -31,4 +31,4 @@ Estado: Aceptada · enmendada por [0033](0033-gpu-minima-4-gb-y-corte-ajustado-a
 Los cubos a 4 px no cumplen RQ-01 en EQ-REF.
 
 ## Evidencia
-[Preguntas P1, P2, P4, P5](../requirements.md#resoluciones-del-30-10-2026) · [Plan de render, R3](../plans/render-y-carga-escala.md) · [Requisitos RF-03 a RF-07](../requirements.md)
+[Preguntas P1, P2, P4, P5](../requirements.md#resoluciones-del-30-10-2026) · [Plan de render, R3](../records/archive/render-y-carga-escala.md) · [Requisitos RF-03 a RF-07](../requirements.md)

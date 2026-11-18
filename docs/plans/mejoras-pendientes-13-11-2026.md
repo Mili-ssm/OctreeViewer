@@ -40,7 +40,7 @@ que no es de esta línea de trabajo.
 
 - [x] Publicar en el remoto (15-11-2026): `master` (`ded7ee8`) → `main` con `--force-with-lease` y `feat/r3-v75`
   con seguimiento; `git ls-remote origin` muestra los dos SHA locales.
-- [x] D3c (ver la fase D, hecho el 15-11-2026): [plan propio](d3c-congelado-v7-final.md), con pre-mortem y decisiones del propietario en el
+- [x] D3c (ver la fase D, hecho el 15-11-2026): [plan propio](../records/archive/d3c-congelado-v7-final.md), con pre-mortem y decisiones del propietario en el
   [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md). Comprobación: la de D3c.
 - [x] PR de `feat/r3-v75` a `main` abierta (15-11-2026): [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1); la fusión la decide el propietario.
 - [x] Flujo de GitHub adoptado (15-11-2026): lo pendiente pasa a [issues](https://github.com/Mili-ssm/OctreeViewer/issues) ([reglas](../../CONTRIBUTING.md#issues-y-prs)); los experimentos son PRs en borrador (#2–#10).
@@ -68,7 +68,7 @@ escritor experimental `OQ09_MORTON=best`), `explore/oq09-viewer-sort`, `explore/
 - [x] A3. Una página que falla no se pide en bucle y un injerto fallido no rompe la cola (`43fc0d9`).
 - [x] A4. TA8: `#![forbid(unsafe_code)]` en los cinco crates sin `unsafe` (`5a1c7d8`).
 
-## Fase B: terminar R3 ([plan](render-r3-cubos-en-gpu.md))
+## Fase B: terminar R3 ([plan](../records/archive/render-r3-cubos-en-gpu.md))
 
 - [x] B1. Tarea 11 medida: estadísticas `cutApply` y `cellsForgottenTotal`, probe
   `probe-cells-smoke.mjs` y [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md) (`97c52f8`,
@@ -136,7 +136,7 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
     identidad propia ([ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md),
     [registro](../records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md)): Belvedere 815 → 531 MB con un +1,3 %
     de tiempo total; Majadas sin cambio apreciable (+0,26 % sobre su óptimo).
-  - [x] D3c (15-11-2026; [plan](d3c-congelado-v7-final.md), [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md); registros [RQ-07](../records/benchmarks/D3C_RQ07_V7_15-11-2026.md), [web Belvedere](../records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md) y [referencias](../records/benchmarks/D3C_V7_REFERENCES_15-11-2026.md)). Congelado (RQ-07 revisado por el ADR 0043): identidad final de V7 con el escritor híbrido por defecto (unos 30
+  - [x] D3c (15-11-2026; [plan](../records/archive/d3c-congelado-v7-final.md), [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md); registros [RQ-07](../records/benchmarks/D3C_RQ07_V7_15-11-2026.md), [web Belvedere](../records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md) y [referencias](../records/benchmarks/D3C_V7_REFERENCES_15-11-2026.md)). Congelado (RQ-07 revisado por el ADR 0043): identidad final de V7 con el escritor híbrido por defecto (unos 30
     puntos: versiones, E/S paginada, CLI, especificación, índices, pruebas), regeneración de datasets y
     referencias. Comprobación: `check.sh` verde con la identidad final y referencias R1 regeneradas.
 - [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.

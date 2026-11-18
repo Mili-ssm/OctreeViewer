@@ -2,7 +2,7 @@
 
 > Registro fechado, resultado de un modelo (no de una medición de navegador). Cifras válidas para las trazas nativas de
 > [S10](HYBRID_SPOOL_RAM_2026-10-29.md) (Belvedere con 2 y 8 divisiones, Majadas con 2; 1 worker, perfil `perf`; no se
-> regeneraron). Contexto: decisión 5 del [plan de la etapa 4](../../plans/conversor-web-paralelo-etapa4.md) (spools en
+> regeneraron). Contexto: decisión 5 del [plan de la etapa 4](../archive/conversor-web-paralelo-etapa4.md) (spools en
 > segmentos de JS, volcado síncrono a páginas de zonas OPFS, lista de páginas libres, zonas vacías truncadas). Datos:
 > [JSON](data/hybrid-policy-2026-10-30.json); simulador
 > [`model_hybrid_zones.py`](../../../crates/viewer_convert/benchmarks/model_hybrid_zones.py) (reutiliza `parse_log` y `source_bytes`

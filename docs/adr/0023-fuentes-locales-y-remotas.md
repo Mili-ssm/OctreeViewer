@@ -27,4 +27,4 @@ Estado: Aceptada · Fecha: 30-10-2026 · Sustituye a [0009](0009-transporte-web-
 RQ-04 no es alcanzable con la jerarquía paginada en RED-REF.
 
 ## Evidencia
-[Requisitos RF-09, RQ-04, RED-REF](../requirements.md) · [Plan de render, R5](../plans/render-y-carga-escala.md)
+[Requisitos RF-09, RQ-04, RED-REF](../requirements.md) · [Plan de render, R5](../records/archive/render-y-carga-escala.md)
