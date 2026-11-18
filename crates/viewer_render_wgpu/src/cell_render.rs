@@ -371,7 +371,7 @@ pub(crate) struct FrameUniform {
     pub(crate) intensity_max: f32,
     pub(crate) height_offset: f32,
     pub(crate) height_span: f32,
-    /// 0 octant mode, 1 cell mode.
+    /// 1 with a LOD view (the per-cell decision); 0 without one (the mask path of tests and benches).
     pub(crate) lod_mode: u32,
     /// 0 off.
     pub(crate) counters: u32,
@@ -486,7 +486,7 @@ pub(crate) struct CellRenderer {
     /// `set_page_frame`.
     page_frame: Option<PageFrameStamp>,
     color: CellColor,
-    /// `None` keeps octant mode.
+    /// `None` keeps the mask path (tests and benches).
     lod_view: Option<LodView>,
     /// For the tests that read the compacted slot ids back.
     #[cfg(test)]
@@ -868,13 +868,14 @@ impl CellRenderer {
     }
 
     /// `Some` switches the slot pass to the per-cell decision of [`crate::cell_lod`] (`lod_mode`
-    /// 1); `None` keeps the octant-bit and mask test. The driver passes `Some` in cell mode and
-    /// `None` in octant mode.
+    /// 1); `None` keeps the octant-bit and mask test, which draws every unmasked cell of the active
+    /// pages. The driver always passes `Some` (ADR 0056); only tests and `cell_bench` draw without a
+    /// view.
     pub(crate) fn set_lod_view(&mut self, view: Option<LodView>) {
         self.lod_view = view;
     }
 
-    /// The view the slot pass decides with (`None`: octant mode).
+    /// The view the slot pass decides with (`None`: the mask path).
     pub(crate) fn lod_view(&self) -> Option<LodView> {
         self.lod_view
     }

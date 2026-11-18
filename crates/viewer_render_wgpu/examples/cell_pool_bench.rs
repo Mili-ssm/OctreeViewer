@@ -649,7 +649,8 @@ fn run_case(case: &Case, gpu: &Gpu, counters_only: bool) -> Result<Value> {
         return Ok(json!({
             "case": case.name,
             "target_px": case.target_px,
-            // Constant: keeps old and new outputs comparable.
+            // Constant since octant mode was retired (ADR 0056). Older reports that say "octant" (runs
+            // without `--cell-lod`) measured the retired mode and are not comparable.
             "lod_mode": "cell",
             "cut_nodes": case.cut.len(),
             "active_levels": plan.active.len(),
