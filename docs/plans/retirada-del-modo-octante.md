@@ -74,9 +74,18 @@ todavía usa (pasos, sondas, retención por nodo) se queda para el [plan del ADR
 
 ### Task 4: Goldens of the paths the deletions will touch
 
-- [ ] Golden del `cell_cut` público calculado en modo celda (ruta sin rango ni estado previo) y golden de un corte
+- [x] Golden del `cell_cut` público calculado en modo celda (ruta sin rango ni estado previo) y golden de un corte
   de dos frames con estado previo (pasos). Se anota qué miden hoy `coverage_spike` y la estimación sin tope de
   `cell_pool_bench` (los dos pasan por el `cell_cut` de octante) y qué medirán después.
+  Hecho en `3284b5c`: `cell_cut_digest_golden_of_the_plain_cut_in_cell_mode` (48 casos, `cell_cut_with` con
+  `LodMode::Cell`) y `cell_cut_digest_golden_with_a_previous_cut_in_cell_mode` (64 casos de dos frames, con todo
+  residente y con solo lo dibujado en el frame 1; pasos y etapas verificados > 0); los 4 goldens de `cell_cut`
+  pasan y el golden 1 y el 2 fallan al perturbar la entrada.
+  - Hecho: `examples/coverage_spike.rs` llama a `cell_cut` (octante) en las líneas 936 (corte deseado por pose y
+    objetivo) y 1399 (unión de transición por variante); `examples/cell_pool_bench.rs` lo llama en la línea 825
+    (estimación «sin tope», claves `wanted` de cada octante). Ninguno pasa rango ni estado previo.
+  - Hecho: tras la retirada, `cell_cut` calculará por `cell_cut_with` en modo celda, la ruta fijada por el golden 1,
+    y esos tres puntos de llamada pasarán por ella.
 
 ### Task 5: Default flip, with every rig pinned first
 
