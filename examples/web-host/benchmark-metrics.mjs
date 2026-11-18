@@ -133,7 +133,7 @@ export function renderPathStatsLines(lod, gpu, viewer) {
             path: "render path: cells",
             cut: `cut: ${dash(lod.cutApply)} · epoch ${dash(lod.cutEpochSent)} of ${dash(lod.cutEpochApplied)}`,
             pool: `pool pages: ${dash(lod.poolResidentPages)} / ${dash(lod.poolCapacityPages)} resident`,
-            poolBytes: `pool uploaded bytes: ${dash(lod.poolUploadedBytes)}`,
+            poolBytes: `pool bytes uploaded this frame: ${dash(lod.poolUploadedBytes)}`,
             poolWork: "nodes without level / coarsened / stages: "
                 + `${dash(lod.poolNodesWithoutLevel)} / ${dash(lod.poolCoarsened)} / ${dash(lod.poolStages)}`,
             queued: `queued node cells: ${dash(lod.queuedNodeCells)}`,

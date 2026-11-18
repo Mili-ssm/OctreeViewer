@@ -139,7 +139,7 @@ test("renderPathStatsLines shows the cells counters instead of the CPU ones", ()
     assert.equal(lines.path, "render path: cells");
     assert.equal(lines.cut, "cut: applied · epoch 12 of 12");
     assert.equal(lines.pool, "pool pages: 345 / 65536 resident");
-    assert.equal(lines.poolBytes, "pool uploaded bytes: 1024");
+    assert.equal(lines.poolBytes, "pool bytes uploaded this frame: 1024");
     assert.equal(lines.poolWork, "nodes without level / coarsened / stages: 0 / 0 / 0");
     assert.equal(lines.queued, "queued node cells: 0");
     for (const key of ["points", "voxels", "blocks", "coverage", "uploaded"]) assert.equal(lines[key], undefined);
