@@ -1130,9 +1130,10 @@ fn deep_pages_far_from_the_root_corner_are_placed_exactly() {
         root_min: [-half; 3],
         root_side: 2.0 * half,
     };
+    // A coordinate origin off zero on z: the corner is measured from it.
     let frame = PageFrame {
         grid,
-        coordinate_origin: [0.0; 3],
+        coordinate_origin: [0.0, 0.0, 8.5],
         visual_scale: 1.0,
         eye_scaled: [0.0; 3],
     };
@@ -1160,6 +1161,11 @@ fn deep_pages_far_from_the_root_corner_are_placed_exactly() {
             f32::from_bits(entry.0[1]),
             (-(cells as f64 + 1.0) * side) as f32,
             "y of cell -{cells}"
+        );
+        assert_eq!(
+            f32::from_bits(entry.0[2]),
+            (cells as f64 * side - 8.5) as f32,
+            "z of cell +{cells} from the coordinate origin"
         );
         assert_eq!(f32::from_bits(entry.0[3]), side as f32, "cell side");
     }

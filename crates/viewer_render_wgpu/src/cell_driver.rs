@@ -1231,7 +1231,7 @@ impl CellDriver {
                     mask: update.mask,
                 },
                 corner: std::array::from_fn(|axis| {
-                    grid.root_min[axis] + update.node_lo[axis] as f64 * side
+                    grid.cell_edge_from(axis, update.node_lo[axis], side, 0.0)
                 }),
             };
             self.node_slots.insert(update.slot, slot);
