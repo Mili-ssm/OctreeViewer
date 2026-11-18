@@ -1,6 +1,6 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 6b hechas
+Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 7 hechas
 
 **Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
 clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
@@ -198,10 +198,14 @@ nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
 
 ### Task 7: Delete the explicitly-octant render tests
 
-- [ ] Se borran los tests de render que tienen el modo octante como sujeto (5 de `cell_cut_tests`, 2 de
-  `cell_pool_tests`, el golden de octante, duplicado ya por el de celda) y se porta
-  `the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter` (`cell_driver_gpu_tests.rs`) con el gemelo
-  de celda como oráculo y al menos un adaptador. Se conservan los tests unitarios de pasos de `cell_cut_tests`.
+- [x] (82cd7cf) Los tests de render ya no ejercitan el modo octante: 6 borrados (regla de retención por octante,
+  cambio de modo, registro sin cambios al mover el ojo, un test de reinicio contenido en otro, dos de promoción por
+  octantes que abarcan), 4 pierden su mitad de octante y el resto se portan a la ruta de celda, incluidos los tests
+  unitarios de pasos. `the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter` usa el gemelo de celda
+  como oráculo y corrió en dos adaptadores (diferencia máxima de 5e-7 con tolerancia de 5e-4). 414 tests de render;
+  goldens de celda intactos; ninguna mención a `LodMode::Octant` en los tests de render. Se conserva el golden
+  antiguo `cell_cut_digest_golden`: su tabla no es comparable entrada a entrada con la del corte simple en modo
+  celda porque usan resúmenes distintos.
 
 ### Task 8: wasm sims and glue tests, one mode (R)
 
