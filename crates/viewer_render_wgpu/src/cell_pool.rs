@@ -1066,7 +1066,8 @@ impl CellPool {
 
     /// Cell mode: the depths of `entry` emitted as active levels: the drawn ones that are
     /// resident and inside the node's span (a retained cut may hold depths of another mode or
-    /// span), plus the node's D5 depth when its mask is set (see `d5_active`).
+    /// span), the resident depths of its range that reach one of them without a residency gap,
+    /// plus the node's D5 depth when its mask is set (see `d5_active`).
     fn cell_active_depths(
         &self,
         entry: &CellCutEntry,
@@ -1089,7 +1090,9 @@ impl CellPool {
             (entry.range, drawn.first(), drawn.last())
         {
             let (lo, hi) = (lo.min(*first), hi.max(*last));
-            for anchor in &drawn {
+            // A drawn depth that is not usable yet (fresh) anchors nothing: its neighbours would
+            // form a set with a gap at it.
+            for anchor in drawn.iter().filter(|depth| usable(**depth)) {
                 wanted.extend((lo..*anchor).rev().take_while(|depth| usable(*depth)));
                 wanted.extend((*anchor + 1..=hi).take_while(|depth| usable(*depth)));
             }
