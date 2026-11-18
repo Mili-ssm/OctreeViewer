@@ -2298,3 +2298,161 @@ fn a_lost_previous_depth_draws_the_resident_closest_to_it_towards_the_wanted_one
         Some((2, Some(3)))
     );
 }
+
+// ---- Nearest occupied view depth and the data-bounded `hi` (ADR 0055 plan, task 5) -------------
+
+/// Half-tangents of the field of view of `VIEWPORT`.
+fn half_tangents() -> (f64, f64) {
+    let vertical = (crate::camera::VERTICAL_FOV * 0.5).tan();
+    (
+        vertical * f64::from(VIEWPORT[0]) / f64::from(VIEWPORT[1]),
+        vertical,
+    )
+}
+
+/// Depth of the render or LOD near plane for `along_x()` (the larger of both, as the frustum).
+fn near_of(view: &ViewProjection) -> f64 {
+    view.camera()
+        .lod_near_depth()
+        .max(view.camera().clip_distances().0)
+}
+
+fn clipped(view: &ViewProjection, min: [f64; 3], max: [f64; 3]) -> Option<f64> {
+    crate::cell_range::ViewFrustum::new(view)
+        .expect("frustum")
+        .min_depth(min, max)
+}
+
+#[test]
+fn a_box_inside_the_frustum_gives_the_depth_of_its_nearest_vertex() {
+    // The eye is at x = -900 looking along +x: x = 0 lies at depth 900.
+    let view = along_x();
+    assert!(near_of(&view) < 900.0);
+    let depth = clipped(&view, [0.0, -10.0, -10.0], [100.0, 10.0, 10.0]).expect("inside");
+    assert!((depth - 900.0).abs() < 1e-9, "{depth}");
+}
+
+#[test]
+fn a_box_wholly_outside_a_side_plane_has_no_depth() {
+    let view = along_x();
+    // Beyond each of the four side planes at depth 900..1000 (half widths ~ 500 and ~ 400).
+    for (min, max) in [
+        ([0.0, 2000.0, -10.0], [100.0, 2100.0, 10.0]),
+        ([0.0, -2100.0, -10.0], [100.0, -2000.0, 10.0]),
+        ([0.0, -10.0, 2000.0], [100.0, 10.0, 2100.0]),
+        ([0.0, -10.0, -2100.0], [100.0, 10.0, -2000.0]),
+    ] {
+        assert_eq!(clipped(&view, min, max), None, "{min:?} {max:?}");
+    }
+}
+
+#[test]
+fn a_box_straddling_a_side_plane_gives_the_depth_of_its_clipped_part() {
+    let view = along_x();
+    let (tan_h, tan_v) = half_tangents();
+    // Its nearest face (depth 900) is outside the right plane; the plane reaches y = 5 at depth
+    // 5 / tan_h, so the visible part starts there.
+    let near_y = tan_h * 950.0;
+    let depth = clipped(&view, [0.0, near_y, -10.0], [100.0, near_y + 400.0, 10.0]).unwrap();
+    assert!((depth - 950.0).abs() < 1e-6, "{depth}");
+    // The same across the top plane.
+    let near_z = tan_v * 975.0;
+    let depth = clipped(&view, [0.0, -10.0, near_z], [100.0, 10.0, near_z + 400.0]).unwrap();
+    assert!((depth - 975.0).abs() < 1e-6, "{depth}");
+}
+
+#[test]
+fn a_box_behind_or_across_the_near_plane_is_clamped_to_it() {
+    let view = along_x();
+    // Behind the eye: nothing in view.
+    assert_eq!(
+        clipped(&view, [-1000.0, -10.0, -10.0], [-950.0, 10.0, 10.0]),
+        None
+    );
+    // From 1 unit in front of the eye to depth 900: the near plane is the nearest visible depth.
+    let depth = clipped(&view, [-899.0, -1.0, -1.0], [0.0, 1.0, 1.0]);
+    assert_eq!(depth, Some(near_of(&view)));
+}
+
+#[test]
+fn a_box_beside_the_eye_is_far_in_depth_although_it_is_near_in_distance() {
+    let view = along_x();
+    let (tan_h, _) = half_tangents();
+    // Level with the eye and 800 to its right: the unclipped bound (distance over the stretch)
+    // is about 660, the visible part starts where the right plane reaches y = 800.
+    let region = SpatialBounds::new([-1000.0, 800.0, -10.0], [1000.0, 900.0, 10.0]).unwrap();
+    let unclipped = nearest_visible_depth(&view, &region, view_eye(&view));
+    let depth = clipped(&view, region.min(), region.max()).expect("visible part");
+    assert!((depth - 800.0 / tan_h).abs() < 1e-6, "{depth}");
+    assert!(depth > 1.5 * unclipped, "{depth} against {unclipped}");
+    // Containing the eye, the unclipped bound is 0 and the visible part starts at the near plane.
+    let around = SpatialBounds::new([-1000.0, -100.0, -100.0], [100.0, 100.0, 100.0]).unwrap();
+    assert_eq!(nearest_visible_depth(&view, &around, view_eye(&view)), 0.0);
+    assert_eq!(
+        clipped(&view, around.min(), around.max()),
+        Some(near_of(&view))
+    );
+}
+
+#[test]
+fn the_nearest_occupied_depth_is_the_least_over_the_pages_and_none_without_any_in_view() {
+    use crate::cell_range::nearest_occupied_depth;
+    let (view, grid) = (along_x(), huge_grid());
+    let page = |origin: [u64; 3]| crate::PageInfo {
+        node: NodeId::new(1),
+        depth: 6,
+        origin,
+        first_cell: 0,
+        cells: 1,
+        box_max: [3, 3, 3],
+        flags: 0,
+        rel_origin: [0; 3],
+    };
+    // Depth 6: 2000 / 64 = 31.25 per cell; cell 32 starts at x = 0 (depth 900), 40 at x = 250.
+    let side = 2000.0 / 64.0;
+    let pages = [page([40, 32, 32]), page([32, 32, 32])];
+    let depth = nearest_occupied_depth(&view, &grid, [0.0; 3], 6, &pages).expect("in view");
+    assert!((depth - 900.0).abs() < 1e-9, "{depth} (side {side})");
+    assert_eq!(
+        nearest_occupied_depth(&view, &grid, [0.0; 3], 6, &pages[..1]),
+        Some(900.0 + 8.0 * side)
+    );
+    assert_eq!(
+        nearest_occupied_depth(&view, &grid, [0.0; 3], 6, &[page([32, 63, 32])]),
+        None
+    );
+    assert_eq!(nearest_occupied_depth(&view, &grid, [0.0; 3], 6, &[]), None);
+}
+
+#[test]
+fn an_occupied_depth_bounds_hi_and_a_farther_one_never_gives_a_finer_hi() {
+    let (view, grid) = (along_x(), huge_grid());
+    let region = boxed([-800.0, -50.0, -50.0], [1000.0, 50.0, 50.0]);
+    let at = |occupied| {
+        node_view_range_at(&view, &grid, [0.0; 3], region, (3, 12), 1.0, None, occupied).unwrap()
+    };
+    let plain = node_view_range(&view, &grid, [0.0; 3], region, (3, 12), 1.0, None).unwrap();
+    assert_eq!(at(None), plain);
+    // At or below the nearest depth the region already has, nothing changes.
+    assert_eq!(at(Some(0.0)), plain);
+    let mut last = plain.1;
+    for occupied in [500.0, 900.0, 1500.0, 3000.0, 10_000.0, 100_000.0] {
+        let (lo, hi) = at(Some(occupied));
+        assert_eq!(lo, plain.0);
+        assert!(hi <= last && hi >= lo, "{occupied}: {hi} after {last}");
+        last = hi;
+    }
+    assert!(last < plain.1, "a far occupied depth coarsens hi: {last}");
+    let alone = view_range_hi_at(
+        &view,
+        &grid,
+        [0.0; 3],
+        region,
+        (3, 12),
+        1.0,
+        None,
+        Some(3000.0),
+    )
+    .expect("hi");
+    assert_eq!(alone.max(plain.0), at(Some(3000.0)).1);
+}

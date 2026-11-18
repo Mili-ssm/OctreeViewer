@@ -496,9 +496,52 @@ pub fn node_view_range(
     target_px: f64,
     min_side: Option<f64>,
 ) -> Option<(u8, u8)> {
+    node_view_range_at(
+        view,
+        grid,
+        coordinate_origin,
+        region,
+        buildable,
+        target_px,
+        min_side,
+        None,
+    )
+}
+
+/// `node_view_range` with `hi_c` evaluated at `max(nearest depth, occupied)` instead of at the
+/// nearest depth alone, `occupied` being the view depth of the node's nearest occupied geometry
+/// (`nearest_occupied_depth`, same units as the view depth of the region). A farther `occupied`
+/// never gives a finer `hi`; `None` is `node_view_range`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn node_view_range_at(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    region: Option<SpatialBounds>,
+    buildable: (u8, u8),
+    target_px: f64,
+    min_side: Option<f64>,
+    occupied: Option<f64>,
+) -> Option<(u8, u8)> {
     let span = ViewSpan::new(view, grid, coordinate_origin, region, buildable, min_side)?;
     let lo = span.lo(target_px);
-    Some((lo, span.hi(target_px).max(lo)))
+    Some((lo, span.hi(target_px, occupied).max(lo)))
+}
+
+/// `hi_c` of `node_view_range_at` alone, not raised to `lo`: one search instead of two.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn view_range_hi_at(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    region: Option<SpatialBounds>,
+    buildable: (u8, u8),
+    target_px: f64,
+    min_side: Option<f64>,
+    occupied: Option<f64>,
+) -> Option<u8> {
+    ViewSpan::new(view, grid, coordinate_origin, region, buildable, min_side)
+        .map(|span| span.hi(target_px, occupied))
 }
 
 /// `lo_c` of `node_view_range` alone: one search instead of two, for callers that ignore `hi_c`.
@@ -587,8 +630,9 @@ impl<'a> ViewSpan<'a> {
     }
 
     /// Not yet raised to `lo`.
-    fn hi(&self, target_px: f64) -> u8 {
-        self.on_axis(self.nearest, target_px / self.stretch)
+    fn hi(&self, target_px: f64, occupied: Option<f64>) -> u8 {
+        let nearest = occupied.map_or(self.nearest, |depth| self.nearest.max(depth));
+        self.on_axis(nearest, target_px / self.stretch)
     }
 }
 
@@ -630,7 +674,7 @@ fn relative_bounds(bounds: SpatialBounds, origin: [f64; 3]) -> Option<SpatialBou
     .ok()
 }
 
-fn view_eye(view: &ViewProjection) -> [f64; 3] {
+pub(crate) fn view_eye(view: &ViewProjection) -> [f64; 3] {
     view.camera()
         .position()
         .map(|value| value / view.visual_scale())

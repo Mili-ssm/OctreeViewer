@@ -88,8 +88,9 @@ use crate::{
         FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_octants,
         behind_wanted, cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels,
         in_cell_range, octant_wanted_depth_in, octant_wanted_depth_near, octants_in_front,
-        probe_region, served_depth, view_range_lo,
+        probe_region, served_depth, view_range_hi_at, view_range_lo,
     },
+    cell_range::nearest_occupied_depth,
     representative_depth,
 };
 
@@ -319,6 +320,16 @@ struct NodeDepths {
     /// The node's far wanted depth and the octants in front of the eye
     /// (`node_view_range`, `octants_in_front`).
     far: (u8, u8),
+    /// Data bound of the node (ADR 0055 plan, task 5): `hi` of its range at the view depth of
+    /// the nearest page box of `finest`, inside the frustum. Not used in any decision yet. At a
+    /// fixed pose it only rises (a level leaving or arriving cannot make it oscillate); a pose
+    /// change recomputes it freely. `None`: no resident level, or none of its pages in view.
+    hi_d: Option<u8>,
+    /// Finest resident depth of the node when `hi_d` was computed, and the pool's
+    /// `residency_epoch` it was read at: `hi_d` is looked at again when the epoch moved and the
+    /// finest depth changed.
+    finest: Option<u8>,
+    epoch: u64,
     pose: Pose,
     /// Effective view depth of the node at that pose, in scaled units: the depth of its nearest
     /// point along the view direction, times the cosine of its off-axis angle (`depth^2 /
