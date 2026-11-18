@@ -320,19 +320,14 @@ struct NodeDepths {
     /// The node's far wanted depth and the octants in front of the eye
     /// (`node_view_range`, `octants_in_front`).
     far: (u8, u8),
-    /// Data bound of the node (ADR 0055 plan, task 5): `hi` of its range at the view depth of
-    /// the nearest page box of `finest` inside the frustum. Not used in any decision yet.
-    /// `None` is "no bound known for this pose" (no resident level with a page in view was seen
-    /// since the pose last changed): a consumer falls back to the unbounded `hi`, the
-    /// conservative side, never to the coarsest depth. `Some(d)` may come from an earlier, finer
-    /// residency at the same pose (it only rises there, so a level leaving or arriving cannot
-    /// make it oscillate) and stays a valid bound because occupied data does not move; a pose
-    /// change recomputes it freely.
+    /// Data bound of the node (ADR 0055 plan, tasks 5 and 7a): the least over its resident
+    /// levels of `hi` at the view depth of the nearest page box of the level, at least the level's
+    /// own depth (`CellPool::data_bound_of`). It caps the wish of the node's octants
+    /// (`Ctx::depth`). It depends on the pose and the resident set, not on the order of arrival.
+    /// `None`: no resident level, or the node is outside the view range; there is no cap, the
+    /// conservative side.
     hi_d: Option<u8>,
-    /// Finest resident depth of the node when `hi_d` was computed, and the pool's
-    /// `residency_epoch` it was read at: `hi_d` is looked at again when the epoch moved and the
-    /// finest depth changed.
-    finest: Option<u8>,
+    /// The pool's `residency_epoch` `hi_d` was read at: it is looked at again when it moved.
     epoch: u64,
     pose: Pose,
     /// Effective view depth of the node at that pose, in scaled units: the depth of its nearest
@@ -561,6 +556,10 @@ pub struct CellPool {
     /// Test-only: data bounds computed from a resident level's page boxes.
     #[cfg(test)]
     bound_evaluations: u32,
+    /// Test-only: the wish is not capped at the data bound. The fake levels of the older tests
+    /// keep their pages at the grid corner, which is no evidence about where the data is.
+    #[cfg(test)]
+    uncapped_wish: bool,
     last_pose: Option<Pose>,
     depth_key: Option<ViewKey>,
     wanted_memo: Option<WantedMemo>,
@@ -651,6 +650,8 @@ impl CellPool {
             depths: FastMap::default(),
             #[cfg(test)]
             bound_evaluations: 0,
+            #[cfg(test)]
+            uncapped_wish: false,
             last_pose: None,
             depth_key: None,
             wanted_memo: None,

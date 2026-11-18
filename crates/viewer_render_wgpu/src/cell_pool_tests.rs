@@ -44,12 +44,15 @@ impl Rig {
         budget_pages: u64,
         delay: u64,
     ) -> Self {
+        let mut pool = CellPool::new(PoolConfig {
+            capacity_pages,
+            upload_budget_bytes: budget_pages * POOL_PAGE_BYTES,
+            ..PoolConfig::default()
+        });
+        // The fake pages sit at the grid corner: the tests that need the cap say so.
+        pool.uncapped_wish = true;
         Self {
-            pool: CellPool::new(PoolConfig {
-                capacity_pages,
-                upload_budget_bytes: budget_pages * POOL_PAGE_BYTES,
-                ..PoolConfig::default()
-            }),
+            pool,
             gpu: FakeGpu::default(),
             nodes,
             delay,
@@ -3529,7 +3532,6 @@ fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
             depths: [below; 8],
             far: (0, 0),
             hi_d: None,
-            finest: None,
             epoch: 0,
             pose: Pose {
                 eye: [0.0; 3],
@@ -3546,6 +3548,7 @@ fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
         origin: ORIGIN,
         depths: &depths,
         evaluations: Cell::new(0),
+        capped: true,
     };
     let cut_node = CellCutNode {
         bounds,
@@ -4829,25 +4832,31 @@ const FAR_NODE: u64 = 3;
 /// Pool target: depths 4 to 7 change with the occupied depth (6 at ~12, 5 at ~102).
 const BOUND_TARGET: f64 = 32.0;
 
-/// `NodeDepths::hi_d` of `id` as the pure functions give it at `view`, from the pages of the
-/// finest resident level the entry was computed with.
+/// `NodeDepths::hi_d` of `id` as the pure functions give it at `view`: the least over the
+/// resident levels of `max(bound of the level, level depth)`, not below `lo`.
 fn bound_from_pages(rig: &Rig, id: NodeId, view: &ViewProjection) -> Option<u8> {
-    let finest = rig.pool.depths[&id].finest?;
-    let level = rig.pool.level(rig.pool.key(id, finest)).expect("level");
     let node = &rig.nodes[&id];
-    let occupied = crate::nearest_occupied_depth(view, &grid(), ORIGIN, finest, &level.pages)?;
     let region = probe_region(node.bounds, std::array::from_fn(|o| node.probe_box(o)));
-    crate::cell_cut::node_view_range_at(
-        view,
-        &grid(),
-        ORIGIN,
-        region,
-        node.buildable,
-        BOUND_TARGET / 2.0,
-        rig.pool.min_side(),
-        Some(occupied),
-    )
-    .map(|(_, hi)| hi)
+    let lo = rig.pool.depths[&id].far.0;
+    (node.buildable.0..=node.buildable.1)
+        .filter_map(|depth| {
+            let level = rig.pool.level(rig.pool.key(id, depth))?;
+            let occupied =
+                crate::nearest_occupied_depth(view, &grid(), ORIGIN, depth, &level.pages)?;
+            let (_, hi) = crate::cell_cut::node_view_range_at(
+                view,
+                &grid(),
+                ORIGIN,
+                region,
+                node.buildable,
+                BOUND_TARGET / 2.0,
+                rig.pool.min_side(),
+                Some(occupied),
+            )?;
+            Some(hi.max(depth))
+        })
+        .min()
+        .map(|bound| bound.max(lo))
 }
 
 /// A settled rig at the zoom camera whose node `id` holds one cell at `at` in every level.
@@ -4862,7 +4871,7 @@ fn bound_rig(id: u64, at: [f64; 3]) -> Rig {
 }
 
 #[test]
-fn the_data_bound_is_hi_at_the_nearest_page_of_the_finest_resident_level() {
+fn the_data_bound_is_the_least_over_the_resident_levels_of_hi_at_their_nearest_page() {
     let (near, far) = (NodeId::new(NEAR_NODE), NodeId::new(FAR_NODE));
     let zoom = view(&camera("zoom"));
     let rig = bound_rig(NEAR_NODE, NEAR_POINT);
@@ -4870,7 +4879,6 @@ fn the_data_bound_is_hi_at_the_nearest_page_of_the_finest_resident_level() {
     let bound = rig.pool.data_bound(near).expect("a page in view");
     assert_eq!(Some(bound), bound_from_pages(&rig, near, &zoom));
     assert!(entry.far.0 <= bound && bound <= rig.nodes[&near].buildable.1);
-    assert_eq!(entry.finest, Some(7));
     let far_rig = bound_rig(FAR_NODE, FAR_POINT);
     let far_bound = far_rig.pool.data_bound(far).expect("a page in view");
     assert_eq!(Some(far_bound), bound_from_pages(&far_rig, far, &zoom));
@@ -4879,42 +4887,125 @@ fn the_data_bound_is_hi_at_the_nearest_page_of_the_finest_resident_level() {
 }
 
 #[test]
-fn the_data_bound_never_falls_at_a_fixed_pose_and_is_recomputed_when_the_pose_moves() {
+fn the_data_bound_does_not_depend_on_the_levels_over_it() {
+    let (cut, zoom) = (ids(&CHILDREN), camera("zoom"));
+    let id = NodeId::new(NEAR_NODE);
+    let mut rig = bound_rig(NEAR_NODE, FAR_POINT);
+    let bound = rig.pool.data_bound(id).expect("bound");
+    let top = rig.nodes[&id].buildable.1;
+    assert!(bound < top, "setup: {bound} against {top}");
+    // The levels over the bound leave: it does not change (they could not hold the least).
+    let evaluations = rig.pool.bound_evaluations;
+    for depth in (bound + 1)..=top {
+        let (key, frame) = (rig.pool.key(id, depth), rig.pool.frame);
+        rig.pool.evict_resident(key, frame);
+    }
+    rig.pool.uncapped_wish = false;
+    rig.step(&cut, &zoom, BOUND_TARGET);
+    assert!(
+        rig.pool.bound_evaluations > evaluations,
+        "setup: looked at again"
+    );
+    assert_eq!(rig.pool.data_bound(id), Some(bound));
+    // The whole resident set leaves and comes back in the pool's own order, with the same pages:
+    // the same bound, wherever the order of arrival went.
+    let keys: Vec<LevelKey> = (rig.nodes[&id].buildable.0..=bound)
+        .map(|depth| rig.pool.key(id, depth))
+        .collect();
+    for key in &keys {
+        let frame = rig.pool.frame;
+        rig.pool.evict_resident(*key, frame);
+    }
+    rig.step(&cut, &zoom, BOUND_TARGET);
+    rig.run(8, &cut, &zoom, BOUND_TARGET);
+    put_pages_at(&mut rig, id, FAR_POINT);
+    rig.pool.residency_epoch += 1;
+    rig.step(&cut, &zoom, BOUND_TARGET);
+    assert_eq!(rig.pool.data_bound(id), Some(bound));
+}
+
+#[test]
+fn a_level_arriving_inside_the_bound_can_lower_it_and_the_wishes_follow() {
     let (cut, zoom) = (ids(&CHILDREN), camera("zoom"));
     let id = NodeId::new(NEAR_NODE);
     let mut rig = bound_rig(NEAR_NODE, NEAR_POINT);
-    let near_bound = rig.pool.data_bound(id).expect("bound");
-    // The data the bound came from goes away: only far cells are left, and the finest resident
-    // depth changes, so the bound is looked at again.
-    put_pages_at(&mut rig, id, FAR_POINT);
-    let finest = rig.pool.depths[&id].finest.expect("finest");
-    let key = rig.pool.key(id, finest);
-    let frame = rig.pool.frame;
-    rig.pool.evict_resident(key, frame);
-    rig.step(&cut, &zoom, BOUND_TARGET);
-    let entry = &rig.pool.depths[&id];
+    rig.pool.uncapped_wish = false;
+    let before = rig.pool.data_bound(id).expect("bound");
+    let coarse = rig.nodes[&id].buildable.0;
+    assert!(coarse < before, "setup: {coarse} against {before}");
+    // The coarsest level now has its data far from the eye: it alone gives a lower bound.
+    let key = rig.pool.key(id, coarse);
+    let level = rig.pool.levels.get_mut(&key).expect("level");
+    let mut packed = (**level.data.as_ref().expect("data")).clone();
+    for page in &mut packed.pages {
+        page.origin = FAR_POINT.map(|v| (v / (SIDE / 2.0_f64.powi(i32::from(coarse)))) as u64);
+    }
+    level.data = Some(Arc::new(packed));
+    rig.pool.residency_epoch += 1;
+    let mut plan = rig.step(&cut, &zoom, BOUND_TARGET);
+    let after = rig.pool.data_bound(id).expect("bound");
+    assert!(after < before, "setup: {after} against {before}");
+    assert_eq!(
+        after,
+        bound_from_pages(&rig, id, &view(&zoom)).expect("pages")
+    );
     assert!(
-        entry.finest < Some(finest),
-        "{:?} after {finest}",
-        entry.finest
+        !plan.counters.wanted_reused,
+        "the lowered bound redoes the wanted cut"
     );
-    let from_pages = bound_from_pages(&rig, id, &view(&zoom)).expect("pages in view");
-    assert!(from_pages < near_bound, "{from_pages} against {near_bound}");
+    let mut wish = None;
+    for _ in 0..4 {
+        wish = wish.max(finest_wish_and_request(&plan, id).0);
+        plan = rig.step(&cut, &zoom, BOUND_TARGET);
+    }
+    assert_eq!(wish, Some(after), "the wish did not follow the bound");
+}
+
+#[test]
+fn a_resident_level_with_no_page_in_view_bounds_the_node_at_its_own_depth() {
+    let (cut, zoom) = (ids(&CHILDREN), camera("zoom"));
+    let id = NodeId::new(NEAR_NODE);
+    let (first, last) = (4_u8, 7_u8);
+    // Run with the levels `resident` only, the ones in `unseen` holding their pages far outside
+    // the view; return the bound and the finest wish of the node.
+    let run = |resident: &[u8], unseen: &[u8]| {
+        let mut rig = bound_rig(NEAR_NODE, FAR_POINT);
+        rig.pool.uncapped_wish = false;
+        for depth in first..=last {
+            let (key, frame) = (rig.pool.key(id, depth), rig.pool.frame);
+            if !resident.contains(&depth) {
+                rig.pool.evict_resident(key, frame);
+            } else if unseen.contains(&depth) {
+                let side = SIDE / 2.0_f64.powi(i32::from(depth));
+                let level = rig.pool.levels.get_mut(&key).expect("level");
+                let mut packed = (**level.data.as_ref().expect("data")).clone();
+                for page in &mut packed.pages {
+                    page.origin = [1.0e9; 3].map(|v| (v / side) as u64);
+                }
+                level.data = Some(Arc::new(packed));
+            }
+        }
+        rig.pool.residency_epoch += 1;
+        let plan = rig.step(&cut, &zoom, BOUND_TARGET);
+        let lo = rig.pool.depths[&id].far.0;
+        (
+            rig.pool.data_bound(id).expect("a resident level bounds"),
+            lo,
+            finest_wish_and_request(&plan, id).0,
+        )
+    };
+    // {4, 5} with only level 4 in view, against {5, 6} with none: the coarsest level with no box
+    // in view gives the bound whichever coarser level is also resident.
+    let (with_view, lo, wish) = run(&[4, 5], &[5]);
+    let (without_view, _, _) = run(&[5, 6], &[5, 6]);
     assert_eq!(
-        rig.pool.data_bound(id),
-        Some(near_bound),
-        "held at a fixed pose"
+        with_view, without_view,
+        "the bound follows the resident set"
     );
-    // The level comes back (with the pool's own pages) and the bound still holds.
-    rig.run(4, &cut, &zoom, BOUND_TARGET);
-    assert!(rig.pool.data_bound(id) >= Some(near_bound));
-    // A pose beyond the drift limit recomputes it freely: it follows the pages of the finest
-    // resident level at the new pose, whatever they give.
-    let fit = camera("fit");
-    rig.step(&cut, &fit, BOUND_TARGET);
-    assert_eq!(
-        rig.pool.data_bound(id),
-        bound_from_pages(&rig, id, &view(&fit))
+    assert_eq!(with_view, lo.max(5));
+    assert!(
+        wish.is_some() && wish <= Some(with_view),
+        "wish {wish:?}, bound {with_view}"
     );
 }
 
@@ -4935,27 +5026,23 @@ fn a_still_camera_at_rest_computes_no_data_bound_and_a_moved_one_does() {
 }
 
 #[test]
-fn the_cached_depths_look_at_the_data_bound_again_when_the_finest_resident_level_changes() {
+fn the_cached_depths_look_at_the_data_bound_again_when_a_resident_level_changes() {
     let (cut, zoom) = (ids(&CHILDREN), camera("zoom"));
     let id = NodeId::new(NEAR_NODE);
     let mut rig = bound_rig(NEAR_NODE, NEAR_POINT);
-    let (finest, bound) = (
-        rig.pool.depths[&id].finest.expect("finest"),
-        rig.pool.data_bound(id),
-    );
     let refreshes = |rig: &mut Rig| rig.step(&cut, &zoom, BOUND_TARGET).counters.depth_refreshes;
-    // Nothing changes at a fixed pose: no refresh, the same entry.
-    assert_eq!(refreshes(&mut rig), 0);
-    assert_eq!(rig.pool.depths[&id].finest, Some(finest));
-    // A level that leaves the pool moves the finest depth in the entry without redoing it.
-    let frame = rig.pool.frame;
-    rig.pool.evict_resident(rig.pool.key(id, finest), frame);
-    assert_eq!(refreshes(&mut rig), 0);
-    assert!(rig.pool.depths[&id].finest < Some(finest));
-    // And when it arrives again the entry follows, and the bound is not lower.
+    // Nothing changes at a fixed pose: no refresh, no work.
     rig.run(4, &cut, &zoom, BOUND_TARGET);
-    assert_eq!(rig.pool.depths[&id].finest, Some(finest));
-    assert!(rig.pool.data_bound(id) >= bound);
+    let evaluations = rig.pool.bound_evaluations;
+    assert_eq!(refreshes(&mut rig), 0);
+    assert_eq!(rig.pool.bound_evaluations, evaluations);
+    // A level that leaves the pool, whichever it is, makes the bound be looked at again without
+    // redoing the entry.
+    let key = rig.pool.key(id, rig.nodes[&id].buildable.0);
+    let frame = rig.pool.frame;
+    rig.pool.evict_resident(key, frame);
+    assert_eq!(refreshes(&mut rig), 0);
+    assert!(rig.pool.bound_evaluations > evaluations);
 }
 
 #[test]
@@ -5032,4 +5119,82 @@ fn the_active_set_has_no_gap_between_a_drawn_depth_and_the_range() {
             assert_eq!(active, expected, "case {n} under {rule:?}");
         }
     }
+}
+
+// ---- The wish is capped at the data bound (ADR 0055 plan, task 7a) --------------------------
+
+/// The finest depth any octant of `id` wishes in `plan`, and the finest depth requested for it.
+fn finest_wish_and_request(plan: &FramePlan, id: NodeId) -> (Option<u8>, Option<u8>) {
+    let wish = plan
+        .entries
+        .iter()
+        .filter(|entry| entry.node == id)
+        .flat_map(|entry| entry.wanted.iter().flatten().copied())
+        .max();
+    let request = plan
+        .fetch_requests
+        .iter()
+        .filter(|key| key.node == id)
+        .map(|key| key.depth)
+        .max();
+    (wish, request)
+}
+
+#[test]
+fn a_node_wishes_and_requests_no_depth_finer_than_its_data_bound() {
+    let (cut, zoom) = (ids(&CHILDREN), camera("zoom"));
+    let id = NodeId::new(NEAR_NODE);
+    // The eye node (its octants cross the eye plane and wish the finest depth) holds data only
+    // on the far side: its bound is 5 and it wishes 7.
+    let mut rig = bound_rig(NEAR_NODE, FAR_POINT);
+    rig.pool.uncapped_wish = false;
+    let bound = rig.pool.data_bound(id).expect("a page in view");
+    let top = rig.nodes[&id].buildable.1;
+    assert!(
+        bound < top,
+        "setup: the bound {bound} must leave room below {top}"
+    );
+    // The levels finer than the bound go away; the pool must not fetch them again.
+    let finer: Vec<LevelKey> = ((bound + 1)..=top).map(|d| rig.pool.key(id, d)).collect();
+    for key in finer {
+        let frame = rig.pool.frame;
+        rig.pool.evict_resident(key, frame);
+    }
+    let (mut wish, mut request) = (None, None);
+    for _ in 0..12 {
+        let plan = rig.step(&cut, &zoom, BOUND_TARGET);
+        let (w, r) = finest_wish_and_request(&plan, id);
+        wish = wish.max(w);
+        request = request.max(r);
+    }
+    assert!(
+        wish.is_some() && wish <= Some(bound),
+        "wish {wish:?}, bound {bound}"
+    );
+    assert!(request <= Some(bound), "request {request:?}, bound {bound}");
+}
+
+#[test]
+fn at_a_fixed_pose_no_level_is_requested_twice_or_cancelled_more_than_twice() {
+    let (cut, zoom) = (ids(&CHILDREN), camera("zoom"));
+    let mut rig = Rig::new(octant_nodes(), 256, 64, 2);
+    rig.pool.uncapped_wish = false;
+    let (mut requested, mut cancelled): (HashMap<LevelKey, u32>, HashMap<LevelKey, u32>) =
+        Default::default();
+    for _ in 0..200 {
+        let plan = rig.step(&cut, &zoom, BOUND_TARGET);
+        for key in &plan.fetch_requests {
+            *requested.entry(*key).or_default() += 1;
+        }
+        for event in &plan.events {
+            if let CellPoolEvent::Cancel(key) = event {
+                *cancelled.entry(*key).or_default() += 1;
+            }
+        }
+    }
+    assert!(!requested.is_empty(), "setup: levels were requested");
+    let repeated: Vec<_> = requested.iter().filter(|(_, n)| **n > 1).collect();
+    assert!(repeated.is_empty(), "requested twice: {repeated:?}");
+    let cancels: Vec<_> = cancelled.iter().filter(|(_, n)| **n > 2).collect();
+    assert!(cancels.is_empty(), "cancelled more than twice: {cancels:?}");
 }

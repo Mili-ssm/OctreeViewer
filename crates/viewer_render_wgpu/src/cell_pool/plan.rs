@@ -120,6 +120,16 @@ impl CellPool {
             origin: coordinate_origin,
             depths,
             evaluations: Cell::new(0),
+            capped: {
+                #[cfg(test)]
+                {
+                    !self.uncapped_wish
+                }
+                #[cfg(not(test))]
+                {
+                    true
+                }
+            },
         };
         let eye: [f64; 3] = view
             .camera()
