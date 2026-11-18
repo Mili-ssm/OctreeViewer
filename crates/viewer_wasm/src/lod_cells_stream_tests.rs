@@ -3874,10 +3874,15 @@ fn source_detail(
         .filter(|(depth, _)| *depth <= cap_b)
         .max_by_key(|(depth, _)| *depth)
         .or_else(|| levels.iter().min_by_key(|(depth, _)| *depth));
+    let chosen = [
+        levels.iter().max_by_key(|(depth, _)| *depth),
+        set_b,
+        levels.iter().min_by_key(|(depth, _)| *depth),
+    ];
     let sets = [
-        boxes_of(levels.iter().max_by_key(|(depth, _)| *depth)),
-        boxes_of(set_b),
-        boxes_of(levels.iter().min_by_key(|(depth, _)| *depth)),
+        boxes_of(chosen[0]),
+        boxes_of(chosen[1]),
+        boxes_of(chosen[2]),
         Some(octant_boxes(h, j)),
     ];
     let planes = frustum_planes(ctx, calc.near);
@@ -3887,7 +3892,9 @@ fn source_detail(
             continue;
         };
         // raw: the distance to the box over the off-axis stretch, as `nearest_visible_depth` does
-        // for the region; clip: the smallest view depth of the box inside the frustum.
+        // for the region; clip: the smallest view depth of the box inside the frustum (the
+        // render crate's `nearest_occupied_page` for the pages of a level; the octant boxes of
+        // the last source have no pages, so they keep the local clip).
         let raw = set
             .iter()
             .map(|(min, max)| {
@@ -3898,14 +3905,24 @@ fn source_detail(
                 distance / calc.stretch
             })
             .fold(f64::INFINITY, f64::min);
-        let (clip, at) = set
-            .iter()
-            .enumerate()
-            .filter_map(|(i, bx)| Some((min_depth_in_box(bx, &planes, forward)?, i)))
-            .fold((None, 0), |(best, at), (depth, i)| match best {
-                Some(b) if b <= depth => (best, at),
-                _ => (Some(depth), i),
-            });
+        let (clip, at) = match chosen.get(s).copied().flatten() {
+            Some((depth, level)) => viewer_render_wgpu::nearest_occupied_page(
+                view,
+                &grid,
+                h.dataset.coordinate_origin(),
+                *depth,
+                &level.pages,
+            )
+            .map_or((None, 0), |(depth, at)| (Some(depth * ctx.scale), at)),
+            None => set
+                .iter()
+                .enumerate()
+                .filter_map(|(i, bx)| Some((min_depth_in_box(bx, &planes, forward)?, i)))
+                .fold((None, 0), |(best, at), (depth, i)| match best {
+                    Some(b) if b <= depth => (best, at),
+                    _ => (Some(depth), i),
+                }),
+        };
         if s == 0
             && clip.is_some()
             && let Some((_, level)) = levels.iter().max_by_key(|(depth, _)| *depth)

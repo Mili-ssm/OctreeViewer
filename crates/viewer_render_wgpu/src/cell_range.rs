@@ -159,8 +159,7 @@ impl ViewFrustum {
 
 /// The smallest view depth, inside the view frustum, of the page boxes `pages` of the level at
 /// absolute `depth` (the tight box of a page spans `box_max + 1` cells from its origin), or `None`
-/// when no page box meets the frustum. One pass, no allocation; a page whose lower bound is not
-/// below the best so far is skipped, so the exact clip runs on few of them.
+/// when no page box meets the frustum. See `nearest_occupied_page`.
 pub fn nearest_occupied_depth(
     view: &ViewProjection,
     grid: &CellGrid,
@@ -168,19 +167,34 @@ pub fn nearest_occupied_depth(
     depth: u8,
     pages: &[PageInfo],
 ) -> Option<f64> {
+    nearest_occupied_page(view, grid, coordinate_origin, depth, pages).map(|(depth, _)| depth)
+}
+
+/// `nearest_occupied_depth` and the index of the first page that gives it. One pass, no
+/// allocation; a page whose lower bound is not below the best so far is skipped, so the exact
+/// clip runs on few of them.
+pub fn nearest_occupied_page(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    depth: u8,
+    pages: &[PageInfo],
+) -> Option<(f64, usize)> {
     let frustum = ViewFrustum::new(view)?;
     let side = grid.root_side / 2.0_f64.powi(i32::from(depth));
     let base: [f64; 3] = std::array::from_fn(|a| grid.root_min[a] - coordinate_origin[a]);
-    let mut best: Option<f64> = None;
-    for page in pages {
+    let mut best: Option<(f64, usize)> = None;
+    for (index, page) in pages.iter().enumerate() {
         let min: [f64; 3] = std::array::from_fn(|a| base[a] + page.origin[a] as f64 * side);
         let max: [f64; 3] =
             std::array::from_fn(|a| min[a] + (f64::from(page.box_max[a]) + 1.0) * side);
-        if best.is_some_and(|b| frustum.lower_bound(min, max) >= b) {
+        if best.is_some_and(|(b, _)| frustum.lower_bound(min, max) >= b) {
             continue;
         }
-        if let Some(depth) = frustum.min_depth(min, max) {
-            best = Some(best.map_or(depth, |b| b.min(depth)));
+        if let Some(depth) = frustum.min_depth(min, max)
+            && best.is_none_or(|(b, _)| depth < b)
+        {
+            best = Some((depth, index));
         }
     }
     best

@@ -64,7 +64,7 @@ pub use cell_pool::{
     DEFAULT_UPLOAD_BUDGET_BYTES, FramePlan, HIGH_PERCENT, LOW_PERCENT, LevelKey, MaskUpdate,
     POOL_PAGE_BYTES, PageUpload, PoolConfig, PoolCounters, PoolNode, usable_pages,
 };
-pub use cell_range::nearest_occupied_depth;
+pub use cell_range::{nearest_occupied_depth, nearest_occupied_page};
 pub use cell_render::{CellLimitMode, CellPoolError, LodCounters, MASK_WORDS, NODE_WORDS};
 pub use frame_timer::GpuFrameStats;
 pub use gpu::{
