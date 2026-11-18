@@ -28,7 +28,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 
 | Documento | Contenido | Estado |
 | --- | --- | --- |
-| [ADR 0055 en modo celda: rango por nodo y puerta de residencia](plans/adr-0055-rango-por-nodo.md) | División de `cell_pool.rs`, rango por nodo en lugar de sondas por octante y puerta de residencia en los bordes; diez tareas con sus puertas. | pendiente |
+| [ADR 0055 en modo celda: rango por nodo y puerta de residencia](plans/adr-0055-rango-por-nodo.md) | División de `cell_pool.rs`, rango por nodo en lugar de sondas por octante y puerta de residencia en los bordes; doce tareas en tres tramos entregables por separado, con pre-mortem aplicado. | en curso |
 | [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho y fusionado en `main`, sigue D4) |
 | [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050, 0052 y 0053); fase 1 y 2a fusionadas; 2b en pausa. | en curso |
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
