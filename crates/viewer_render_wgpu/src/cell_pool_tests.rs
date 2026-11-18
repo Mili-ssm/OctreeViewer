@@ -4393,3 +4393,252 @@ fn a_leaving_node_hands_back_one_level() {
         "{first:?}"
     );
 }
+
+#[test]
+fn cell_reset_restarts_the_active_window() {
+    // Only depth 9 serves the node when it enters the cut (range 7..=11); the rest of the range
+    // arrives and the window widens to all of it. After a reset the node enters again: it must
+    // start from the depth it draws, one level either side, and widen one level per frame, with
+    // neither the window nor the finest depth it had before the reset.
+    let stored: Vec<u8> = (2..=12).collect();
+    let nodes = HashMap::from([(NodeId::new(1), d5_node(SIDE, &stored))]);
+    let mut rig = Rig::new(nodes, 4096, 64, 10_000);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2, 9]);
+    rig.pool.residency_epoch += 1;
+    let cam = camera("zoom");
+    let cut = ids(&[1]);
+    let enter = |rig: &mut Rig| {
+        let plan = d5_step_at(rig, &cut, &cam, 2.0);
+        assert_eq!(plan.entries[0].range, Some((7, 11)), "setup");
+        assert_eq!(active_depths(&plan, rig, 1), [9], "entering the cut");
+    };
+    enter(&mut rig);
+    seed_more(&mut rig, 1, &[7, 8, 10, 11]);
+    let mut plan = d5_step_at(&mut rig, &cut, &cam, 2.0);
+    for _ in 0..2 {
+        plan = d5_step_at(&mut rig, &cut, &cam, 2.0);
+    }
+    // Guard: a range with lo < hi whose active depths include ones no octant draws.
+    let (lo, hi) = plan.entries[0].range.expect("a cell-mode node has a range");
+    let drawn = plan.entries[0].required_levels();
+    let widened = active_depths(&plan, &rig, 1);
+    assert!(
+        lo < hi && widened.iter().any(|d| !drawn.contains(d)),
+        "{lo}..{hi} {widened:?} vs {drawn:?}"
+    );
+    assert_eq!(widened, [7, 8, 9, 10, 11], "setup: the window is wide");
+
+    let _ = rig.pool.reset();
+    rig.pool.residency_epoch += 1;
+    // The first frame after the reset already finds 7 resident, two levels from the drawn 9 and
+    // inside the range: only a stale window would activate it.
+    seed_resident(&mut rig.pool, 1, &[2, 7, 9]);
+    enter(&mut rig);
+    seed_more(&mut rig, 1, &[8, 10, 11]);
+    let spans: Vec<Vec<u8>> = (0..3)
+        .map(|_| active_depths(&d5_step_at(&mut rig, &cut, &cam, 2.0), &rig, 1))
+        .collect();
+    assert_eq!(spans[0], [8, 9, 10], "one level either side again");
+    assert_eq!(spans[1], [7, 8, 9, 10, 11], "one more level either side");
+    assert_eq!(spans[2], spans[1], "the range is covered");
+}
+
+/// The eight octant nodes with stored (and buildable) depths 4..=12: in the zoom camera the
+/// near ones get a range of several depths.
+fn wide_octant_nodes() -> HashMap<NodeId, PoolNode> {
+    let mut nodes = octant_nodes();
+    for node in nodes.values_mut() {
+        node.stored = (4..=12).collect();
+        node.buildable = (4, 12);
+    }
+    nodes
+}
+
+/// What the wide-range scenarios must have exercised: nodes whose range has `lo < hi` and an
+/// active level that is range-only (active, but not the depth any octant draws).
+fn count_range_only(plan: &FramePlan) -> usize {
+    plan.entries
+        .iter()
+        .filter_map(|entry| entry.range.filter(|(lo, hi)| lo < hi).map(|_| entry))
+        .map(|entry| {
+            let drawn = entry.required_levels();
+            plan.active
+                .iter()
+                .filter(|level| level.key.node == entry.node && !drawn.contains(&level.key.depth))
+                .count()
+        })
+        .sum()
+}
+
+fn an_active_range_depth_is_never_evicted_under_pressure_with(rule: ActiveRule) {
+    let mut rig = Rig::new(wide_octant_nodes(), 80, 2, 1);
+    rig.pool.set_active_rule(rule);
+    let cut = ids(&CHILDREN);
+    let (mut evictions, mut range_only, mut previously_active) = (0, 0, 0);
+    let mut previous: HashSet<LevelKey> = HashSet::new();
+    for frame in 0..80 {
+        let mut cam = camera("zoom");
+        cam.orbit(0.004 * f64::from(frame), 0.0);
+        let plan = rig.step(&cut, &cam, 2.0);
+        range_only += count_range_only(&plan);
+        for event in &plan.events {
+            let CellPoolEvent::Evict(key) = event else {
+                continue;
+            };
+            evictions += 1;
+            // An active level that leaves the wanted set may go; one inside the range the cut
+            // still gives its node would be active again at once, so it must be kept.
+            if !previous.contains(key) {
+                continue;
+            }
+            previously_active += 1;
+            let in_range = plan.entries.iter().any(|entry| {
+                entry.node == key.node
+                    && entry
+                        .range
+                        .is_some_and(|(lo, hi)| (lo..=hi).contains(&key.depth))
+            });
+            assert!(
+                !in_range,
+                "frame {frame}: {key:?} was active, is still in its node's range and was evicted"
+            );
+        }
+        previous = plan.active.iter().map(|level| level.key).collect();
+    }
+    // Guards: the pool really was under pressure and range-only depths really were active.
+    assert!(evictions > 0, "no eviction happened");
+    assert!(range_only > 0, "no range-only active depth occurred");
+    assert!(previously_active > 0, "no active level was ever evicted");
+    rig.assert_gpu_matches_pool();
+}
+
+#[test]
+fn an_active_range_depth_is_never_evicted_under_pressure() {
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        an_active_range_depth_is_never_evicted_under_pressure_with(rule);
+    }
+}
+
+#[test]
+fn cap_clamps_the_range_and_fit_reports_it_with_wide_ranges() {
+    // The eight near nodes want ranges of several depths in the zoom camera, which do not fit:
+    // the fit caps the farthest nodes first and reports it, and no capped node keeps an active
+    // depth finer than its cap.
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        let mut rig = Rig::new(wide_octant_nodes(), 80, 64, 1);
+        rig.pool.set_active_rule(rule);
+        let cut = ids(&CHILDREN);
+        let cam = camera("zoom");
+        let near = by_distance(&cam, &CHILDREN);
+        let (mut reported, mut capped_range_only) = (0, 0);
+        for frame in 0..40 {
+            let plan = rig.step(&cut, &cam, 2.0);
+            if plan.counters.pool_coarsened == 0 {
+                continue;
+            }
+            reported += 1;
+            assert_eq!(
+                plan.coarsened_nodes.len(),
+                plan.counters.pool_coarsened as usize,
+                "frame {frame}"
+            );
+            // Farthest first: the farthest node is capped, and walking from the farthest to the
+            // nearest node the caps never get coarser (an uncapped node in between is allowed:
+            // the fit skips a node whose coarsening saves no pages).
+            let farthest = *near.last().expect("nodes");
+            assert!(
+                plan.coarsened_nodes.contains(&NodeId::new(farthest)),
+                "frame {frame}: {:?}",
+                plan.coarsened_nodes
+            );
+            let caps: Vec<u8> = near
+                .iter()
+                .rev()
+                .filter_map(|id| rig.pool.caps.get(&NodeId::new(*id)).copied())
+                .collect();
+            assert!(caps.is_sorted(), "frame {frame}: caps far to near {caps:?}");
+            for key in plan.fetch_requests.iter().chain(&plan.level_requests) {
+                if let Some(cap) = rig.pool.caps.get(&key.node) {
+                    assert!(
+                        key.depth <= *cap,
+                        "frame {frame}: {key:?} requested above cap {cap}"
+                    );
+                }
+            }
+            for entry in &plan.entries {
+                let Some(cap) = rig.pool.caps.get(&entry.node) else {
+                    continue;
+                };
+                let drawn = entry.required_levels();
+                for level in plan.active.iter().filter(|l| l.key.node == entry.node) {
+                    assert!(
+                        level.key.depth <= *cap,
+                        "frame {frame}: {:?} above cap {cap}",
+                        level.key
+                    );
+                    if entry.range.is_some_and(|(lo, hi)| lo < hi)
+                        && !drawn.contains(&level.key.depth)
+                    {
+                        capped_range_only += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            reported > 0,
+            "{rule:?}: the fit never reported a coarsening"
+        );
+        assert!(
+            capped_range_only > 0,
+            "{rule:?}: no capped node had a range-only active depth"
+        );
+    }
+}
+
+#[test]
+fn every_active_depth_is_fully_uploaded_with_a_wide_range() {
+    // One page per frame: levels spend several frames partially uploaded, while their node's
+    // range already holds resident depths. No frame may activate a level that lacks pages.
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        let mut rig = Rig::new(wide_octant_nodes(), 4096, 1, 1);
+        rig.pool.set_active_rule(rule);
+        let cut = ids(&CHILDREN);
+        let cam = camera("zoom");
+        let (mut range_only, mut partial) = (0, 0);
+        for frame in 0..200 {
+            let plan = rig.step(&cut, &cam, 2.0);
+            range_only += count_range_only(&plan);
+            let active: HashSet<LevelKey> = plan.active.iter().map(|level| level.key).collect();
+            for key in &active {
+                assert!(
+                    rig.pool.is_resident(*key),
+                    "frame {frame}: {key:?} is not resident"
+                );
+                let pages = rig.pool.level(*key).expect("level").pages.len();
+                let uploaded = (0..pages)
+                    .filter(|page| rig.gpu.slot_of.contains_key(&(*key, *page)))
+                    .count();
+                assert_eq!(uploaded, pages, "frame {frame}: {key:?} lacks pages");
+            }
+            partial += rig
+                .pool
+                .levels
+                .iter()
+                .filter(|(key, level)| {
+                    !active.contains(key)
+                        && matches!(&level.state, LevelState::Uploading { slots, pages_done }
+                            if *pages_done < slots.len())
+                })
+                .count();
+        }
+        assert!(
+            range_only > 0,
+            "{rule:?}: no range-only active depth occurred"
+        );
+        assert!(
+            partial > 0,
+            "{rule:?}: no level was ever observed partially uploaded"
+        );
+    }
+}
