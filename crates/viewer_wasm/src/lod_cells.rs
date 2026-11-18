@@ -101,6 +101,8 @@ pub struct CellPlanStats {
     pub built_nodes: Vec<NodeId>,
     /// Nodes ready to be built (blocks decoded, parents done) that the cap left for later.
     pub build_deferred: usize,
+    /// The node part of `build_deferred` (without the level backlog).
+    pub nodes_deferred: usize,
     pub build_capped: bool,
     pub build_ms: f64,
     /// Nodes of the cut sent to the driver (plan nodes with cells).
@@ -132,6 +134,8 @@ pub struct CellUpdateStats {
     pub built_nodes: Vec<NodeId>,
     /// Nodes ready to be built (blocks decoded, parents done) that the cap left for later.
     pub build_deferred: usize,
+    /// The node part of `build_deferred` (without the level backlog).
+    pub nodes_deferred: usize,
     pub build_capped: bool,
     pub build_ms: f64,
     /// Nodes of the cut given to the driver (plan nodes with cells).
@@ -162,6 +166,7 @@ impl CellUpdateStats {
         Self {
             built_nodes: plan.built_nodes,
             build_deferred: plan.build_deferred,
+            nodes_deferred: plan.nodes_deferred,
             build_capped: plan.build_capped,
             build_ms: plan.build_ms,
             cut_nodes: plan.cut_nodes,
@@ -615,6 +620,13 @@ impl LodDataset {
                 .map(|axis| root.max()[axis] - root.min()[axis])
                 .fold(0.0, f64::max),
         }
+    }
+
+    /// The tight extent of the data for `CellDriver::set_data_bounds`; `None` when it is the root
+    /// cube itself (nothing tighter is known).
+    pub fn cell_data_bounds(&self) -> Option<SpatialBounds> {
+        let stats = self.metadata.hierarchy().stats();
+        (stats.data_bounds != stats.root_bounds).then_some(stats.data_bounds)
     }
 
     /// The dataset's `coordinate_origin`, for `DriverConfig::coordinate_origin`.
@@ -1643,15 +1655,15 @@ impl LodDataset {
         let build_ms = build_started.elapsed_ms();
         let (cpu_blocked, gpu_blocked) = (self.cells.cpu_blocked, self.cells.gpu_blocked);
         let any_blocked = cpu_blocked || gpu_blocked;
-        let build_deferred = levels_deferred
-            + if any_blocked {
-                0
-            } else {
-                candidates
-                    .iter()
-                    .filter(|c| !built_nodes.contains(&c.id) && ready(self, c.id))
-                    .count()
-            };
+        let nodes_deferred = if any_blocked {
+            0
+        } else {
+            candidates
+                .iter()
+                .filter(|c| !built_nodes.contains(&c.id) && ready(self, c.id))
+                .count()
+        };
+        let build_deferred = levels_deferred + nodes_deferred;
         let unbuilt = candidates
             .iter()
             .filter(|c| !built_nodes.contains(&c.id))
@@ -1757,6 +1769,7 @@ impl LodDataset {
         let stats = CellPlanStats {
             built_nodes,
             build_deferred,
+            nodes_deferred,
             build_capped: build_deferred > 0,
             build_ms,
             cut_nodes: cut.len(),

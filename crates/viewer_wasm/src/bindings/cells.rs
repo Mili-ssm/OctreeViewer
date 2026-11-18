@@ -394,6 +394,15 @@ impl WasmSceneBuilder {
                 .reference_spacing()
                 .map_or(JsValue::NULL, JsValue::from_f64),
         )?;
+        // The tight data extent for `beginRemoteCells`; null when it is the root cube.
+        let data = dataset.cell_data_bounds();
+        for (key, pick) in [("dataMin", true), ("dataMax", false)] {
+            let value = data.as_ref().map_or(JsValue::NULL, |bounds| {
+                let corner = if pick { bounds.min() } else { bounds.max() };
+                js_sys::Float64Array::from(corner.as_slice()).into()
+            });
+            set(&info, key, &value)?;
+        }
         Ok(info.into())
     }
 
@@ -648,15 +657,36 @@ impl WasmVoxelViewer {
         root_min: js_sys::Float64Array,
         root_side: f64,
         reference_spacing: Option<f64>,
+        data_min: Option<js_sys::Float64Array>,
+        data_max: Option<js_sys::Float64Array>,
     ) -> Result<String, JsValue> {
         // Arguments and renderer are checked before any state changes: an error leaves the
         // previous cells path as it was.
+        let mut data_bounds = None;
         if self.cells_requested {
             if origin.length() != 3 || root_min.length() != 3 || !root_side.is_finite() {
                 return Err(JsValue::from_str(
                     "origin and rootMin need 3 numbers and rootSide must be finite",
                 ));
             }
+            // The tight data extent (`cellsInfo.dataMin/dataMax`) is optional, both or neither:
+            // without it the probes use the geometric octants.
+            data_bounds = match (&data_min, &data_max) {
+                (None, None) => None,
+                (Some(min), Some(max)) if min.length() == 3 && max.length() == 3 => {
+                    let (mut lo, mut hi) = ([0.0; 3], [0.0; 3]);
+                    min.copy_to(&mut lo);
+                    max.copy_to(&mut hi);
+                    Some(viewer_core::SpatialBounds::new(lo, hi).map_err(|error| {
+                        JsValue::from_str(&format!("invalid dataMin/dataMax: {error}"))
+                    })?)
+                }
+                _ => {
+                    return Err(JsValue::from_str(
+                        "dataMin and dataMax must be given together, with 3 numbers each",
+                    ));
+                }
+            };
             if self.gpu_renderer.is_none() {
                 return Err(JsValue::from_str("GPU renderer has not been initialized"));
             }
@@ -695,6 +725,9 @@ impl WasmVoxelViewer {
         }
         let mut cells =
             ViewerCells::new(config, self.cell_node_cap).with_reference_spacing(reference_spacing);
+        if let Some(data) = data_bounds {
+            cells = cells.with_data_bounds(Some(data));
+        }
         cells
             .set_continuity(self.continuity)
             .map_err(|message| JsValue::from_str(&message))?;

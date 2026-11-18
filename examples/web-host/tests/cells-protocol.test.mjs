@@ -23,6 +23,7 @@ const lod = (extra = {}) => ({
 });
 const cellsInfo = () => ({
     generation: 3, origin: new Float64Array(3), rootMin: new Float64Array([0, 0, 0]), rootSide: 8, referenceSpacing: 0.25,
+    dataMin: new Float64Array([1, 1, 1]), dataMax: new Float64Array([2, 2, 2]),
 });
 const opened = (cellPath = "enabled") => ({
     status: "metadata_ready", visualScale: 1, nodeCount: 1, maxLevel: 0,
@@ -330,8 +331,8 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
             if (mode !== "octant" && mode !== "cell") throw new Error(`unknown cell LOD mode ${mode}`);
             log.push(["setCellLod", mode]);
         },
-        beginRemoteCells(origin, rootMin, rootSide, referenceSpacing) {
-            log.push(["beginRemoteCells", rootSide]);
+        beginRemoteCells(origin, rootMin, rootSide, referenceSpacing, dataMin, dataMax) {
+            log.push(["beginRemoteCells", rootSide, dataMin?.[0], dataMax?.[0]]);
             log.push(["referenceSpacing", referenceSpacing]);
             cellsOn = cellPath === "enabled";
             return cellPath;
@@ -473,7 +474,7 @@ test("cells=1 reaches both workers and the render worker starts its driver from 
     assert.equal(worker.posted[0].cells, true, "init of the build worker");
     const builder = await render.openCells();
     assert.equal(builder.posted.find(item => item.type === "open").cells, true);
-    assert.deepEqual(render.calls("beginRemoteCells"), [["beginRemoteCells", 8]]);
+    assert.deepEqual(render.calls("beginRemoteCells"), [["beginRemoteCells", 8, 1, 2]]);
     const off = await runRenderWorker({ cells: false });
     assert.equal(off.calls("enableCells").length, 0);
     assert.equal(off.workers[0].posted[0].cells, false);

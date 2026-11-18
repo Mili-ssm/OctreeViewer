@@ -114,8 +114,8 @@ fn fixture_cuts() -> Vec<(&'static str, Vec<NodeId>)> {
 }
 
 /// Brute-force oracle with its own cube placement, in the dataset frame: the first stored depth
-/// whose cube, at the octant point nearest the eye, meets `target`, else the finest (every
-/// coarser stored depth fails by construction).
+/// whose cube, at the octant point nearest the eye, would not refine (ADR 0054: its smallest of 8
+/// children projects below `target`), else the finest.
 fn oracle_octant(
     view: &ViewProjection,
     origin: [f64; 3],
@@ -158,14 +158,21 @@ fn oracle_octant(
             }
             cube_min[a] = v;
         }
-        let cube = SpatialBounds::new(cube_min, cube_min.map(|v| v + side)).unwrap();
-        view.projected_voxel_edge_pixels(cube, origin)
+        let half = side / 2.0;
+        let mut smallest = f64::INFINITY;
+        for child in 0..8_usize {
+            let child_min: [f64; 3] =
+                std::array::from_fn(|a| cube_min[a] + half * ((child >> a & 1) as f64));
+            let bounds = SpatialBounds::new(child_min, child_min.map(|v| v + half)).unwrap();
+            smallest = smallest.min(view.projected_voxel_edge_pixels(bounds, origin));
+        }
+        smallest
     };
     // Brute force: test every stored depth; the choice is the coarsest passing one.
     let passing: Vec<u8> = stored
         .iter()
         .copied()
-        .filter(|d| edge(*d) <= target)
+        .filter(|d| edge(*d) < target)
         .collect();
     passing.first().copied().unwrap_or(*stored.last().unwrap())
 }
@@ -426,6 +433,39 @@ fn camera_inside_node_returns_finest_for_its_octant() {
     }
 }
 
+/// Eye inside the geometric octant, data far in front or behind: the probe measures the data.
+#[test]
+fn a_probe_of_the_data_never_asks_the_finest_for_a_degenerate_box() {
+    let huge = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    let grid = CellGrid {
+        root_min: [-1000.0; 3],
+        root_side: 2000.0,
+    };
+    let mut camera = cameras().remove(0).1;
+    // Eye inside octant 6, looking along -x.
+    assert!(camera.set_pose([500.0, 300.0, -200.0], [0.0, 300.0, -200.0]));
+    let view = view(&camera);
+    let at = |probe| octant_wanted_depth_in(&view, &grid, [0.0; 3], huge, 6, probe, (3, 9), 8.0);
+    let data = |min: [f64; 3], side: f64| ProbeBox::Data(cube_box(min, side));
+    // Octant 0 of a 200-cube holds exactly the data box: the geometric answer for it.
+    let reference_node = SpatialBounds::new([0.0, 250.0, -250.0], [200.0, 450.0, -50.0]).unwrap();
+    let reference = octant_wanted_depth(&view, &grid, [0.0; 3], reference_node, 0, (3, 9), 8.0);
+    assert_eq!(
+        at(ProbeBox::Geometric),
+        9,
+        "the geometric box reaches the eye"
+    );
+    assert!(reference < 9, "setup: the target is met at that distance");
+    assert_eq!(at(data([0.0, 250.0, -250.0], 100.0)), reference);
+    // All data behind the eye plane: the coarsest depth.
+    assert_eq!(at(data([600.0, 250.0, -250.0], 100.0)), 3);
+    assert_eq!(at(ProbeBox::Empty), 3);
+}
+
+fn cube_box(min: [f64; 3], side: f64) -> SpatialBounds {
+    SpatialBounds::new(min, min.map(|v| v + side)).unwrap()
+}
+
 #[test]
 fn camera_inside_the_dataset_matches_the_oracle() {
     let grid = dataset_grid(ORIGIN);
@@ -551,6 +591,8 @@ fn digest_tells_a_hidden_octant_from_depth_zero() {
         wanted: [wanted; 8],
         drawn: [wanted; 8],
         stage: [false; 8],
+        step: [None; 8],
+        range: None,
         mask: [0; 8],
     };
     assert_ne!(
@@ -1111,18 +1153,18 @@ fn visible_volume_equals_covered_volume() {
 }
 
 const GOLDEN: &[(&str, u64)] = &[
-    ("root/fit/2px", 0x874f97c38baa823a),
-    ("root/fit/4px", 0x7d1169d9327e7815),
-    ("root/fit/8px", 0x42f9363f7b47c3c8),
-    ("root/orbit/2px", 0x874f97c38baa823a),
-    ("root/orbit/4px", 0x2fa845aa5f346e25),
-    ("root/orbit/8px", 0xc94fe0686b55ff68),
+    ("root/fit/2px", 0x7d1169d9327e7815),
+    ("root/fit/4px", 0x42f9363f7b47c3c8),
+    ("root/fit/8px", 0x5153783bc29513cb),
+    ("root/orbit/2px", 0x2fa845aa5f346e25),
+    ("root/orbit/4px", 0xc94fe0686b55ff68),
+    ("root/orbit/8px", 0xa8e7a617daf0527b),
     ("root/zoom/2px", 0x874f97c38baa823a),
-    ("root/zoom/4px", 0x874f97c38baa823a),
-    ("root/zoom/8px", 0xf0c6b585db2b31a5),
-    ("root/pan/2px", 0x874f97c38baa823a),
-    ("root/pan/4px", 0x68ec0d2c4b5afa9f),
-    ("root/pan/8px", 0x8f0c75bc680f980a),
+    ("root/zoom/4px", 0xf0c6b585db2b31a5),
+    ("root/zoom/8px", 0x19329f184c5ad560),
+    ("root/pan/2px", 0x68ec0d2c4b5afa9f),
+    ("root/pan/4px", 0x8f0c75bc680f980a),
+    ("root/pan/8px", 0x7bbd7c33444d8725),
     ("children/fit/2px", 0xa51da02388ee6c85),
     ("children/fit/4px", 0xa51da02388ee6c85),
     ("children/fit/8px", 0xa51da02388ee6c85),
@@ -1135,30 +1177,30 @@ const GOLDEN: &[(&str, u64)] = &[
     ("children/pan/2px", 0xa51da02388ee6c85),
     ("children/pan/4px", 0xa51da02388ee6c85),
     ("children/pan/8px", 0xa51da02388ee6c85),
-    ("mixed/fit/2px", 0xcfb3dd69675f533e),
-    ("mixed/fit/4px", 0x3d645e2f3ea980ba),
-    ("mixed/fit/8px", 0xde418b595f37d282),
-    ("mixed/orbit/2px", 0xcfb3dd69675f533e),
-    ("mixed/orbit/4px", 0xa23a9cfb8cb4df9e),
-    ("mixed/orbit/8px", 0x5301c3f944a73fce),
+    ("mixed/fit/2px", 0x3d645e2f3ea980ba),
+    ("mixed/fit/4px", 0xde418b595f37d282),
+    ("mixed/fit/8px", 0xdb555f7c706e7e1e),
+    ("mixed/orbit/2px", 0xa23a9cfb8cb4df9e),
+    ("mixed/orbit/4px", 0x5301c3f944a73fce),
+    ("mixed/orbit/8px", 0xb8531a79d519f47e),
     ("mixed/zoom/2px", 0xcfb3dd69675f533e),
     ("mixed/zoom/4px", 0xcfb3dd69675f533e),
-    ("mixed/zoom/8px", 0xcfb3dd69675f533e),
-    ("mixed/pan/2px", 0xcfb3dd69675f533e),
-    ("mixed/pan/4px", 0x5ee017fede23060c),
-    ("mixed/pan/8px", 0xcda82b8f251e4148),
-    ("wide_chain/fit/2px", 0x5782cd16bba4da29),
-    ("wide_chain/fit/4px", 0x6ddc9d7207e4afc9),
-    ("wide_chain/fit/8px", 0xb47d3a451a1e318d),
-    ("wide_chain/orbit/2px", 0x1b83ad1575279081),
-    ("wide_chain/orbit/4px", 0x403a506cb10ea159),
-    ("wide_chain/orbit/8px", 0xe894eeff470f1055),
-    ("wide_chain/zoom/2px", 0x8b1110b3ed120ded),
-    ("wide_chain/zoom/4px", 0x63d9c91115e43e69),
-    ("wide_chain/zoom/8px", 0x3e44e15bac392dc1),
-    ("wide_chain/pan/2px", 0x6047938e45ba3559),
-    ("wide_chain/pan/4px", 0x016225300c8668c9),
-    ("wide_chain/pan/8px", 0xae20372b87dfb69d),
+    ("mixed/zoom/8px", 0x3d645e2f3ea980ba),
+    ("mixed/pan/2px", 0x5ee017fede23060c),
+    ("mixed/pan/4px", 0xcda82b8f251e4148),
+    ("mixed/pan/8px", 0x9d1b8179261646b0),
+    ("wide_chain/fit/2px", 0x6ddc9d7207e4afc9),
+    ("wide_chain/fit/4px", 0xb47d3a451a1e318d),
+    ("wide_chain/fit/8px", 0x53542e0c8f481245),
+    ("wide_chain/orbit/2px", 0x403a506cb10ea159),
+    ("wide_chain/orbit/4px", 0xe894eeff470f1055),
+    ("wide_chain/orbit/8px", 0x89c1f98705838a65),
+    ("wide_chain/zoom/2px", 0x666bc1dea4c36f31),
+    ("wide_chain/zoom/4px", 0xd5ddb3e23053144d),
+    ("wide_chain/zoom/8px", 0xf779a7f9f1450615),
+    ("wide_chain/pan/2px", 0x016225300c8668c9),
+    ("wide_chain/pan/4px", 0xae20372b87dfb69d),
+    ("wide_chain/pan/8px", 0x932b0084c615954d),
 ];
 
 #[test]
@@ -1405,4 +1447,401 @@ fn cell_mode_ignores_children_resident_only_outside_their_span() {
 
 fn root_bounds() -> SpatialBounds {
     SpatialBounds::new(ORIGIN, ORIGIN.map(|v| v + SIDE)).unwrap()
+}
+
+/// ADR 0054: the target is a minimum. A wanted depth finer than the coarsest buildable one means
+/// the next coarser cell refined, so the wanted cell, placed at the octant point nearest the eye,
+/// measures at least the target (the eye behind the cell's plane counts as `+inf`).
+#[test]
+fn the_octant_wanted_depth_keeps_cells_at_least_the_target() {
+    let huge = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    let grid = CellGrid {
+        root_min: [-1000.0; 3],
+        root_side: 2000.0,
+    };
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1_u64 << 53) as f64
+    };
+    let mut finer = 0;
+    for _ in 0..600 {
+        let mut camera = cameras().remove(0).1;
+        let eye: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1600.0);
+        let at: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1000.0);
+        if !camera.set_pose(eye, at) {
+            continue;
+        }
+        let view = view(&camera);
+        let target = [1.0, 4.0, 16.0][(next() * 3.0) as usize % 3];
+        for octant in 0..8 {
+            let wanted = octant_wanted_depth(&view, &grid, [0.0; 3], huge, octant, (3, 12), target);
+            if wanted == 3 {
+                continue;
+            }
+            finer += 1;
+            let mid = [0.0; 3];
+            let side = 2000.0 / f64::from(1_u32 << wanted);
+            let cube_min: [f64; 3] = std::array::from_fn(|a| {
+                let (lo, hi) = if octant >> (2 - a) & 1 == 1 {
+                    (mid[a], 1000.0)
+                } else {
+                    (-1000.0, mid[a])
+                };
+                eye[a].clamp(lo, hi).min(hi - side).max(lo)
+            });
+            let cube = SpatialBounds::new(cube_min, cube_min.map(|v| v + side)).unwrap();
+            let edge = view.projected_voxel_edge_pixels(cube, [0.0; 3]);
+            assert!(
+                edge >= target,
+                "octant {octant} depth {wanted}: {edge} px below {target} (eye {eye:?})"
+            );
+        }
+    }
+    assert!(finer > 500, "{finer} finer octants");
+}
+
+// ---- Phase 2b task 1: the depth range of a node ----
+
+fn huge_grid() -> CellGrid {
+    CellGrid {
+        root_min: [-1000.0; 3],
+        root_side: 2000.0,
+    }
+}
+
+/// Cell-mode entry of one node with every depth of `buildable` stored and resident, its octant
+/// depths and range from the view as the pool computes them (origin `[0; 3]`).
+fn ranged_entry(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    bounds: SpatialBounds,
+    buildable: (u8, u8),
+    target: f64,
+) -> CellCutEntry {
+    let stored: Vec<u8> = (buildable.0..=buildable.1).collect();
+    let node = CellCutNode {
+        bounds,
+        buildable,
+        resident: stored.clone(),
+        stored,
+    };
+    cell_cut_ranged(
+        &ids(&[1]),
+        &|_| Some(node.clone()),
+        grid,
+        LodMode::Cell,
+        &|_, octant, data| {
+            octant_wanted_depth(view, grid, [0.0; 3], bounds, octant, data.buildable, target)
+        },
+        Some(&|_, data| {
+            node_far_depth(
+                view,
+                grid,
+                [0.0; 3],
+                bounds,
+                [ProbeBox::Geometric; 8],
+                data.buildable,
+                target,
+                None,
+            )
+        }),
+        None,
+    )
+    .unwrap()
+    .remove(0)
+}
+
+fn posed(eye: [f64; 3], at: [f64; 3]) -> ViewProjection {
+    let mut camera = cameras().remove(0).1;
+    assert!(camera.set_pose(eye, at));
+    view(&camera)
+}
+
+#[test]
+fn the_far_wanted_depth_is_never_finer_than_the_near_one() {
+    let grid = huge_grid();
+    let mut state = 0x2545_F491_4F6C_DD1D_u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1_u64 << 53) as f64
+    };
+    let mut checked = 0;
+    for _ in 0..800 {
+        let eye: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1600.0);
+        let at: [f64; 3] = std::array::from_fn(|_| (next() * 2.0 - 1.0) * 1000.0);
+        let mut camera = cameras().remove(0).1;
+        if !camera.set_pose(eye, at) {
+            continue;
+        }
+        let view = view(&camera);
+        let target = [1.0, 4.0, 16.0][(next() * 3.0) as usize % 3];
+        // A random box inside the grid: the root or one of its octants.
+        let side = 2000.0 / f64::from(1_u32 << ((next() * 3.0) as u32));
+        let min: [f64; 3] = std::array::from_fn(|_| {
+            -1000.0 + ((next() * 2000.0 / side).floor() * side).min(2000.0 - side)
+        });
+        let bounds = SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
+        let (far, front) = node_far_depth(
+            &view,
+            &grid,
+            [0.0; 3],
+            bounds,
+            [ProbeBox::Geometric; 8],
+            (3, 12),
+            target,
+            None,
+        );
+        let near = (0..8)
+            .filter(|o| front >> o & 1 == 1)
+            .map(|o| octant_wanted_depth(&view, &grid, [0.0; 3], bounds, o, (3, 12), target))
+            .max();
+        if let Some(near) = near {
+            assert!(
+                far <= near,
+                "far {far} > near {near}: eye {eye:?} at {at:?} box {bounds:?} target {target}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 300, "{checked} poses checked");
+}
+
+#[test]
+fn a_node_straddling_the_eye_plane_has_a_sane_range() {
+    // The eye sits beside the node, level with its middle, looking along +x: the node's lower-x
+    // half is behind the eye plane, the upper-x half in front.
+    let grid = huge_grid();
+    let bounds = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    let view = posed([100.0, 3000.0, 0.0], [1000.0, 3000.0, 0.0]);
+    let entry = ranged_entry(&view, &grid, bounds, (3, 12), 4.0);
+    let (lo, hi) = entry.range.expect("range");
+    assert!(lo <= hi && (3..=12).contains(&lo) && hi <= 12, "{lo}..{hi}");
+}
+
+#[test]
+fn the_eye_inside_the_node_gives_lo_le_hi() {
+    let grid = huge_grid();
+    let bounds = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    for at in [
+        [900.0, 0.0, 0.0],
+        [0.0, -900.0, 100.0],
+        [-500.0, 500.0, 500.0],
+    ] {
+        let view = posed([10.0, 20.0, 30.0], at);
+        for target in [1.0, 4.0, 16.0] {
+            let entry = ranged_entry(&view, &grid, bounds, (3, 12), target);
+            let (lo, hi) = entry.range.expect("range");
+            assert!(lo <= hi, "{lo}..{hi} at {at:?} target {target}");
+        }
+    }
+}
+
+#[test]
+fn an_octant_behind_the_eye_does_not_widen_the_range() {
+    // Octants 0..4 are behind the eye: they "want" the finest depth (12) only because their cube
+    // measures +inf, so they must not set `hi`; the visible ones want 5, the far side 4.
+    let nodes = root_with(&[3, 4, 5, 6, 12], &[3, 4, 5, 6, 12]);
+    let range = |front: u8| {
+        cell_cut_ranged(
+            &ids(&[1]),
+            &|id| nodes.get(&id).cloned(),
+            &dataset_grid(ORIGIN),
+            LodMode::Cell,
+            &|_, octant, _| if octant < 4 { 12 } else { 5 },
+            Some(&|_, _| (4, front)),
+            None,
+        )
+        .unwrap()[0]
+            .range
+    };
+    assert_eq!(range(0b1111_0000), Some((4, 5)));
+    // None in front (every octant crosses the plane): hi = lo.
+    assert_eq!(range(0), Some((4, 4)));
+}
+
+#[test]
+fn octant_mode_entries_have_no_range() {
+    let nodes = root_with(&[0, 1, 2, 3], &[0, 1, 2, 3]);
+    let camera = cameras().remove(0).1;
+    let entries = run(
+        &ids(&[1]),
+        &nodes,
+        &camera,
+        &dataset_grid(ORIGIN),
+        ORIGIN,
+        4.0,
+    )
+    .unwrap();
+    assert!(entries.iter().all(|entry| entry.range.is_none()));
+}
+
+/// One octant drawing `prev` that wants `w`, over `stored` buildable in `3..=12`.
+fn step_one(
+    prev: Option<u8>,
+    w: u8,
+    stored: &[u8],
+    resident: &[u8],
+    mode: LodMode,
+) -> (Option<u8>, Option<u8>) {
+    let (drawn, _, step) = drawn_levels(
+        &[Some(w); 8],
+        stored,
+        (3, 12),
+        resident,
+        &PrevState {
+            drawn: [prev; 8],
+            timed_out: [false; 8],
+        },
+        // Octant mode: a node depth that spans nothing here.
+        0,
+        mode,
+    );
+    (drawn[0], step[0])
+}
+
+#[test]
+fn stepping_never_jumps_past_the_wanted_depth() {
+    let stored = [7, 8, 9, 10];
+    // Drew 10, now wants 8: only {7, 10} resident keeps 10 and waits for 9.
+    assert_eq!(
+        step_one(Some(10), 8, &stored, &[7, 10], LodMode::Octant),
+        (Some(10), Some(9))
+    );
+    assert_eq!(
+        step_one(Some(10), 8, &stored, &[7, 9, 10], LodMode::Octant),
+        (Some(9), Some(8))
+    );
+    // Then 9 -> 8 once 8 is resident, and it stops there.
+    assert_eq!(
+        step_one(Some(9), 8, &stored, &[7, 8, 9, 10], LodMode::Octant),
+        (Some(8), None)
+    );
+    assert_eq!(
+        step_one(Some(8), 8, &stored, &[7, 8, 9, 10], LodMode::Octant),
+        (Some(8), None)
+    );
+}
+
+#[test]
+fn stepping_refines_one_level_per_frame() {
+    let stored = [3, 4, 5, 6, 7];
+    let resident = [3, 4, 5, 6, 7];
+    assert_eq!(
+        step_one(Some(3), 7, &stored, &resident, LodMode::Octant),
+        (Some(4), Some(5))
+    );
+    assert_eq!(
+        step_one(Some(4), 7, &stored, &resident, LodMode::Octant),
+        (Some(5), Some(6))
+    );
+    // The adjacent level is not resident yet: keep drawing, and ask for it.
+    assert_eq!(
+        step_one(Some(3), 7, &stored, &[3, 5, 7], LodMode::Octant),
+        (Some(3), Some(4))
+    );
+    // A chain pruned to {3, 7} whose depths in between are buildable asks for the adjacent one.
+    assert_eq!(
+        step_one(Some(3), 7, &[3, 7], &[3, 7], LodMode::Octant),
+        (Some(3), Some(4))
+    );
+}
+
+#[test]
+fn a_first_draw_uses_the_closest_resident() {
+    let stored = [7, 8, 9, 10];
+    assert_eq!(
+        step_one(None, 8, &stored, &[7, 10], LodMode::Octant),
+        (Some(7), Some(8))
+    );
+    // A previous depth that is no longer resident counts as no previous.
+    assert_eq!(
+        step_one(Some(9), 8, &stored, &[7, 10], LodMode::Octant),
+        (Some(7), Some(8))
+    );
+}
+
+#[test]
+fn cell_mode_keeps_the_stepped_depth_active() {
+    // A cell-mode node of depth 7 (span 7..=10) that drew 10 in every octant and wants 8: it keeps
+    // drawing 10 while 9 is missing, and the step it waits for is reported.
+    let (drawn, _, step) = drawn_levels(
+        &[Some(8); 8],
+        &[7, 8, 9, 10],
+        (7, 10),
+        &[7, 10],
+        &PrevState {
+            drawn: [Some(10); 8],
+            timed_out: [false; 8],
+        },
+        7,
+        LodMode::Cell,
+    );
+    assert_eq!(drawn, [Some(10); 8]);
+    assert_eq!(step, [Some(9); 8]);
+}
+
+#[test]
+fn stepping_skips_unservable_depths_and_times_out() {
+    // 8 and 9 are neither resident nor buildable: the step from 10 towards 7 waits for 7 itself.
+    assert_eq!(
+        stepped_depth(Some(10), 7, (3, 6), &[10], false),
+        Some((10, Some(7)))
+    );
+    // Timed out: a hop to the resident level of the interval closest to `prev`, never past the
+    // wanted depth, and the octant stays pending (`step`) until it draws the wanted depth.
+    assert_eq!(
+        stepped_depth(Some(10), 8, (3, 12), &[6, 9, 10], true),
+        Some((9, Some(8)))
+    );
+    assert_eq!(
+        stepped_depth(Some(6), 8, (3, 12), &[6, 9, 10], true),
+        Some((6, Some(7)))
+    );
+}
+
+#[test]
+fn a_timeout_hops_to_the_resident_closest_to_the_previous_depth() {
+    // Drew 10, wants 4, residents {10, 6}: it waits for 9 first, and only after the wait hops to
+    // 6 (not further than the closest resident), still pending towards 4.
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[10, 6], false),
+        Some((10, Some(9)))
+    );
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[10, 6], true),
+        Some((6, Some(5)))
+    );
+    // 9 or 8 arriving meanwhile is taken instead of the farther 6.
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[10, 9, 6], true),
+        Some((9, Some(8)))
+    );
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[10, 8, 6], true),
+        Some((8, Some(7)))
+    );
+    // Nothing resident in between: it keeps waiting, and stays pending.
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[10], true),
+        Some((10, Some(9)))
+    );
+}
+
+#[test]
+fn a_lost_previous_depth_draws_the_resident_closest_to_it_towards_the_wanted_one() {
+    // 10 is no longer resident: 8 (closest to 10 inside 4..=10) and not 6 (closest to 4).
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[6, 8], false),
+        Some((8, Some(7)))
+    );
+    // Nothing between: the closest to the wanted depth.
+    assert_eq!(
+        stepped_depth(Some(10), 4, (3, 12), &[2, 12], false),
+        Some((2, Some(3)))
+    );
 }

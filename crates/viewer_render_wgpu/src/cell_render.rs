@@ -525,34 +525,55 @@ fn cell_dot(a: vec3<f32>, b: vec3<f32>) -> f32 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-fn cell_edge_px(lo: vec3<f32>, side: f32) -> f32 {
-    var projected: array<vec2<f32>, 8>;
-    for (var index = 0u; index < 8u; index++) {
-        let corner = vec3<f32>(
-            select(lo.x, lo.x + side, (index & 1u) != 0u),
-            select(lo.y, lo.y + side, (index & 2u) != 0u),
-            select(lo.z, lo.z + side, (index & 4u) != 0u));
-        let depth = cell_dot(corner, frame.forward);
-        if depth <= 0.0 { return CELL_NEAR_EDGE; }
-        projected[index] = vec2<f32>(
-            frame.focal * (cell_dot(corner, frame.right) / depth),
-            frame.focal * (cell_dot(corner, frame.up) / depth));
-    }
-    var maximum = 0.0;
-    for (var index = 0u; index < 8u; index++) {
-        for (var axis = 0u; axis < 3u; axis++) {
-            if ((index >> axis) & 1u) != 0u { continue; }
-            let other = index | (1u << axis);
-            let dx = projected[index].x - projected[other].x;
-            let dy = projected[index].y - projected[other].y;
-            maximum = max(maximum, sqrt(dx * dx + dy * dy));
+// The smallest projected edge among the 8 children of the cell: see `min_child_edge_px` in
+// cell_lod.rs, whose operation order this copies.
+fn cell_min_child_edge_px(lo: vec3<f32>, side: f32) -> f32 {
+    let half = side * 0.5;
+    var projected: array<vec2<f32>, 27>;
+    var behind = 0u;
+    for (var index = 0u; index < 27u; index++) {
+        let steps = vec3<u32>(index % 3u, (index / 3u) % 3u, index / 9u);
+        let point = vec3<f32>(
+            select(select(lo.x, lo.x + half, steps.x == 1u), (lo.x + half) + half, steps.x == 2u),
+            select(select(lo.y, lo.y + half, steps.y == 1u), (lo.y + half) + half, steps.y == 2u),
+            select(select(lo.z, lo.z + half, steps.z == 1u), (lo.z + half) + half, steps.z == 2u));
+        let depth = cell_dot(point, frame.forward);
+        if depth <= 0.0 {
+            behind |= 1u << index;
+            continue;
         }
+        projected[index] = vec2<f32>(
+            frame.focal * (cell_dot(point, frame.right) / depth),
+            frame.focal * (cell_dot(point, frame.up) / depth));
     }
-    return maximum;
+    var smallest = CELL_NEAR_EDGE;
+    for (var child = 0u; child < 8u; child++) {
+        let base = (child & 1u) + ((child >> 1u) & 1u) * 3u + ((child >> 2u) & 1u) * 9u;
+        var blocked = false;
+        for (var corner = 0u; corner < 8u; corner++) {
+            let point = base + (corner & 1u) + ((corner >> 1u) & 1u) * 3u + (corner >> 2u) * 9u;
+            if ((behind >> point) & 1u) != 0u { blocked = true; }
+        }
+        if blocked { continue; }
+        var maximum = 0.0;
+        for (var corner = 0u; corner < 8u; corner++) {
+            for (var axis = 0u; axis < 3u; axis++) {
+                if ((corner >> axis) & 1u) != 0u { continue; }
+                let first = base + (corner & 1u) + ((corner >> 1u) & 1u) * 3u + (corner >> 2u) * 9u;
+                let other = corner | (1u << axis);
+                let second = base + (other & 1u) + ((other >> 1u) & 1u) * 3u + (other >> 2u) * 9u;
+                let dx = projected[first].x - projected[second].x;
+                let dy = projected[first].y - projected[second].y;
+                maximum = max(maximum, sqrt(dx * dx + dy * dy));
+            }
+        }
+        smallest = min(smallest, maximum);
+    }
+    return smallest;
 }
 
 fn cell_refines(lo: vec3<f32>, side: f32) -> bool {
-    return side > frame.min_side && cell_edge_px(lo, side) > frame.target_px;
+    return side * 0.5 >= frame.min_side && cell_min_child_edge_px(lo, side) >= frame.target_px;
 }
 
 // Is any set mask bit inside the cell `rel` of the node record at word `record`, `level` below the

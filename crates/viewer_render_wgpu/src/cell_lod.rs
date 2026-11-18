@@ -26,7 +26,7 @@ pub struct LodView {
     pub up: [f32; 3],
     pub focal: f32,
     pub target_px: f32,
-    /// A cell with `side <= min_side` never refines.
+    /// A cell refines only if its children are at least this long (`side / 2 >= min_side`).
     pub min_side: f32,
 }
 
@@ -158,9 +158,69 @@ pub fn edge_px(view: &LodView, lo: [f32; 3], side: f32) -> f32 {
     maximum
 }
 
-/// E1: the cell is worth replacing by finer ones.
+/// Smallest projected edge among the eight children of the cell `[lo, lo + side]`, in pixels; a
+/// child's edge is the longest of its 12 projected edges, as in `edge_px`. A child with a corner
+/// at or behind the eye plane measures `+inf` (it never limits refinement), so the result is
+/// `+inf` when every child has one.
+///
+/// Operation order, copied literally by the WGSL port: `half = side * 0.5`; the 3x3x3 grid of
+/// child corners has coordinates `lo[a]`, `lo[a] + half`, `(lo[a] + half) + half` at index 0, 1, 2
+/// (point `i + 3j + 9k`); each point is projected once as in `edge_px` and a point with
+/// `d <= 0` is marked behind; child `(cx, cy, cz)` is `+inf` if any of its 8 points is behind,
+/// else the maximum over its 12 edges of `sqrt(dx*dx + dy*dy)`, edges visited as in `edge_px`
+/// (corner index bit `a` selects the far point on axis `a`); the result is the minimum child.
+pub fn min_child_edge_px(view: &LodView, lo: [f32; 3], side: f32) -> f32 {
+    let half = side * 0.5;
+    let mut projected = [[0.0f32; 2]; 27];
+    let mut behind = 0u32;
+    for (index, pixel) in projected.iter_mut().enumerate() {
+        let steps = [index % 3, index / 3 % 3, index / 9];
+        let point: [f32; 3] = std::array::from_fn(|a| match steps[a] {
+            0 => lo[a],
+            1 => lo[a] + half,
+            _ => (lo[a] + half) + half,
+        });
+        let depth = dot(point, view.forward);
+        if depth <= 0.0 {
+            behind |= 1 << index;
+            continue;
+        }
+        *pixel = [
+            view.focal * (dot(point, view.right) / depth),
+            view.focal * (dot(point, view.up) / depth),
+        ];
+    }
+    let mut smallest = f32::INFINITY;
+    for child in 0..8usize {
+        let base = (child & 1) + (child >> 1 & 1) * 3 + (child >> 2 & 1) * 9;
+        let point = |corner: usize| base + (corner & 1) + (corner >> 1 & 1) * 3 + (corner >> 2) * 9;
+        if (0..8).any(|corner| behind >> point(corner) & 1 != 0) {
+            continue;
+        }
+        let mut maximum = 0.0f32;
+        for corner in 0..8usize {
+            for axis in 0..3 {
+                if corner >> axis & 1 != 0 {
+                    continue;
+                }
+                let first = projected[point(corner)];
+                let second = projected[point(corner | 1 << axis)];
+                let dx = first[0] - second[0];
+                let dy = first[1] - second[1];
+                maximum = maximum.max((dx * dx + dy * dy).sqrt());
+            }
+        }
+        smallest = smallest.min(maximum);
+    }
+    smallest
+}
+
+/// E1 (ADR 0054): the cell is replaced by finer ones iff its children would still be at least
+/// `min_side` long and every one of them at least `target_px` on screen (`min_child_edge_px`; a
+/// child behind the eye plane never blocks, so a cell around the eye always refines). The target
+/// is a minimum: the smallest child is not always the one farthest along `forward` off axis.
 pub fn refines(view: &LodView, lo: [f32; 3], side: f32) -> bool {
-    side > view.min_side && edge_px(view, lo, side) > view.target_px
+    side * 0.5 >= view.min_side && min_child_edge_px(view, lo, side) >= view.target_px
 }
 
 /// `2^exponent` as an `f32`, exact for `0 <= exponent <= MAX_NODE_SPAN`.

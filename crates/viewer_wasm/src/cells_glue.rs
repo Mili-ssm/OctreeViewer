@@ -54,6 +54,11 @@ pub(crate) const TARGET_PIXELS_RANGE: std::ops::RangeInclusive<f64> = 0.5..=16.0
 /// spacing of the cloud (RF-05), so occupied neighbouring cells touch.
 pub(crate) const DEFAULT_CONTINUITY_FACTOR: f64 = 1.0;
 
+/// Default length minimum of the drawn cubes: 0.1 mm, in dataset units. Metres are assumed
+/// until phase 3 reads the CRS unit. Continuity (spacing x factor) wins when larger
+/// ([ADR 0054](../../../docs/adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md)).
+pub(crate) const DEFAULT_MIN_SIDE: f64 = 1e-4;
+
 /// RF-05 continuity of one cloud: off is the literal mode (the default). On, the pool never
 /// draws cells smaller than `factor` x the reference spacing, which is stored in the dataset
 /// metadata and does not change while pages are grafted (ADR 0019).
@@ -98,7 +103,16 @@ impl Continuity {
         }
     }
 
-    /// The effective minimum cell side: `None` in literal mode and for a cloud whose reference
+    /// The minimum side the driver gets: the default length minimum, or the continuity side
+    /// when that is larger. Always `Some`, so a new viewer already stops at 0.1 mm.
+    pub(crate) fn effective_min_side(&self, reference_spacing: Option<f64>) -> Option<f64> {
+        Some(
+            self.min_side(reference_spacing)
+                .map_or(DEFAULT_MIN_SIDE, |side| side.max(DEFAULT_MIN_SIDE)),
+        )
+    }
+
+    /// The continuity minimum cell side: `None` in literal mode and for a cloud whose reference
     /// spacing is unknown (such a cloud stays literal).
     pub(crate) fn min_side(&self, reference_spacing: Option<f64>) -> Option<f64> {
         reference_spacing
@@ -530,8 +544,10 @@ impl ViewerCells {
     /// A fresh driver: the build side is told (`driverReplaced`) with the first
     /// [`take_messages`](Self::take_messages) so it sends every node again.
     pub(crate) fn new(config: DriverConfig, byte_cap: usize) -> Self {
+        let mut driver = CellDriver::new(config);
+        driver.set_min_side(Some(DEFAULT_MIN_SIDE));
         Self {
-            driver: CellDriver::new(config),
+            driver,
             queue: VecDeque::new(),
             queued_nodes: 0,
             queued_bytes: 0,
@@ -563,15 +579,24 @@ impl ViewerCells {
     /// The reference spacing of the cloud this driver draws, as `cellsInfo` gives it.
     pub(crate) fn with_reference_spacing(mut self, spacing: Option<f64>) -> Self {
         self.reference_spacing = spacing;
+        self.driver
+            .set_min_side(self.continuity.effective_min_side(spacing));
+        self
+    }
+
+    /// The tight extent of the data, as `cellsInfo` gives it (`None`: the root cube is the extent).
+    pub(crate) fn with_data_bounds(mut self, data: Option<viewer_core::SpatialBounds>) -> Self {
+        self.driver.set_data_bounds(data);
         self
     }
 
     /// Turns the continuity of the cloud on or off. Nothing is rebuilt or sent again: the next
     /// frame only picks other levels of the cells the driver holds.
     pub(crate) fn set_continuity(&mut self, continuity: Continuity) -> Result<(), String> {
-        let side = continuity.checked_min_side(self.reference_spacing)?;
+        continuity.checked_min_side(self.reference_spacing)?;
         self.continuity = continuity;
-        self.driver.set_min_side(side);
+        self.driver
+            .set_min_side(continuity.effective_min_side(self.reference_spacing));
         self.view_dirty = true;
         self.probe_last.set(None);
         Ok(())
@@ -860,8 +885,11 @@ impl InProcessCells {
         if let Some(pages) = config.gpu_pool_pages {
             driver.pool.capacity_pages = pages;
         }
+        let mut driver = CellDriver::new(driver);
+        driver.set_min_side(Some(DEFAULT_MIN_SIDE));
+        driver.set_data_bounds(dataset.cell_data_bounds());
         Self {
-            driver: CellDriver::new(driver),
+            driver,
             stage_pixels: None,
             dirty: false,
             config,
@@ -932,8 +960,10 @@ impl InProcessCells {
         load_block: &mut impl FnMut(&mut R, BlockId) -> Result<Option<PointBlock>, String>,
         load_page: &mut impl FnMut(&mut R, NodeId) -> Result<PageInsert, String>,
     ) -> Result<(CellPlanStats, Vec<BlockId>), String> {
-        self.driver
-            .set_min_side(self.continuity.min_side(dataset.reference_spacing()));
+        self.driver.set_min_side(
+            self.continuity
+                .effective_min_side(dataset.reference_spacing()),
+        );
         self.driver.set_lod_mode(self.lod_mode);
         let mut rounds = 0;
         loop {
@@ -968,6 +998,7 @@ impl InProcessCells {
             let plan_stats = CellPlanStats {
                 built_nodes: stats.built_nodes,
                 build_deferred: stats.build_deferred,
+                nodes_deferred: stats.nodes_deferred,
                 build_capped: stats.build_capped,
                 build_ms: stats.build_ms,
                 cut_nodes: stats.cut_nodes,

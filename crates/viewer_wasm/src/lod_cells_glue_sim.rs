@@ -65,7 +65,8 @@ impl GlueSim {
             cpu_budget,
         );
         let builder = BuilderCells::new(h.config);
-        let mut viewer = ViewerCells::new(config, byte_cap);
+        let mut viewer =
+            ViewerCells::new(config, byte_cap).with_data_bounds(h.dataset.cell_data_bounds());
         viewer.camera_changed(1);
         Self {
             h,
@@ -103,7 +104,8 @@ impl GlueSim {
                 self.cpu_budget,
             ),
             self.byte_cap,
-        );
+        )
+        .with_data_bounds(self.h.dataset.cell_data_bounds());
         viewer.set_lod_mode(self.mode);
         viewer.camera_changed(self.view_gen);
         viewer
@@ -697,7 +699,9 @@ fn in_process_drawn_depths(max_level_builds: usize) -> (u8, usize, u64) {
             target.eye = view.camera().position();
             let step = CellStep {
                 view,
-                target_pixels: 2.0,
+                // 1 px: with the px target as a minimum (ADR 0054) the view must want a depth finer
+                // than the pruned chain holds, which 2 px no longer does in this scene.
+                target_pixels: 1.0,
                 config,
                 can_load_blocks: true,
             };
@@ -1142,7 +1146,8 @@ fn a_close_pair_leaf_draws_at_its_spacing_from_far() {
 #[test]
 fn a_refused_depth_stops_being_wanted_and_the_view_settles() {
     let mut pair = Pair::with_harness(close_pair_leaf());
-    pair.target_px = 4.0;
+    // 2 px: with the px target as a minimum (ADR 0054) 4 px wants nothing past the first refusal.
+    pair.target_px = 2.0;
     let c = SIDE / 2.0;
     pair.view = synth_view([c + 4.0 * SIDE, c + 0.5 * SIDE, c + 1.0 * SIDE], [c; 3]);
     pair.target.eye = pair.view.camera().position();
@@ -1568,7 +1573,7 @@ fn settle_report(pair: &mut Pair) -> viewer_render_wgpu::FrameReport {
 
 #[test]
 fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_holes() {
-    use crate::cells_glue::Continuity;
+    use crate::cells_glue::{Continuity, DEFAULT_MIN_SIDE};
     let probe = synthetic_harness(1 << 20, 2.0);
     let root_side = probe.dataset.cell_grid().root_side;
     // Cells of the minimum side are those of depth 3 (the synthetic pyramids reach deeper).
@@ -1665,9 +1670,13 @@ fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_ho
         Some(spacing)
     );
 
-    // Off again: literal mode, the digest of the first pass.
+    // Off again: literal mode keeps only the default length minimum (ADR 0054), the digest of the
+    // first pass.
     pair.viewer.set_continuity(Continuity::default()).unwrap();
-    assert_eq!(pair.viewer.stats(&pair.target).continuity_min_side, None);
+    assert_eq!(
+        pair.viewer.stats(&pair.target).continuity_min_side,
+        Some(DEFAULT_MIN_SIDE)
+    );
     pair.pump();
     assert_eq!(pair.rest(), Some(literal_digest));
 }
@@ -1697,4 +1706,77 @@ fn the_continuity_minimum_is_the_factor_times_the_reference_spacing_and_off_by_d
         Continuity::default().checked_min_side(Some(f64::MAX)),
         Ok(None)
     );
+}
+
+#[test]
+fn a_new_viewer_applies_the_default_length_minimum() {
+    use crate::cells_glue::DEFAULT_MIN_SIDE;
+    let h = synthetic_harness(1 << 20, 2.0);
+    let viewer = ViewerCells::new(
+        driver_config(
+            h.dataset.cell_grid(),
+            h.dataset.coordinate_origin(),
+            u64::MAX,
+        ),
+        1 << 20,
+    );
+    assert_eq!(viewer.driver().pool().min_side(), Some(DEFAULT_MIN_SIDE));
+    assert_eq!(DEFAULT_MIN_SIDE, 1e-4);
+    let mut cells = InProcessCells::new(&h.dataset, h.config);
+    assert_eq!(
+        cells
+            .stats(&h.dataset, &StrictTarget::default())
+            .continuity_min_side,
+        Some(DEFAULT_MIN_SIDE)
+    );
+    // Without any setContinuity call, an update keeps it.
+    let mut h = h;
+    let view = synth_orbit().remove(0);
+    let mut target = StrictTarget {
+        eye: view.camera().position(),
+        ..StrictTarget::default()
+    };
+    let (blocks, pages) = (&mut h.blocks, &mut h.pages);
+    cells
+        .update(
+            &mut h.dataset,
+            &view,
+            2.0,
+            true,
+            &mut target,
+            Some(&mut ()),
+            false,
+            &mut |_: &mut (), id| blocks(id),
+            &mut |_: &mut (), anchor| pages(anchor),
+        )
+        .unwrap();
+    assert_eq!(
+        cells.stats(&h.dataset, &target).continuity_min_side,
+        Some(DEFAULT_MIN_SIDE)
+    );
+}
+
+#[test]
+fn literal_mode_keeps_the_default_minimum() {
+    use crate::cells_glue::{Continuity, DEFAULT_MIN_SIDE};
+    let literal = Continuity::default();
+    assert_eq!(
+        literal.effective_min_side(Some(0.25)),
+        Some(DEFAULT_MIN_SIDE)
+    );
+    assert_eq!(literal.effective_min_side(None), Some(DEFAULT_MIN_SIDE));
+    assert_eq!(
+        literal.effective_min_side(Some(1e-6)),
+        Some(DEFAULT_MIN_SIDE)
+    );
+}
+
+#[test]
+fn continuity_wins_when_larger() {
+    use crate::cells_glue::{Continuity, DEFAULT_MIN_SIDE};
+    let on = Continuity::new(true, None).unwrap();
+    assert_eq!(on.effective_min_side(Some(0.25)), Some(0.25));
+    assert_eq!(on.effective_min_side(None), Some(DEFAULT_MIN_SIDE));
+    // A continuity side below the default does not lower it.
+    assert_eq!(on.effective_min_side(Some(1e-6)), Some(DEFAULT_MIN_SIDE));
 }

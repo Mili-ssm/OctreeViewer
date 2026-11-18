@@ -24,7 +24,11 @@ struct Rig {
     inflight: Vec<(u64, LevelKey)>,
     /// Nodes whose data is not delivered while they are here (a slow region).
     held: HashSet<NodeId>,
+    /// Levels that never arrive while they are here (a refused or lost request).
+    refused: HashSet<LevelKey>,
     frame: u64,
+    /// The stepping oracle's wait per `(node, octant)` (see `Rig::check_stepping`).
+    waits: HashMap<(NodeId, usize), StepWait>,
 }
 
 impl Rig {
@@ -47,7 +51,9 @@ impl Rig {
             deep: None,
             inflight: Vec::new(),
             held: HashSet::new(),
+            refused: HashSet::new(),
             frame: 0,
+            waits: HashMap::new(),
         }
     }
 
@@ -74,13 +80,14 @@ impl Rig {
             .partition(|(at, _)| *at <= self.frame);
         self.inflight = later;
         for (at, key) in due {
-            if self.held.contains(&key.node) {
+            if self.held.contains(&key.node) || self.refused.contains(&key) {
                 self.inflight.push((at, key));
                 continue;
             }
             let pages = self.pages(key);
             self.pool.offer(key, fake_level(key, pages));
         }
+        let before = self.stepping_before();
         let nodes = &self.nodes;
         let plan = self
             .pool
@@ -90,9 +97,13 @@ impl Rig {
                 view,
                 &grid(),
                 ORIGIN,
-                target,
+                // These scenarios were calibrated when the target was a maximum edge; under
+                // ADR 0054 (a minimum, cubes between N and 2N px) half the target selects the
+                // same depths, so the literals below keep their meaning.
+                target / 2.0,
             )
             .expect("frame");
+        self.check_stepping(&plan, before);
         self.gpu.apply(&plan, &self.pool);
         for key in &plan.fetch_requests {
             self.inflight.push((self.frame + self.delay, *key));
@@ -114,6 +125,107 @@ impl Rig {
         plan
     }
 
+    /// What the stepping oracle needs from before a frame is planned: what each octant drew in
+    /// the applied cut and the levels resident (the lookup of the cut reads them).
+    fn stepping_before(&mut self) -> SteppingBefore {
+        if self.pool.applied_drawn.is_empty() {
+            self.waits.clear();
+        }
+        SteppingBefore {
+            drawn: self.pool.applied_drawn.clone(),
+            resident: self
+                .nodes
+                .iter()
+                .map(|(id, node)| {
+                    let levels = node
+                        .stored
+                        .iter()
+                        .copied()
+                        .filter(|depth| self.pool.is_resident(self.pool.key(*id, *depth)))
+                        .collect();
+                    (*id, levels)
+                })
+                .collect(),
+            waits: self.waits.clone(),
+        }
+    }
+
+    /// The stepping rule of ADR 0053, restated from its text, against an applied octant-mode
+    /// cut: per `(node, octant)` the drawn depth equals the expected stepped depth (one level
+    /// towards the wanted one through resident depths, never past it; after `STEP_WAIT_FRAMES`
+    /// the resident depth of `prev..wanted` closest to `prev`; a lost `prev` draws the resident
+    /// depth closest to it towards the wanted one), and it differs from `prev` by more than one
+    /// level only in a hop the pool counts in `step_hops`. Nodes under a fit cap, held, or
+    /// spanning (`drawn_levels` forces one level on them) are not checked. Every planned frame,
+    /// applied or retained, advances the waits of what is on screen.
+    fn check_stepping(&mut self, plan: &FramePlan, before: SteppingBefore) {
+        if self.pool.lod_mode != LodMode::Octant {
+            return;
+        }
+        let (mut hops, mut waits) = (0, HashMap::new());
+        for entry in &plan.entries {
+            let node = &self.nodes[&entry.node];
+            let stored = capped(&node.stored, self.pool.caps.get(&entry.node));
+            let resident: Vec<u8> = stored
+                .iter()
+                .copied()
+                .filter(|d| before.resident[&entry.node].contains(d))
+                .collect();
+            let buildable = capped_range(node.buildable, self.pool.caps.get(&entry.node));
+            let node_depth = CellPool::node_depth(&grid(), node.bounds);
+            let exempt = self.pool.caps.contains_key(&entry.node)
+                || self.pool.hold.contains(&entry.node)
+                || entry.drawn.iter().flatten().any(|d| *d <= node_depth);
+            let prev = before.drawn.get(&entry.node).copied().unwrap_or([None; 8]);
+            for o in 0..8 {
+                let Some(wanted) = entry.wanted[o] else {
+                    continue;
+                };
+                let w = served_depth(&stored, wanted);
+                let drawn = entry.drawn[o];
+                let step = spec_next(drawn, w, buildable, &resident);
+                if plan.apply == CutApply::Applied && !exempt {
+                    let waited = before.waits.get(&(entry.node, o)).map_or(0, |(_, f)| *f);
+                    let timed_out = waited >= STEP_WAIT_FRAMES;
+                    let expected = spec_depth(prev[o], w, buildable, &resident, timed_out);
+                    assert_eq!(
+                        drawn, expected,
+                        "node {:?} octant {o}: prev {:?} wanted {w} resident {resident:?} \
+                         waited {waited}",
+                        entry.node, prev[o]
+                    );
+                    if let (Some(drawn), Some(was)) = (drawn, prev[o]) {
+                        assert!(
+                            (was.min(w)..=was.max(w)).contains(&drawn) || !resident.contains(&was),
+                            "node {:?} octant {o}: {was} -> {drawn} passes the wanted depth {w}",
+                            entry.node
+                        );
+                        if drawn.abs_diff(was) > 1 {
+                            assert!(
+                                timed_out || !resident.contains(&was),
+                                "node {:?} octant {o}: {was} -> {drawn} without a timeout",
+                                entry.node
+                            );
+                            hops += 1;
+                        }
+                    }
+                }
+                if let (Some(drawn), Some(step)) = (drawn, step) {
+                    let key = (drawn, w > drawn, step);
+                    let frames = match before.waits.get(&(entry.node, o)) {
+                        Some((waiting, frames)) if *waiting == key => frames + 1,
+                        _ => 1,
+                    };
+                    waits.insert((entry.node, o), (key, frames));
+                }
+            }
+        }
+        if plan.apply == CutApply::Applied {
+            assert_eq!(plan.counters.step_hops, hops, "counted timeout hops");
+        }
+        self.waits = waits;
+    }
+
     /// Pages owned on the GPU equal the pages of the resident levels and of the partial uploads.
     fn assert_gpu_matches_pool(&self) {
         let resident = self.pool.resident_pages() as usize;
@@ -124,6 +236,62 @@ impl Rig {
             .map(|key| self.gpu.owner.values().filter(|(k, _)| k == key).count())
             .sum();
         assert_eq!(self.gpu.owner.len(), resident + partial);
+    }
+}
+
+/// `Rig::stepping_before`.
+struct SteppingBefore {
+    drawn: FastMap<NodeId, [Option<u8>; 8]>,
+    resident: HashMap<NodeId, Vec<u8>>,
+    waits: HashMap<(NodeId, usize), StepWait>,
+}
+
+/// The depths strictly after `from` up to `w`, in the order of the walk from `from` to `w`.
+fn walk(from: u8, w: u8) -> Vec<u8> {
+    if w >= from {
+        (from + 1..=w).collect()
+    } else {
+        (w..from).rev().collect()
+    }
+}
+
+/// The depth the octant awaits next from `from`: the first servable one on the walk to `w`, `w`
+/// itself when none is; `None` once `from` is `w`.
+fn spec_next(from: Option<u8>, w: u8, buildable: (u8, u8), resident: &[u8]) -> Option<u8> {
+    let from = from.filter(|from| *from != w)?;
+    let servable = |d: &u8| resident.contains(d) || (buildable.0..=buildable.1).contains(d);
+    Some(walk(from, w).into_iter().find(servable).unwrap_or(w))
+}
+
+/// The depth an octant that drew `prev` draws now (ADR 0053).
+fn spec_depth(
+    prev: Option<u8>,
+    w: u8,
+    buildable: (u8, u8),
+    resident: &[u8],
+    timed_out: bool,
+) -> Option<u8> {
+    let closest_to_w = || {
+        resident
+            .iter()
+            .copied()
+            .min_by_key(|d| (d.abs_diff(w), std::cmp::Reverse(*d)))
+    };
+    let first_resident = |from: u8| walk(from, w).into_iter().find(|d| resident.contains(d));
+    match prev {
+        None => closest_to_w(),
+        Some(prev) if !resident.contains(&prev) => first_resident(prev).or_else(closest_to_w),
+        Some(prev) if prev == w => Some(prev),
+        Some(prev) => {
+            let next = spec_next(Some(prev), w, buildable, resident).expect("prev != w");
+            if resident.contains(&next) {
+                Some(next)
+            } else if timed_out {
+                Some(first_resident(prev).unwrap_or(prev))
+            } else {
+                Some(prev)
+            }
+        }
     }
 }
 
@@ -166,7 +334,9 @@ fn levels_become_active_only_with_all_pages_and_uploads_span_frames() {
     let mut first_complete = None;
     let mut max_stages = 0;
     let mut last = None;
-    for frame in 0..80 {
+    // Budget: one page per frame, and ADR 0053 makes every node load its whole chain 4..=7
+    // (8 nodes x (1 + 3 x 3) pages, one less per level with `shrink`) before reaching depth 7.
+    for frame in 0..100 {
         let plan = rig.step(&cut, &cam, 4.0);
         if frame == 0 {
             assert_eq!(
@@ -217,7 +387,8 @@ fn uploads_give_every_node_its_first_level_before_refining_and_go_nearest_first(
     let cut = ids(&CHILDREN);
     let cam = camera("zoom");
     let mut started: Vec<(u64, u8)> = Vec::new();
-    for _ in 0..60 {
+    // Budget: one page per frame and the whole chain 4..=7 per node, 8 x (1 + 3 x 4) = 104 pages.
+    for _ in 0..120 {
         for upload in rig.step(&cut, &cam, 4.0).uploads {
             if upload.page_range.start == 0 {
                 started.push((upload.key.node.get(), upload.key.depth));
@@ -228,6 +399,9 @@ fn uploads_give_every_node_its_first_level_before_refining_and_go_nearest_first(
     let expected: Vec<(u64, u8)> = near
         .iter()
         .map(|id| (*id, 4))
+        // One level at a time (ADR 0053): each intermediate depth is a step, nearest first.
+        .chain(near.iter().map(|id| (*id, 5)))
+        .chain(near.iter().map(|id| (*id, 6)))
         .chain(near.iter().map(|id| (*id, 7)))
         .collect();
     assert_ne!(
@@ -306,6 +480,7 @@ fn root_node() -> HashMap<NodeId, PoolNode> {
             stored: vec![3, 4, 5],
             buildable: (3, 5),
             points: 2000,
+            octant_data_bounds: None,
         },
     )])
 }
@@ -384,18 +559,28 @@ fn regraft_mid_cut_keeps_coverage() {
 
 #[test]
 fn slots_of_an_evicted_level_return_two_frames_after_it_last_drew() {
-    // Node 2 at 4 px: depth 7 (4 pages) + depth 4 (1 page) in 8 pages; reuse needs the delay.
-    let mut rig = Rig::new(octant_nodes(), 8, 8, 0);
+    // Node 2 at 4 px: depth 7 (4 pages) + depth 4 (1 page); reuse needs the delay.
+    // Stepping down from 7 also needs the pages of the levels in between (ADR 0053), so the pool
+    // has room for them.
+    let mut rig = Rig::new(octant_nodes(), 16, 16, 0);
     let cut = ids(&[2]);
     let cam = camera("zoom");
-    let plan = rig.run(8, &cut, &cam, 4.0);
+    let plan = rig.run(24, &cut, &cam, 4.0);
     assert_eq!(plan.counters.nodes_without_level, 0);
     let key = rig.pool.key(NodeId::new(2), 7);
     assert!(plan.active.iter().any(|a| a.key == key));
     let slots: Vec<u32> = (0..4).map(|p| rig.gpu.slot_of[&(key, p)]).collect();
-    // The level draws until frame `last`; far away it is unused and may go.
-    let last = rig.frame;
-    rig.step(&cut, &cam, 64.0);
+    // The level draws until frame `last`; far away the node steps down one level per frame
+    // (ADR 0053) and then the level is unused and may go.
+    let mut last = rig.frame;
+    for _ in 0..8 {
+        let plan = rig.step(&cut, &cam, 64.0);
+        if plan.active.iter().any(|a| a.key == key) {
+            last = rig.frame;
+        } else {
+            break;
+        }
+    }
     assert!(rig.pool.evict(key));
     // Pages return two frames after the last draw, not before, and they are not rewritten sooner.
     let mut freed_at = None;
@@ -635,6 +820,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
                 stored: vec![3, 4],
                 buildable: (3, 4),
                 points: 2000,
+                octant_data_bounds: None,
             },
         ),
         (
@@ -644,6 +830,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
                 stored: vec![7, 8],
                 buildable: (7, 8),
                 points: 2000,
+                octant_data_bounds: None,
             },
         ),
         (
@@ -653,6 +840,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
                 stored: vec![6, 7],
                 buildable: (6, 7),
                 points: 2000,
+                octant_data_bounds: None,
             },
         ),
     ])
@@ -825,7 +1013,7 @@ fn a_steady_frame_calls_cell_cut_at_most_once_and_changes_invalidate_the_reuse()
     let mut rig = Rig::new(octant_nodes(), 256, 64, 0);
     let cut = ids(&CHILDREN);
     let zoom = camera("zoom");
-    rig.run(12, &cut, &zoom, 4.0);
+    rig.run(40, &cut, &zoom, 4.0);
     let steady = rig.step(&cut, &zoom, 4.0);
     assert!(steady.counters.cut_evaluations <= 1);
     assert!(steady.counters.wanted_reused && steady.counters.real_reused);
@@ -841,7 +1029,7 @@ fn a_steady_frame_calls_cell_cut_at_most_once_and_changes_invalidate_the_reuse()
 
     // Residency changes redo the real cut (here also the wanted one: an evicted level is back to
     // its estimated size).
-    rig.run(8, &cut[..7], &zoom, 64.0);
+    rig.run(16, &cut[..7], &zoom, 64.0);
     let key = rig.pool.key(NodeId::new(2), 7);
     assert!(rig.pool.evict(key));
     let plan = rig.step(&cut[..7], &zoom, 64.0);
@@ -850,14 +1038,14 @@ fn a_steady_frame_calls_cell_cut_at_most_once_and_changes_invalidate_the_reuse()
     // A camera that stops is exact: it refreshes once, then everything is reused again.
     let moved = camera("fit");
     rig.step(&cut[..7], &moved, 64.0);
-    let still = rig.run(3, &cut[..7], &moved, 64.0);
+    let still = rig.run(16, &cut[..7], &moved, 64.0);
     assert!(still.counters.wanted_reused && still.counters.real_reused);
     assert!(still.counters.cut_evaluations <= 1);
 }
 
 fn full_depths(cam: &OrbitCamera, node: &PoolNode, target: f64) -> [u8; 8] {
     std::array::from_fn(|o| {
-        octant_wanted_depth(
+        crate::cell_cut::octant_wanted_depth(
             &view(cam),
             &grid(),
             ORIGIN,
@@ -921,7 +1109,7 @@ fn the_hinted_search_equals_the_full_search() {
     let mut state = 0x2545_F491_4F6C_DD1D_u64;
     let nodes = octant_nodes();
     let mut checked = 0;
-    for _ in 0..4000 {
+    for _ in 0..50_000 {
         let mut cam = camera("fit");
         // Eyes inside, next to and far from the octants, looking anywhere.
         let eye: [f64; 3] =
@@ -943,13 +1131,22 @@ fn the_hinted_search_equals_the_full_search() {
         let width = usize::from(range.1 - range.0) + 1;
         let hint = range.0 + ((next(&mut state) * width as f64) as usize % width) as u8;
         let v = view(&cam);
-        let full = octant_wanted_depth(&v, &grid(), ORIGIN, node.bounds, octant, range, target_px);
+        let full = crate::cell_cut::octant_wanted_depth(
+            &v,
+            &grid(),
+            ORIGIN,
+            node.bounds,
+            octant,
+            range,
+            target_px,
+        );
         let near = crate::cell_cut::octant_wanted_depth_near(
             &v,
             &grid(),
             ORIGIN,
             node.bounds,
             octant,
+            crate::cell_cut::ProbeBox::Geometric,
             range,
             target_px,
             hint,
@@ -960,7 +1157,8 @@ fn the_hinted_search_equals_the_full_search() {
         );
         checked += 1;
     }
-    assert!(checked > 2000);
+    // Measured with the rule of ADR 0054 (the smallest of the 8 children): 0 of 79 993 differ.
+    assert!(checked > 40_000);
 }
 
 #[test]
@@ -987,7 +1185,8 @@ fn caps_lift_when_the_capped_levels_are_bigger_than_the_uncapped_ones() {
             &view(&cam),
             &grid(),
             ORIGIN,
-            4.0,
+            // Calibrated for the old maximum target; 2 px under ADR 0054 selects the same depths.
+            2.0,
         )
         .expect("frame")
     };
@@ -1260,6 +1459,7 @@ fn the_fallback_never_makes_the_real_cut_too_fine() {
             stored: vec![4, 5],
             buildable: (4, 5),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     let mut rig = Rig::new(nodes.clone(), 64, 8, 1);
@@ -1634,8 +1834,8 @@ fn resident_levels(rig: &Rig) -> HashMap<NodeId, Vec<u8>> {
 
 /// Depth the plan really draws at `point`: the unhidden octant of an entry that has a resident
 /// level in `active` there (geometry computed here). `resident` is `resident_levels` taken
-/// before the step: each drawn depth is checked against it and `resident_depth`, and no point may
-/// be drawn by two entries.
+/// before the step: each drawn depth must be one of them, and no point may be drawn by two
+/// entries.
 fn drawn_at(
     plan: &FramePlan,
     nodes: &HashMap<NodeId, PoolNode>,
@@ -1657,10 +1857,10 @@ fn drawn_at(
                 .then(|| entry.drawn[octant])
                 .flatten()
                 .inspect(|depth| {
-                    let wanted = entry.wanted[octant].expect("a drawn octant is wanted");
-                    assert_eq!(
-                        crate::resident_depth(wanted, &resident[&entry.node]).map(|(d, _)| d),
-                        Some(*depth),
+                    // The octant may be stepping (ADR 0053): it draws a resident level, and the
+                    // stepping rule has its own tests.
+                    assert!(
+                        resident[&entry.node].contains(depth),
                         "node {:?} octant {octant}",
                         entry.node
                     );
@@ -2000,6 +2200,7 @@ fn only_a_node_with_an_ancestor_the_fallback_would_use_can_be_held() {
             stored: vec![8, 9, 10],
             buildable: (8, 10),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     let mut rig = rig_with_coarse_children(Some(deep));
@@ -2181,8 +2382,8 @@ fn observe(rig: &mut Rig, cut: &[NodeId], camera: &OrbitCamera, target: f64) -> 
 
 /// `(drawn, wanted)` depth of the entry that really draws `point` (not masked, octant in
 /// `active`); the geometry is computed here from the bounds. The drawn depth must be the one
-/// `resident_depth` gives for the wanted one over the levels that were resident, and no point may
-/// be drawn by two entries.
+/// level that was resident (the exact stepped depth is checked per octant by `Rig::step`), and no
+/// point may be drawn by two entries.
 fn drawn_and_wanted_at(
     plan: &FramePlan,
     nodes: &HashMap<NodeId, PoolNode>,
@@ -2203,11 +2404,12 @@ fn drawn_and_wanted_at(
                 .any(|a| a.key.node == entry.node && a.octant_bits >> octant & 1 == 1)
                 .then(|| Some((entry.drawn[octant]?, entry.wanted[octant]?)))
                 .flatten()
-                .inspect(|(drawn, wanted)| {
+                .inspect(|(drawn, _)| {
                     let levels = capped(&seen.resident[&entry.node], seen.caps.get(&entry.node));
-                    assert_eq!(
-                        crate::resident_depth(*wanted, &levels).map(|(d, _)| d),
-                        Some(*drawn),
+                    // The expected stepped depth is `Rig::check_stepping`'s; here, that the
+                    // level was resident, and that it is never past the wanted depth.
+                    assert!(
+                        levels.contains(drawn),
                         "node {:?} octant {octant}",
                         entry.node
                     );
@@ -2515,6 +2717,7 @@ fn a_zone_nothing_can_cover_retains_the_previous_cut_and_counts_the_loss() {
             stored: vec![4, 5],
             buildable: (4, 5),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     let mut rig = Rig::new(nodes.clone(), 64, 8, 1);
@@ -2611,6 +2814,7 @@ fn chain_with_extras() -> HashMap<NodeId, PoolNode> {
             stored: vec![4, 5],
             buildable: (4, 5),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     nodes.insert(
@@ -2620,6 +2824,7 @@ fn chain_with_extras() -> HashMap<NodeId, PoolNode> {
             stored: vec![9, 10],
             buildable: (9, 10),
             points: 2000,
+            octant_data_bounds: None,
         },
     );
     nodes
@@ -2700,6 +2905,8 @@ fn drawing(node: u64, octants: &[usize]) -> CellCutEntry {
         wanted: [Some(7); 8],
         drawn: std::array::from_fn(|o| octants.contains(&o).then_some(7)),
         stage: [false; 8],
+        step: [None; 8],
+        range: None,
         mask: [0; 8],
     }
 }
@@ -3202,6 +3409,7 @@ fn cell_mode_clamps_the_pool_to_the_node_span() {
             stored: vec![below],
             buildable: (below, node_depth + 6),
             points: 500,
+            octant_data_bounds: None,
         },
     )]);
     let cam = camera("fit");
@@ -3235,6 +3443,7 @@ fn leaf_below_its_node() -> (HashMap<NodeId, PoolNode>, u8, u8) {
             stored: vec![below, node_depth + 2],
             buildable: (below, node_depth + 6),
             points: 500,
+            octant_data_bounds: None,
         },
     )]);
     (nodes, node_depth, below)
@@ -3309,6 +3518,7 @@ fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
         stored: vec![below, cap, near],
         buildable: (below, near),
         points: 500,
+        octant_data_bounds: None,
     };
     let mut pool = CellPool::new(PoolConfig::default());
     pool.set_lod_mode(LodMode::Cell);
@@ -3319,6 +3529,7 @@ fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
         NodeDepths {
             node: node.clone(),
             depths: [below; 8],
+            far: (0, 0),
             pose: Pose {
                 eye: [0.0; 3],
                 forward: [0.0, 0.0, 1.0],
@@ -3382,6 +3593,7 @@ fn d5_node(side: f64, stored: &[u8]) -> PoolNode {
         stored: stored.to_vec(),
         buildable: (stored[0], *stored.last().unwrap()),
         points: 2000,
+        octant_data_bounds: None,
     }
 }
 
@@ -3475,6 +3687,7 @@ fn the_d5_request_comes_first() {
                 stored: vec![3, 5],
                 buildable: (3, 5),
                 points: 2000,
+                octant_data_bounds: None,
             },
         ),
     ]));
@@ -3601,4 +3814,461 @@ fn a_retained_frame_keeps_the_d5_depth_its_record_was_written_with() {
     );
     assert!(plan.mask_updates.is_empty());
     assert_eq!(active_depths(&plan, &rig, 1), applied);
+}
+
+/// ADR 0054: the length minimum bounds the wanted depth, even for a leaf the eye is next to and
+/// whose source density is far finer.
+#[test]
+fn min_side_bounds_the_wanted_depth() {
+    let min_side = 1e-4;
+    // SIDE / 2^19 is the finest side that is not below the minimum.
+    let finest_allowed = 19;
+    assert!(SIDE / f64::from(1_u32 << finest_allowed) >= min_side);
+    assert!(SIDE / f64::from(1_u32 << (finest_allowed + 1)) < min_side);
+    let mut nodes = root_node();
+    nodes.get_mut(&NodeId::new(1)).unwrap().buildable = (3, 25);
+    for cap in [None, Some(min_side)] {
+        let mut rig = Rig::new(nodes.clone(), 64, 16, 1);
+        rig.pool.set_min_side(cap);
+        for eye in [
+            [ORIGIN[0] + 20.0, ORIGIN[1] + 30.0, ORIGIN[2] + 10.0],
+            [ORIGIN[0] - 0.01, ORIGIN[1] + 30.0, ORIGIN[2] + 10.0],
+        ] {
+            let mut cam = camera("fit");
+            assert!(cam.set_pose(eye, [ORIGIN[0] + 32.0, ORIGIN[1] + 32.0, ORIGIN[2] + 32.0]));
+            let plan = rig.run(12, &ids(&[1]), &cam, 4.0);
+            for wanted in plan.entries[0].wanted.iter().flatten() {
+                match cap {
+                    Some(_) => assert!(*wanted <= finest_allowed, "wanted {wanted}"),
+                    None => assert!(*wanted > finest_allowed, "setup: uncapped wanted {wanted}"),
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn cell_mode_activates_resident_depths_across_the_range() {
+    // Residents at every stored depth: the active set also holds the resident depths between
+    // the node's far (lo) and near (hi) depths that no octant draws.
+    let cam = camera("zoom");
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+    )]);
+    let mut rig = Rig::new(nodes, 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    rig.pool.residency_epoch += 1;
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
+    let entry = &plan.entries[0];
+    let (lo, hi) = entry.range.expect("a cell-mode node has a range");
+    assert!(lo < hi, "{lo}..{hi}");
+    let required = entry.required_levels();
+    assert!(required.iter().all(|d| *d <= hi));
+    assert!(
+        (lo..=hi).any(|d| !required.contains(&d)),
+        "the range reaches depths no octant draws: {lo}..{hi} vs {required:?}"
+    );
+    let expected: Vec<u8> = (lo..=hi)
+        .chain(required.iter().copied())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    assert_eq!(active_depths(&plan, &rig, 1), expected);
+}
+
+#[test]
+fn cell_mode_fetches_stored_depths_across_the_range() {
+    // Only the coarsest depth is resident: every other stored depth inside the node's range is
+    // fetched, not only the octants' wanted ones.
+    let cam = camera("zoom");
+    let stored = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    let nodes = HashMap::from([(NodeId::new(1), d5_node(SIDE, &stored))]);
+    let mut rig = Rig::new(nodes, 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2]);
+    rig.pool.residency_epoch += 1;
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
+    let (lo, hi) = plan.entries[0].range.expect("a cell-mode node has a range");
+    assert!(lo < hi, "{lo}..{hi}");
+    let wanted = plan.entries[0].required_levels();
+    let fetched: Vec<u8> = plan.fetch_requests.iter().map(|key| key.depth).collect();
+    for depth in (lo..=hi).filter(|d| *d != 2) {
+        assert!(
+            fetched.contains(&depth),
+            "depth {depth} of {lo}..{hi}: {fetched:?}"
+        );
+    }
+    assert!(
+        (lo..=hi).any(|d| !wanted.contains(&d)),
+        "the range reaches depths no octant wants: {lo}..{hi} vs {wanted:?}"
+    );
+    // Coarse to fine.
+    assert!(
+        fetched.windows(2).all(|pair| pair[0] <= pair[1]),
+        "{fetched:?}"
+    );
+}
+
+/// A node whose range reaches below its stored chain: depths 7 and 8 are buildable, not stored,
+/// and above the spacing depth (the finest stored one, 9); 10 and 11 are below it.
+fn range_gap_rig() -> Rig {
+    let mut node = d5_node(SIDE, &[2, 3, 4, 9]);
+    node.buildable = (2, 14);
+    node.points = 512 * 64;
+    let mut rig = Rig::new(HashMap::from([(NodeId::new(1), node)]), 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2]);
+    rig.pool.residency_epoch += 1;
+    rig
+}
+
+#[test]
+fn cell_mode_requests_missing_depths_across_the_range_down_to_spacing() {
+    let mut rig = range_gap_rig();
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
+    let (lo, hi) = plan.entries[0].range.expect("a cell-mode node has a range");
+    assert_eq!((lo, hi), (7, 11), "setup");
+    let requested: Vec<u8> = plan.level_requests.iter().map(|key| key.depth).collect();
+    for depth in [7, 8] {
+        assert!(requested.contains(&depth), "{depth} missing: {requested:?}");
+    }
+    // 10 lies in the range below the spacing depth and no octant wants it: not built.
+    assert!(!requested.contains(&10), "{requested:?}");
+    // Octant (near) depths keep their behaviour: 11 is wanted by an octant.
+    assert!(requested.contains(&11), "{requested:?}");
+    // The stepping's adjacent depth (8) goes first, then the octant-wanted 11, then the
+    // range-only 7.
+    assert_eq!(requested, [8, 11, 7]);
+    // Not stored, so nothing is fetched for them.
+    let fetched: Vec<u8> = plan.fetch_requests.iter().map(|key| key.depth).collect();
+    assert!(
+        !fetched.contains(&7) && !fetched.contains(&8),
+        "{fetched:?}"
+    );
+}
+
+/// Node with stored {2, 3, 4, 9}, buildable 2..=14; `resident` are seeded before the frame.
+fn gap_rig_with(resident: &[u8]) -> Rig {
+    let mut node = d5_node(SIDE, &[2, 3, 4, 9]);
+    node.buildable = (2, 14);
+    node.points = 512 * 64;
+    let mut rig = Rig::new(HashMap::from([(NodeId::new(1), node)]), 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, resident);
+    rig.pool.residency_epoch += 1;
+    rig
+}
+
+#[test]
+fn cell_mode_fills_gaps_between_active_depths() {
+    // 7 and 11 are resident and active (range 7..=11): 8 and 10 lie between them, so they are
+    // requested although 10 is below the spacing depth 9; 9 is stored and fetched instead.
+    let mut rig = gap_rig_with(&[2, 7, 11]);
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
+    let requested: Vec<u8> = plan.level_requests.iter().map(|key| key.depth).collect();
+    for depth in [8, 10] {
+        assert!(requested.contains(&depth), "{depth} missing: {requested:?}");
+    }
+    assert!(!requested.contains(&9), "{requested:?}");
+    assert!(
+        !requested.contains(&12),
+        "nothing past the finest active depth: {requested:?}"
+    );
+}
+
+#[test]
+fn cell_mode_fills_gaps_below_spacing_for_a_leaf() {
+    // A leaf whose stored chain ends at 9 and whose resident depths are 9 and 11: 10 is below
+    // the spacing depth and gets built because it lies between two active depths.
+    let mut rig = gap_rig_with(&[2, 9, 11]);
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
+    let requested: Vec<u8> = plan.level_requests.iter().map(|key| key.depth).collect();
+    assert!(requested.contains(&10), "{requested:?}");
+    assert!(!requested.contains(&12), "{requested:?}");
+}
+
+#[test]
+fn the_fit_counts_requested_range_depths() {
+    let mut rig = range_gap_rig();
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &camera("zoom"), 2.0);
+    let nodes: FastMap<NodeId, PoolNode> =
+        rig.nodes.iter().map(|(id, n)| (*id, n.clone())).collect();
+    let none = FastMap::default();
+    let (needed, total) =
+        rig.pool
+            .needed_and_pages(&plan.entries, &nodes, &none, &grid(), &FastSet::default());
+    let pages = |depth: u8| {
+        rig.pool.pages_of(
+            rig.pool.key(NodeId::new(1), depth),
+            &nodes[&NodeId::new(1)],
+            &grid(),
+        )
+    };
+    let needed_pages: usize = needed
+        .iter()
+        .map(|key| rig.pool.pages_of(*key, &nodes[&key.node], &grid()))
+        .sum();
+    for depth in [7, 8] {
+        assert!(!needed.contains(&rig.pool.key(NodeId::new(1), depth)));
+    }
+    assert_eq!(total as usize, needed_pages + pages(7) + pages(8));
+}
+
+// ADR 0053: stepping through pruned residents, timeouts and hops. `Rig::step` checks every frame
+// against the stepping oracle, so these scenarios only pin down when the hops happen.
+
+/// Every octant of node 2 wants the same depth, so a hop counts once per octant.
+const OCTANTS: u32 = 8;
+
+/// One frame of node 2 alone in the zoom camera: `(drawn, step, step_hops)` of its octant 0.
+fn step_node_2(rig: &mut Rig, target: f64) -> (Option<u8>, Option<u8>, u32) {
+    let plan = rig.step(&ids(&[2]), &camera("zoom"), target);
+    plan.entries.first().map_or((None, None, 0), |e| {
+        (e.drawn[0], e.step[0], plan.counters.step_hops)
+    })
+}
+
+/// Node 2 draws depth 7 (target 4) with every depth resident; `gone` are evicted and `refused`
+/// never arrive again, then the view wants depth 4 (target 64) or 5 (target 32).
+fn node_2_drawing_7(gone: &[u8], refused: &[u8]) -> Rig {
+    let mut nodes = octant_nodes();
+    let node = nodes.get_mut(&NodeId::new(2)).expect("node 2");
+    node.stored = vec![3, 4, 5, 6, 7];
+    node.buildable = (3, 7);
+    let mut rig = Rig::new(nodes, 256, 64, 0);
+    // Walk the depths up, so that each one is resident.
+    for target in [64.0, 32.0, 16.0, 4.0] {
+        for _ in 0..30 {
+            step_node_2(&mut rig, target);
+        }
+    }
+    assert_eq!(step_node_2(&mut rig, 4.0), (Some(7), None, 0), "setup");
+    for depth in gone {
+        assert!(rig.pool.evict(rig.pool.key(NodeId::new(2), *depth)));
+    }
+    rig.refused = refused
+        .iter()
+        .map(|depth| rig.pool.key(NodeId::new(2), *depth))
+        .collect();
+    rig
+}
+
+#[test]
+fn a_level_that_never_arrives_is_skipped_after_the_wait_with_one_counted_hop() {
+    // Depths 6 and 5 are gone and refused: 7 waits for 6, then hops to the closest resident (4).
+    let mut rig = node_2_drawing_7(&[5, 6], &[5, 6]);
+    for frame in 0..STEP_WAIT_FRAMES {
+        assert_eq!(
+            step_node_2(&mut rig, 64.0),
+            (Some(7), Some(6), 0),
+            "frame {frame}"
+        );
+    }
+    assert_eq!(
+        step_node_2(&mut rig, 64.0),
+        (Some(4), None, OCTANTS),
+        "the hop"
+    );
+    assert_eq!(step_node_2(&mut rig, 64.0), (Some(4), None, 0));
+}
+
+#[test]
+fn the_wait_survives_a_wanted_depth_that_flips_towards_the_same_side() {
+    // Wanted 4 and 5 alternate every frame (both below the drawn 7, awaiting 6): one wait.
+    let mut rig = node_2_drawing_7(&[5, 6], &[5, 6]);
+    let targets = [64.0, 32.0];
+    for frame in 0..STEP_WAIT_FRAMES as usize {
+        let (drawn, step, hops) = step_node_2(&mut rig, targets[frame % 2]);
+        assert_eq!((drawn, step, hops), (Some(7), Some(6), 0), "frame {frame}");
+    }
+    let (drawn, _, hops) = step_node_2(&mut rig, targets[0]);
+    assert_eq!(
+        (drawn, hops),
+        (Some(4), OCTANTS),
+        "the wait did not restart"
+    );
+}
+
+#[test]
+fn each_hop_gets_its_own_wait_and_a_refused_level_never_reads_as_rest() {
+    // 6 and 4 are gone and refused, 5 stays: 7 hops to 5 after one wait, then 4 (still wanted,
+    // never delivered) is waited for in turn, and the octant stays pending.
+    let mut rig = node_2_drawing_7(&[6, 4], &[6, 4]);
+    for frame in 0..STEP_WAIT_FRAMES {
+        assert_eq!(
+            step_node_2(&mut rig, 64.0),
+            (Some(7), Some(6), 0),
+            "frame {frame}"
+        );
+    }
+    assert_eq!(
+        step_node_2(&mut rig, 64.0),
+        (Some(5), Some(4), OCTANTS),
+        "first hop"
+    );
+    for frame in 0..3 * STEP_WAIT_FRAMES {
+        assert_eq!(
+            step_node_2(&mut rig, 64.0),
+            (Some(5), Some(4), 0),
+            "frame {frame}"
+        );
+    }
+}
+
+#[test]
+fn an_adjacent_level_arriving_during_the_wait_is_taken_and_restarts_the_wait() {
+    // 6 arrives at frame 10: 7 -> 6 normally; 5 never arrives, so the next hop comes a full wait
+    // after reaching 6, to the resident 4.
+    let mut rig = node_2_drawing_7(&[5, 6], &[5, 6]);
+    for _ in 0..10 {
+        step_node_2(&mut rig, 64.0);
+    }
+    rig.refused.remove(&rig.pool.key(NodeId::new(2), 6));
+    let mut frames = Vec::new();
+    for _ in 0..3 * STEP_WAIT_FRAMES {
+        frames.push(step_node_2(&mut rig, 64.0));
+    }
+    let reached_6 = frames.iter().position(|f| f.0 == Some(6)).expect("6 drawn");
+    assert!(reached_6 < 4, "{reached_6}");
+    assert!(
+        frames[..reached_6]
+            .iter()
+            .all(|f| f.0 == Some(7) && f.2 == 0)
+    );
+    let reached_4 = frames.iter().position(|f| f.0 == Some(4)).expect("4 drawn");
+    assert_eq!(
+        reached_4 - reached_6,
+        STEP_WAIT_FRAMES as usize,
+        "{frames:?}"
+    );
+    assert_eq!(frames.iter().map(|f| f.2).sum::<u32>(), OCTANTS);
+}
+
+#[test]
+fn retained_frames_advance_the_step_wait() {
+    // 7 waits for 6, which never arrives. A pose jump to a cut that cannot draw yet keeps the
+    // previous one on screen (`RetainedPrevious`); those frames count towards the wait, so back
+    // on node 2 the octants hop at once to the resident 4.
+    let mut rig = node_2_drawing_7(&[5, 6], &[5, 6]);
+    assert_eq!(
+        step_node_2(&mut rig, 64.0),
+        (Some(7), Some(6), 0),
+        "the wait starts"
+    );
+    rig.held.extend([NodeId::new(6), NodeId::new(7)]);
+    for frame in 1..STEP_WAIT_FRAMES {
+        let plan = rig.step(&ids(&[6, 7]), &camera("zoom"), 64.0);
+        assert_eq!(plan.apply, CutApply::RetainedPrevious, "frame {frame}");
+        assert_eq!(plan.counters.step_hops, 0, "frame {frame}");
+    }
+    assert_eq!(
+        step_node_2(&mut rig, 64.0),
+        (Some(4), None, OCTANTS),
+        "the retained frames waited"
+    );
+}
+
+#[test]
+fn a_node_entering_the_cut_widens_its_window_one_level_per_frame() {
+    // Only depth 9 serves the node when it enters the cut (range 7..=11), so it draws 9 alone.
+    // The other depths of the range become resident afterwards: the active span takes one level
+    // at each end per frame, not the whole range at once (ADR 0053).
+    let nodes = HashMap::from([(
+        NodeId::new(1),
+        d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+    )]);
+    let mut rig = Rig::new(nodes, 4096, 64, 10_000);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    seed_resident(&mut rig.pool, 1, &[2, 9]);
+    rig.pool.residency_epoch += 1;
+    let cam = camera("zoom");
+    let plan = d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
+    assert_eq!(plan.entries[0].range, Some((7, 11)), "setup");
+    assert_eq!(active_depths(&plan, &rig, 1), [9], "entering the cut");
+    seed_more(&mut rig, 1, &[7, 8, 10, 11]);
+    let spans: Vec<Vec<u8>> = (0..3)
+        .map(|_| active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1))
+        .collect();
+    assert_eq!(spans[0], [8, 9, 10], "one level either side");
+    assert_eq!(spans[1], [7, 8, 9, 10, 11], "one more level either side");
+    assert_eq!(spans[2], spans[1], "the range is covered");
+}
+
+/// Children of node 2 (ids 10..=17) that store depths 4..=10, with node 2 drawing depth 6 under
+/// `[2, 3]` first. Returns the rig and the cut of the children.
+fn children_entering_below_node_2() -> (Rig, Vec<NodeId>) {
+    let mut nodes = two_regions_with_coarse_children();
+    for child in region_children(10) {
+        let node = nodes.get_mut(&NodeId::new(child)).expect("child");
+        node.stored = (4..=10).collect();
+        node.buildable = (4, 10);
+    }
+    let mut rig = Rig::new(nodes, 4096, 64, 0);
+    rig.pool.set_lod_mode(LodMode::Cell);
+    let plan = rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+    let drawn = depth_of(&plan, 2)
+        .into_iter()
+        .flatten()
+        .max()
+        .expect("node 2 draws");
+    assert_eq!(drawn, 6, "setup");
+    let mut cut = ids(&region_children(10));
+    cut.push(NodeId::new(3));
+    (rig, cut)
+}
+
+/// The first plan in which every child draws something, and what each child drew in it.
+fn first_drawn_children(rig: &mut Rig, cut: &[NodeId], target: f64) -> (FramePlan, Vec<u8>) {
+    for _ in 0..30 {
+        let plan = rig.step(cut, &camera("fit"), target);
+        let drawn: Vec<Vec<u8>> = region_children(10)
+            .into_iter()
+            .map(|child| {
+                plan.entries
+                    .iter()
+                    .find(|e| e.node.get() == child)
+                    .map_or_else(Vec::new, |e| e.drawn.iter().flatten().copied().collect())
+            })
+            .collect();
+        if drawn.iter().all(|d| !d.is_empty()) {
+            return (plan, drawn.into_iter().flatten().collect());
+        }
+    }
+    panic!("the children never drew");
+}
+
+#[test]
+fn an_entering_leaf_starts_one_level_below_its_ancestor() {
+    // Node 2 drew depth 6: its children enter at 6 or 7 (one level from it) although they want
+    // 10 and the level is as available as the others.
+    let (mut rig, cut) = children_entering_below_node_2();
+    let (_, drawn) = first_drawn_children(&mut rig, &cut, 0.25);
+    assert!(drawn.iter().all(|d| (6..=7).contains(d)), "{drawn:?}");
+}
+
+#[test]
+fn a_leaving_node_hands_back_one_level() {
+    // The children drew from depth 7 and the cut returns to node 2: it restarts one level below
+    // their coarsest drawn depth, not at the level closest to what it wants.
+    let (mut rig, cut) = children_entering_below_node_2();
+    first_drawn_children(&mut rig, &cut, 0.25);
+    // Node 2 has left the cut by now; the children are still at their first depth.
+    let last = rig.step(&cut, &camera("fit"), 0.25);
+    let coarsest = region_children(10)
+        .into_iter()
+        .flat_map(|child| depth_of(&last, child))
+        .flatten()
+        .min()
+        .expect("children draw");
+    let mut plan = rig.step(&ids(&[2, 3]), &camera("fit"), 64.0);
+    while !has_entry(&plan, 2) {
+        plan = rig.step(&ids(&[2, 3]), &camera("fit"), 64.0);
+    }
+    let first: Vec<u8> = depth_of(&plan, 2).into_iter().flatten().collect();
+    assert!(
+        !first.is_empty() && first.iter().all(|d| *d + 1 == coarsest),
+        "{first:?}"
+    );
 }

@@ -448,12 +448,13 @@ fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) 
 
 fn check_stats(label: &str, sim: &Sim) {
     println!(
-        "{label}: {:?} | zone coarsenings {} | drops below the raw wish: stage-excused {}, unexcused {} | lost samples {}",
+        "{label}: {:?} | zone coarsenings {} | drops below the raw wish: stage-excused {}, unexcused {} | lost samples {} | ADR 0053 gate {:?}",
         sim.stats,
         sim.h.zone_coarsenings,
         sim.h.stage_excused_drops,
         sim.h.unexcused_drops,
-        sim.h.lost_samples
+        sim.h.lost_samples,
+        sim.h.gate
     );
     assert_eq!(
         sim.h.unexcused_drops, 0,
@@ -614,11 +615,15 @@ fn synthetic_dolly_in(mode: LodMode) {
     synthetic_case("dolly", synth_dolly(), &SEEDS, Inject::default(), mode);
 }
 
-sim_both_modes!(
-    synthetic_dolly_in,
-    sim_synthetic_dolly_reaches_the_in_process_digest,
-    sim_synthetic_dolly_reaches_the_in_process_digest_in_cell_mode
-);
+#[test]
+fn sim_synthetic_dolly_reaches_the_in_process_digest() {
+    synthetic_dolly_in(LodMode::Octant);
+}
+
+#[test]
+fn sim_synthetic_dolly_reaches_the_in_process_digest_in_cell_mode() {
+    synthetic_dolly_in(LodMode::Cell);
+}
 
 fn synthetic_inject_in(mode: LodMode) {
     let inject = Inject {

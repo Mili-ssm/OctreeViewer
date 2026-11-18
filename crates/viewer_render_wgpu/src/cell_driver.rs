@@ -163,6 +163,23 @@ fn level_ranges(grid: &CellGrid, levels: &[PackedLevel]) -> Vec<(u8, CellColorRa
         .collect()
 }
 
+/// The box the LOD probes in each octant of `bounds` (dataset frame): the octant's geometric box
+/// intersected with the frame's tight data extent, `None` where they do not meet (no data, so no
+/// demand). It depends on the node and the extent only, never on the levels stored, so the same
+/// camera always gives the same wish. `None` altogether without an extent: the geometric octants.
+pub(crate) fn octant_data_bounds(
+    bounds: SpatialBounds,
+    data: Option<SpatialBounds>,
+) -> Option<[Option<SpatialBounds>; 8]> {
+    let data = data?;
+    Some(std::array::from_fn(|octant| {
+        let geometric = crate::cell_cut::octant_box(bounds, octant)?;
+        let min: [f64; 3] = std::array::from_fn(|a| geometric.min()[a].max(data.min()[a]));
+        let max: [f64; 3] = std::array::from_fn(|a| geometric.max()[a].min(data.max()[a]));
+        SpatialBounds::new(min, max).ok()
+    }))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DriverConfig {
     pub pool: PoolConfig,
@@ -348,6 +365,9 @@ pub struct CellDriver {
     pool: CellPool,
     nodes: HashMap<NodeId, StoredNode>,
     cpu_bytes: u64,
+    /// Tight extent of the data (dataset frame) the octant probes clip to; `None` probes the
+    /// geometric octants.
+    data_bounds: Option<SpatialBounds>,
     /// Pool page slot of each page of a level that is uploading or resident.
     slots: HashMap<LevelKey, Vec<u32>>,
     masks_allocated: u32,
@@ -511,6 +531,7 @@ impl CellDriver {
             config,
             nodes: HashMap::new(),
             cpu_bytes: 0,
+            data_bounds: None,
             slots: HashMap::new(),
             masks_allocated: 0,
             node_slots: HashMap::new(),
@@ -535,6 +556,19 @@ impl CellDriver {
     /// Pages of the pool this driver fits cuts to (`PoolConfig::capacity_pages`).
     pub fn pool_capacity_pages(&self) -> u32 {
         self.config.pool.capacity_pages
+    }
+
+    /// Sets the tight extent of the data (`SpatialStats::data_bounds`; `None` when it is the
+    /// root cube itself) that the octant probes clip to, for the nodes held and the ones to come.
+    pub fn set_data_bounds(&mut self, data: Option<SpatialBounds>) {
+        if self.data_bounds == data {
+            return;
+        }
+        self.data_bounds = data;
+        for stored in self.nodes.values_mut() {
+            stored.pool.octant_data_bounds = octant_data_bounds(stored.pool.bounds, data);
+        }
+        self.dirty = true;
     }
 
     /// Continuity (RF-05): the smallest cell side the pool draws, or `None` for the literal mode.
@@ -751,6 +785,7 @@ impl CellDriver {
             .map(|level| (level.depth, level.pages.len()))
             .collect();
         self.pool.set_level_sizes(id, &sizes);
+        let octant_data_bounds = octant_data_bounds(bounds, self.data_bounds);
         let bytes = levels.iter().map(level_bytes).sum::<u64>();
         let count = levels.len();
         self.cpu_bytes += bytes;
@@ -764,6 +799,7 @@ impl CellDriver {
                     stored: levels.iter().map(|level| level.depth).collect(),
                     buildable,
                     points,
+                    octant_data_bounds,
                 },
                 levels: levels.into_iter().map(Arc::new).collect(),
                 bytes,
@@ -1078,7 +1114,12 @@ impl CellDriver {
             || plan.apply == CutApply::RetainedPrevious
             // Nodes waiting outside the cut or held back (R3-Q20/Q21) enter on a later frame.
             || plan.counters.excluded_nodes > 0
-            || plan.counters.held_nodes > 0;
+            || plan.counters.held_nodes > 0
+            // An octant still stepping towards its wanted depth moves on the next frame (ADR 0053).
+            || plan
+                .entries
+                .iter()
+                .any(|entry| entry.step.iter().any(Option::is_some));
         self.level_requests = plan
             .level_requests
             .iter()

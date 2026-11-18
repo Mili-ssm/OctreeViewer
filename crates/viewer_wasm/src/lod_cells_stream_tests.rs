@@ -19,7 +19,7 @@ use viewer_core::{
 };
 use viewer_format::{FormatReader, FormatReaderLimits, OctreeReader};
 use viewer_render_wgpu::cell_lod::{
-    LodView, MAX_NODE_SPAN, NodeLod, cell_lo, drawn_depth_at, refines,
+    LodView, MAX_NODE_SPAN, NodeLod, cell_lo, drawn_depth_at, edge_px, refines,
 };
 use viewer_render_wgpu::{
     CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan, LodMode, MASK_WORDS,
@@ -501,6 +501,7 @@ struct FrameInfo {
     uploaded_pages: usize,
     built: usize,
     deferred: usize,
+    nodes_deferred: usize,
     max_gap: u32,
     dtf: bool,
     digest: u64,
@@ -546,6 +547,12 @@ struct Totals {
     forgotten: usize,
 }
 
+/// `(node, wanted, drawn)` of an entry of the last plan.
+type LastEntry = (NodeId, [Option<u8>; 8], [Option<u8>; 8]);
+
+/// A cut node of a frame with its active depths and its range.
+type NodeLevels = (NodeId, Vec<u8>, Option<(u8, u8)>);
+
 struct Harness {
     dataset: LodDataset,
     driver: CellDriver,
@@ -574,6 +581,9 @@ struct Harness {
     unexcused_drops: usize,
     /// The nodes the fit capped in the frame being checked.
     frame_capped: Vec<NodeId>,
+    last_entries: Vec<LastEntry>,
+    /// Per cut node of the last frame: its active depths and its range (cell mode).
+    last_levels: Vec<NodeLevels>,
     frame_stage_px: f64,
     /// Sample points drawn in the previous cut, still inside the planner's cut, drawn by nothing.
     lost_samples: usize,
@@ -612,8 +622,43 @@ struct Harness {
     cell_seen: HashMap<(NodeId, u16), ([f64; 3], u8)>,
     /// Cell-mode counters (reported, never asserted).
     cell_counters: CellCounters,
+    /// ADR 0053 temporal gate: depth drawn per (node, octant) at the previous checked cut, the
+    /// timeout hops (`PoolCounters::step_hops`, global per frame) not yet charged to a check, and
+    /// the counters. The memory survives `camera_moved`: the rule holds whatever the camera does.
+    step_prev: HashMap<(NodeId, usize), u8>,
+    pending_hops: u32,
+    gate: StepGate,
+    /// Cell mode: (drawing node, depth) of each lattice sample at the previous evaluation.
+    cell_gate_prev: HashMap<(NodeId, u16), (NodeId, u8)>,
     /// Cell mode: the nodes of the last evaluated cut as the twin sees them.
     cell_nodes: Vec<CellNode>,
+}
+
+/// Counters of the ADR 0053 temporal gate (reported; only the octant-mode unexplained ones are asserted 0).
+#[derive(Default, Debug, Clone, Copy)]
+struct StepGate {
+    /// Timeout hops the pool counted (global per frame).
+    hops: usize,
+    /// Octant mode: drawn-depth changes of more than one level between consecutive checked cuts.
+    octant_jumps: usize,
+    /// ... excused by a counted stage (a drop of a staged octant).
+    octant_stage_excused: usize,
+    /// ... beyond the stage excuses and the timeout hops of the frame (asserted 0).
+    octant_unexplained: usize,
+    /// Cell mode (measured, never asserted): samples whose depth changed by more than one level
+    /// and whose drawing node changed between the two frames (hand-off between nodes).
+    cell_node_changed: usize,
+    /// ... and whose drawing node is the same (within-node jumps).
+    cell_within_node: usize,
+    /// Cell mode spatial gate (measured, never asserted): pairs of adjacent lattice samples drawn
+    /// by different nodes, summed over the checked cuts ...
+    cell_border_pairs: usize,
+    /// ... whose drawn depths differ by more than one level (ADR 0053, between neighbouring cells).
+    cell_border_over_one: usize,
+    /// ... the same two counts over the pairs whose both samples are on screen (inside the
+    /// frustum, between the render near and far planes): RF-31 concerns what the viewer sees.
+    cell_border_visible_pairs: usize,
+    cell_border_visible_over_one: usize,
 }
 
 /// Cell-mode counters of the sample oracle.
@@ -645,6 +690,23 @@ struct CellCtx {
     scale: f64,
     origin: [f64; 3],
     root_side: f64,
+    /// Viewport size in pixels and render clip distances (scaled units) for the visibility test.
+    viewport: [f64; 2],
+    clip: (f64, f64),
+}
+
+impl CellCtx {
+    /// Whether an eye-relative point lies inside the view frustum and between the render clip
+    /// planes.
+    fn on_screen(&self, rel: [f64; 3]) -> bool {
+        let dot = |v: [f32; 3]| (0..3).map(|a| rel[a] * f64::from(v[a])).sum::<f64>();
+        let depth = dot(self.lod.forward);
+        let focal = f64::from(self.lod.focal);
+        depth >= self.clip.0
+            && depth <= self.clip.1
+            && dot(self.lod.right).abs() * focal <= depth * self.viewport[0] * 0.5
+            && dot(self.lod.up).abs() * focal <= depth * self.viewport[1] * 0.5
+    }
 }
 
 impl Harness {
@@ -686,6 +748,8 @@ impl Harness {
             stage_excused_drops: 0,
             unexcused_drops: 0,
             frame_capped: Vec::new(),
+            last_entries: Vec::new(),
+            last_levels: Vec::new(),
             frame_stage_px: 0.0,
             lost_samples: 0,
             planner_of_drawn_cut: None,
@@ -706,6 +770,10 @@ impl Harness {
             cell_memory: HashMap::new(),
             cell_seen: HashMap::new(),
             cell_counters: CellCounters::default(),
+            step_prev: HashMap::new(),
+            pending_hops: 0,
+            gate: StepGate::default(),
+            cell_gate_prev: HashMap::new(),
             cell_nodes: Vec::new(),
         }
     }
@@ -750,6 +818,8 @@ impl Harness {
     /// The oracles on the cut a frame drew (holes, coarsenings, lost samples); runs when the
     /// drawn cut changed.
     fn check_drawn_cut(&mut self, number: usize, plan: &FramePlan, digest: u64) {
+        self.pending_hops += plan.counters.step_hops;
+        self.gate.hops += plan.counters.step_hops as usize;
         if self.mode == LodMode::Cell {
             self.check_cell_cut(number, plan, digest);
             return;
@@ -765,6 +835,7 @@ impl Harness {
                     &holes[..holes.len().min(3)]
                 ));
             }
+            self.gate_octant_steps(number, &cut);
             if self.check_zones {
                 // The pool stage of the brief: the depth drawn per (node, octant) never gets
                 // coarser while the camera is still.
@@ -862,6 +933,47 @@ impl Harness {
             }
             self.last_cut_digest = Some(digest);
             self.last_cut = Some(cut);
+        }
+    }
+
+    /// ADR 0053 gate, octant mode: a (node, octant) present in the previous checked cut and in
+    /// this one changes its drawn depth by at most one level. Excused: a drop of a staged octant
+    /// that a counted stage explains, and as many jumps as timeout hops the pool counted since
+    /// the last check. The hop counter is global, so a hop is charged to any jump of the frame
+    /// (conservative only in that it may excuse a jump of another node; the totals are
+    /// reported).
+    fn gate_octant_steps(&mut self, number: usize, cut: &CutView) {
+        let hops = std::mem::take(&mut self.pending_hops);
+        let mut current = HashMap::new();
+        let mut jumps = Vec::new();
+        let mut stage_excused = 0;
+        for (i, node) in cut.nodes.iter().enumerate() {
+            for (octant, drawn) in cut.active[i].iter().enumerate() {
+                let Some(now) = *drawn else {
+                    continue;
+                };
+                current.insert((*node, octant), now);
+                if let Some(&before) = self.step_prev.get(&(*node, octant))
+                    && before.abs_diff(now) > 1
+                {
+                    if now < before && self.stage_excuses(cut.entries[i].stage[octant], *node) {
+                        stage_excused += 1;
+                    } else {
+                        jumps.push((*node, octant, before, now));
+                    }
+                }
+            }
+        }
+        self.gate.octant_jumps += jumps.len() + stage_excused;
+        self.gate.octant_stage_excused += stage_excused;
+        let unexplained = jumps.len().saturating_sub(hops as usize);
+        self.gate.octant_unexplained += unexplained;
+        self.step_prev = current;
+        if unexplained > 0 {
+            self.fail(format!(
+                "frame {number}: {unexplained} drawn-depth jumps over one level without a timeout hop \
+                 ({hops} hops this frame), (node, octant, from, to): {jumps:?}"
+            ));
         }
     }
 
@@ -971,6 +1083,10 @@ impl Harness {
             .collect();
         let mut memory = HashMap::new();
         let mut seen = HashMap::new();
+        let mut gate_prev = HashMap::new();
+        let mut on_screen: HashSet<(NodeId, u16)> = HashSet::new();
+        let mut within_node = 0;
+        let mut node_changed = 0;
         let mut lost = 0;
         for (key, p) in points {
             let rel = to_eye(p);
@@ -1048,6 +1164,19 @@ impl Harness {
                             }
                         }
                     }
+                    if let Some(&(was_node, was)) = self.cell_gate_prev.get(&key)
+                        && was.abs_diff(*depth) > 1
+                    {
+                        if was_node == node.id {
+                            within_node += 1;
+                        } else {
+                            node_changed += 1;
+                        }
+                    }
+                    gate_prev.insert(key, (node.id, *depth));
+                    if ctx.on_screen(rel) {
+                        on_screen.insert(key);
+                    }
                     memory.insert(key, (p, *depth));
                     seen.insert(key, (p, *depth));
                 }
@@ -1070,6 +1199,34 @@ impl Harness {
         // Only the samples of the nodes that are in the cut now stay: the next frame compares
         // against them (and against the ones its own cut adds).
         let current: HashSet<NodeId> = nodes.iter().map(|node| node.id).collect();
+        self.pending_hops = 0;
+        self.gate.cell_node_changed += node_changed;
+        self.gate.cell_within_node += within_node;
+        gate_prev.retain(|(node, _), _| current.contains(node));
+        // Spatial gate: adjacent lattice points (one step along an axis) of the same node lattice
+        // that different nodes draw.
+        for (&(lattice, n), &(drawer, depth)) in &gate_prev {
+            let at = [n % 7, n / 7 % 7, n / 49];
+            for (axis, stride) in [1_u16, 7, 49].into_iter().enumerate() {
+                if at[axis] == 6 {
+                    continue;
+                }
+                if let Some(&(other, other_depth)) = gate_prev.get(&(lattice, n + stride))
+                    && other != drawer
+                {
+                    self.gate.cell_border_pairs += 1;
+                    let over_one = usize::from(depth.abs_diff(other_depth) > 1);
+                    self.gate.cell_border_over_one += over_one;
+                    if on_screen.contains(&(lattice, n))
+                        && on_screen.contains(&(lattice, n + stride))
+                    {
+                        self.gate.cell_border_visible_pairs += 1;
+                        self.gate.cell_border_visible_over_one += over_one;
+                    }
+                }
+            }
+        }
+        self.cell_gate_prev = gate_prev;
         memory.retain(|(node, _), _| current.contains(node));
         seen.retain(|(node, _), _| current.contains(node));
         self.cell_memory = memory;
@@ -1095,6 +1252,8 @@ impl Harness {
             scale,
             origin: self.dataset.coordinate_origin(),
             root_side: grid.root_side,
+            viewport: viewport.map(f64::from),
+            clip: view.camera().clip_distances(),
         });
     }
 
@@ -1121,6 +1280,24 @@ impl Harness {
         .unwrap_or_else(|error| panic!("frame {number}: {error}"));
         let stats = &out.update.stats;
         let plan = &out.update.report.plan;
+        self.last_entries = plan
+            .entries
+            .iter()
+            .map(|e| (e.node, e.wanted, e.drawn))
+            .collect();
+        self.last_levels = plan
+            .entries
+            .iter()
+            .map(|e| {
+                let depths = plan
+                    .active
+                    .iter()
+                    .filter(|level| level.key.node == e.node)
+                    .map(|level| level.key.depth)
+                    .collect();
+                (e.node, depths, e.range)
+            })
+            .collect();
         self.target.check_plan(plan);
         let digest = cell_cut_digest(&plan.entries);
         self.frame_capped = plan.coarsened_nodes.clone();
@@ -1145,6 +1322,7 @@ impl Harness {
             uploaded_pages: out.update.report.uploaded_pages,
             built: stats.built_nodes.len(),
             deferred: stats.build_deferred,
+            nodes_deferred: stats.nodes_deferred,
             max_gap: stats.max_gap,
             dtf: stats.descendant_too_fine,
             digest,
@@ -1270,6 +1448,7 @@ impl Harness {
             t.fallback_peak,
             t.hold_unsettled,
         );
+        println!("{label}: ADR 0053 gate {:?}", self.gate);
     }
 }
 
@@ -1493,7 +1672,8 @@ fn synthetic_build_cap_defers_without_waiting_for_the_camera_in(mode: LodMode) {
             break;
         }
         let info = capped.frame(&view);
-        deferred_frames += usize::from(info.deferred > 0);
+        // `deferred` also counts the level backlog; only node deferral is compared with builds.
+        deferred_frames += usize::from(info.nodes_deferred > 0);
         builds += info.built;
     }
     capped.report("synthetic capped builds");
@@ -2236,3 +2416,224 @@ both_modes!(
     a_late_node_of_an_older_colour_generation_is_dropped_by_the_driver,
     a_late_node_of_an_older_colour_generation_is_dropped_in_cell_mode
 );
+
+/// The built-in sample loaded in a harness, with its coordinate origin and visual scale.
+fn sample_harness(mode: LodMode) -> (Harness, [f64; 3], f64) {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/web-host/sample.oct");
+    let file = std::fs::File::open(path).unwrap();
+    let reader: RealReader =
+        FormatReader::open_lazy(std::io::BufReader::new(file), FormatReaderLimits::default())
+            .unwrap();
+    let scale = reader.format_metadata().visual_scale();
+    let mut dataset = LodDataset::from_shared_metadata_and_visual_scale(
+        reader.format_metadata().viewer_dataset().unwrap(),
+        scale,
+        256 << 20,
+    )
+    .with_global_frame(reader.format_version().uses_global_frame());
+    if let Some(source) = reader.page_source().cloned() {
+        dataset = dataset
+            .with_pages(
+                source.root_unloaded(),
+                Box::new({
+                    let s = source.clone();
+                    move |a| s.release_page(a)
+                }),
+                256 << 20,
+            )
+            .unwrap();
+    }
+    let origin = dataset.coordinate_origin();
+    let reader = Rc::new(RefCell::new(reader));
+    let for_blocks = Rc::clone(&reader);
+    let for_pages = Rc::clone(&reader);
+    let blocks: Blocks = Box::new(move |id| {
+        crate::block_loading::load_render_block(
+            &mut *for_blocks.borrow_mut(),
+            id,
+            Some(viewer_render_wgpu::ColorMode::Rgb),
+            None,
+            None,
+        )
+        .map(Some)
+    });
+    let pages: Pages = Box::new(move |anchor| {
+        let graft = for_pages
+            .borrow_mut()
+            .read_page(anchor)
+            .map_err(|e| e.to_string())?;
+        Ok(PageInsert {
+            anchor,
+            number: graft.number,
+            nodes: graft.nodes,
+            unloaded: graft.unloaded,
+            bytes: graft.encoded_len,
+        })
+    });
+    (
+        Harness::new(dataset, 4.0, blocks, pages).in_mode(mode),
+        origin,
+        scale,
+    )
+}
+
+/// The built-in sample at a close pose: the leaves are tall cubes whose octants cross the eye plane
+/// while the data lies in front of it. No node may draw its finest depth (cells of ~0.003 px)
+/// there: the probe measures the data, not the node box.
+fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in(mode: LodMode) {
+    let (mut h, origin, scale) = sample_harness(mode);
+    let viewport = [870, 750];
+    // Measured at this pose: probing the data wants depth 11-13 in these leaves (cells near the
+    // px target), while probing the node box wants the finest depth, 19 (cells of ~0.003 px).
+    // 14 is one level of margin over the former and far from the latter.
+    const MAX_DEPTH: u8 = 14;
+    let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
+    let mk = |eye: [f64; 3], target: [f64; 3]| {
+        let root = h.dataset.metadata.hierarchy().stats().root_bounds;
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(
+            SceneBounds {
+                min: local(root.min()),
+                max: local(root.max())
+            },
+            viewport
+        ));
+        assert!(camera.set_pose(local(eye), local(target)));
+        ViewProjection::new(camera, viewport, scale, VoxelBuildLimits::default())
+    };
+    let target = [31.95849609375, 31.95849609375, 1.99951171875];
+    let v0 = mk(
+        [31.95849609375, 75.78127736426028, 77.90279540825159],
+        target,
+    );
+    let v4 = mk(
+        [31.95849609375, 38.75951960734527, 6.118357964164779],
+        target,
+    );
+    h.settle(&v0, 3, 5000);
+    h.camera_moved();
+    h.settle(&v4, 3, 5000);
+    let mut seen = std::collections::BTreeSet::new();
+    for (node, wanted, drawn) in &h.last_entries {
+        if [13, 14, 17, 18].contains(&node.get()) {
+            for o in 0..8 {
+                let (Some(w), Some(d)) = (wanted[o], drawn[o]) else {
+                    continue;
+                };
+                seen.insert(node.get());
+                assert!(
+                    w <= MAX_DEPTH && d <= MAX_DEPTH,
+                    "node {} octant {o} wants {w} and draws {d} in {mode:?}",
+                    node.get()
+                );
+            }
+        }
+    }
+    assert_eq!(
+        seen.into_iter().collect::<Vec<_>>(),
+        [13, 14, 17, 18],
+        "every leaf must have an octant with a wanted and drawn depth, or the check is vacuous"
+    );
+}
+
+#[test]
+fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in_cell_mode() {
+    // Octant mode still has the degenerate-probe hole (follow-up), so only cell mode is covered.
+    the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in(LodMode::Cell);
+}
+
+/// The sample from a close pose whose leaves hold the eye (nodes 14 and 17): their octants that
+/// straddle the eye plane want a far finer depth than the ones wholly in front. The node's active
+/// depths must stay contiguous up to that wish, or the per-cell rule jumps from the coarse range
+/// to a depth whose cells measure a fraction of a pixel (black holes).
+#[test]
+fn a_node_holding_the_eye_keeps_contiguous_active_depths_and_no_sub_pixel_cells() {
+    let (mut h, origin, scale) = sample_harness(LodMode::Cell);
+    let viewport = [870, 750];
+    let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
+    let mk = |eye: [f64; 3], target: [f64; 3]| {
+        let root = h.dataset.metadata.hierarchy().stats().root_bounds;
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(
+            SceneBounds {
+                min: local(root.min()),
+                max: local(root.max())
+            },
+            viewport
+        ));
+        assert!(camera.set_pose(eye, target));
+        ViewProjection::new(camera, viewport, scale, VoxelBuildLimits::default())
+    };
+    // Local-frame poses: the eye 9 units from the target, 1.4 above it.
+    let target = [50.0, 50.0, 3.22];
+    let far = mk([50.0, 90.0, 40.0], target);
+    let p2 = mk([50.0, 59.11, 4.60], target);
+    h.settle(&far, 3, 5000);
+    h.camera_moved();
+    h.settle(&p2, 3, 5000);
+    let ctx = h.cell_ctx.as_ref().expect("cell mode context");
+    let grid = h.dataset.cell_grid();
+    let hierarchy = h.dataset.metadata.hierarchy();
+    let mut seen = 0;
+    for (node, depths, range) in &h.last_levels {
+        let mut depths = depths.clone();
+        depths.sort_unstable();
+        if ![14, 17].contains(&node.get()) {
+            continue;
+        }
+        let (Some(&first), Some(&last)) = (depths.first(), depths.last()) else {
+            continue;
+        };
+        seen += 1;
+        let lo = range.map_or(first, |(lo, _)| lo.max(first));
+        let missing: Vec<u8> = (lo..=last).filter(|d| !depths.contains(d)).collect();
+        assert!(
+            missing.is_empty(),
+            "node {} active {depths:?} range {range:?}: {missing:?} missing",
+            node.get()
+        );
+        // No cell of the node's lattice is drawn below half the pixel target, unless it is the
+        // node's coarsest active depth (nothing coarser to fall back on).
+        let bounds = hierarchy.node(*node).unwrap().bounds();
+        let node_depth = representative_depth(&grid, bounds).saturating_sub(3);
+        let rel_lo: [f64; 3] =
+            std::array::from_fn(|a| (bounds.min()[a] - origin[a]) * scale - ctx.eye[a]);
+        let lod = NodeLod {
+            anchor: rel_lo.map(|v| v as f32),
+            node_depth,
+            active: depths.iter().fold(0_u64, |b, d| b | 1 << (d - node_depth)),
+            mask: [0; 8],
+        };
+        let side = ctx.root_side / (1_u64 << node_depth) as f64 * ctx.scale;
+        for n in 0..343_u16 {
+            let at = [n % 7, n / 7 % 7, n / 49];
+            let rel: [f64; 3] = std::array::from_fn(|a| {
+                let t = 0.01 + 0.98 * (f64::from(at[a]) + 0.37) / 6.37;
+                rel_lo[a] + (bounds.max()[a] - bounds.min()[a]) * scale * t
+            });
+            let Some(depth) = drawn_depth_at(&ctx.lod, &lod, rel, rel_lo, side) else {
+                continue;
+            };
+            if depth == first {
+                continue;
+            }
+            let cells = (1_u64 << (depth - node_depth)) as f64;
+            let cell_side = side / cells;
+            let cell: [f64; 3] = std::array::from_fn(|a| {
+                ((rel[a] - rel_lo[a]) / cell_side)
+                    .floor()
+                    .clamp(0.0, cells - 1.0)
+            });
+            let cell_min: [f32; 3] =
+                std::array::from_fn(|a| (rel_lo[a] + cell[a] * cell_side) as f32);
+            let px = edge_px(&ctx.lod, cell_min, cell_side as f32);
+            assert!(
+                px >= 2.0,
+                "node {} draws depth {depth} at {px} px (active {depths:?})",
+                node.get()
+            );
+        }
+    }
+    assert_eq!(seen, 2, "nodes 14 and 17 are drawn");
+}

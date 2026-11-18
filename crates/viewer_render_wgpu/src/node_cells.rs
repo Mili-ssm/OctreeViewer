@@ -324,13 +324,13 @@ impl NodeSetup {
         {
             return Err(NodeCellError::AbsoluteDepthExceeded);
         }
-        let first = if is_leaf {
-            spacing.map_or_else(
-                || representative_depth(grid, bounds),
-                |spacing| representative_depth_for_spacing(grid, spacing),
-            )
-        } else {
-            representative_depth(grid, bounds)
+        // A leaf builds the same coarse levels as an internal node (aggregated multi-point
+        // cells from `node_depth + 3`), so it can hand off to its parent within one level; its
+        // spacing depth only marks where its single-point tail starts (ADR 0053).
+        let rep = representative_depth(grid, bounds);
+        let first = match spacing.filter(|_| is_leaf) {
+            Some(spacing) => rep.min(representative_depth_for_spacing(grid, spacing)),
+            None => rep,
         };
         let last = if is_leaf {
             MAX_CELL_DEPTH

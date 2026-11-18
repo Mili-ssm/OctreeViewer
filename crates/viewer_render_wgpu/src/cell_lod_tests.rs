@@ -186,9 +186,10 @@ fn chain_cell(node: &NodeLod, rel: [u32; 3], level: u32, side0: f32) -> ([f32; 3
     (cell_lo(node, rel, side), side)
 }
 
-/// Measurement: counts child/parent pairs where the child refines and the parent does not. The
-/// actual projected edge is not monotone for chains crossing the eye plane, so only chains whose
-/// root cell is fully in front of the eye and whose cells f32 resolves are counted; the draw rule does not rely on this.
+/// Measurement: counts child/parent pairs where the child refines and
+/// the parent does not. The actual projected edge is not monotone for chains crossing the eye
+/// plane, so only chains whose root cell is fully in front of the eye and whose cells f32
+/// resolves are counted; the draw rule does not rely on this.
 #[test]
 fn refines_is_monotone_from_child_to_parent() {
     let mut rng = Rng(2);
@@ -545,4 +546,99 @@ fn node_record_round_trips() {
         assert_eq!(record[24] >> 8, u32::from(m1));
         assert!(record[25..].iter().all(|&word| word == 0));
     }
+}
+
+/// ADR 0054: the target is a minimum. On a contiguous chain of active depths every drawn cell
+/// below the coarsest one measures at least the target and at least `min_side` in length, and
+/// agrees with `drawn_depth_at` at its centre. The drawn cells of each scene are enumerated whole
+/// (the leaves of the refinement tree), not sampled.
+#[test]
+fn drawn_cells_never_project_below_the_target() {
+    let mut rng = Rng(11);
+    let mut checked = 0;
+    let mut deeper = 0;
+    for pose in 0..150 {
+        let side0 = rng.log_range(1.0, 1e3);
+        let top = 2 + rng.below(3) as u32;
+        let node = NodeLod {
+            anchor: [0; 3].map(|_| (rng.range(-3.0, 3.0) * side0) as f32),
+            node_depth: rng.below(8) as u8,
+            active: active_bits(&(0..=top).collect::<Vec<_>>()),
+            mask: [0; 8],
+        };
+        let mut view = random_view(&mut rng);
+        if pose % 3 == 0 {
+            view.min_side = (side0 / f64::from(pow2(rng.below(u64::from(top) + 1) as u32))) as f32;
+        }
+        let node_lo = node.anchor.map(f64::from);
+        let mut stack = vec![(0u32, [0u32; 3])];
+        while let Some((level, rel)) = stack.pop() {
+            let side = (side0 / f64::from(pow2(level))) as f32;
+            let lo = cell_lo(&node, rel, side);
+            if level < top && refines(&view, lo, side) {
+                for child in 0..8u32 {
+                    stack.push((
+                        level + 1,
+                        std::array::from_fn(|a| rel[a] * 2 + (child >> a & 1)),
+                    ));
+                }
+                continue;
+            }
+            checked += 1;
+            let centre: [f64; 3] =
+                std::array::from_fn(|a| node_lo[a] + (f64::from(rel[a]) + 0.5) * f64::from(side));
+            assert_eq!(
+                drawn_depth_at(&view, &node, centre, node_lo, side0),
+                Some(node.node_depth + level as u8),
+                "level {level} rel {rel:?}"
+            );
+            if level == 0 {
+                continue;
+            }
+            deeper += 1;
+            let edge = edge_px(&view, lo, side);
+            assert!(
+                side >= view.min_side && edge >= view.target_px,
+                "level {level}: side {side} edge {edge} below min_side {} / target {}",
+                view.min_side,
+                view.target_px
+            );
+        }
+    }
+    assert!(checked > 150 && deeper > 1000, "{deeper} deeper draws");
+}
+
+/// ADR 0054, off-axis: the smallest child is not always the one farthest along `forward`. Here
+/// the far child measures about 1.12 px but another child about 0.88 px, so a target of 1 px must
+/// stop the refinement.
+#[test]
+fn refines_measures_every_child_off_axis() {
+    let forward = normalized([-0.024, -0.004, 1.0]);
+    let right = normalized([-forward[1], forward[0], 0.0]);
+    let up = normalized(cross(forward, right));
+    let view = LodView {
+        forward: forward.map(|c| c as f32),
+        right: right.map(|c| c as f32),
+        up: up.map(|c| c as f32),
+        focal: 1.0,
+        target_px: 1.0,
+        min_side: 0.0,
+    };
+    let (lo, side) = ([-0.281f32, -0.760, 0.1], 0.317f32);
+    let half = side * 0.5;
+    let edges: Vec<f32> = (0..8usize)
+        .map(|child| {
+            let child_lo = std::array::from_fn(|a| lo[a] + half * ((child >> a & 1) as f32));
+            edge_px(&view, child_lo, half)
+        })
+        .collect();
+    let far = (0..3).fold(0, |far, a| far | usize::from(view.forward[a] > 0.0) << a);
+    let smallest = edges.iter().copied().fold(f32::INFINITY, f32::min);
+    assert!(edges[far] >= 1.0 && smallest < 1.0, "{edges:?}");
+    let measured = min_child_edge_px(&view, lo, side);
+    assert!(
+        (measured - smallest).abs() <= 1e-3 * smallest,
+        "{measured} vs {smallest}"
+    );
+    assert!(!refines(&view, lo, side));
 }

@@ -57,3 +57,5 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0051](0051-granularidad-de-hojas-configurable.md) | La granularidad de las hojas es configurable: puntos máximos, lado mínimo y distancia de fusión (precisa 0044) | Aceptada (pendiente) |
 | [0052](0052-retencion-y-ajuste-al-pool-por-celda.md) | Retención por zona, hijos provisionales con el color del padre y ajuste homogéneo al pool (precisa R3-Q19, R3-Q21 y R3-Q11) | Aceptada (hijos provisionales opcionales, revisión 15-11) |
 | [0053](0053-transiciones-de-un-nivel.md) | Las transiciones de nivel avanzan de un nivel en un nivel, en el espacio y en el tiempo (precisa ADR 0050 y R3-Q21) | Aceptada (cola bajo la separación pendiente de revisión) |
+| [0054](0054-el-objetivo-de-px-es-el-tamano-minimo.md) | El objetivo de px es el tamaño mínimo del vóxel y el mínimo en longitud está activo por defecto (0,1 mm) (cambia RQ-09) | Aceptada |
+| [0055](0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) | En modo celda la GPU decide el nivel dibujado y la CPU solo la residencia: conjunto activo contiguo (precisaría ADR 0050 y 0053) | Propuesta |

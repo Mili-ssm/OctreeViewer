@@ -1,6 +1,6 @@
 # 0049 El tamaño mínimo del cubo se elige en px, en longitud o por el espaciado de la nube
 
-Estado: Aceptada (revisada el 16-11-2026: filtros combinables, ver «Revisión») · Fecha: 15-11-2026 · Decide: propietario · Precisa RF-05, RQ-09 y el [ADR 0019](0019-cubos-por-nodo-residentes-en-gpu.md)
+Estado: Aceptada (revisada el 16-11-2026: filtros combinables, ver «Revisión»; el filtro de longitud pasa a estar activo por defecto con 0,1 mm, [ADR 0054](0054-el-objetivo-de-px-es-el-tamano-minimo.md)) · Fecha: 15-11-2026 · Decide: propietario · Precisa RF-05, RQ-09 y el [ADR 0019](0019-cubos-por-nodo-residentes-en-gpu.md)
 
 ## Contexto
 - Hoy el detalle se controla con el objetivo de px. La continuidad (RF-05) es una casilla que fija el lado mínimo del cubo
