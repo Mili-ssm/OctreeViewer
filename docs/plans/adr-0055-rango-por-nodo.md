@@ -231,10 +231,10 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 10: Node-level range and anchor replace the per-octant fields (R)
 
-- [x] **10-pre.** Se retira la regla `Window` (propietario, 19-11-2026): `ActiveRule`, `applied_window`, el
+- [ ] **10-pre.** Se retira la regla `Window` (propietario, 19-11-2026): `ActiveRule`, `applied_window`, el
   selector de la demo, `setCellActiveRule` y `?cellActive=` (ignorado con aviso). Comprobación: las líneas
   `SimStats` de `Contiguous` y el resumen de la entrada de la GPU, idénticos; navegador.
-  Hecho en d108004 (crates) y HASH2 (demo y binding); la parte del navegador la verifica la sesión principal.
+  Código en d108004 (crates) y f09344a (demo y binding); falta el navegador.
 
 - [ ] **10a** (diseño rehecho el 19-11-2026 tras retirar `Window`): ver
   [«Diseño de la tarea 10»](#diseño-de-la-tarea-10-campos-por-nodo). Falta su pre-mortem.
