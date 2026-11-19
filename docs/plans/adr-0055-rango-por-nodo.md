@@ -231,8 +231,8 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 10: Node-level range and anchor replace the per-octant fields (R)
 
-- [ ] **10a, en este plan.** Se definen «ancla» y `stage` por nodo. `stage` se mide sobre
-  `[lo, min(hi, separación, tope del fit)]`, lo que de verdad se puede pedir: si no, `stages` no llega a 0 en reposo.
+- [ ] **10a, en este plan** (diseño del agente, 19-11-2026; pendiente de pre-mortem antes de ejecutar 10b).
+  Ver [«Diseño de la tarea 10»](#diseño-de-la-tarea-10-campos-por-nodo).
 - [ ] **10b.** `CellCutEntry` gana los campos por nodo junto a los viejos y los lectores se pasan de uno en uno,
   un commit cada uno: `busy` del driver, `stages`, el tope de `fit`, `lost_zones`, el resumen del corte.
 - [ ] **10c.** Se quitan los campos por octante; los goldens y resúmenes que cambian se rehacen comprobando a mano
@@ -257,6 +257,66 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 - [ ] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4 y zoom en movimiento, con «objetivo alcanzado» en
   reposo; registro fechado con las simulaciones y la residencia en Majadas antes y después; `docs/reference/`,
   `docs/explanation/REGIONAL_VOXEL_LOD.md` (su regla E6) y el ADR 0055 enlazados donde cambie el contrato.
+
+## Diseño de la tarea 10: campos por nodo
+
+**Conclusión.** `CellCutEntry` pasa de cuatro arrays por octante a cuatro valores por nodo: `range`, `anchor`,
+`stage` y `step`. La GPU ya solo recibe el conjunto de niveles activos del nodo y la máscara 8³; lo único que
+dependía de verdad de un valor por octante es el paso de un nivel por frame (ADR 0053), que pasa a ser por nodo.
+
+Inventario de lectores (19-11-2026, sobre `cefcc04`): de unos 40 usos en producción, los valores por octante solo
+son esenciales en la cadena de pasos (`drawn_levels`, `prev_state`, `step_waits`, `step_hops`, semillas). El resto
+reduce a máximo, «alguno», recuento o conjunto, o a **presencia** (`drawn[o].is_some()`), que equivale a «octante no
+enmascarado y el nodo tiene algún nivel residente en su tramo».
+
+| Campo nuevo | Significado | Sustituye a |
+| --- | --- | --- |
+| `range: Option<(u8, u8)>` | `[lo, hi]`: `lo` de `node_view_range`; `hi` = el deseo más fino del nodo, ya limitado por la cota por datos y el tramo construible (`node_range` de la tarea 7b) | `wanted[o]` y el `range` actual |
+| `anchor: Option<u8>` | Nivel más fino que el nodo puede tener activo este frame. `None`: nada residente en su tramo. Avanza como mucho un nivel por frame hacia `hi` (ADR 0053) | `drawn[o]` |
+| `stage: bool` | El ancla no ha llegado al objetivo alcanzable: `anchor < min(hi, nivel almacenado más fino o el construible que se puede pedir, tope del fit)` | `stage[o]` |
+| `step: Option<u8>` | Nivel siguiente que el ancla espera (ancla ± 1), si no es residente y usable | `step[o]` |
+
+Reglas:
+
+- **Activos.** `cell_active_depths` toma los niveles residentes y usables de `[lo, anchor]` según la regla de
+  activos; ya no recibe niveles «dibujados». El nivel D5 sigue como hoy.
+- **Paso.** Con `prev` = ancla aplicada del nodo: si `hi > prev`, el ancla es el nivel usable más fino `≤ prev + 1`;
+  si `hi < prev`, baja a `max(hi, prev − 1)`; el salto por espera agotada (`STEP_WAIT_FRAMES`) se conserva, con una
+  entrada por nodo en `step_waits`.
+- **Entrada al corte** (nodo sin ancla aplicada). Al acercarse, `prev` = nivel activo más fino del antepasado que
+  dibujaba (`applied_finest`), recortado al tramo del nodo. Al alejarse, `prev` = el ancla aplicada más gruesa de
+  los descendientes que sustituye. La retención (`run_covers`, tarea 9) decide cuándo entra; no cambia.
+- **Presencia.** Los lectores de `fallback.rs` (`covers_in`, `uncovered_levels`, `lost_zones`, `octant_covered`,
+  `missing_levels`) usan `octant_fully_masked(mask, o)` y `anchor.is_some()`.
+- **`stages`.** El contador pasa de octantes a nodos (más los términos `applied_covered` y `too_fine_excluded`, que
+  se reescalan a nodos). La demo y las sondas solo comprueban `poolStages === 0`, que no cambia de significado.
+- **Resúmenes.** `cell_cut_digest` y `drawn_digest` resumen `range`, `anchor`, `stage`, `step` y la máscara: todos
+  los goldens cambian una vez (10c).
+
+Qué deja de existir en la tarea 11: las semillas por octante (`seed.rs`), `PrevState` por octante, `finer_drawn`
+por octante (pasa a «niveles sobre el tope que estaban activos») y el juez `PerOctant`.
+
+Qué cambia de comportamiento, y cómo se comprueba:
+
+| Cambio | Riesgo | Comprobación |
+| --- | --- | --- |
+| Un nodo cuyos octantes hoy dibujan niveles distintos tiene un único ancla | El conjunto activo puede diferir en un nivel durante el paso | La GPU ya elige por celda entre los activos: el oráculo del gemelo de la tarea 8, las simulaciones reales y P1 a P4 en el navegador |
+| El paso es por nodo | Un nodo con deseos muy dispares (cerca y lejos) llega a `hi` en `hi − ancla` frames, no antes | Test de la regla `Window` de esta tarea; frames hasta asentarse en dolly y órbitas ≤ 1,5 × |
+| `stages` cuenta nodos | Cifras de `poolStages` no comparables con las anteriores | Solo se usa `=== 0`; se anota en `PROBES.md` |
+
+Orden (cada paso, un commit con los tests en verde):
+
+1. **10b-1.** `CellCutEntry` gana `anchor`, `stage_node`, `step_node` calculados junto a los campos viejos, sin
+   lectores. Test: en cada simulación, `anchor` = máximo de `drawn`, `stage_node` = algún `stage`, y el conjunto
+   activo calculado desde `[lo, anchor]` es igual al de hoy; las discrepancias se listan, no se ocultan.
+2. **10b-2 a 10b-6.** Un lector por commit: `busy` del driver, `stages`, tope del `fit` y peticiones
+   (`needed_levels`, `requested_levels`, `steps`), presencia en `fallback.rs`, `cell_active_depths`.
+3. **10b-7.** El paso por nodo sustituye a `drawn_levels` y a las semillas como fuente del ancla (aquí cambia el
+   comportamiento); `applied_drawn` pasa a guardar el ancla.
+4. **10c a 10e**, como están descritas arriba.
+
+Parada propia de este diseño: si en 10b-1 el conjunto activo desde `[lo, anchor]` difiere del actual en más de un
+nivel en alguna simulación real, el ancla por nodo no describe lo que hoy se dibuja: parar y replantear.
 
 ## Riesgos y su comprobación
 
