@@ -348,8 +348,8 @@ fn color_of(generation: u64) -> u64 {
 
 struct StoredNode {
     pool: PoolNode,
-    /// Ranges of each level by depth, read once when it is stored: a frame merges only the
-    /// levels it draws (R3-Q32: the CPU path ranges over the voxels it draws).
+    /// Ranges of each level by depth, read once when it is stored; they feed
+    /// `CellDriver::stored_colors`, which no view or eviction narrows.
     colors: Vec<(u8, CellColorRanges)>,
     /// One per depth of `pool.stored`.
     levels: Vec<Arc<PackedLevel>>,
@@ -368,6 +368,12 @@ pub struct CellDriver {
     /// Tight extent of the data (dataset frame) the octant probes clip to; `None` probes the
     /// geometric octants.
     data_bounds: Option<SpatialBounds>,
+    /// Fixed elevation range of the dataset (Z of its data extent, absolute frame); `None` makes
+    /// the elevation range follow `stored_colors`.
+    elevation_range: Option<[f64; 2]>,
+    /// Union of the ranges of every level stored since the dataset or colour generation last
+    /// changed: view-independent, it only grows (eviction and the camera never narrow it).
+    stored_colors: CellColorRanges,
     /// Pool page slot of each page of a level that is uploading or resident.
     slots: HashMap<LevelKey, Vec<u32>>,
     masks_allocated: u32,
@@ -530,6 +536,8 @@ impl CellDriver {
             nodes: HashMap::new(),
             cpu_bytes: 0,
             data_bounds: None,
+            elevation_range: None,
+            stored_colors: CellColorRanges::default(),
             slots: HashMap::new(),
             masks_allocated: 0,
             node_slots: HashMap::new(),
@@ -566,6 +574,31 @@ impl CellDriver {
             stored.pool.octant_data_bounds = octant_data_bounds(stored.pool.bounds, data);
         }
         self.dirty = true;
+    }
+
+    /// Fixes the elevation range of the colour modes to the Z span of the dataset's data extent
+    /// (absolute dataset coordinates), so it does not depend on the view. `None` follows the
+    /// stored levels like the intensity range.
+    pub fn set_elevation_range(&mut self, range: Option<[f64; 2]>) {
+        if self.elevation_range != range {
+            self.elevation_range = range;
+            self.dirty = true;
+        }
+    }
+
+    /// Z span of the root cube (absolute frame): the data extent when `set_data_bounds` got `None`.
+    pub fn root_z_range(&self) -> [f64; 2] {
+        let grid = &self.config.grid;
+        [grid.root_min[2], grid.root_min[2] + grid.root_side]
+    }
+
+    /// Records `generation` as the newest seen; a new dataset or colour generation discards the
+    /// stored colour ranges, which belonged to the old one.
+    fn advance_generation(&mut self, generation: Option<u64>) {
+        if generation > self.newest_generation {
+            self.stored_colors = CellColorRanges::default();
+        }
+        self.newest_generation = self.newest_generation.max(generation);
     }
 
     /// Continuity (RF-05): the smallest cell side the pool draws, or `None` for the literal mode.
@@ -699,6 +732,9 @@ impl CellDriver {
         self.pool.set_level_sizes(id, &sizes);
         let added = levels.len();
         let colors = level_ranges(&self.config.grid, &levels);
+        for (_, color) in &colors {
+            self.stored_colors = self.stored_colors.merge(*color);
+        }
         for (level, color) in levels.into_iter().zip(colors) {
             let bytes = level_bytes(&level);
             let at = stored
@@ -764,7 +800,7 @@ impl CellDriver {
         if stored_generation.is_some() {
             return self.recolor_node(id, generation, buildable, levels);
         }
-        self.newest_generation = self.newest_generation.max(generation);
+        self.advance_generation(generation);
         if levels.is_empty() {
             return Ok(NodeAdded::NoLevels);
         }
@@ -778,6 +814,9 @@ impl CellDriver {
         let count = levels.len();
         self.cpu_bytes += bytes;
         let colors = level_ranges(&self.config.grid, &levels);
+        for (_, color) in &colors {
+            self.stored_colors = self.stored_colors.merge(*color);
+        }
         self.nodes.insert(
             id,
             StoredNode {
@@ -881,9 +920,12 @@ impl CellDriver {
         stored.bytes = bytes;
         stored.pool.buildable = buildable;
         stored.levels = levels;
-        stored.colors = colors;
+        stored.colors = colors.clone();
         stored.generation = generation;
-        self.newest_generation = self.newest_generation.max(generation);
+        self.advance_generation(generation);
+        for (_, color) in &colors {
+            self.stored_colors = self.stored_colors.merge(*color);
+        }
         self.dirty = true;
         self.arrived_since_cut.insert(id);
         Ok(NodeAdded::Recolored { levels: count })
@@ -901,6 +943,12 @@ impl CellDriver {
         }
         self.masks_allocated = 0;
         self.node_slots.clear();
+        // Back to the levels still stored: what was evicted before is not requested again.
+        self.stored_colors = self
+            .nodes
+            .values()
+            .flat_map(|node| node.colors.iter().map(|(_, ranges)| *ranges))
+            .fold(CellColorRanges::default(), CellColorRanges::merge);
         self.anchor_frame = None;
         self.armed = false;
         self.failed = false;
@@ -1247,17 +1295,10 @@ impl CellDriver {
             }
         }
         report.active_pages = table.len();
-        let colors = plan
-            .active
-            .iter()
-            .filter_map(|active| {
-                let node = self.nodes.get(&active.key.node)?;
-                node.colors
-                    .iter()
-                    .find(|(depth, _)| *depth == active.key.depth)
-                    .map(|(_, ranges)| *ranges)
-            })
-            .fold(CellColorRanges::default(), CellColorRanges::merge);
+        let colors = CellColorRanges {
+            intensity: self.stored_colors.intensity,
+            z: self.elevation_range.or(self.stored_colors.z),
+        };
         mark(FramePhase::TableBuilt);
         // Nothing resident and no pool yet: there is no page table to write.
         if !table.is_empty() || target.has_pool() {

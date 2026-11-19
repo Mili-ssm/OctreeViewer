@@ -730,9 +730,7 @@ impl WasmVoxelViewer {
         }
         let mut cells =
             ViewerCells::new(config, self.cell_node_cap).with_reference_spacing(reference_spacing);
-        if let Some(data) = data_bounds {
-            cells = cells.with_data_bounds(Some(data));
-        }
+        cells = cells.with_data_bounds(data_bounds);
         cells
             .set_continuity(self.continuity)
             .map_err(|message| JsValue::from_str(&message))?;

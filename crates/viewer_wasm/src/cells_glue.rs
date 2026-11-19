@@ -597,6 +597,12 @@ impl ViewerCells {
     /// The tight extent of the data, as `cellsInfo` gives it (`None`: the root cube is the extent).
     pub(crate) fn with_data_bounds(mut self, data: Option<viewer_core::SpatialBounds>) -> Self {
         self.driver.set_data_bounds(data);
+        // The elevation range is the extent's Z, also when the extent is the root cube.
+        let z = data.map_or_else(
+            || self.driver.root_z_range(),
+            |bounds| [bounds.min()[2], bounds.max()[2]],
+        );
+        self.driver.set_elevation_range(Some(z));
         self
     }
 
@@ -889,6 +895,7 @@ impl InProcessCells {
         let mut driver = CellDriver::new(driver);
         driver.set_min_side(Some(DEFAULT_MIN_SIDE));
         driver.set_data_bounds(dataset.cell_data_bounds());
+        driver.set_elevation_range(Some(dataset.cell_elevation_range()));
         Self {
             driver,
             stage_pixels: None,
