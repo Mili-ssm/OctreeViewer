@@ -1,5 +1,6 @@
 // Browser-only, bounded probe of `load({ url })` in the embeddable API (D4, issue #11). Run it from
 // probe-api-remote.html; the procedure is in PROBES.md ("Remote source through the embeddable API").
+import { lodTargetReached } from "./benchmark-metrics.mjs";
 import { sidecarUrl } from "./http-range-source.mjs";
 import { createViewer } from "./viewer-api.mjs";
 
@@ -10,7 +11,7 @@ const withTimeout = (promise, label) => Promise.race([
 ]);
 
 /**
- * Opens `datasetUrl` as a remote `{ url }` source and waits for the 4 px LOD state.
+ * Opens `datasetUrl` as a remote `{ url }` source and waits for the LOD target (`lodTargetReached`).
  * `buildWorker`: use the build worker (`createViewer` option). `attributes`: "derived" opens the
  * `sidecarUrl(datasetUrl)` sidecar explicitly, "none" opens without one.
  * Resolves with `{ name, bytes, hasAttributes, metadata, reachedTarget }`, or `{ error }` when the load fails.
@@ -35,7 +36,8 @@ export async function probeApiRemote(datasetUrl, { buildWorker = false, attribut
         while (performance.now() < deadline) {
             const stats = await withTimeout(viewer.getStats(), "getStats");
             if (stats.lod?.lodError) return { error: stats.lod.lodError };
-            if (stats.lod?.coverageComplete && stats.lod.pendingBlockIds.length === 0 && stats.lod.lodStagePixels <= 4) {
+            // The cells path (the default) reports no `coverageComplete`: reuse the benchmark definition.
+            if (lodTargetReached(stats.lod)) {
                 reachedTarget = true;
                 break;
             }

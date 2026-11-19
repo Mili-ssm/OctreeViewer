@@ -259,7 +259,8 @@ comparison and outstanding visual validation; a `presented` status alone is not 
 Checks `load({ url })` (HTTP Range, D4) with and without the build worker. The data server must
 answer Range and CORS; `red-ref-server.mjs` answers every file as `application/octet-stream`, so it
 serves only the dataset and a second static server serves the page, the modules and `pkg/`
-(the workers import `../../pkg/viewer_wasm.js`, so the app root is the repository root, with fresh bindings).
+(the workers import `../../pkg/viewer_wasm.js`, so the app root is the repository root). Build the bindings
+first with `scripts/build-wasm-bindings.sh` when `pkg/` is missing or stale (a fresh worktree has none).
 
 ```bash
 python3 -m http.server 8791 --bind 127.0.0.1 &                                     # app: repository root
