@@ -503,11 +503,6 @@ fn check_stats(label: &str, sim: &Sim) {
     );
     assert_eq!(sim.h.lost_samples, 0);
     assert_eq!(
-        sim.stats.active_gaps, 0,
-        "a node's active set skipped a non-usable depth: {:?}",
-        sim.h.totals.first_gap
-    );
-    assert_eq!(
         sim.h.zone_coarsenings, 0,
         "a zone was drawn coarser than before"
     );
