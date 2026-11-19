@@ -281,9 +281,11 @@ consumo de bloques que requiera agregación.
 
 ## Selección por celda en la GPU (fase 2a, 16-11-2026)
 
-Con `cellLod: cell` el pase de slots decide **por celda** qué nivel activo de un nodo dibuja cada punto, de modo que las
-fronteras entre niveles siguen la distancia de cada celda y no los bordes de octante. Con `octant` (por defecto) todo
-queda como antes. Diseño y decisiones E1–E8 en el [plan de la fase 2a](../records/archive/fase-2a-lod-por-celda-en-gpu.md#design-decisions-agent-16-11-2026);
+El pase de slots decide **por celda** qué nivel activo de un nodo dibuja cada punto, de modo que las
+fronteras entre niveles siguen la distancia de cada celda y no los bordes de octante. Hasta el 18-11-2026 existió además un
+modo por octante (un nivel por octante de nodo); se retiró ([ADR 0056](../adr/0056-se-retira-el-modo-octante.md)) y la
+selección por celda es el único modo. La CPU sigue calculando internamente profundidades por octante, que alimentan la
+maquinaria por celda; el [plan del ADR 0055](../plans/adr-0055-rango-por-nodo.md) las sustituye por un rango por nodo. Diseño y decisiones E1–E8 en el [plan de la fase 2a](../records/archive/fase-2a-lod-por-celda-en-gpu.md#design-decisions-agent-16-11-2026);
 resultados en el [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-2026.md).
 
 ### Regla
@@ -311,4 +313,4 @@ regla perdedora (OQ-11, issue #66).
 
 - Los conjuntos activos de la 2a pueden saltarse niveles (por ejemplo `{6, 13}`) hasta la fase 2b, que aplica la regla de
   un nivel de la [ADR 0053](../adr/0053-transiciones-de-un-nivel.md).
-- `probe-cells-parity` compara el resumen del corte, no los píxeles; la comparación de píxeles a la misma pose (octante frente a celda) está en la sección «Navegador» del registro.
+- `probe-cells-parity` compara el resumen del corte, no los píxeles; la comparación de píxeles a la misma pose (octante frente a celda, cuando existían los dos modos) está en la sección «Navegador» del registro.

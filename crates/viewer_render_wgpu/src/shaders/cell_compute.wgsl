@@ -185,6 +185,7 @@ var<workgroup> wg_base: u32;
 fn slot_state(page: CellPage, page_index: u32, local: u32, page_was_drawn: bool) -> u32 {
     let cell = inst[page_index * 512u + local];
     if cell_is_empty(cell) { return 0u; }
+    // Without a LOD view (tests and benches) every unmasked cell of the active pages draws.
     if frame.lod_mode == 1u {
         if !cell_draws(page, cell) { return 0u; }
     } else if !cell_spans_octants(cell) {

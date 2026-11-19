@@ -241,8 +241,8 @@ pub(crate) fn is_grid_aligned(grid: &CellGrid, bounds: SpatialBounds) -> bool {
 
 /// Packs one level of a node. `bounds` are the node bounds in the grid's frame. Precondition: every
 /// cell lies in `node_range(depth)` of the node on each axis (the cell builder clamps to it);
-/// checked with `debug_assert!`. Cell mode requires a grid-aligned node (ADR 0029); an off-grid
-/// node packs with `u32::MAX` relative origins (octant mode keeps drawing those).
+/// checked with `debug_assert!`. The per-cell decision requires a grid-aligned node (ADR 0029); an
+/// off-grid node packs with `u32::MAX` relative origins.
 pub fn pack_level(
     grid: &CellGrid,
     bounds: SpatialBounds,
