@@ -1,6 +1,6 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 9 hechas; Task 10 en parte (docs y ruta de máscara hechas; faltan cierre de issues, checks y navegador, y el plan del ADR 0055)
+Estado: completado · 19-11-2026 · ejecuta el [ADR 0056](../../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; fusionado en #82, #84 y #85; #59 y #67 cerradas, `scripts/check.sh` pasó 23/23 y el navegador pasó en fddfb6c
 
 **Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
 clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
@@ -55,7 +55,7 @@ todavía usa (pasos, sondas, retención por nodo) se queda para el [plan del ADR
 ### Task 1: Characterize cell mode (R)
 
 - [x] (4116b38, efdef22) Golden `cell_cut_digest_golden_in_cell_mode` (falla al alterar `range`) y
-  [línea base](../records/benchmarks/R3_LINEA_BASE_CELDA_18-11-2026.md): las simulaciones reales son deterministas
+  [línea base](../benchmarks/R3_LINEA_BASE_CELDA_18-11-2026.md): las simulaciones reales son deterministas
   salvo el orden y las líneas de tiempo; 618 nombres de test. La pasada de `cells_bench` no se hizo.
 
 ### Task 2: Dry run, classify what fails in cell mode
@@ -237,8 +237,8 @@ nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
   selección que la usan no compensa); comentarios actualizados en `d53b7e0`.
 - [x] `docs/requirements.md`, `docs/explanation/REGIONAL_VOXEL_LOD.md` y `docs/estado.md` dejan de describir el
   modo octante como vigente (commit `0838b22`).
-- [ ] Al fusionar, se cierran #59 y #67.
-- [ ] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4.
+- [x] Al fusionar, se cierran #59 y #67. (19-11-2026: cerradas.)
+- [x] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4. (19-11-2026: `FUZZ_CHECK=0 scripts/check.sh` 23 de 23 y navegador en P1 a P4, zoom, giro y Belvedere, los dos en `fddfb6c`, en verde.)
 - [x] El [plan del ADR 0055](adr-0055-rango-por-nodo.md) queda reescrito sin la restricción del modo octante: su D4
   pasa de «rellenar» a «sustituir», el borrado que esperaba a la retirada entra en su tramo C y `hi` se limita por
   datos (OQ-16).

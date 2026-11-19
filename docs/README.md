@@ -28,14 +28,11 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 
 | Documento | Contenido | Estado |
 | --- | --- | --- |
-| [Retirada del modo octante](plans/retirada-del-modo-octante.md) | Ejecuta el ADR 0056: línea base del modo celda, cambio de predeterminado, ensayo que clasifica los tests, oráculo de pasos de celda, borrado de la API y de las ramas `LodMode`; diez tareas, pre-mortem aplicado. | en curso |
-| [ADR 0055 en modo celda: rango por nodo y puerta de residencia](plans/adr-0055-rango-por-nodo.md) | División de `cell_pool.rs`, rango por nodo en lugar de sondas por octante y puerta de residencia en los bordes; doce tareas en tres tramos. Hechas las tareas 1 a 9, la retirada de `Window` y #87; el tramo único como fuente de la emisión y el borrado de la maquinaria por octante se aparcan (#88). | completado |
 | [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho y fusionado en `main`, sigue D4) |
 | [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050, 0052 y 0053); fase 1 y 2a fusionadas; 2b en pausa. | en curso |
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
 | [Fase 2b: rango de niveles y transiciones](plans/fase-2b-rango-de-niveles-y-transiciones.md) | Plan de la fase 2b (#44): rango de niveles por nodo (de la celda más lejana a la más cercana), un nivel por frame (ADR 0053) y residencia D4. | en pausa |
 | [Replanteamiento del LOD por celda](plans/replanteamiento-lod-por-celda-18-11-2026.md) | Estado de la fase 2b, requisitos replanteados según su intención, experimentos en ramas `explore/` y preguntas para el propietario (ADR 0055, aceptado el 18-11-2026). | aprobado |
-| [Cómo retomar (18-11-2026)](plans/retomar-18-11-2026.md) | Ramas locales y su estado, cómo comprobarlas, las respuestas del propietario a Q1–Q5 y D1–D6 y el siguiente trabajo en orden. | en curso |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 
 ## Explicación
@@ -181,6 +178,9 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Muestra de la demo en V7](records/archive/muestra-de-la-demo-en-v7.md) | La muestra integrada pasa a V7 y a 589.824 puntos; V5 queda como heredado hasta V8 (ADR 0047). | histórico |
 | [Fase 2a: LOD por celda en la GPU](records/archive/fase-2a-lod-por-celda-en-gpu.md) | Plan detallado de la fase 2a (#44): gemelo Rust de la decisión por celda, medida de la métrica, corte en modo celda, decisión en el paso de ranuras y opción `cellLod`. | histórico |
 | [Limpieza y refactor](records/archive/limpieza-y-refactor-18-11-2026.md) | Limpieza de disco y git, puesta al día de documentos vivos y división mecánica de los módulos más grandes, sin cambios de comportamiento; decisiones pendientes del propietario. | histórico |
+| [Retirada del modo octante](records/archive/retirada-del-modo-octante.md) | Ejecuta el ADR 0056: línea base del modo celda, cambio de predeterminado, ensayo que clasifica los tests, oráculo de pasos de celda, borrado de la API y de las ramas `LodMode`; diez tareas, pre-mortem aplicado. | histórico |
+| [ADR 0055 en modo celda: rango por nodo y puerta de residencia](records/archive/adr-0055-rango-por-nodo.md) | División de `cell_pool.rs`, rango por nodo en lugar de sondas por octante y puerta de residencia en los bordes; doce tareas en tres tramos. Hechas las tareas 1 a 9, la retirada de `Window` y #87; el tramo único como fuente de la emisión y el borrado de la maquinaria por octante se aparcan (#88). | histórico |
+| [Cómo retomar (18-11-2026)](records/archive/retomar-18-11-2026.md) | Ramas locales y su estado, cómo comprobarlas, las respuestas del propietario a Q1–Q5 y D1–D6 y el siguiente trabajo en orden. | histórico |
 | [R3: cubos por nodo en GPU](records/archive/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | histórico |
 | [R3: anchura de región, layout, máscaras y flags](records/archive/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | histórico |
 | [R4: pirámide densa y rejilla global](records/archive/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | histórico |

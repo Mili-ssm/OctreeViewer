@@ -26,7 +26,7 @@ Estado: Aceptada · Fecha: 18-11-2026 · Decide: propietario (retirada y momento
 - **La opción `ActiveRule`** (ventana o contiguo) no cambia: la decide el propietario ([#66](https://github.com/Mili-ssm/OctreeViewer/issues/66)).
 - **#59 se cierra sin arreglo**: el defecto desaparece con el modo.
 - La maquinaria por octante que el modo celda todavía usa (pasos, sondas, retención por nodo) **no** se borra aquí:
-  la sustituye el [plan del ADR 0055](../plans/adr-0055-rango-por-nodo.md).
+  la sustituye el [plan del ADR 0055](../records/archive/adr-0055-rango-por-nodo.md).
 
 ## Alternativas
 - **Conservarlo congelado**: dos rutas y #59 abierta sin fecha; es lo que había.
@@ -36,7 +36,7 @@ Estado: Aceptada · Fecha: 18-11-2026 · Decide: propietario (retirada y momento
 
 ## Consecuencias
 - Los tests que no fijaban modo corrían en modo octante: pasan a modo celda, y los que comprueben algo que sigue
-  importando se portan en vez de borrarse ([plan](../plans/retirada-del-modo-octante.md)).
+  importando se portan en vez de borrarse ([plan](../records/archive/retirada-del-modo-octante.md)).
 - Las cifras por octante de los registros anteriores dejan de ser reproducibles; se guarda antes una línea base
   del modo celda.
 - El plan del ADR 0055 se simplifica: ya no hay código compartido que mantener alimentado (su decisión D4).

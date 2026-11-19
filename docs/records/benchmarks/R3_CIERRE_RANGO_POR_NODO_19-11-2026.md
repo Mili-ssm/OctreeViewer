@@ -8,7 +8,7 @@ intentó y se aparcó: al conectarlo aparecieron reglas que el diseño no tenía
 visible pequeño. Queda como experimento en la PR en borrador
 [#88](https://github.com/Mili-ssm/OctreeViewer/pull/88).
 
-Cierra el [plan del ADR 0055 en modo celda](../../plans/adr-0055-rango-por-nodo.md). Continúa los registros del
+Cierra el [plan del ADR 0055 en modo celda](../archive/adr-0055-rango-por-nodo.md). Continúa los registros del
 [tope por datos](R3_TOPE_POR_DATOS_19-11-2026.md) y de las
 [fuentes de la cota](R3_FUENTES_COTA_POR_DATOS_18-11-2026.md).
 

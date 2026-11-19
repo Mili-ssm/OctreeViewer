@@ -1,6 +1,6 @@
 # Nivel pedido, LOD por celda y tamaño mínimo del cubo
 
-Estado: en curso · 18-11-2026 · aprobado por el propietario (pre-mortem aplicado); fase 1 fusionada (PR #55) salvo el p95 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)); fase 2a fusionada (PR #56); fase 2b en pausa y replanteada en el [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md)
+Estado: en curso · 19-11-2026 · la fase 2b sigue en pausa: su rango por nodo lo ejecutó el [plan del ADR 0055](../records/archive/adr-0055-rango-por-nodo.md) ([registro de cierre](../records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)); aprobado por el propietario (pre-mortem aplicado); fase 1 fusionada (PR #55) salvo el p95 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)); fase 2a fusionada (PR #56); fase 2b en pausa y replanteada en el [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md)
 
 **Objetivo:** que el render dibuje en cada celda el nivel que pide su distancia, construyendo a demanda los niveles
 que la cadena podada no guarda, con transiciones graduales en bandas alrededor del ojo, y que el usuario elija el

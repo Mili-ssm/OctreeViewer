@@ -7,7 +7,7 @@ casos, coincide con la cota celda a celda en el nodo que contiene el ojo y no ca
 nodo contiguo al ojo queda 3 o 4 niveles por encima. Sin el recorte a la vista, todas las fuentes vuelven al
 último nivel.
 
-Es la tarea 5a del [plan del ADR 0055 en modo celda](../../plans/adr-0055-rango-por-nodo.md). Medida nativa, sin
+Es la tarea 5a del [plan del ADR 0055 en modo celda](../archive/adr-0055-rango-por-nodo.md). Medida nativa, sin
 GPU, con tests ignorados que solo imprimen; no cambia la lógica del visor. Continúa el registro de la
 [cota por datos](R3_EXTREMO_FINO_POR_DATOS_18-11-2026.md), cuya cota celda a celda es aquí la referencia.
 

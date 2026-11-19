@@ -1,7 +1,7 @@
 # R3: línea base del modo celda antes de retirar el modo octante — 18-11-2026
 
 **Estado: medido; sirve de referencia, no de resultado.** Fija lo que hace hoy el modo celda (`LodMode::Cell`) para
-que las tareas del [plan de retirada](../../plans/retirada-del-modo-octante.md) (ADR 0056) demuestren que borrar el
+que las tareas del [plan de retirada](../archive/retirada-del-modo-octante.md) (ADR 0056) demuestren que borrar el
 modo octante no lo cambia: los seis tests `real_sim` de Belvedere (tres en modo celda, con cuatro simulaciones), el golden de `cell_cut_ranged` y la lista de
 tests de `viewer_render_wgpu` y `viewer_wasm`.
 

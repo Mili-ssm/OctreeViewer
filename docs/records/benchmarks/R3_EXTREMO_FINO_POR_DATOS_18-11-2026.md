@@ -85,7 +85,7 @@ ya supera en más de la mitad lo que los nodos del corte retienen de verdad (19 
 - Antes de darlo por bueno hay que medir la residencia real con `hi_d` conectado, en Majadas a 1 px, donde el
   margen de hoy es del 20 % de lo usable (45 806 de 57 344).
 - Para que `hi` mande de verdad sobre lo que se carga, las peticiones tienen que salir del rango y no del deseo
-  por octante: es el tramo B del [plan del ADR 0055](../../plans/adr-0055-rango-por-nodo.md).
+  por octante: es el tramo B del [plan del ADR 0055](../archive/adr-0055-rango-por-nodo.md).
 
 ## Límites
 
