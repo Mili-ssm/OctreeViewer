@@ -60,7 +60,7 @@ Citas del propietario tal como las transcriben los ADR; no hay fuente primaria q
 ## Requisitos replanteados (decisiones del agente, a validar)
 
 Cada fila conserva el fin y cambia el medio. «Blando» significa medio revisable según el
-[catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026).
+[catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-aceptado-19-11-2026).
 
 | # | Texto actual | Problema | Lectura propuesta |
 | --- | --- | --- | --- |

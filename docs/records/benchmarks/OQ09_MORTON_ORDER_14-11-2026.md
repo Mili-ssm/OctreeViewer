@@ -6,7 +6,7 @@ más pequeño (815 → 528 MB) y descarga los mismos bytes por vista o menos. Le
 a 4 px y un ~6 % más a 1 px (dentro de la variación entre rondas); la etapa de bloques de la conversión
 tarda el doble (una ejecución). Ordenar **todos** los bloques en Morton acelera la carga remota un
 16–24 % porque las celdas se construyen antes, pero descarga un 34–49 % más por vista. La causa de esa construcción más rápida no
-se ha encontrado. La estimación anterior de un 0,63 % ([requisitos](../../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026)) solo contaba quitar el índice de filas; el
+se ha encontrado. La estimación anterior de un 0,63 % ([requisitos](../../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-aceptado-19-11-2026)) solo contaba quitar el índice de filas; el
 ahorro real viene de que la codificación por diferencias comprime mejor los puntos ordenados.
 
 ## Variantes

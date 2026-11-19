@@ -1,6 +1,6 @@
 # 0008 `release` optimiza tamaño; `perf` optimiza velocidad para benchmarks
 
-Estado: Aceptada · Fecha: fecha no registrada
+Estado: Sustituida en parte por el [ADR 0057](0057-release-optimiza-velocidad.md) el 19-11-2026 (`release` usa `opt-level = 3`); el resto sigue aceptado · Fecha: fecha no registrada
 
 ## Contexto
 El WASM publicado prioriza tamaño y LTO completo; los benchmarks nativos necesitan iterar sin el coste de LTO completo.
