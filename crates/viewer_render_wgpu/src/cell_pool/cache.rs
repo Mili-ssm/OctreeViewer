@@ -248,6 +248,7 @@ impl CellPool {
                     node: data.clone(),
                     depths,
                     far,
+                    behind: behind.0,
                     hi_d,
                     epoch: self.residency_epoch,
                     pose,
@@ -273,7 +274,11 @@ impl CellPool {
             {
                 self.bound_evaluations += 1;
             }
-            let probes = std::array::from_fn(|octant| data.probe_box(octant));
+            // The same octants as when the entry was computed (`NodeDepths::behind`).
+            let probes = mask_behind(
+                std::array::from_fn(|octant| data.probe_box(octant)),
+                cached.behind,
+            );
             let hi_d = Self::data_bound_of(
                 &self.levels,
                 self.config,

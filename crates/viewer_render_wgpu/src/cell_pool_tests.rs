@@ -4126,6 +4126,7 @@ fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
             node: node.clone(),
             depths: [below; 8],
             far: (0, 0),
+            behind: 0,
             hi_d: None,
             epoch: 0,
             pose: Pose {

@@ -318,6 +318,9 @@ struct NodeDepths {
     /// The node's far wanted depth and the octants in front of the eye
     /// (`node_view_range`, `octants_in_front`).
     far: (u8, u8),
+    /// Octants with nothing in view at that pose (`behind_octants`), left out of `far` and of the
+    /// data bound; the bound is recomputed on a residency change with the same octants.
+    behind: u8,
     /// Data bound of the node (ADR 0055 plan, tasks 5 and 7a): the least over its resident
     /// levels of `hi` at the view depth of the nearest page box of the level, at least the level's
     /// own depth (`CellPool::data_bound_of`). It caps the wish of the node's octants
