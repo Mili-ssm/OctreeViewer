@@ -268,7 +268,7 @@ mod partition_tests {
                 let mut bytes = Vec::new();
                 write_point(&mut bytes, &fixture, layout).unwrap();
                 write_point(&mut bytes, &second, layout).unwrap();
-                store.create(spool).unwrap();
+                store.create(spool, 1).unwrap();
                 store.append(spool, &bytes).unwrap();
                 store.close(spool).unwrap();
                 let block = PlannedBlock {

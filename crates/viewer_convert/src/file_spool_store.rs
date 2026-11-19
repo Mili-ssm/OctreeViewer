@@ -19,6 +19,12 @@ struct FileEntry {
     /// The file exists on disk (`SOURCE` always; the others from the first append).
     created: bool,
     len: u64,
+    /// Size of one record; the compressed layout (a later task) reads it.
+    #[expect(
+        dead_code,
+        reason = "stored now, read by the compressed spool layout in task 4"
+    )]
+    record_bytes: usize,
     /// `SOURCE` only: one writer from `create` to `close`.
     writer: Option<BufWriter<File>>,
 }
@@ -49,7 +55,12 @@ impl FileSpoolStore {
     }
 
     /// Checkpoint path: `SOURCE` already exists and is closed; the ledger starts at `source_len`.
-    pub fn with_closed_source(root: &Path, source_len: u64, diagnostics: bool) -> Self {
+    pub fn with_closed_source(
+        root: &Path,
+        source_len: u64,
+        record_bytes: usize,
+        diagnostics: bool,
+    ) -> Self {
         let store = Self {
             root: root.to_owned(),
             ledger: diagnostics.then(|| SpoolLedger::with_live(source_len)),
@@ -62,6 +73,7 @@ impl FileSpoolStore {
                 phase: Phase::Closed,
                 created: true,
                 len,
+                record_bytes,
                 writer: None,
             },
         );
@@ -80,7 +92,14 @@ impl FileSpoolStore {
 impl SpoolStore for FileSpoolStore {
     type Reader = io::Take<BufReader<File>>;
 
-    fn create(&self, id: SpoolId) -> Result<(), ConvertError> {
+    fn create(&self, id: SpoolId, record_bytes: usize) -> Result<(), ConvertError> {
+        if record_bytes == 0 {
+            return Err(lifecycle_error(
+                id,
+                "create",
+                "record size must be positive",
+            ));
+        }
         let mut open = lock(&self.open);
         if open.entries.contains_key(&id) {
             return Err(lifecycle_error(id, "create", "id was already used"));
@@ -96,6 +115,7 @@ impl SpoolStore for FileSpoolStore {
                 phase: Phase::Open,
                 created: writer.is_some(),
                 len: 0,
+                record_bytes,
                 writer,
             },
         );
@@ -226,10 +246,10 @@ mod tests {
     fn file_store_matches_the_lifecycle_and_native_names() {
         let dir = tempfile::tempdir().unwrap();
         let store = FileSpoolStore::new(dir.path(), true);
-        store.create(SpoolId::SOURCE).unwrap();
+        store.create(SpoolId::SOURCE, 1).unwrap();
         store.append(SpoolId::SOURCE, b"source").unwrap();
         store.close(SpoolId::SOURCE).unwrap();
-        store.create(SpoolId(7)).unwrap();
+        store.create(SpoolId(7), 1).unwrap();
         assert!(!dir.path().join("spool-7.spool").exists(), "created lazily");
         store.append(SpoolId(7), b"ab").unwrap();
         store.append(SpoolId(7), b"cd").unwrap();
@@ -251,7 +271,7 @@ mod tests {
         assert!(message(store.append(SpoolId(7), b"e")).contains("append"));
         store.delete(SpoolId(7)).unwrap();
         store.delete(SpoolId::SOURCE).unwrap();
-        assert!(message(store.create(SpoolId(7))).contains("already used"));
+        assert!(message(store.create(SpoolId(7), 1)).contains("already used"));
         assert_eq!(
             store.ledger_totals(),
             Some(LedgerTotals {
@@ -263,12 +283,19 @@ mod tests {
     }
 
     #[test]
+    fn create_rejects_a_zero_record_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileSpoolStore::new(dir.path(), false);
+        assert!(message(store.create(SpoolId(3), 0)).contains("record size"));
+    }
+
+    #[test]
     fn file_store_resumes_from_a_closed_source() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("source.spool"), b"12345").unwrap();
-        let store = FileSpoolStore::with_closed_source(dir.path(), 5, true);
+        let store = FileSpoolStore::with_closed_source(dir.path(), 5, 1, true);
         assert_eq!(store.len(SpoolId::SOURCE).unwrap(), 5);
-        assert!(message(store.create(SpoolId::SOURCE)).contains("already used"));
+        assert!(message(store.create(SpoolId::SOURCE, 1)).contains("already used"));
         store.delete(SpoolId::SOURCE).unwrap();
         assert!(!dir.path().join("source.spool").exists());
     }

@@ -37,7 +37,9 @@ pub struct SpoolExtent {
 /// Ids are never reused; any other order is an error.
 pub trait SpoolStore {
     type Reader: Read;
-    fn create(&self, id: SpoolId) -> Result<(), ConvertError>;
+    /// `record_bytes` is the size of one record of this spool. Only stores that lay records out
+    /// by byte plane need it; the others ignore it.
+    fn create(&self, id: SpoolId, record_bytes: usize) -> Result<(), ConvertError>;
     fn append(&self, id: SpoolId, bytes: &[u8]) -> Result<(), ConvertError>;
     fn close(&self, id: SpoolId) -> Result<(), ConvertError>;
     fn len(&self, id: SpoolId) -> Result<u64, ConvertError>;
@@ -219,7 +221,7 @@ impl MemSpoolStore {
 impl SpoolStore for MemSpoolStore {
     type Reader = io::Cursor<Vec<u8>>;
 
-    fn create(&self, id: SpoolId) -> Result<(), ConvertError> {
+    fn create(&self, id: SpoolId, _record_bytes: usize) -> Result<(), ConvertError> {
         let mut state = lock(&self.state);
         if state.spools.contains_key(&id) {
             return Err(lifecycle_error(id, "create", "id was already used"));
@@ -310,7 +312,7 @@ mod tests {
 
     fn closed(store: &MemSpoolStore, id: u64, bytes: &[u8]) -> SpoolId {
         let id = SpoolId(id);
-        store.create(id).unwrap();
+        store.create(id, 1).unwrap();
         store.append(id, bytes).unwrap();
         store.close(id).unwrap();
         id
@@ -361,7 +363,7 @@ mod tests {
     #[test]
     fn mem_store_rejects_deleting_an_open_spool() {
         let store = MemSpoolStore::new(true);
-        store.create(SpoolId(1)).unwrap();
+        store.create(SpoolId(1), 1).unwrap();
         assert!(message(store.delete(SpoolId(1))).contains("delete"));
     }
 
@@ -369,16 +371,16 @@ mod tests {
     fn mem_store_never_reuses_an_id() {
         let store = MemSpoolStore::new(true);
         let id = closed(&store, 1, b"a");
-        assert!(message(store.create(id)).contains("already used"));
+        assert!(message(store.create(id, 1)).contains("already used"));
         store.delete(id).unwrap();
-        assert!(message(store.create(id)).contains("already used"));
+        assert!(message(store.create(id, 1)).contains("already used"));
         assert!(message(store.delete(id)).contains("delete"));
     }
 
     #[test]
     fn mem_store_rejects_reads_before_close_and_outside_the_extent() {
         let store = MemSpoolStore::new(true);
-        store.create(SpoolId(1)).unwrap();
+        store.create(SpoolId(1), 1).unwrap();
         let whole = SpoolExtent { offset: 0, len: 0 };
         assert!(message(store.reader(SpoolId(1), whole)).contains("read"));
         assert!(message(store.len(SpoolId(1))).contains("len"));

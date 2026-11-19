@@ -2402,8 +2402,12 @@ struct FailingStore {
 
 impl crate::pipeline::spool_store::SpoolStore for FailingStore {
     type Reader = std::io::Cursor<Vec<u8>>;
-    fn create(&self, id: crate::pipeline::spool_store::SpoolId) -> Result<(), ConvertError> {
-        self.inner.create(id)
+    fn create(
+        &self,
+        id: crate::pipeline::spool_store::SpoolId,
+        record_bytes: usize,
+    ) -> Result<(), ConvertError> {
+        self.inner.create(id, record_bytes)
     }
     fn append(
         &self,
