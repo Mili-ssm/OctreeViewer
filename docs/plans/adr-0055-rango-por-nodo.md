@@ -195,11 +195,19 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 8: `run_covers`, a pure residency gate for both directions
 
-- [ ] Test de caracterización que fija `eval_refine_hold` en un borde al acercarse (hijo frente a antepasado) y en
-  uno al alejarse (nodo frente a descendientes aplicados, la rama `below`).
-- [ ] `run_covers` cubre los dos casos: el tramo del hijo alcanza el nivel más fino del antepasado más uno; y, al
-  alejarse, el nodo no sustituye a descendientes cuyo tramo dibuja más fino de lo que él alcanza. Tests unitarios.
-  (El nombre evita `covers_in` y `CoverRule::cover`, que ya existen en `fallback.rs`.)
+- [x] (2b8a1e1) Tests de caracterización de `eval_refine_hold` en un borde al acercarse (23 casos) y en uno al
+  alejarse (28 casos), con cinco mutaciones que los hacen fallar. **Regla observada**, por octante, con `F` = nivel
+  activo más fino de lo que dibujaba antes sobre la huella y `w` = deseo del nodo: el nodo se retiene si lo que
+  dibujaría queda por debajo de `min(F, w)`. **No hay «más uno»**: un hijo que solo tiene residente `F` se libera
+  hoy. El «más uno» que decía este plan era un error de redacción (confundía la retención con el paso de un nivel
+  por frame); vale la regla observada, que es la de R3-Q21 (ninguna zona se engrosa).
+- [x] (64631ad) `run_covers(run, before, wish)` (`cell_pool/hold.rs`, solo en tests hasta la tarea 9): el nodo
+  puede sustituir cuando el extremo fino de su tramo alcanza `min(máximo fino de before, wish)`; `before` es el
+  tramo del antepasado al acercarse y los de los descendientes al alejarse. Coincide con `eval_refine_hold` en los
+  51 casos, con las dos reglas de activos.
+  Dos límites que hereda la tarea 9: la función es por nodo, así que un octante corto junto a uno largo podría
+  discrepar (no visto en los casos mixtos probados); y al alejarse la semilla depende del nivel nominal de los
+  descendientes, que la puerta pura no ve (caracterizado solo para nominal = más fino − 1).
 
 ### Task 9: The residency gate replaces the per-node hold (R)
 
