@@ -30,7 +30,7 @@ const FRAME_SAMPLE_CAPACITY = 4096;
 let frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
 let frameRenderSampleCount = 0;
 let nextFrameRenderSample = 0;
-const coalescedCommands = new Set(["resize", "refine", "depthShading", "continuity", "fit", "birdView"]);
+const coalescedCommands = new Set(["resize", "refine", "depthShading", "continuity", "minLength", "fit", "birdView"]);
 
 // Benchmark instrumentation (render plan R0, E2/E3/E5). Aggregates only; read with the "metrics"
 // message. Self-contained on purpose: package-local.py embeds this worker without module imports.
@@ -58,8 +58,8 @@ let renderCanvas = null;
 let framebufferSize = [1, 1];
 let depthShadingOn = true;
 let continuitySetting = null;
-// "octant" | "cell" once the host chose one; re-applied to every viewer the worker creates.
-let cellLodSetting = null;
+// Length minimum in dataset units (`undefined` = the viewer's default); re-applied like `continuitySetting`.
+let minLengthSetting = null;
 let cellNodeBytes = 0;
 let builtOpened = null;
 let lastScene = null;
@@ -580,8 +580,12 @@ function pickFramebufferCoordinates(cssX, cssY, cssWidth, cssHeight) {
 function postLodProgress(lod, afterRenderFrame = false) {
     if (!lod) return;
     const now = performance.now();
-    const hasVisiblePoints = Number(lod.visiblePoints) > 0;
-    if (afterRenderFrame && firstCoarseMs === null && hasVisiblePoints) {
+    // Cells path: `visiblePoints` is a CPU-path counter that stays 0, so the first frame is the first
+    // render with an applied cut and resident pool pages.
+    const hasDrawnContent = lod.cellPath === "enabled"
+        ? lod.cutApply != null && Number(lod.poolResidentPages) > 0
+        : Number(lod.visiblePoints) > 0;
+    if (afterRenderFrame && firstCoarseMs === null && hasDrawnContent) {
         firstCoarseMs = now - targetLodStartedAt;
     }
     // Cells path: the T11 definition replaces coverageComplete (self-contained copy of cellsTargetReached).
@@ -995,7 +999,7 @@ function onBuildMessage(worker, data) {
 // the dataset on the CPU path, which both sides then keep until the viewer is recreated.
 function beginCells(opened) {
     const info = opened.cellsInfo;
-    const path = info ? viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing) : "off";
+    const path = info ? viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing, info.dataMin, info.dataMax) : "off";
     if (path === "enabled") {
         cellsRemote = true;
         forwardCellMessages();
@@ -1308,13 +1312,27 @@ async function recoverFromDeviceLoss(loss) {
     return false;
 }
 
-// The viewer refuses an unknown mode and keeps its own, so the stored setting only changes after it
-// accepted the new one.
-function applyCellLod(mode) {
-    viewer.setCellLod(mode);
-    cellLodSetting = mode;
+// A render setting changes the live stats without touching the lodProgress key, so the key is reset to
+// make the next frame re-post them (otherwise they stay stale until the camera moves).
+function renderSettingChanged() {
     advanceSceneGeneration();
-    return mode;
+    lastLodProgressKey = "";
+}
+
+// The viewer refuses an invalid factor and keeps its own, so the stored setting follows only an accepted one.
+function applyContinuity(enabled, factor) {
+    viewer.setContinuity(enabled, factor);
+    continuitySetting = [enabled, factor];
+    renderSettingChanged();
+    return true;
+}
+
+// The viewer refuses an invalid side and keeps its own, so the stored setting follows only an accepted one.
+function applyMinLength(side) {
+    viewer.setMinLength(side);
+    minLengthSetting = [side];
+    renderSettingChanged();
+    return side;
 }
 
 // New adapter, device and surface on the same canvas, then the open dataset again without reading
@@ -1334,7 +1352,7 @@ async function recreateViewer(pose) {
     viewer.resize(framebufferSize[0], framebufferSize[1]);
     viewer.setDepthShading(depthShadingOn);
     if (continuitySetting) viewer.setContinuity(...continuitySetting);
-    if (cellLodSetting) viewer.setCellLod(cellLodSetting);
+    if (minLengthSetting) viewer.setMinLength(...minLengthSetting);
     viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
     advanceSceneGeneration();
     if (buildOptions && buildOpened && builtOpened) {
@@ -1345,7 +1363,7 @@ async function recreateViewer(pose) {
             viewer.enableCells(true);
             if (cellNodeBytes) viewer.setCellNodeBytesPerFrame(cellNodeBytes);
             const info = opened.cellsInfo;
-            const path = viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing);
+            const path = viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing, info.dataMin, info.dataMax);
             if (path !== "enabled") throw new Error(`the new device cannot draw cells (${path})`);
             pendingCellCut = null;
             appliedCutEpoch = 0;
@@ -1463,8 +1481,11 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         setPxMode(data.mode);
                         value = pxStats();
                         break;
-                    case "setCellLod":
-                        value = applyCellLod(data.mode);
+                    case "setMinLength":
+                        value = applyMinLength(data.side ?? undefined);
+                        break;
+                    case "setContinuity":
+                        value = applyContinuity(Boolean(data.enabled), data.factor ?? undefined);
                         break;
                     case "setGpuFrameTiming":
                         hostGpuTiming = Boolean(data.enabled);
@@ -1537,16 +1558,14 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 break;
             case "continuity":
                 // RF-05: only changes which cell level each octant draws; nothing is rebuilt.
-                continuitySetting = [Boolean(data.enabled), data.factor ?? undefined];
-                viewer.setContinuity(...continuitySetting);
-                advanceSceneGeneration();
+                applyContinuity(Boolean(data.enabled), data.factor ?? undefined);
                 break;
-            case "setCellLod":
-                // A rejected mode is a warning, not an error: the host keeps rendering in the old one.
+            case "minLength":
+                // Same as "continuity", but an invalid side is a warning: the old minimum stays.
                 try {
-                    applyCellLod(data.mode);
+                    applyMinLength(data.side ?? undefined);
                 } catch (error) {
-                    self.postMessage({ type: "warning", operation: "setCellLod", message: String(error) });
+                    self.postMessage({ type: "warning", operation: "minLength", message: String(error) });
                 }
                 break;
             case "metrics":

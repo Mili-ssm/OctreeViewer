@@ -372,13 +372,25 @@ export function createViewer(hostCanvas, options = {}) {
             }
             return request("setPxMode", { mode: pxMode });
         },
-        // ADR 0050: "octant" (default) or "cell" level selection of the cells path; resolves with the
-        // mode now in force. An unknown mode rejects and keeps the current one.
-        setCellLod(mode) {
-            if (mode !== "octant" && mode !== "cell") {
-                return Promise.reject(new TypeError("cell LOD mode must be 'octant' or 'cell'"));
+        // Length minimum of the drawn cubes in dataset units (ADR 0049/0054): `undefined` restores the
+        // default (1e-4), 0 turns it off; a negative or non-finite side rejects. The larger of it and the
+        // continuity side wins. Resolves with the side sent.
+        setMinLength(side) {
+            if (side !== undefined && side !== null && !(Number.isFinite(side) && side >= 0)) {
+                return Promise.reject(new TypeError("minimum length must be a finite number >= 0, or undefined for the default"));
             }
-            return request("setCellLod", { mode });
+            return request("setMinLength", { side: side ?? undefined });
+        },
+        // Cloud-spacing minimum (RF-05): with `enabled`, no cube is drawn smaller than `factor` (default 1)
+        // x the cloud's reference spacing. Independent of the length minimum.
+        setContinuity(enabled, factor) {
+            if (typeof enabled !== "boolean") {
+                return Promise.reject(new TypeError("continuity enabled must be a boolean"));
+            }
+            if (factor !== undefined && !(Number.isFinite(factor) && factor > 0)) {
+                return Promise.reject(new TypeError("continuity factor must be a finite number > 0"));
+            }
+            return request("setContinuity", { enabled, factor });
         },
         pick(cssX, cssY) {
             if (!Number.isFinite(cssX) || !Number.isFinite(cssY)) {

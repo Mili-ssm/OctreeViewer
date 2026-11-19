@@ -1,8 +1,9 @@
 import { CoalescedCommandQueue } from "./coalesced-command-queue.mjs";
 import {
     FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,
-    summarizeFrameReplies,
+    renderPathStatsLines, summarizeFrameReplies,
 } from "./benchmark-metrics.mjs";
+import { lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";
 import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
@@ -48,7 +49,13 @@ let latestPxStats = null;
 const voxelPixels = document.getElementById("voxel-pixels");
 const voxelPixelsValue = document.getElementById("voxel-pixels-value");
 const depthShading = document.getElementById("depth-shading");
-const continuity = document.getElementById("continuity");
+const minLengthMode = document.getElementById("min-length-mode");
+const minLengthValue = document.getElementById("min-length-value");
+const minLengthUnit = document.getElementById("min-length-unit");
+const minLengthFields = document.getElementById("min-length-length-fields");
+const spacingFields = document.getElementById("min-length-spacing-fields");
+const spacingInfo = document.getElementById("min-length-spacing-info");
+const continuityFactor = document.getElementById("continuity-factor");
 const cameraMode = document.getElementById("camera-mode");
 const cameraModeHelp = document.getElementById("camera-mode-help");
 
@@ -175,6 +182,7 @@ window.__renderBench = {
         viewEpoch: latestLodStats.viewEpoch ?? null, cutEpochSent: latestLodStats.cutEpochSent ?? null,
         cutEpochApplied: latestLodStats.cutEpochApplied ?? null,
         continuity: latestLodStats.continuity ?? null, continuityMinSide: latestLodStats.continuityMinSide ?? null,
+        minLength: latestLodStats.minLength ?? null,
         wasmLinearMemoryBytes: latestLodStats.wasmLinearMemoryBytes ?? null,
     },
     openTimings: () => benchmarkRun && {
@@ -325,15 +333,13 @@ function formatVoxelEdges(lod) {
 
 function updateStats(message) {
     const lod = message.lod ?? latestLodStats;
-    const points = lod?.visiblePoints ?? message.viewer.point_count;
-    const coverage = lod
-        ? `${lod.coverageComplete ? "complete" : "incomplete"} (${lod.uncoveredNodes} uncovered)`
-        : "not using LOD";
+    const path = renderPathStatsLines(lod, message.gpu, message.viewer);
     const cache = lod
         ? `${formatBytes(Number(lod.cacheBytes))} / ${formatBytes(Number(lod.cacheBudgetBytes))}`
         : "—";
     statsRoot.textContent = [
         `dataset: ${datasetName}`,
+        path.path,
         `finest voxel detail target: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`
             + (latestPxStats?.mode === "dynamic"
                 ? ` · dynamic (${latestPxStats.signalSource ?? "no signal"}${latestPxStats.signalMs === null ? "" : ` p95 ${latestPxStats.signalMs.toFixed(1)} ms`})`
@@ -342,20 +348,25 @@ function updateStats(message) {
         `rendered voxel limit: ${lod?.voxelBudget ?? "—"}`,
         `projected voxel edges: ${formatVoxelEdges(lod)}`,
         `voxels above target: ${lod?.oversizedVoxels ?? "—"}`,
-        `visible points: ${points}`,
-        `visible voxels: ${lod?.renderedVoxels ?? message.gpu.visibleInstances}`,
+        path.points,
+        path.cut,
+        path.pool,
+        path.voxels,
         `HZB occlusion: ${(lod?.hzbActive ?? message.gpu.hzbActive) ? "active" : "inactive"}`,
-        `visible blocks: ${message.gpu.visibleBlocks}`,
+        path.blocks,
+        path.poolWork,
         `deepest visible LOD level: ${lod?.maxVisibleLevel ?? "—"}`,
-        `LOD coverage: ${coverage}`,
+        path.coverage,
+        path.queued,
         `pending blocks: ${lod?.pendingBlockIds.length ?? 0} · pending pages ${lod?.pendingPageAnchors?.length ?? 0}${lod?.pageBudgetExhausted ? " (page budget exhausted)" : ""} · evicted targets ${lod?.refinementWork?.evictedPendingBlocks ?? "—"}`,
         `decoded cache: ${cache} · evictions / rejects ${lod?.cacheActivity?.evictions ?? "—"} / ${lod?.cacheActivity ? Number(lod.cacheActivity.rejectedOversize) + Number(lod.cacheActivity.rejectedProtected) : "—"}`,
-        `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
+        path.uploaded,
+        path.poolBytes,
         `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
         `renderFrame p50/p95/p99: ${formatFrameRenderMs(message.frameRenderMs)}`,
         `worker frame replies: ${measureFrameRate(frameSamples, benchmarkRun?.measurementStartedAt).meanFps?.toFixed(1) ?? "warming up"} FPS (last stable window)`,
         `viewport: ${viewportSize?.join(" x ") ?? "—"}`,
-    ].join("\n");
+    ].filter((line) => line !== undefined).join("\n");
 }
 
 function requestFrame() {
@@ -502,6 +513,7 @@ function handleWorkerMessage(event) {
     } else if (data.type === "ready") {
         ready = true;
         pxMode.disabled = false;
+        syncCellControls();
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
@@ -513,16 +525,8 @@ function handleWorkerMessage(event) {
             });
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
-        // The demo draws with per-cell level selection (owner, 16-11-2026); `?cellLod=octant` compares
-        // with the library default. No UI control yet.
-        const requestedCellLod = new URLSearchParams(location.search).get("cellLod");
-        let cellLod = "cell";
-        if (requestedCellLod === "octant" || requestedCellLod === "cell") {
-            cellLod = requestedCellLod;
-        } else if (requestedCellLod !== null) {
-            console.warn(`ignoring ?cellLod=${requestedCellLod}: expected "octant" or "cell"`);
-        }
-        worker.postMessage({ type: "setCellLod", mode: cellLod });
+        syncCellControls();
+        sendMinLength();
         requestFrameOnce();
         if (reopenAfterRecreate) {
             const { file, name, attributes } = reopenAfterRecreate;
@@ -556,6 +560,7 @@ function handleWorkerMessage(event) {
         if (pendingProject) shownProject = pendingProject;
         updateAttributeChoices(data.opened);
         latestLodStats = data.lod;
+        updateSpacingInfo();
         updateProgressiveLoadState(data.lod);
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
@@ -572,12 +577,14 @@ function handleWorkerMessage(event) {
         statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes${data.opened.paged ? " (declared, paged)" : ""} · selecting visible blocks…`;
     } else if (data.type === "lod") {
         latestLodStats = data.lod;
+        updateSpacingInfo();
         updateProgressiveLoadState(data.lod);
         statusRoot.textContent = `LOD stage ${data.lod.lodStagePixels} px · finest target ${data.lod.targetVoxelPixels} px`;
     } else if (data.type === "lodProgress") {
         if (data.refinement?.id !== requestedRefinementId) return;
         observedRefinementId = data.refinement.id;
         latestLodStats = data.lod;
+        updateSpacingInfo();
         updateStats(data);
         if (benchmarkRun) {
             benchmarkRun.refinement = data.refinement;
@@ -619,6 +626,7 @@ function handleWorkerMessage(event) {
             if (lastFrameStatus) statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
         }
         latestLodStats = data.lod ?? latestLodStats;
+        updateSpacingInfo();
         if (benchmarkRun) {
             benchmarkRun.latestGpuStats = data.gpu;
             benchmarkRun.latestMemoryStats = data.memory ?? null;
@@ -862,10 +870,71 @@ depthShading.addEventListener("change", () => {
     if (benchmarkRun) benchmarkRun.settingsChanged = true;
     queueWorkerCommand("depthShading", { value: depthShading.checked });
 });
-continuity.addEventListener("change", () => {
+// Minimum cube size (ADR 0049/0054). Invalid numbers are not sent: the last valid value stays and the
+// input is marked.
+const initialParams = new URLSearchParams(location.search);
+if (initialParams.has("cellLod")) {
+    console.warn("ignoring ?cellLod=: the parameter was removed and the viewer always uses per-cell level selection");
+}
+if (initialParams.has("cellActive")) {
+    console.warn("ignoring ?cellActive=: the parameter was removed and the viewer always uses the contiguous active rule");
+}
+
+const lastValid = { side: lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value), factor: 1 };
+
+function syncCellControls() {
+    minLengthMode.disabled = !ready;
+    minLengthValue.disabled = !ready;
+    minLengthUnit.disabled = !ready;
+    continuityFactor.disabled = !ready;
+}
+
+function syncMinLengthMode() {
+    minLengthFields.hidden = minLengthMode.value !== "length";
+    spacingFields.hidden = minLengthMode.value !== "spacing";
+    updateSpacingInfo();
+}
+
+// The side the renderer applies (stats), whatever the mode: the larger of the length and the spacing side.
+function updateSpacingInfo() {
+    const side = latestLodStats?.continuityMinSide;
+    if (!ready || !latestLodStats) {
+        spacingInfo.textContent = "The effective minimum side shows once a cloud is open.";
+    } else if (typeof side !== "number") {
+        spacingInfo.textContent = "No minimum side: pixels only.";
+    } else {
+        // In spacing mode the length still applies when it is the larger side (also for a cloud
+        // without a reference spacing, which the stats do not tell apart).
+        const lengthWins = minLengthMode.value === "spacing" && Math.abs(side - lastValid.side) <= 1e-9 * side;
+        spacingInfo.textContent = `Effective minimum side: ${side.toPrecision(3)} (dataset units, metres assumed).`
+            + (lengthWins ? " The length applies: the spacing side is smaller, or this cloud has no reference spacing." : "");
+    }
+}
+
+function sendMinLength() {
+    const side = lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value);
+    const factor = parseSpacingFactor(Number(continuityFactor.value));
+    minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(side)));
+    continuityFactor.setAttribute("aria-invalid", String(Number.isNaN(factor)));
+    if (!Number.isNaN(side)) lastValid.side = side;
+    if (!Number.isNaN(factor)) lastValid.factor = factor;
+    for (const [type, values] of minLengthCommands(minLengthMode.value, lastValid.side, lastValid.factor)) {
+        queueWorkerCommand(type, values);
+    }
+}
+
+function onMinLengthChange() {
     resetBenchmarkWindow();
-    queueWorkerCommand("continuity", { enabled: continuity.checked });
+    syncMinLengthMode();
+    sendMinLength();
+}
+for (const control of [minLengthMode, minLengthValue, minLengthUnit, continuityFactor]) {
+    control.addEventListener("change", onMinLengthChange);
+}
+minLengthValue.addEventListener("input", () => {
+    minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value))));
 });
+syncMinLengthMode();
 for (const version of FORMAT_VERSIONS) {
     optionFields.formatVersion.append(new Option(version, version, false, version === OPTION_DEFAULTS.formatVersion));
 }

@@ -895,13 +895,15 @@ export class WasmVoxelViewer {
      * @param {Float64Array} root_min
      * @param {number} root_side
      * @param {number | null} [reference_spacing]
+     * @param {Float64Array | null} [data_min]
+     * @param {Float64Array | null} [data_max]
      * @returns {string}
      */
-    beginRemoteCells(origin, root_min, root_side, reference_spacing) {
+    beginRemoteCells(origin, root_min, root_side, reference_spacing, data_min, data_max) {
         let deferred2_0;
         let deferred2_1;
         try {
-            const ret = wasm.wasmvoxelviewer_beginRemoteCells(this.__wbg_ptr, origin, root_min, root_side, !isLikeNone(reference_spacing), isLikeNone(reference_spacing) ? 0 : reference_spacing);
+            const ret = wasm.wasmvoxelviewer_beginRemoteCells(this.__wbg_ptr, origin, root_min, root_side, !isLikeNone(reference_spacing), isLikeNone(reference_spacing) ? 0 : reference_spacing, isLikeNone(data_min) ? 0 : addToExternrefTable0(data_min), isLikeNone(data_max) ? 0 : addToExternrefTable0(data_max));
             var ptr1 = ret[0];
             var len1 = ret[1];
             if (ret[3]) {
@@ -1355,21 +1357,6 @@ export class WasmVoxelViewer {
         }
     }
     /**
-     * Per-octant (`"octant"`, the default) or per-cell (`"cell"`) level selection of the cells
-     * path (ADR 0050). Any other string is an error and the mode stays as it was. It survives
-     * `beginRemoteCells` and dataset changes, takes effect on the next frame and rebuilds
-     * nothing.
-     * @param {string} mode
-     */
-    setCellLod(mode) {
-        const ptr0 = passStringToWasm0(mode, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.wasmvoxelviewer_setCellLod(this.__wbg_ptr, ptr0, len0);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
-        }
-    }
-    /**
      * Bytes of `nodeCells` applied per frame (at least one node); takes effect on the next
      * `beginRemoteCells`.
      * @param {number} bytes
@@ -1390,8 +1377,8 @@ export class WasmVoxelViewer {
     }
     /**
      * Continuity of the open cloud (RF-05): with `enabled`, no cell is drawn smaller than
-     * `factor` (default 1) x the reference spacing of the cloud; off is the literal mode, which
-     * is the default. It survives `beginRemoteCells` and dataset changes, takes effect on the
+     * `factor` (default 1) x the reference spacing of the cloud; off (the default) leaves only the
+     * length minimum (`setMinLength`). It survives `beginRemoteCells` and dataset changes, takes effect on the
      * next frame and rebuilds nothing: the cells hold every level.
      * @param {boolean} enabled
      * @param {number | null} [factor]
@@ -1417,6 +1404,21 @@ export class WasmVoxelViewer {
      */
     setGpuFrameTiming(enabled) {
         wasm.wasmvoxelviewer_setGpuFrameTiming(this.__wbg_ptr, enabled);
+    }
+    /**
+     * Length minimum of the drawn cubes, in dataset units (ADR 0049 revision of 16-11-2026,
+     * ADR 0054): no cell is drawn smaller than it, and the larger of it and the continuity side
+     * wins. `undefined` restores the default (1e-4, 0.1 mm if the unit is metres); 0 turns the
+     * length filter off; a negative, NaN or infinite value is an error and leaves the state as
+     * it was. It survives `beginRemoteCells` and dataset changes like the continuity, takes
+     * effect on the next frame and rebuilds nothing.
+     * @param {number | null} [side]
+     */
+    setMinLength(side) {
+        const ret = wasm.wasmvoxelviewer_setMinLength(this.__wbg_ptr, !isLikeNone(side), isLikeNone(side) ? 0 : side);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     /**
      * Moves the orbit center while preserving the camera position.
@@ -3151,27 +3153,27 @@ function __wbg_get_imports() {
             arg0.zoneRelease(arg1 >>> 0);
         }, arguments); },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 602, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 607, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___JsValue__core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("GPUDevice")], shim_idx: 549, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("GPUDevice")], shim_idx: 554, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("GPUDeviceLostInfo")], shim_idx: 553, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("GPUDeviceLostInfo")], shim_idx: 558, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_540468089f657b51___convert__closures_____invoke___wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuDeviceLostInfo__GpuDeviceLostInfo______true_);
             return ret;
         },
         __wbindgen_generic_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("any")], shim_idx: 549, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("any")], shim_idx: 554, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__117);
             return ret;
         },
         __wbindgen_generic_0000000000000005: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("undefined")], shim_idx: 549, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("undefined")], shim_idx: 554, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__118);
             return ret;
         },
