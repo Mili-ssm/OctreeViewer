@@ -246,9 +246,15 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
   están todos detrás del ojo salía de la caja unión, que «pasaba» por una esquina que tampoco se ve; ahora `lo` y
   la cota por datos miden solo octantes con datos a la vista (nodo 77: (12, 12) → (7, 7)). El hueco de ese nodo
   sigue: un octante aún dibuja 12 mientras baja nivel a nivel y otro ya dibuja 7; lo quita el tramo único (10e).
-- [ ] **10b.** `node_run` (función pura) y los campos por nodo, calculados junto a los viejos sin lectores. Parada:
-  en algún frame de una simulación real, los bits activos de `node_run` difieren de los de hoy fuera de los frames
-  con hueco (`active_gaps`), que es justo lo que corrige.
+- [ ] **10b.** `node_run` (función pura) y los campos por nodo, calculados junto a los viejos sin lectores.
+  - [x] (ec9bd09) `cell_pool/run.rs`: `node_run` con 11 tests unitarios (B1, B2, B6, B7, B11); el plan rellena
+    `node_anchor`, `node_run`, `node_stage`, `node_step` y guarda `applied_run` (lo emitido sin el D5) y la espera
+    por nodo; `before_finest` es la única fuente de `before` (B5). Nada observable cambia (simulaciones y resumen
+    de la GPU idénticos byte a byte). Para 10c: los campos se calculan al construir la memoria del corte, así que
+    la espera agotada debe subir `residency_epoch` como hoy `step_waits`; y `before` aún sale de
+    `applied_finest` (con el D5): pasar a `applied_run` (B3) en el commit de comportamiento.
+  - [ ] Comparación por (nodo, frame) entre el tramo de `node_run` y los bits activos de hoy, cada diferencia
+    clasificada (B8). Parada: en algún frame de una simulación real, una diferencia sin clasificar.
 - [ ] **10c.** Un lector por commit (`busy` del driver, `stages`, `fit` y peticiones, presencia en `fallback.rs`,
   `cell_active_depths`, retención): resumen de la entrada de la GPU idéntico en cada uno, salvo el último.
 - [ ] **10d.** Oráculo de las simulaciones sobre los campos por nodo (lo aplazado de la tarea 6): solo celdas
@@ -309,7 +315,7 @@ enmiendas mandan sobre la tabla y las reglas anteriores.
 
 | # | Enmienda | Fallo que evita |
 | --- | --- | --- |
-| B1 | Tramo emitido = tramo usable que contiene el ancla, recortado a `[min(lo, run.lo), max(hi, ancla)]`: nunca vacío si hay ancla, como hoy `hi.max(dibujado)`. Test: `prev` 12, usables {5, 10, 11, 12}, `hi` 8 → {10, 11, 12} | Al alejarse rápido, tramo vacío (hueco) o salto de 12 a 5 |
+| B1 | Tramo emitido = tramo usable que contiene el ancla, recortado a `[min(lo, ancla), max(hi, ancla)]` (corregido el 19-11-2026: decía `min(lo, run.lo)`, que no recorta nada por abajo; la intención es la de hoy, `lo.min(dibujado)`): nunca vacío si hay ancla, como hoy `hi.max(dibujado)`. Test: `prev` 12, usables {5, 10, 11, 12}, `hi` 8 → {10, 11, 12} | Al alejarse rápido, tramo vacío (hueco) o salto de 12 a 5 |
 | B2 | Ancla: el usable más cercano a `prev` en el sentido del objetivo (`[prev, objetivo]`) y, si no hay, el más cercano en general, como `nearest_to_prev` hoy | Engrosar un nivel cuando `prev` se expulsa |
 | B3 | `prev` = extremo fino del tramo aplicado **sin** el nivel D5 (campo nuevo `applied_run`), no `applied_finest` | Anclar en el D5, que es un tramo aparte |
 | B4 | Se protege el tramo aplicado entero, no solo lo dibujado (`required_levels` en `plan.rs`). La emisión recalcula `node_run` desde el ancla guardada | Tramo expulsado entre el plan y la emisión; puerta y emisión distintas |
