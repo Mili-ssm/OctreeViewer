@@ -176,7 +176,7 @@ impl CellPool {
         id: NodeId,
         node: &PoolNode,
         cap: Option<&u8>,
-        before: &FastMap<NodeId, u8>,
+        before: Option<u8>,
         grid: &CellGrid,
     ) -> Option<u8> {
         self.applied_run
@@ -193,7 +193,7 @@ impl CellPool {
                         .copied()
                 })
             })
-            .or_else(|| before.get(&id).copied())
+            .or(before)
             .or_else(|| {
                 let buildable = capped_range(node.buildable, cap);
                 self.prev_state_seeded(id, node.bounds, buildable, grid)
@@ -220,46 +220,19 @@ impl CellPool {
         grid: &CellGrid,
     ) {
         for entry in entries {
-            let (Some((lo, hi)), Some(node)) = (entry.range, nodes.get(&entry.node)) else {
+            let Some(node) = nodes.get(&entry.node) else {
                 continue;
             };
             let id = entry.node;
-            let node_depth = Self::node_depth(grid, node.bounds);
-            let (span_lo, span_hi) = cell_depth_range(node_depth);
-            let usable: Vec<u8> = (span_lo..=span_hi)
-                .filter(|depth| {
-                    given.get(&id).is_some_and(|list| list.contains(depth))
-                        && self.is_usable(self.key(id, *depth))
-                })
-                .collect();
-            let d5 = entry
-                .mask
-                .iter()
-                .any(|word| *word != 0)
-                .then(|| self.d5_resident(id, node, grid))
-                .flatten();
-            let usable = without_detached_d5(usable, d5);
-            let cap = self.caps.get(&id);
-            let (b_lo, b_hi) = capped_range(node.buildable, cap);
-            let finest = self
-                .drawable_stored(&capped(&node.stored, cap), grid, node.bounds)
-                .into_iter()
-                .chain((b_lo.max(span_lo) <= b_hi.min(span_hi)).then_some(b_hi.min(span_hi)))
-                .max();
-            let Some(target) = finest.map(|finest| finest.min(hi)) else {
+            let Some((target, out)) = self.node_run_of(
+                entry,
+                node,
+                given.get(&id).map_or(&[], Vec::as_slice),
+                before.get(&id).copied(),
+                grid,
+            ) else {
                 continue;
             };
-            let out = node_run(&RunInput {
-                prev: self.node_prev(id, node, cap, before, grid),
-                range: (lo, hi),
-                target,
-                usable: &usable,
-                waited_step: self
-                    .node_waits
-                    .get(&id)
-                    .and_then(|(step, frames, _)| (*frames >= STEP_WAIT_FRAMES).then_some(*step)),
-                coarsest_wish: entry.wanted.iter().flatten().min().copied(),
-            });
             entry.node_target = Some(target);
             entry.node_anchor = out.anchor;
             entry.node_run = out.run;
@@ -268,9 +241,58 @@ impl CellPool {
         }
     }
 
+    /// The target and the run of one node over the resident list `given` it would be cut with.
+    /// The hold judges a node with the same call that later fills its fields, so the run it judges
+    /// is the run emitted when the node is released (A2, B5).
+    pub(super) fn node_run_of(
+        &self,
+        entry: &CellCutEntry,
+        node: &PoolNode,
+        given: &[u8],
+        before: Option<u8>,
+        grid: &CellGrid,
+    ) -> Option<(u8, NodeRun)> {
+        let (lo, hi) = entry.range?;
+        let id = entry.node;
+        let node_depth = Self::node_depth(grid, node.bounds);
+        let (span_lo, span_hi) = cell_depth_range(node_depth);
+        let usable: Vec<u8> = (span_lo..=span_hi)
+            .filter(|depth| given.contains(depth) && self.is_usable(self.key(id, *depth)))
+            .collect();
+        let d5 = entry
+            .mask
+            .iter()
+            .any(|word| *word != 0)
+            .then(|| self.d5_resident(id, node, grid))
+            .flatten();
+        let usable = without_detached_d5(usable, d5);
+        let cap = self.caps.get(&id);
+        let (b_lo, b_hi) = capped_range(node.buildable, cap);
+        let finest = self
+            .drawable_stored(&capped(&node.stored, cap), grid, node.bounds)
+            .into_iter()
+            .chain((b_lo.max(span_lo) <= b_hi.min(span_hi)).then_some(b_hi.min(span_hi)))
+            .max();
+        let target = finest?.min(hi);
+        let out = node_run(&RunInput {
+            prev: self.node_prev(id, node, cap, before, grid),
+            range: (lo, hi),
+            target,
+            usable: &usable,
+            waited_step: self
+                .node_waits
+                .get(&id)
+                .and_then(|(step, frames, _)| (*frames >= STEP_WAIT_FRAMES).then_some(*step)),
+            coarsest_wish: entry.wanted.iter().flatten().min().copied(),
+        });
+        Some((target, out))
+    }
+
     /// Advances the waits of the nodes of the applied cut that wait for a level (`node_step`),
-    /// in place: `(step, frames, stamp)`; the nodes not stamped this call are dropped.
-    pub(super) fn advance_node_waits(&mut self) {
+    /// in place: `(step, frames, stamp)`; the nodes not stamped this call are dropped. True when a
+    /// wait reaches `STEP_WAIT_FRAMES` now: the cut is planned again so the anchor may hop.
+    pub(super) fn advance_node_waits(&mut self) -> bool {
+        let mut expired = false;
         self.node_waits_stamp += 1;
         let stamp = self.node_waits_stamp;
         for entry in &self.applied {
@@ -282,6 +304,7 @@ impl CellPool {
                 Some(wait) if wait.0 == step && wait.2 + 1 == stamp => {
                     wait.1 += 1;
                     wait.2 = stamp;
+                    expired |= wait.1 == STEP_WAIT_FRAMES;
                 }
                 _ => {
                     self.node_waits.insert(entry.node, (step, 1, stamp));
@@ -289,6 +312,7 @@ impl CellPool {
             }
         }
         self.node_waits.retain(|_, wait| wait.2 == stamp);
+        expired
     }
 }
 

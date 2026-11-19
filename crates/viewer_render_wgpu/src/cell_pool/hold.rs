@@ -335,46 +335,46 @@ impl CellPool {
             {
                 continue;
             }
-            let (here, _, _) = drawn_levels(
-                &wanted,
-                &stored,
-                capped_range(data.buildable, self.caps.get(&id)),
-                &resident,
-                &self.prev_state_seeded(
-                    id,
-                    data.bounds,
+            #[cfg(test)]
+            let (here, _, _) = {
+                drawn_levels(
+                    &wanted,
+                    &stored,
                     capped_range(data.buildable, self.caps.get(&id)),
-                    grid,
-                ),
-                f.rep.saturating_sub(MAX_MASK_LEVELS),
-            );
+                    &resident,
+                    &self.prev_state_seeded(
+                        id,
+                        data.bounds,
+                        capped_range(data.buildable, self.caps.get(&id)),
+                        grid,
+                    ),
+                    f.rep.saturating_sub(MAX_MASK_LEVELS),
+                )
+            };
             let short = match judge {
                 Judge::Run => {
-                    // The active run of the node from its own resident levels under the cap, with
-                    // no `new_d5`, against the finest depth that drew over any octant it wants
-                    // before. `plan` may emit a different set once the node is released: under a
-                    // fit cap `finer_drawn` swaps the resident levels for finer ones above the cap
-                    // (tests: a capped node released by the gate), and `new_d5` adds a depth: the
-                    // gate ignores both, and the twin tests show the emitted set draws nothing
-                    // coarser. A node with nothing usable to draw yet is short.
+                    // The run the node emits once released, from the call that fills its fields
+                    // (`node_run_of`) over its own resident levels, with no D5 depth, against the
+                    // finest depth that drew over any octant it wants before. Under a fit cap
+                    // `finer_drawn` may swap the resident levels for finer ones above the cap: the
+                    // emitted run is then finer than the judged one, never coarser. A node with
+                    // nothing usable to draw yet is short.
                     let wish = wanted.iter().flatten().max();
                     match (before, wish) {
                         (Some(before), Some(wish)) => {
-                            let run = CellCutEntry {
-                                drawn: here,
-                                ..entry.clone()
-                            };
-                            let depths = self.cell_active_depths(
-                                &run,
-                                f.rep.saturating_sub(MAX_MASK_LEVELS),
-                                None,
-                            );
-                            match depths.first().zip(depths.last()) {
-                                Some((lo, hi)) => {
-                                    !run_covers(Some((*lo, *hi)), &[(0, before)], *wish)
-                                }
-                                None => true,
+                            let run = self
+                                .node_run_of(
+                                    entry,
+                                    data,
+                                    &resident,
+                                    out.before.get(&id).copied(),
+                                    grid,
+                                )
+                                .and_then(|(_, run)| run.run);
+                            if let Some((_, top)) = run {
+                                out.judged.insert(id, top);
                             }
+                            run.is_none_or(|run| !run_covers(Some(run), &[(0, before)], *wish))
                         }
                         _ => false,
                     }

@@ -148,6 +148,11 @@ impl CellCutEntry {
         octant_fully_masked(&self.mask, octant)
     }
 
+    /// The depths of the node's single run, ascending (empty for a node without one).
+    pub(crate) fn run_depths(&self) -> std::ops::RangeInclusive<u8> {
+        self.node_run.map_or(1..=0, |(lo, hi)| lo..=hi)
+    }
+
     /// Distinct drawn depths, ascending: the levels that must be resident.
     pub fn required_levels(&self) -> Vec<u8> {
         let mut depths: Vec<u8> = self.drawn.iter().flatten().copied().collect();

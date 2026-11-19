@@ -6156,17 +6156,14 @@ fn a_node_entering_with_no_before_takes_its_prev_from_the_history() {
         !rig.pool.applied_drawn.contains_key(&child) && !rig.pool.applied_run.contains_key(&child),
         "setup: the child did not draw"
     );
-    let empty = FastMap::default();
     assert_eq!(
-        rig.pool.node_prev(child, node, None, &empty, &grid()),
+        rig.pool.node_prev(child, node, None, None, &grid()),
         Some(finest),
         "the ancestor's finest drawn depth, from the entering seed"
     );
     // A `before` of the hold wins over the seed.
-    let mut before = FastMap::default();
-    before.insert(child, 9);
     assert_eq!(
-        rig.pool.node_prev(child, node, None, &before, &grid()),
+        rig.pool.node_prev(child, node, None, Some(9), &grid()),
         Some(9)
     );
 }

@@ -447,6 +447,9 @@ struct HoldEval {
     /// `hold::before_finest` of each cut node with something that drew over its footprint (B5,
     /// C2), the `prev` of its `node_run` when it did not draw.
     before: FastMap<NodeId, u8>,
+    /// The fine end of the run the gate judged for each node it judged (`Judge::Run`): the run
+    /// the node emits when it is released.
+    judged: FastMap<NodeId, u8>,
 }
 
 /// Order-free digest of a set of nodes.

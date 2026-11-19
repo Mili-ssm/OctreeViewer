@@ -145,7 +145,7 @@ impl CellPool {
         let drawn = self
             .applied
             .iter()
-            .any(|entry| entry.node == key.node && entry.required_levels().contains(&key.depth));
+            .any(|entry| entry.node == key.node && entry.run_depths().contains(&key.depth));
         if drawn || self.pinned.contains(&key) || !self.is_resident(key) {
             return false;
         }

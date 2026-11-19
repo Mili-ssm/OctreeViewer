@@ -100,9 +100,9 @@ impl CoverRule {
 }
 
 /// Does `ancestor` (`gap` levels above `f`) draw, in the real cut `entries`, everywhere `f` lies?
-/// A hidden octant (`wanted` is None) is drawn by the resident nodes that hide it. It reads
-/// `drawn`, not the node anchor: the hold's evaluation calls it on entries `fill_node_runs` has
-/// not reached yet (the run needs the hold's `before`).
+/// A hidden octant (`wanted` is None) is drawn by the resident nodes that hide it. It reads the
+/// anchor through `claims`: the hold's evaluation calls it on entries that only have the
+/// provisional fill of `plan` (the run needs the hold's `before`; the presence does not).
 pub(super) fn covers_in(
     entries: &[CellCutEntry],
     position: &FastMap<NodeId, usize>,
@@ -115,7 +115,7 @@ pub(super) fn covers_in(
     };
     let parent = &entries[index];
     f.octants_in(gap)
-        .all(|o| parent.drawn[o].is_some() || parent.wanted[o].is_none())
+        .all(|o| parent.claims(o) || parent.wanted[o].is_none())
 }
 
 /// Where a node sits in the grid, as `cell_cut` places it.
