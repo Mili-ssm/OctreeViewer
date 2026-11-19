@@ -23,8 +23,9 @@ use crate::spool_frame::{
     FRAME_HEADER_BYTES, FrameHeader, MAX_FRAME_RECORDS, decode_frame, encode_frame,
 };
 
-/// One sparse-index entry per this many frames: a per-frame table would cost gigabytes of RAM on
-/// the largest inputs, while a header walk from the file start would make block reads quadratic.
+/// One sparse-index entry per this many frames. A per-frame table costs 16 bytes per frame, about
+/// 0.05 % of the live logical bytes (~1.3 GB for ~2.7 TB of live spools at the 500 GB scale); a
+/// header walk from the file start would make block reads quadratic on large leaf spools.
 const INDEX_STRIDE_FRAMES: u64 = 64;
 /// Encoded frames are written in batches of about this size.
 const WRITE_BATCH_BYTES: usize = 1 << 20;
@@ -50,6 +51,8 @@ struct FileEntry {
     frames: u64,
     /// `(logical, physical)` offset of the start of frames 0, 64, 128, ...
     sparse_index: Vec<(u64, u64)>,
+    /// A write failed: the spool can only be deleted.
+    failed: bool,
 }
 
 impl FileEntry {
@@ -64,6 +67,7 @@ impl FileEntry {
             physical_len: 0,
             frames: 0,
             sparse_index: Vec::new(),
+            failed: false,
         }
     }
 }
@@ -157,10 +161,34 @@ pub(crate) struct FramedReader {
     payload: Vec<u8>,
     frame: Vec<u8>,
     pos: usize,
+    /// Kind of the first error: later reads fail the same way instead of skipping a frame.
+    poisoned: Option<io::ErrorKind>,
+}
+
+fn ensure_sound(entry: &FileEntry, id: SpoolId, operation: &str) -> Result<(), ConvertError> {
+    if entry.failed {
+        Err(lifecycle_error(id, operation, "an earlier write failed"))
+    } else {
+        Ok(())
+    }
 }
 
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.to_owned())
+}
+
+/// The header is untrusted: checked before any length is used to skip or allocate.
+fn validate_header(header: FrameHeader, record_bytes: usize) -> io::Result<()> {
+    let logical = header.logical_len as usize;
+    if !logical.is_multiple_of(record_bytes) || logical / record_bytes > MAX_FRAME_RECORDS {
+        return Err(invalid("spool frame length is not a valid record multiple"));
+    }
+    if header.stored_len > header.logical_len
+        || (header.stored_len == header.logical_len) != header.raw
+    {
+        return Err(invalid("spool frame header is inconsistent"));
+    }
+    Ok(())
 }
 
 impl FramedReader {
@@ -177,6 +205,7 @@ impl FramedReader {
         if extent.len > 0 {
             loop {
                 let header = read_header(&mut file)?;
+                validate_header(header, record_bytes)?;
                 let end = logical + u64::from(header.logical_len);
                 if end > extent.offset {
                     file.seek_relative(-(FRAME_HEADER_BYTES as i64))?;
@@ -194,16 +223,13 @@ impl FramedReader {
             payload: Vec::new(),
             frame: Vec::new(),
             pos: 0,
+            poisoned: None,
         })
     }
 
     fn load_frame(&mut self) -> io::Result<()> {
         let header = read_header(&mut self.file)?;
-        let limit = MAX_FRAME_RECORDS * self.record_bytes;
-        // Checked before allocating: the header is untrusted.
-        if header.stored_len as usize > limit {
-            return Err(invalid("spool frame payload is too large"));
-        }
+        validate_header(header, self.record_bytes)?;
         self.payload.resize(header.stored_len as usize, 0);
         self.file.read_exact(&mut self.payload).map_err(truncated)?;
         decode_frame(header, &self.payload, self.record_bytes, &mut self.frame)?;
@@ -232,11 +258,17 @@ fn read_header(file: &mut BufReader<File>) -> io::Result<FrameHeader> {
 
 impl Read for FramedReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if let Some(kind) = self.poisoned {
+            return Err(kind.into());
+        }
         if self.remaining == 0 || buf.is_empty() {
             return Ok(0);
         }
         while self.pos >= self.frame.len() {
-            self.load_frame()?;
+            if let Err(error) = self.load_frame() {
+                self.poisoned = Some(error.kind());
+                return Err(error);
+            }
         }
         let wanted = usize::try_from(self.remaining).unwrap_or(usize::MAX);
         let count = buf.len().min(self.frame.len() - self.pos).min(wanted);
@@ -342,22 +374,20 @@ impl SpoolStore for FileSpoolStore {
         let (cursor, writer) = {
             let mut open = lock(&self.open);
             let entry = entry_in(&mut open.entries, id, "append", Phase::Open, |e| e.phase)?;
+            ensure_sound(entry, id, "append")?;
             if bytes.is_empty() {
                 return Ok(());
             }
-            let logical = entry.len - entry.carry.len() as u64;
-            entry.len = entry
+            entry
                 .len
                 .checked_add(added)
                 .ok_or(ConvertError::SizeOverflow)?;
-            let first = !entry.created;
-            entry.created = true;
             if id == SpoolId::SOURCE {
-                entry.physical_len += added;
                 (None, entry.writer.take())
             } else {
+                let logical = entry.len - entry.carry.len() as u64;
                 let cursor = FrameCursor {
-                    first,
+                    first: !entry.created,
                     record_bytes: entry.record_bytes,
                     carry: std::mem::take(&mut entry.carry),
                     logical,
@@ -367,19 +397,10 @@ impl SpoolStore for FileSpoolStore {
                 (Some(cursor), None)
             }
         };
-        let physical_added = if let Some(cursor) = cursor {
+        // The entry is updated only after the write, so a failure leaves nothing half counted.
+        let result = if let Some(cursor) = cursor {
             let before = cursor.physical;
-            let done = write_frames(&self.path(id), cursor, bytes)?;
-            let mut open = lock(&self.open);
-            let entry = open
-                .entries
-                .get_mut(&id)
-                .expect("the entry was found above");
-            entry.physical_len = done.physical;
-            entry.frames = done.frames;
-            entry.sparse_index.extend(done.index);
-            entry.carry = done.carry;
-            done.physical - before
+            write_frames(&self.path(id), cursor, bytes).map(|done| (Some(done), before))
         } else {
             let mut writer = writer.expect("the SOURCE writer lives from create to close");
             let result = writer.write_all(bytes);
@@ -388,9 +409,35 @@ impl SpoolStore for FileSpoolStore {
                 .get_mut(&id)
                 .expect("the entry was found above")
                 .writer = Some(writer);
-            result?;
-            added
+            result.map(|()| (None, 0))
         };
+        let mut open = lock(&self.open);
+        let entry = open
+            .entries
+            .get_mut(&id)
+            .expect("the entry was found above");
+        let physical_added = match result {
+            Ok((Some(done), before)) => {
+                entry.physical_len = done.physical;
+                entry.frames = done.frames;
+                entry.sparse_index.extend(done.index);
+                entry.carry = done.carry;
+                entry.created = true;
+                done.physical - before
+            }
+            Ok((None, _)) => {
+                entry.physical_len += added;
+                added
+            }
+            Err(error) => {
+                entry.failed = true;
+                // The file may exist even though the first write failed.
+                entry.created = entry.created || self.path(id).exists();
+                return Err(error.into());
+            }
+        };
+        entry.len += added;
+        drop(open);
         if let Some(ledger) = &self.ledger {
             ledger.add(added);
             ledger.add_physical(physical_added);
@@ -402,6 +449,7 @@ impl SpoolStore for FileSpoolStore {
         let writer = {
             let mut open = lock(&self.open);
             let entry = entry_in(&mut open.entries, id, "close", Phase::Open, |e| e.phase)?;
+            ensure_sound(entry, id, "close")?;
             if !entry.carry.is_empty() {
                 return Err(lifecycle_error(
                     id,
@@ -423,7 +471,9 @@ impl SpoolStore for FileSpoolStore {
 
     fn len(&self, id: SpoolId) -> Result<u64, ConvertError> {
         let mut open = lock(&self.open);
-        Ok(entry_in(&mut open.entries, id, "len", Phase::Closed, |e| e.phase)?.len)
+        let entry = entry_in(&mut open.entries, id, "len", Phase::Closed, |e| e.phase)?;
+        ensure_sound(entry, id, "len")?;
+        Ok(entry.len)
     }
 
     /// The extent is checked against the length recorded by `append` (like `MemSpoolStore`), so
@@ -433,6 +483,7 @@ impl SpoolStore for FileSpoolStore {
         let (record_bytes, start) = {
             let mut open = lock(&self.open);
             let entry = entry_in(&mut open.entries, id, "read", Phase::Closed, |e| e.phase)?;
+            ensure_sound(entry, id, "read")?;
             if extent
                 .offset
                 .checked_add(extent.len)
@@ -469,6 +520,10 @@ impl SpoolStore for FileSpoolStore {
     fn delete(&self, id: SpoolId) -> Result<(), ConvertError> {
         let (created, len, physical) = {
             let mut open = lock(&self.open);
+            // A spool whose write failed never closes; it can still be deleted.
+            if let Some(entry) = open.entries.get_mut(&id).filter(|e| e.failed) {
+                entry.phase = Phase::Closed;
+            }
             let entry = entry_in(&mut open.entries, id, "delete", Phase::Closed, |e| e.phase)?;
             entry.phase = Phase::Deleted;
             drop(std::mem::take(&mut entry.carry));
@@ -586,6 +641,19 @@ mod tests {
         data
     }
 
+    /// Logical start of every frame, read from the file's headers.
+    fn frame_starts(path: &Path) -> Vec<usize> {
+        let bytes = fs::read(path).unwrap();
+        let (mut at, mut logical, mut starts) = (0, 0, Vec::new());
+        while at < bytes.len() {
+            let header = FrameHeader::parse(bytes[at..at + 8].try_into().unwrap());
+            starts.push(logical);
+            logical += header.logical_len as usize;
+            at += 8 + header.stored_len as usize;
+        }
+        starts
+    }
+
     fn framed(store: &FileSpoolStore, id: u64, data: &[u8], chunk: usize) -> SpoolId {
         let id = SpoolId(id);
         store.create(id, RECORD).unwrap();
@@ -631,7 +699,28 @@ mod tests {
         let id = framed(&store, 1, &data, 65_536);
         assert!(lock(&store.open).entries[&id].sparse_index.len() >= 2);
         let end = data.len();
-        let cases = [
+        // Exact sparse-index boundaries, the byte before them and a frame start that is not one.
+        let index: Vec<usize> = lock(&store.open).entries[&id]
+            .sparse_index
+            .iter()
+            .map(|&(logical, _)| logical as usize)
+            .collect();
+        assert!(
+            index.len() >= 3 && index[1].is_multiple_of(RECORD),
+            "{index:?}"
+        );
+        let mut boundary_cases = Vec::new();
+        for &at in &index[1..3] {
+            boundary_cases.push((at, RECORD * 3));
+            boundary_cases.push((at - RECORD, RECORD * 3));
+            boundary_cases.push((at - 1, RECORD + 2));
+        }
+        let starts = frame_starts(&dir.path().join("spool-1.spool"));
+        for frame in [1, 65] {
+            boundary_cases.push((starts[frame], RECORD * 5));
+            boundary_cases.push((starts[frame] - RECORD, RECORD * 5));
+        }
+        let cases = boundary_cases.into_iter().chain([
             (0, 42 * 100),
             (42 * 100, 42 * 5),
             (42 * 8191, 42 * 3),
@@ -642,7 +731,7 @@ mod tests {
             (end - 42 * 8192 - 42 * 13, 42 * 8192 + 42 * 13),
             (end, 0),
             (7, 0),
-        ];
+        ]);
         for (offset, len) in cases {
             let got = read(&store, id, offset as u64, len as u64).unwrap();
             assert_eq!(got, data[offset..offset + len], "{offset}+{len}");
@@ -727,10 +816,8 @@ mod tests {
             .unwrap()
             .set_len(size / 2)
             .unwrap();
-        match read(&store, id, 0, data.len() as u64) {
-            Ok(got) => assert!(got.len() < data.len()),
-            Err(error) => assert_eq!(error.kind(), io::ErrorKind::InvalidData),
-        }
+        let error = read(&store, id, 0, data.len() as u64).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         // A start offset past the surviving frames fails when the reader is opened.
         let opened = store.reader(
             id,
@@ -759,5 +846,115 @@ mod tests {
                 });
             }
         });
+    }
+
+    #[test]
+    fn a_failed_write_leaves_the_spool_deletable_and_the_ledger_balanced() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileSpoolStore::new(dir.path(), true);
+        let data = records(2_000);
+        let id = SpoolId(1);
+        store.create(id, RECORD).unwrap();
+        store.append(id, &data[..RECORD * 1_000]).unwrap();
+        let path = dir.path().join("spool-1.spool");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+        if File::options().append(true).open(&path).is_ok() {
+            return; // permissions are not enforced (running as root)
+        }
+        assert!(store.append(id, &data[RECORD * 1_000..]).is_err());
+        assert!(message(store.append(id, b"x")).contains("earlier write failed"));
+        assert!(message(store.close(id)).contains("earlier write failed"));
+        store.delete(id).unwrap();
+        assert!(!path.exists());
+        let ledger = store.ledger.as_ref().unwrap();
+        assert_eq!(ledger.live.load(Ordering::Relaxed), 0);
+        assert_eq!(ledger.physical_live.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn a_corrupt_header_in_a_skipped_frame_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileSpoolStore::new(dir.path(), false);
+        let data = records(MAX_FRAME_RECORDS * 3);
+        let id = framed(&store, 1, &data, 1 << 20);
+        let path = dir.path().join("spool-1.spool");
+        let mut bytes = fs::read(&path).unwrap();
+        // The first frame is walked over to reach an offset in the second.
+        let bad = u32::try_from(RECORD * 7 + 1).unwrap();
+        bytes[..4].copy_from_slice(&bad.to_le_bytes());
+        fs::write(&path, bytes).unwrap();
+        let opened = store.reader(
+            id,
+            SpoolExtent {
+                offset: (RECORD * (MAX_FRAME_RECORDS + 5)) as u64,
+                len: RECORD as u64,
+            },
+        );
+        assert!(
+            opened
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("record multiple")
+        );
+    }
+
+    #[test]
+    fn a_reader_that_failed_keeps_failing() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileSpoolStore::new(dir.path(), false);
+        let data = records(MAX_FRAME_RECORDS * 3);
+        let id = framed(&store, 1, &data, 1 << 20);
+        let path = dir.path().join("spool-1.spool");
+        let size = fs::metadata(&path).unwrap().len();
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(size / 2)
+            .unwrap();
+        let mut reader = store
+            .reader(
+                id,
+                SpoolExtent {
+                    offset: 0,
+                    len: data.len() as u64,
+                },
+            )
+            .unwrap();
+        let mut buf = vec![0; 1 << 20];
+        let error = loop {
+            if let Err(error) = reader.read(&mut buf) {
+                break error;
+            }
+        };
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(reader.read(&mut buf).is_err());
+    }
+
+    #[test]
+    fn concurrent_appends_to_distinct_spools_read_back_identically() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileSpoolStore::new(dir.path(), true);
+        let datas: Vec<Vec<u8>> = (0..4).map(|n| records(20_000 + n * 1_001)).collect();
+        std::thread::scope(|scope| {
+            for (n, data) in datas.iter().enumerate() {
+                let store = &store;
+                scope.spawn(move || {
+                    let chunk = if n == 0 { 65_536 } else { RECORD * 777 };
+                    framed(store, n as u64 + 1, data, chunk);
+                });
+            }
+        });
+        for (n, data) in datas.iter().enumerate() {
+            let id = SpoolId(n as u64 + 1);
+            assert_eq!(read(&store, id, 0, data.len() as u64).unwrap(), *data);
+        }
+        let totals = store.ledger_totals().unwrap();
+        assert_eq!(
+            totals.written,
+            datas.iter().map(|d| d.len() as u64).sum::<u64>()
+        );
     }
 }
