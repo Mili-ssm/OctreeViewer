@@ -246,7 +246,7 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
   están todos detrás del ojo salía de la caja unión, que «pasaba» por una esquina que tampoco se ve; ahora `lo` y
   la cota por datos miden solo octantes con datos a la vista (nodo 77: (12, 12) → (7, 7)). El hueco de ese nodo
   sigue: un octante aún dibuja 12 mientras baja nivel a nivel y otro ya dibuja 7; lo quita el tramo único (10e).
-- [ ] **10b.** `node_run` (función pura) y los campos por nodo, calculados junto a los viejos sin lectores.
+- [x] **10b.** `node_run` (función pura) y los campos por nodo, calculados junto a los viejos sin lectores.
   - [x] (ec9bd09) `cell_pool/run.rs`: `node_run` con 11 tests unitarios (B1, B2, B6, B7, B11); el plan rellena
     `node_anchor`, `node_run`, `node_stage`, `node_step` y guarda `applied_run` (lo emitido sin el D5) y la espera
     por nodo; `before_finest` es la única fuente de `before` (B5). Nada observable cambia (simulaciones y resumen
@@ -257,8 +257,14 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
     todas las simulaciones. Reales: 7 huecos (solo órbita 1), 27 a 34 por encima de `hi`, 10 a 21 nodos que entran,
     0 por `prev` expulsado, 13 a 19 extremo fino distinto, 0 a 4 sin clasificar; 2 frames «más grueso que hoy» por
     simulación, todos de nodos que entran sin `prev`. Tres hallazgos de diseño (C1 a C3 abajo).
-  - [ ] Ronda de ajuste: C1 a C3 y los hallazgos de la revisión de ec9bd09; repetir la comparación. Parada: algún
-    frame «más grueso que hoy» o sin clasificar en una simulación real.
+  - [x] (5be1a1c, f4fd143, 8a68d17) C1 a C3 y los hallazgos de la revisión. `prev` sale de una sola función
+    (`node_prev`): tramo aplicado, lo dibujado por el propio nodo, el `before` de la retención y, si no, la semilla
+    de entrada de hoy (los tres frames «más gruesos» eran nodos sin cobertura para la retención, con historia en la
+    semilla). Comparación final en las 4 simulaciones reales: 0 sin clasificar; 1 frame más grueso que hoy (órbita 1,
+    frame 36, nodo 24): el antepasado dibujaba 8, el tramo único arranca en 8 y pide 10, y hoy salta a 11 porque la
+    semilla se recorta al tramo del nodo. **Aceptado por diseño**: no es más grueso que lo que ya se veía (R3-Q21),
+    solo refina nivel a nivel; lo vigila el criterio de 1,5 × frames hasta asentarse. Desde aquí, la parada de la
+    comparación es «más grueso que `prev`», no «más grueso que hoy».
 - [ ] **10c.** Un lector por commit (`busy` del driver, `stages`, `fit` y peticiones, presencia en `fallback.rs`,
   `cell_active_depths`, retención): resumen de la entrada de la GPU idéntico en cada uno, salvo el último.
 - [ ] **10d.** Oráculo de las simulaciones sobre los campos por nodo (lo aplazado de la tarea 6): solo celdas
