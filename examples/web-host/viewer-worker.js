@@ -1609,7 +1609,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
             }
             case "frame": {
                 const camera = data.camera;
-                if (Object.values(camera).some((value) => value !== 0)) advanceSceneGeneration();
+                if (Object.values(camera).some(Boolean)) advanceSceneGeneration();
                 if (camera.orbitX !== 0 || camera.orbitY !== 0) {
                     viewer.orbit(camera.orbitX, camera.orbitY);
                 }
@@ -1619,6 +1619,9 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 if (camera.zoom !== 0) viewer.zoom(camera.zoom);
                 if (camera.moveX !== 0 || camera.moveY !== 0 || camera.moveZ !== 0) {
                     viewer.moveCamera(camera.moveX, camera.moveY, camera.moveZ);
+                }
+                if (camera.flyForward || camera.flyRight || camera.flyUp) {
+                    viewer.flyCamera(camera.flyForward ?? 0, camera.flyRight ?? 0, camera.flyUp ?? 0);
                 }
                 syncBuildView();
                 const startedAt = performance.now();

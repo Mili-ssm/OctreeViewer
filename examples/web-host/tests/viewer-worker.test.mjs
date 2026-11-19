@@ -49,6 +49,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
     const graftedPages = [];
     const budgets = [];
     const timing = [];
+    const flyCalls = [];
     const updateLodCalls = [];
     let gpuFrameMs = null;
     let holdStage = null; // while set, updateLod leaves the ladder on this coarse rung
@@ -94,6 +95,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         pan() {},
         zoom() {},
         moveCamera() {},
+        flyCamera(...amounts) { flyCalls.push(amounts); return true; },
         setGpuFrameTiming(enabled) { timing.push(enabled); },
         resetGpuFrameStats() { timing.push("reset"); },
         updateLod(pixels) {
@@ -271,6 +273,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         setLodExtra(fields) { lodExtra = fields; },
         setGpuFrameMs(p95, samples = 60) { gpuFrameMs = p95 === null ? null : { p95, samples }; },
         timing,
+        flyCalls,
         updateLodCalls,
         setPendingBlock(value) { pendingBlockIds = value === null ? [] : [String(value)]; },
         setPendingBlocks(values) { pendingBlockIds = values.map(String); },
@@ -1036,4 +1039,12 @@ test("frames slower than 500 ms under GPU overload still coarsen after the dwell
     worker.setGpuFrameMs(30);
     await drawFrames(worker, 0, 12, 700);
     assert.equal(worker.updateLodCalls.at(-1), 8);
+});
+
+test("a frame with flight amounts flies the camera; one without leaves it alone", async () => {
+    const worker = await runWorker();
+    await worker.send("frame", { camera: { ...idleCamera } });
+    assert.deepEqual(worker.flyCalls, []);
+    await worker.send("frame", { camera: { ...idleCamera, flyForward: 0.25, flyRight: -0.5, flyUp: 0 } });
+    assert.deepEqual(worker.flyCalls, [[0.25, -0.5, 0]]);
 });

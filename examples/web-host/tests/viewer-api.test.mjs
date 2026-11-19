@@ -510,3 +510,84 @@ test("init asks for the cells path unless the option is false (R3-Q35)", async (
         Object.assign(globalThis, previous);
     }
 });
+
+test("held WASD/QE keys fly the camera each frame, scaled by dt, Shift and the speed multiplier", async () => {
+    const previous = {
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        Worker: globalThis.Worker,
+        ResizeObserver: globalThis.ResizeObserver,
+        window: globalThis.window,
+        requestAnimationFrame: globalThis.requestAnimationFrame,
+        cancelAnimationFrame: globalThis.cancelAnimationFrame,
+        CustomEvent: globalThis.CustomEvent,
+    };
+    const realNow = performance.now.bind(performance);
+    let now = 1000;
+    performance.now = () => now;
+    let frameCallback = null;
+    globalThis.HTMLCanvasElement = FakeCanvas;
+    globalThis.Worker = FakeWorker;
+    globalThis.ResizeObserver = FakeResizeObserver;
+    const windowListeners = new Map();
+    globalThis.window = {
+        Worker: FakeWorker,
+        devicePixelRatio: 1,
+        addEventListener(type, callback) { windowListeners.set(type, callback); },
+        removeEventListener() {},
+    };
+    globalThis.requestAnimationFrame = (callback) => { frameCallback = callback; return 1; };
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init.detail; } };
+    try {
+        const canvas = new FakeCanvas();
+        const viewer = createViewer(canvas);
+        await viewer.ready;
+        const worker = FakeWorker.instance;
+        const key = (type, event) => canvas.dispatchEvent({ type, key: "", preventDefault() {}, ...event });
+        // Draws one animation frame after `ms` and returns its camera message.
+        const frame = (ms) => {
+            now += ms;
+            const callback = frameCallback;
+            frameCallback = null;
+            assert.ok(callback, "a frame is scheduled");
+            const before = worker.messages.length;
+            callback();
+            const message = worker.messages.slice(before).find((item) => item.type === "frame");
+            worker.send({ type: "frame" });
+            return message.camera;
+        };
+        key("keydown", { key: "w" });
+        key("keydown", { key: "w", repeat: true });
+        key("keydown", { key: "d" });
+        let camera = frame(50);
+        assert.ok(Math.abs(camera.flyForward - 0.05) < 1e-12);
+        assert.ok(Math.abs(camera.flyRight - 0.05) < 1e-12);
+        assert.equal(camera.flyUp, 0);
+        assert.equal(camera.moveY, 0, "no world-axis motion");
+        camera = frame(1000);
+        assert.ok(Math.abs(camera.flyForward - 0.1) < 1e-12, "dt is clamped to 0.1 s");
+        key("keyup", { key: "d" });
+        key("keydown", { key: "Q", shiftKey: true });
+        camera = frame(100);
+        assert.ok(Math.abs(camera.flyForward - 0.4) < 1e-12, "Shift multiplies by 4");
+        assert.equal(camera.flyRight, 0);
+        assert.ok(Math.abs(camera.flyUp + 0.4) < 1e-12);
+        key("keyup", { key: "q" });
+        key("keyup", { key: "w" });
+        camera = frame(100);
+        assert.deepEqual([camera.flyForward, camera.flyRight, camera.flyUp], [0, 0, 0]);
+        assert.equal(frameCallback, null, "no frame is scheduled once nothing is held");
+        // Blur and other modifiers never start or keep motion.
+        key("keydown", { key: "e" });
+        windowListeners.get("blur")();
+        for (const modifier of ["ctrlKey", "metaKey", "altKey"]) key("keydown", { key: "a", [modifier]: true });
+        key("keydown", { key: "+" });
+        camera = frame(100);
+        assert.ok(camera.zoom < 0);
+        assert.deepEqual([camera.flyForward, camera.flyRight, camera.flyUp], [0, 0, 0]);
+        viewer.dispose();
+    } finally {
+        performance.now = realNow;
+        Object.assign(globalThis, previous);
+    }
+});

@@ -5,6 +5,45 @@ const DEFAULT_CACHE_BYTES = 256 * 1024 * 1024;
 const MAX_CACHE_BYTES = 1024 * 1024 * 1024;
 const MAX_PENDING_REQUESTS = 32;
 
+// Held-key flight (WASD/QE). Amounts are in units of the camera's orbit distance, so the feel is
+// independent of the scene size. Same logic in main.js and viewer-api.mjs: the offline packager
+// inlines or copies each file on its own, so they cannot share a module.
+const FLIGHT_KEYS = { w: [1, 0, 0], s: [-1, 0, 0], d: [0, 1, 0], a: [0, -1, 0], e: [0, 0, 1], q: [0, 0, -1] };
+const FLIGHT_SHIFT_FACTOR = 4;
+const FLIGHT_MAX_DT = 0.1;
+function createFlight() {
+    const held = new Set();
+    let shift = false;
+    let last = 0;
+    return {
+        active: () => held.size > 0,
+        /** Returns whether the key is a flight key the page should consume. */
+        press(event, now) {
+            const key = String(event.key).toLowerCase();
+            if (!(key in FLIGHT_KEYS) || event.ctrlKey || event.altKey || event.metaKey) return false;
+            shift = Boolean(event.shiftKey);
+            if (held.size === 0) last = now;
+            held.add(key);
+            return true;
+        },
+        release(event) {
+            shift = Boolean(event.shiftKey);
+            held.delete(String(event.key).toLowerCase());
+        },
+        clear() { held.clear(); shift = false; },
+        /** Per-frame `{ flyForward, flyRight, flyUp }` for the time since the last step, or null. */
+        step(now, speed) {
+            if (held.size === 0) return null;
+            const dt = Math.min(FLIGHT_MAX_DT, Math.max(0, (now - last) / 1000));
+            last = now;
+            const amount = speed * dt * (shift ? FLIGHT_SHIFT_FACTOR : 1);
+            const total = [0, 0, 0];
+            for (const key of held) for (let axis = 0; axis < 3; axis += 1) total[axis] += FLIGHT_KEYS[key][axis] * amount;
+            return { flyForward: total[0], flyRight: total[1], flyUp: total[2] };
+        },
+    };
+}
+
 /** Creates an embeddable viewer on a host-owned canvas. The canvas is transferred to its worker. */
 export function createViewer(hostCanvas, options = {}) {
     let canvas = hostCanvas;
@@ -35,13 +74,14 @@ export function createViewer(hostCanvas, options = {}) {
     let pointerMoved = false;
     let pickPending = false;
     let movementSpeed = 1;
+    const flight = createFlight();
     let resolveReady;
     let rejectReady;
     const readyPromise = new Promise((resolve, reject) => {
         resolveReady = resolve;
         rejectReady = reject;
     });
-    const deltas = { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 };
+    const deltas = { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0, flyForward: 0, flyRight: 0, flyUp: 0 };
     const emit = (type, detail) => {
         for (const callback of listeners.get(type) ?? []) {
             try {
@@ -89,6 +129,8 @@ export function createViewer(hostCanvas, options = {}) {
         raf = 0;
         if (disposed || !ready || framePending) return;
         framePending = true;
+        const fly = flight.step(performance.now(), movementSpeed);
+        if (fly) for (const [key, value] of Object.entries(fly)) deltas[key] += value;
         const camera = { ...deltas };
         for (const key of Object.keys(deltas)) deltas[key] = 0;
         worker.postMessage({ type: "frame", camera });
@@ -125,7 +167,7 @@ export function createViewer(hostCanvas, options = {}) {
         } else if (data.type === "frame") {
             framePending = false;
             emit("frame", data);
-            if (loading) ensureFrame();
+            if (loading || flight.active()) ensureFrame();
         } else if (data.type === "stats") {
             framePending = false;
             emit("stats", data);
@@ -265,18 +307,14 @@ export function createViewer(hostCanvas, options = {}) {
         ensureFrame();
     }
     function contextMenu(event) { event.preventDefault(); }
+    function keyUp(event) { flight.release(event); }
+    function releaseKeys() { flight.clear(); }
     function keyDown(event) {
         if (!ready) return;
         if (event.key === "Home") {
             void request("fit").then(ensureFrame);
-        } else if (mode === "bird" && ["w", "a", "s", "d", "q", "e"].includes(event.key.toLowerCase())) {
-            const distance = movementSpeed * 0.05;
-            if (event.key.toLowerCase() === "w") deltas.moveY += distance;
-            if (event.key.toLowerCase() === "s") deltas.moveY -= distance;
-            if (event.key.toLowerCase() === "a") deltas.moveX -= distance;
-            if (event.key.toLowerCase() === "d") deltas.moveX += distance;
-            if (event.key.toLowerCase() === "q") deltas.moveZ -= distance;
-            if (event.key.toLowerCase() === "e") deltas.moveZ += distance;
+        } else if (flight.press(event, performance.now())) {
+            // Motion is applied per animation frame while the key is held.
         } else if (event.key === "+" || event.key === "=") deltas.zoom -= 0.15;
         else if (event.key === "-") deltas.zoom += 0.15;
         else return;
@@ -287,10 +325,13 @@ export function createViewer(hostCanvas, options = {}) {
         ["pointerdown", pointerDown], ["pointermove", pointerMove], ["pointerup", pointerEnd],
         ["pointercancel", pointerEnd], ["lostpointercapture", pointerEnd],
         ["wheel", wheel, { passive: false }], ["contextmenu", contextMenu], ["keydown", keyDown],
+        ["keyup", keyUp], ["blur", releaseKeys],
     ];
     const bindCanvas = () => { for (const [type, handler, flags] of bindings) canvas.addEventListener(type, handler, flags); };
     const unbindCanvas = () => { for (const [type, handler] of bindings) canvas.removeEventListener(type, handler); };
     bindCanvas();
+    window.addEventListener("blur", releaseKeys);
+    globalThis.document?.addEventListener("visibilitychange", releaseKeys);
 
     // R3-Q34: swaps the host's canvas element for a clone and gives the worker its OffscreenCanvas.
     // Returns whether it did; without a DOM element the worker recovers on its current canvas.
@@ -421,6 +462,8 @@ export function createViewer(hostCanvas, options = {}) {
             if (raf) cancelAnimationFrame(raf);
             resizeObserver.disconnect();
             window.removeEventListener("resize", resize);
+            window.removeEventListener("blur", releaseKeys);
+            globalThis.document?.removeEventListener("visibilitychange", releaseKeys);
             unbindCanvas();
             worker.removeEventListener("message", onMessage);
             worker.removeEventListener("error", onWorkerError);

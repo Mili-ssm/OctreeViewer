@@ -99,6 +99,7 @@ let pointerMode = "orbit";
 let activeCameraMode = cameraMode.value;
 let movementSpeed = 1;
 let cameraDelta = emptyCameraDelta();
+const flight = createFlight();
 let latestLodStats = null;
 let datasetName = "Synthetic sample";
 let loadingFile = false;
@@ -294,8 +295,47 @@ function exportBenchmarkRun() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+// Held-key flight (WASD/QE). Amounts are in units of the camera's orbit distance, so the feel is
+// independent of the scene size. Same logic in main.js and viewer-api.mjs: the offline packager
+// inlines or copies each file on its own, so they cannot share a module.
+const FLIGHT_KEYS = { w: [1, 0, 0], s: [-1, 0, 0], d: [0, 1, 0], a: [0, -1, 0], e: [0, 0, 1], q: [0, 0, -1] };
+const FLIGHT_SHIFT_FACTOR = 4;
+const FLIGHT_MAX_DT = 0.1;
+function createFlight() {
+    const held = new Set();
+    let shift = false;
+    let last = 0;
+    return {
+        active: () => held.size > 0,
+        /** Returns whether the key is a flight key the page should consume. */
+        press(event, now) {
+            const key = String(event.key).toLowerCase();
+            if (!(key in FLIGHT_KEYS) || event.ctrlKey || event.altKey || event.metaKey) return false;
+            shift = Boolean(event.shiftKey);
+            if (held.size === 0) last = now;
+            held.add(key);
+            return true;
+        },
+        release(event) {
+            shift = Boolean(event.shiftKey);
+            held.delete(String(event.key).toLowerCase());
+        },
+        clear() { held.clear(); shift = false; },
+        /** Per-frame `{ flyForward, flyRight, flyUp }` for the time since the last step, or null. */
+        step(now, speed) {
+            if (held.size === 0) return null;
+            const dt = Math.min(FLIGHT_MAX_DT, Math.max(0, (now - last) / 1000));
+            last = now;
+            const amount = speed * dt * (shift ? FLIGHT_SHIFT_FACTOR : 1);
+            const total = [0, 0, 0];
+            for (const key of held) for (let axis = 0; axis < 3; axis += 1) total[axis] += FLIGHT_KEYS[key][axis] * amount;
+            return { flyForward: total[0], flyRight: total[1], flyUp: total[2] };
+        },
+    };
+}
+
 function emptyCameraDelta() {
-    return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 };
+    return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0, flyForward: 0, flyRight: 0, flyUp: 0 };
 }
 
 function queueWorkerCommand(type, values = {}) {
@@ -374,6 +414,8 @@ function requestFrame() {
     if (!ready || frameFailed) return;
     if (framePending) return;
     framePending = true;
+    const fly = flight.step(performance.now(), movementSpeed);
+    if (fly) Object.assign(cameraDelta, fly);
     const camera = cameraDelta;
     cameraDelta = emptyCameraDelta();
     if (benchmarkRun && Object.values(camera).some((value) => value !== 0)) {
@@ -382,6 +424,7 @@ function requestFrame() {
     frameRequestedAt = performance.now();
     worker.postMessage({ type: "frame", camera });
     if (continuousRendering) animationFrame = requestAnimationFrame(requestFrame);
+    if (flight.active()) wakeRendering();
 }
 
 function requestFrameOnce() {
@@ -1235,8 +1278,8 @@ cameraMode.addEventListener("change", () => {
         canvas.focus({ preventScroll: true });
     }
     cameraModeHelp.textContent = activeCameraMode === "bird"
-        ? `Bird: drag pans, right drag rotates, WASD/QE moves · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`
-        : "Observer: click a voxel to set the center, left drag pans, right drag rotates, wheel changes radius.";
+        ? `Bird: drag pans, right drag rotates, WASD/QE flies (Shift = faster) · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`
+        : "Observer: click a voxel to set the center, left drag pans, right drag rotates, wheel changes radius, WASD/QE flies (Shift = faster).";
 });
 function bindCanvasInteractions() {
 canvas.addEventListener("pointerdown", (event) => {
@@ -1302,25 +1345,24 @@ canvas.addEventListener("wheel", (event) => {
     const wheelDelta = event.deltaY * deltaUnit;
     if (activeCameraMode === "bird") {
         movementSpeed = Math.max(0.001, Math.min(1_000_000, movementSpeed * Math.exp(-wheelDelta * 0.001)));
-        cameraModeHelp.textContent = `Bird: drag pans, right drag rotates, WASD/QE moves · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`;
+        cameraModeHelp.textContent = `Bird: drag pans, right drag rotates, WASD/QE flies (Shift = faster) · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`;
     } else {
         cameraDelta.zoom += wheelDelta * 0.001;
     }
     wakeRendering();
 }, { passive: false });
+function releaseFlightKeys() { flight.clear(); }
+canvas.addEventListener("keyup", (event) => flight.release(event));
+canvas.addEventListener("blur", releaseFlightKeys);
+window.addEventListener("blur", releaseFlightKeys);
+document.addEventListener("visibilitychange", releaseFlightKeys);
 canvas.addEventListener("keydown", (event) => {
     if (!ready) return;
     const step = event.shiftKey ? 0.025 : 0.04;
     if (event.key === "Home") {
         queueWorkerCommand("fit");
-    } else if (activeCameraMode === "bird" && ["w", "a", "s", "d", "q", "e"].includes(event.key.toLowerCase())) {
-        const distance = movementSpeed * 0.05;
-        if (event.key.toLowerCase() === "w") cameraDelta.moveY += distance;
-        if (event.key.toLowerCase() === "s") cameraDelta.moveY -= distance;
-        if (event.key.toLowerCase() === "a") cameraDelta.moveX -= distance;
-        if (event.key.toLowerCase() === "d") cameraDelta.moveX += distance;
-        if (event.key.toLowerCase() === "q") cameraDelta.moveZ -= distance;
-        if (event.key.toLowerCase() === "e") cameraDelta.moveZ += distance;
+    } else if (flight.press(event, performance.now())) {
+        // Motion is applied per animation frame while the key is held.
     } else if (event.key === "+" || event.key === "=") {
         cameraDelta.zoom -= 0.15;
     } else if (event.key === "-") {

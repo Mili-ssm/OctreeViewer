@@ -177,6 +177,22 @@ impl OrbitCamera {
         true
     }
 
+    /// Flies the camera: `forward` along the view direction projected on the horizontal plane
+    /// (derived from `yaw`, so it also works looking straight down), `right` along the screen's
+    /// right, `up` along world Z. Amounts are in units of the orbit `distance`; target and eye
+    /// move together.
+    pub fn fly(&mut self, forward: f64, right: f64, up: f64) -> bool {
+        if !forward.is_finite() || !right.is_finite() || !up.is_finite() {
+            return false;
+        }
+        let (sin, cos) = self.yaw.sin_cos();
+        let delta = (DVec3::new(-sin, -cos, 0.0) * forward
+            + DVec3::new(-cos, sin, 0.0) * right
+            + DVec3::Z * up)
+            * self.distance;
+        self.translate(delta.to_array())
+    }
+
     pub fn set_bird_view(&mut self) {
         self.pitch = MAX_PITCH;
     }
@@ -834,6 +850,44 @@ mod tests {
             assert!((a - b).abs().max_element() < 1e-4, "{a} vs {b}");
         }
         assert!(camera.eye_frame([0, 600]).is_none());
+    }
+
+    #[test]
+    fn fly_moves_relative_to_the_view_and_scales_with_distance() {
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(bounds(), [800, 600]));
+        let distance = camera.distance;
+        let close = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9);
+        for bird in [false, true] {
+            if bird {
+                camera.set_bird_view();
+            }
+            let pitch = camera.pitch;
+            for yaw in [0.0, std::f64::consts::FRAC_PI_2, 2.3] {
+                camera.yaw = yaw;
+                let start = camera.target;
+                let (sin, cos) = yaw.sin_cos();
+                assert!(camera.fly(0.5, 0.0, 0.0));
+                let moved = (camera.target - start) / distance;
+                assert!(close(moved.to_array(), [-0.5 * sin, -0.5 * cos, 0.0]));
+                // Right matches the screen's right (see `frame_preserves_..._screen_orientation`).
+                let start = camera.target;
+                assert!(camera.fly(0.0, 1.0, 0.0));
+                let moved = (camera.target - start) / distance;
+                let (_, forward, _, _) = camera.basis();
+                let screen_right = forward.cross(DVec3::Z).normalize();
+                assert!(close(moved.to_array(), screen_right.to_array()));
+                let start = camera.target;
+                assert!(camera.fly(0.0, 0.0, -2.0));
+                let moved = camera.target - start;
+                assert!(close(moved.to_array(), [0.0, 0.0, -2.0 * distance]));
+            }
+            assert_eq!((camera.distance, camera.pitch), (distance, pitch));
+        }
+        let before = camera.target;
+        assert!(!camera.fly(f64::NAN, 0.0, 0.0));
+        assert!(!camera.fly(0.0, f64::INFINITY, 0.0));
+        assert_eq!(camera.target, before);
     }
 
     #[test]
