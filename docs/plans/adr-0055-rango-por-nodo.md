@@ -271,8 +271,20 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
     niveles usables de `node_run`. Comparación: 0 sin clasificar, 0 frames con el tramo bajo `prev`. Para 10e: un
     nodo cuyo único nivel usable dentro del rango es el D5 suelto se ancla por encima de `hi` (visto en la
     referencia en proceso, frames 31 y 32, nodo 23).
-- [ ] **10c.** Un lector por commit (`busy` del driver, `stages`, `fit` y peticiones, presencia en `fallback.rs`,
-  `cell_active_depths`, retención): resumen de la entrada de la GPU idéntico en cada uno, salvo el último.
+- [ ] **10c.** Lectores a los campos por nodo y, después, **un** commit de comportamiento (B9).
+  - [x] (eda80b8) `node_run` toma sus niveles usables de la misma lista de residentes que el corte (vacía para los
+    nodos retenidos, sustituida por `finer_drawn` con tope): lo pedía A4; el encargo de 10b decía «todo el tramo».
+  - [x] (f59ec3c) Invariante en cada frame de cada simulación: hay ancla ⇔ algún octante dibuja, y por octante,
+    dibuja ⇔ no enmascarado y con ancla.
+  - [x] (cd83d13) La presencia (`fallback.rs`) y `hidden_held` leen la máscara y el ancla, salvo `covers_in`: la
+    retención lo llama antes de que existan las anclas (su `before` alimenta a `node_run`); pasa en el commit de
+    comportamiento. Resumen de la GPU idéntico.
+  - [x] (86a5052) `stages` cuenta nodos (antes octantes); en reposo sigue en 0. `poolStages` cambia de escala (la
+    demo solo comprueba `=== 0`; anotar en `PROBES.md` al cerrar).
+  - [ ] **Commit de comportamiento**: peticiones, protección, retención (`covers_in` incluido) y emisión desde
+    `node_run`; `busy` espera a `node_step` (probado y aplazado: sin este commit nadie pide `node_step` y tres tests
+    de GPU del driver no se asientan); la espera agotada sube `residency_epoch`; el caso del D5 suelto como único
+    usable del rango; la aserción `active_gaps == 0`.
 - [ ] **10d.** Oráculo de las simulaciones sobre los campos por nodo (lo aplazado de la tarea 6): solo celdas
   ocupadas, el rango por nodo como tope, excusa específica; `active_gaps` pasa a aserción (0). Antes de 10e (D3).
 - [ ] **10e.** El tramo de `node_run` pasa a ser el emitido (aquí cambia el comportamiento) y se quitan los campos
