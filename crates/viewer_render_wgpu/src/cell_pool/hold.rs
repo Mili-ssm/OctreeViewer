@@ -340,12 +340,14 @@ pub(super) type Run = (u8, u8);
 /// applied descendants' on a zoom out (the node replaces them). `wish` is the finest depth the
 /// node wants.
 ///
-/// Mirrors `eval_refine_hold`: the node is held iff `run.hi < min(finest of before, wish)`. The
-/// threshold is the finest depth drawn before (`drawn_ceiling`: the finest ACTIVE depth, not the
-/// nominal one), not one level more; and the wish bounds it, so a node that wants less than was
-/// drawn, or whose span cannot build what was drawn (its wish is already limited to what it can
-/// build), takes over at its wish. A node with no run (nothing drawable resident) or with nothing
-/// drawn before is not held by this rule.
+/// States the GPU-rule condition, not `eval_refine_hold`'s per-octant one: among a node's active
+/// depths a cell draws the coarsest one that does not refine (`cell_lod::draws`), so the node
+/// coarsens a zone only if its finest active depth `run.1` is below what the zone drew before
+/// (the finest of `before`: the finest ACTIVE depth, not the nominal one) capped by what the view
+/// wants (`wish`). It may take over iff `run.1 >= min(finest of before, wish)`; the table tests
+/// check it against the twin on every row. `eval_refine_hold` can hold longer (see
+/// `ZOOM_OUT_PARTS`). A node with no run (nothing drawable resident) or with nothing drawn before
+/// is not held by this rule.
 #[cfg(test)]
 pub(super) fn run_covers(run: Option<Run>, before: &[Run], wish: u8) -> bool {
     let (Some((_, finest)), Some(drawn)) = (run, before.iter().map(|(_, hi)| *hi).max()) else {

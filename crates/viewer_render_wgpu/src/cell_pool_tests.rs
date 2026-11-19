@@ -9,6 +9,7 @@ use super::hold::{Run, run_covers};
 use super::*;
 use crate::{
     OrbitCamera,
+    cell_lod::{LodView, NodeLod, drawn_depth_at as twin_drawn_depth_at},
     scene_digest_tests::{ORIGIN, SIDE, ids},
     test_support::*,
 };
@@ -2316,10 +2317,37 @@ fn set_applied(rig: &mut Rig, node: u64, finest: u8) {
     rig.pool.applied_finest.insert(NodeId::new(node), finest);
 }
 
+/// How wide a node's range is in a probe: `Wide` starts at the coarsest depth the node can draw
+/// (the far end of `node_view_range` reaching the back of the node), `Near` is only the depth
+/// the octants want. Either way `range = (far.min(near), near)` as `cell_cut_ranged` sets it.
+#[derive(Clone, Copy, Debug)]
+enum Far {
+    Wide,
+    Near,
+}
+
+/// What `refine_probe` saw: whether `eval_refine_hold` holds the node, and the depths
+/// `cell_active_depths` emits for the entry it would draw with.
+struct Probe {
+    held: bool,
+    active: Vec<u8>,
+    node_depth: u8,
+}
+
+impl Probe {
+    /// The active run `[coarsest, finest]`.
+    fn run(&self) -> Option<Run> {
+        self.active
+            .first()
+            .zip(self.active.last())
+            .map(|(lo, hi)| (*lo, *hi))
+    }
+}
+
 /// Whether `eval_refine_hold` holds `node` when every octant of it wants `wish`, and the active
-/// run `[coarsest, finest]` it would take over with (what it draws, as `eval_refine_hold`
-/// computes it from the entering seed, through `cell_active_depths` under `rule`).
-fn refine_probe(rig: &mut Rig, node: u64, wish: u8, rule: ActiveRule) -> (bool, Option<(u8, u8)>) {
+/// depths it would take over with: the entry is built as `plan` would (the drawn levels from the
+/// entering seed and a `range`), so the active rule (`rule`) sees the range residents.
+fn refine_probe(rig: &mut Rig, node: u64, wish: u8, rule: ActiveRule, far: Far) -> Probe {
     rig.pool.set_active_rule(rule);
     let id = NodeId::new(node);
     let (eval, _) = eval_with(rig, &[id], wish);
@@ -2343,28 +2371,223 @@ fn refine_probe(rig: &mut Rig, node: u64, wish: u8, rule: ActiveRule) -> (bool, 
             .prev_state_seeded(id, data.bounds, buildable, &grid),
         f.rep.saturating_sub(MAX_MASK_LEVELS),
     );
+    let node_depth = CellPool::node_depth(&grid, data.bounds);
     let mut entry = entries_with(rig, &[id], wish).remove(0);
     entry.drawn = here;
-    let depths =
-        rig.pool
-            .cell_active_depths(&entry, CellPool::node_depth(&grid, data.bounds), None);
-    let run = depths.first().zip(depths.last()).map(|(lo, hi)| (*lo, *hi));
-    (eval.hold.contains(&id), run)
+    let (lo, hi) = cell_depth_range(node_depth);
+    let (lo, hi) = (lo.max(buildable.0), hi.min(buildable.1));
+    let near = entry
+        .wanted
+        .iter()
+        .flatten()
+        .max()
+        .map_or(hi, |wanted| (*wanted).clamp(lo, hi));
+    let far = match far {
+        Far::Wide => lo,
+        Far::Near => near,
+    };
+    entry.range = Some((far.min(near), near));
+    let active = rig.pool.cell_active_depths(&entry, node_depth, None);
+    Probe {
+        held: eval.hold.contains(&id),
+        active,
+        node_depth,
+    }
 }
 
-/// Zoom in: node 2 drew with nominal depth `finest - 1` and finest active depth `finest`; its
-/// child 10 (stored 4..=7) enters the cut with the resident levels `resident` and wants `wish`.
-fn zoom_in_probe(
-    finest: u8,
-    wish: u8,
-    resident: &[u8],
+/// A node as the GPU twin sees it: its depth, its eye-relative corner and its active depths.
+#[derive(Clone)]
+struct Owner {
+    node_depth: u8,
+    lo: [f64; 3],
+    active: Vec<u8>,
+}
+
+impl Owner {
+    /// The root cell has side 1; the eye is at the origin and the nodes sit 10 units ahead.
+    fn side(&self) -> f64 {
+        2f64.powi(-i32::from(self.node_depth))
+    }
+
+    /// Corner of the child `index` (bits x, y, z from the low) of the node, one level deeper.
+    fn child_lo(&self, index: usize) -> [f64; 3] {
+        std::array::from_fn(|axis| self.lo[axis] + self.side() / 2.0 * (index >> axis & 1) as f64)
+    }
+
+    fn sub_centre(&self, octant: usize) -> [f64; 3] {
+        std::array::from_fn(|axis| {
+            self.lo[axis] + self.side() / 2.0 * ((octant >> axis & 1) as f64 + 0.5)
+        })
+    }
+
+    /// The depth the real per-cell rule (`cell_lod::drawn_depth_at`) draws `point` at when the
+    /// view wants `wish` there: a cell refines iff its children are not shorter than a cell of
+    /// depth `wish` (`min_side`; the pixel target is 0, so only that bound decides).
+    fn drawn_at(&self, wish: u8, point: [f64; 3]) -> Option<u8> {
+        let view = LodView {
+            forward: [0.0, 0.0, 1.0],
+            right: [1.0, 0.0, 0.0],
+            up: [0.0, 1.0, 0.0],
+            focal: 1000.0,
+            target_px: 0.0,
+            min_side: 2f32.powi(-i32::from(wish)),
+        };
+        let node = NodeLod {
+            anchor: self.lo.map(|c| c as f32),
+            node_depth: self.node_depth,
+            active: self
+                .active
+                .iter()
+                .fold(0, |mask, depth| mask | 1u64 << (depth - self.node_depth)),
+            mask: [0; 8],
+        };
+        twin_drawn_depth_at(&view, &node, point, self.lo, self.side())
+    }
+}
+
+/// The twin oracle: `Ok` iff `after` coarsens no sampled cell, for every wish `u <= wish`: it
+/// draws at least `min(what `before` drew there, u)`. `Err` names the first cell that gets
+/// coarser, with the depths.
+fn twin_releases(after: &Owner, wish: u8, samples: &[(Owner, [f64; 3])]) -> Result<(), String> {
+    for (before, point) in samples {
+        for u in 0..=wish {
+            let Some(drew) = before.drawn_at(u, *point) else {
+                continue;
+            };
+            let draws = after.drawn_at(u, *point);
+            if draws.is_none_or(|d| d < drew.min(u)) {
+                return Err(format!(
+                    "wish {u} at {point:?}: before {:?} drew {drew}, after {:?} draws {draws:?}",
+                    before.active, after.active
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What the three judges say about one case. `eval` holds the node (`eval_refine_hold`), `gate`
+/// releases it (`run_covers` on the real run), `oracle` releases it (the twin).
+struct Verdict {
+    eval_holds: bool,
+    gate_releases: bool,
+    oracle: Result<(), String>,
+    run: Option<Run>,
+}
+
+/// Where `eval_refine_hold` and `run_covers` part ways.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Parts {
+    /// `eval_refine_hold` holds, the gate (and the twin) release: the incumbent is conservative.
+    EvalHoldsLonger,
+    /// `eval_refine_hold` releases, the gate holds: the node would coarsen a zone.
+    EvalReleasesEarly,
+}
+
+fn parts(verdict: &Verdict) -> Option<Parts> {
+    match (verdict.eval_holds, verdict.gate_releases) {
+        (true, true) => Some(Parts::EvalHoldsLonger),
+        (false, false) => Some(Parts::EvalReleasesEarly),
+        _ => None,
+    }
+}
+
+const RULES: [ActiveRule; 2] = [ActiveRule::Window, ActiveRule::Contiguous];
+const FARS: [Far; 2] = [Far::Wide, Far::Near];
+
+/// Zoom in: node 2 drew with nominal depth `finest - 1` and finest active depth `finest` (`low`:
+/// half of its octants drew `finest - 2`, so its active set is `finest - 2..=finest`); its child
+/// 10 (stored 4..=7) enters the cut with the resident levels `resident` and wants `wish`.
+fn zoom_in_case(
+    (finest, low, wish, resident): (u8, bool, u8, &[u8]),
     rule: ActiveRule,
-) -> (bool, Option<(u8, u8)>) {
+    far: Far,
+) -> Verdict {
     let mut rig = Rig::new(two_regions_with_coarse_children(), 512, 3, 1);
     rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
     set_applied(&mut rig, 2, finest);
+    if low {
+        let drawn = std::array::from_fn(|o| Some(finest - 1 - u8::from(o >= 4)));
+        rig.pool.applied_drawn.insert(NodeId::new(2), drawn);
+    }
     set_resident(&mut rig, 10, resident);
-    refine_probe(&mut rig, 10, wish, rule)
+    let probe = refine_probe(&mut rig, 10, wish, rule, far);
+    let grid = grid();
+    let ancestor_depth = CellPool::node_depth(&grid, rig.nodes[&NodeId::new(2)].bounds);
+    assert_eq!(
+        probe.node_depth,
+        ancestor_depth + 1,
+        "node 10 is a child of 2"
+    );
+    let before = Owner {
+        node_depth: ancestor_depth,
+        lo: [0.0, 0.0, 10.0],
+        active: (finest - 1 - u8::from(low)..=finest).collect(),
+    };
+    let after = Owner {
+        node_depth: probe.node_depth,
+        lo: before.child_lo(0),
+        active: probe.active.clone(),
+    };
+    let samples: Vec<_> = (0..8)
+        .map(|o| (before.clone(), after.sub_centre(o)))
+        .collect();
+    let run = probe.run();
+    let low_run = finest - 1 - u8::from(low);
+    Verdict {
+        eval_holds: probe.held,
+        gate_releases: run_covers(run, &[(low_run, finest)], wish),
+        oracle: twin_releases(&after, wish, &samples),
+        run,
+    }
+}
+
+/// Zoom out: the children 10..=17 of node 2 drew with nominal depth `finest - 1` and finest
+/// active depth `finest` (`mixed`: only child 10 had `finest`, the others 5, so the octants of
+/// node 2 differ); node 2 (stored 4..=7, never loaded) has `resident` levels and wants `wish`.
+fn zoom_out_case(
+    (finest, mixed, wish, resident): (u8, bool, u8, &[u8]),
+    rule: ActiveRule,
+    far: Far,
+) -> Verdict {
+    let (mut rig, _, _) = zoom_out_rig();
+    set_resident(&mut rig, 2, resident);
+    let finest_of = |child: usize| if mixed && child != 10 { 5 } else { finest };
+    for child in 10..18 {
+        set_applied(&mut rig, child as u64, finest_of(child));
+    }
+    let probe = refine_probe(&mut rig, 2, wish, rule, far);
+    let grid = grid();
+    let child_depth = CellPool::node_depth(&grid, rig.nodes[&NodeId::new(10)].bounds);
+    assert_eq!(
+        child_depth,
+        probe.node_depth + 1,
+        "10..=17 are children of 2"
+    );
+    let after = Owner {
+        node_depth: probe.node_depth,
+        lo: [0.0, 0.0, 10.0],
+        active: probe.active.clone(),
+    };
+    let mut samples = Vec::new();
+    let mut runs = Vec::new();
+    for child in 10..18 {
+        let f = finest_of(child);
+        let owner = Owner {
+            node_depth: child_depth,
+            lo: after.child_lo(child - 10),
+            active: vec![f - 1, f],
+        };
+        samples.extend((0..8).map(|o| (owner.clone(), owner.sub_centre(o))));
+        runs.push((f - 1, f));
+    }
+    let run = probe.run();
+    Verdict {
+        eval_holds: probe.held,
+        gate_releases: run_covers(run, &runs, wish),
+        oracle: twin_releases(&after, wish, &samples),
+        run,
+    }
 }
 
 /// `(finest depth the ancestor drew, wish of the child, resident levels of the child, held)`.
@@ -2401,42 +2624,110 @@ const ZOOM_IN: &[(u8, u8, &[u8], bool)] = &[
     (8, 7, &[7], false),
 ];
 
-#[test]
-fn zoom_in_a_child_is_held_while_it_would_draw_below_the_ancestors_finest_depth() {
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        for (finest, wish, resident, held) in ZOOM_IN {
-            let (got, run) = zoom_in_probe(*finest, *wish, resident, rule);
-            let case = format!(
-                "{rule:?}: ancestor finest {finest}, child wants {wish}, resident {resident:?}"
-            );
-            assert_eq!(got, *held, "{case}");
-            // The same decision from the runs alone: the ancestor's is `[nominal, finest]`.
-            let ancestor = [(finest - 1, *finest)];
-            assert_eq!(run_covers(run, &ancestor, *wish), !held, "{case}: {run:?}");
-        }
+/// Zoom-in rows whose ancestor has octants that drew different depths (`low`): `(finest, wish,
+/// resident, held)` as in `ZOOM_IN`, the ancestor's active set being `finest - 2..=finest`.
+const ZOOM_IN_LOW: &[(u8, u8, &[u8], bool)] = &[(6, 7, &[5], true)];
+
+/// The zoom-in rows where `eval_refine_hold` and `run_covers` differ, and how. The twin oracle
+/// agrees with `run_covers` on every row (`assert_judged`).
+const ZOOM_IN_PARTS: &[(InCase, Parts)] = &[];
+
+/// The zoom-out rows where `eval_refine_hold` and `run_covers` differ, and how.
+const ZOOM_OUT_PARTS: &[(OutCase, Parts)] = &[
+    ((7, true, 7, &[4, 6, 7]), Parts::EvalHoldsLonger),
+    ((7, true, 7, &[4, 7]), Parts::EvalHoldsLonger),
+    ((7, true, 6, &[4, 6]), Parts::EvalHoldsLonger),
+    ((7, true, 6, &[4, 6, 7]), Parts::EvalHoldsLonger),
+    ((6, true, 6, &[4, 6]), Parts::EvalHoldsLonger),
+];
+
+/// `(finest, low, wish, resident)` of a zoom-in row, see `zoom_in_case`.
+type InCase = (u8, bool, u8, &'static [u8]);
+/// `(finest, mixed, wish, resident)` of a zoom-out row, see `zoom_out_case`.
+type OutCase = (u8, bool, u8, &'static [u8]);
+
+/// Checks one verdict: the twin oracle and the gate agree, and `eval_refine_hold` held the node
+/// iff `held`. Returns where `eval_refine_hold` and the gate part ways.
+fn assert_judged(case: &str, verdict: &Verdict, held: bool) -> Option<Parts> {
+    let run = verdict.run;
+    assert!(run.is_some(), "{case}: the node must have a run");
+    assert_eq!(
+        verdict.eval_holds, held,
+        "{case}: eval_refine_hold, run {run:?}"
+    );
+    assert_eq!(
+        verdict.oracle.is_ok(),
+        verdict.gate_releases,
+        "{case}: run_covers and the twin disagree, run {run:?}: {:?}",
+        verdict.oracle
+    );
+    parts(verdict)
+}
+
+/// A row listed in a `*_PARTS` table parts ways in the direction given under some active rule
+/// and range and never in the other; any other row never does. The active run depends on the
+/// rule and the range, `eval_refine_hold` does not.
+fn assert_parts<C: std::fmt::Debug + PartialEq>(
+    case: &C,
+    table: &[(C, Parts)],
+    seen: &[Option<Parts>],
+) {
+    let expected = table.iter().find(|(c, _)| c == case).map(|(_, p)| *p);
+    match expected {
+        None => assert!(seen.iter().all(Option::is_none), "{case:?}: {seen:?}"),
+        Some(p) => assert!(
+            seen.contains(&Some(p)) && seen.iter().all(|s| s.is_none() || *s == Some(p)),
+            "{case:?}: expected {p:?}, saw {seen:?}"
+        ),
     }
 }
 
-/// Zoom out: the children 10..=17 of node 2 drew with nominal depth `finest - 1` and finest
-/// active depth `finest` (`mixed`: only child 10 had `finest`, the others 5, so the octants of
-/// node 2 differ); node 2 (stored 4..=7, never loaded) has `resident` levels and wants `wish`.
-fn zoom_out_probe(
-    finest: u8,
-    mixed: bool,
-    wish: u8,
-    resident: &[u8],
-    rule: ActiveRule,
-) -> (bool, Option<(u8, u8)>) {
-    let (mut rig, _, _) = zoom_out_rig();
-    set_resident(&mut rig, 2, resident);
-    for child in 10..18 {
-        set_applied(
-            &mut rig,
-            child,
-            if mixed && child != 10 { 5 } else { finest },
-        );
+/// Judges one case under every active rule and range.
+fn judge(case: &str, held: bool, run: &dyn Fn(ActiveRule, Far) -> Verdict) -> Vec<Option<Parts>> {
+    let mut seen = Vec::new();
+    for rule in RULES {
+        for far in FARS {
+            seen.push(assert_judged(
+                &format!("{rule:?} {far:?} {case}"),
+                &run(rule, far),
+                held,
+            ));
+        }
     }
-    refine_probe(&mut rig, 2, wish, rule)
+    seen
+}
+
+#[test]
+fn zoom_in_a_child_is_held_while_it_would_draw_below_the_ancestors_finest_depth() {
+    for (finest, wish, resident, held) in ZOOM_IN {
+        let case: InCase = (*finest, false, *wish, *resident);
+        let seen = judge(&format!("{case:?}"), *held, &|rule, far| {
+            zoom_in_case(case, rule, far)
+        });
+        assert_parts(&case, ZOOM_IN_PARTS, &seen);
+    }
+}
+
+#[test]
+fn zoom_in_with_octants_that_drew_different_depths_is_judged_by_the_twin() {
+    for (finest, wish, resident, held) in ZOOM_IN_LOW {
+        let case: InCase = (*finest, true, *wish, *resident);
+        let seen = judge(&format!("{case:?}"), *held, &|rule, far| {
+            zoom_in_case(case, rule, far)
+        });
+        assert_parts(&case, ZOOM_IN_PARTS, &seen);
+    }
+}
+
+#[test]
+fn zoom_out_a_node_is_held_while_it_would_draw_below_what_its_descendants_drew() {
+    for (finest, mixed, wish, resident, held) in ZOOM_OUT {
+        let case: OutCase = (*finest, *mixed, *wish, *resident);
+        let seen = judge(&format!("{case:?}"), *held, &|rule, far| {
+            zoom_out_case(case, rule, far)
+        });
+        assert_parts(&case, ZOOM_OUT_PARTS, &seen);
+    }
 }
 
 /// `(finest depth of the descendants, mixed, wish of the node, resident levels, held)`. The
@@ -2473,32 +2764,98 @@ const ZOOM_OUT: &[(u8, bool, u8, &[u8], bool)] = &[
     (7, true, 7, &[5, 6], true),
     (7, true, 7, &[7], false),
     (7, true, 5, &[5], false),
+    // Per-octant mixed: one descendant drew `finest`, the others 5, the node has gaps in its
+    // levels (review of task 8: node 2 stored 4..=7, resident {4, 6, 7}).
+    (7, true, 7, &[4, 6, 7], true),
+    (7, true, 6, &[4, 6], true),
+    (7, true, 6, &[4, 6, 7], true),
+    (7, true, 7, &[4, 7], true),
+    (7, true, 5, &[4, 5], false),
+    (6, true, 7, &[4, 5], true),
+    (6, true, 7, &[4, 5, 7], true),
+    (6, true, 6, &[4, 6], true),
+    (6, true, 6, &[4, 5], true),
+    // The descendants drew 5 and the node holds the levels above: its run end depends on the
+    // active rule (`the_range_makes_the_active_rule_matter_to_the_run`).
+    (5, false, 7, &[5, 6, 7], false),
+    (5, true, 7, &[4, 5, 6, 7], false),
 ];
 
-#[test]
-fn zoom_out_a_node_is_held_while_it_would_draw_below_what_its_descendants_drew() {
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        for (finest, mixed, wish, resident, held) in ZOOM_OUT {
-            let (got, run) = zoom_out_probe(*finest, *mixed, *wish, resident, rule);
-            let case = format!(
-                "{rule:?}: descendants finest {finest} (mixed {mixed}), node wants {wish}, \
-                 resident {resident:?}"
-            );
-            assert_eq!(got, *held, "{case}");
-            // The same decision from the runs alone: one run `[nominal, finest]` per descendant.
-            let descendants: Vec<Run> = (10..18)
-                .map(|child| {
-                    let f = if *mixed && child != 10 { 5 } else { *finest };
-                    (f - 1, f)
-                })
-                .collect();
-            assert_eq!(
-                run_covers(run, &descendants, *wish),
-                !held,
-                "{case}: {run:?}"
-            );
-        }
+/// `eval_hold` for `id` as if the previous plan already held it. `covering` are the nodes whose
+/// entries `cell_cut` appends after the cut because they draw its zone meanwhile (the ancestor on
+/// a zoom in, the descendants on a zoom out).
+fn eval_held(rig: &Rig, id: u64, covering: &[u64], wish: u8) -> HoldEval {
+    let id = NodeId::new(id);
+    let nodes: FastMap<NodeId, PoolNode> = rig
+        .nodes
+        .iter()
+        .map(|(id, node)| (*id, node.clone()))
+        .collect();
+    let mut entries = entries_with(rig, &[id], wish);
+    for node in covering {
+        entries.extend(entries_with(rig, &[NodeId::new(*node)], wish));
     }
+    let held: FastSet<NodeId> = [id].into_iter().collect();
+    rig.pool
+        .eval_hold(&entries, &[id], &nodes, &grid(), &held, &|_, _, _| wish)
+}
+
+/// The hysteresis branch of `eval_refine_hold` (`if held && ...`): a node held by the previous
+/// plan is judged like a fresh one while something draws its zone (so the table rows hold for
+/// it too, and it stays in `settle`); once nothing draws there it is released.
+#[test]
+fn a_node_already_held_is_judged_like_a_fresh_one_while_its_zone_is_drawn() {
+    for (finest, wish, resident, held) in ZOOM_IN {
+        let mut rig = Rig::new(two_regions_with_coarse_children(), 512, 3, 1);
+        rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+        set_applied(&mut rig, 2, *finest);
+        set_resident(&mut rig, 10, resident);
+        let case = format!("zoom in {finest} {wish} {resident:?}");
+        let covered = eval_held(&rig, 10, &[2], *wish);
+        assert_eq!(covered.hold.contains(&NodeId::new(10)), *held, "{case}");
+        assert!(covered.settle.contains(&NodeId::new(10)), "{case}");
+        let alone = eval_held(&rig, 10, &[], *wish);
+        assert!(alone.hold.is_empty() && alone.settle.is_empty(), "{case}");
+    }
+    for (finest, mixed, wish, resident, held) in ZOOM_OUT {
+        let (mut rig, _, _) = zoom_out_rig();
+        set_resident(&mut rig, 2, resident);
+        for child in 10..18 {
+            let f = if *mixed && child != 10 { 5 } else { *finest };
+            set_applied(&mut rig, child, f);
+        }
+        let case = format!("zoom out {finest} {mixed} {wish} {resident:?}");
+        let children: Vec<u64> = (10..18).collect();
+        let covered = eval_held(&rig, 2, &children, *wish);
+        assert_eq!(covered.hold.contains(&NodeId::new(2)), *held, "{case}");
+        assert!(covered.settle.contains(&NodeId::new(2)), "{case}");
+        let alone = eval_held(&rig, 2, &[], *wish);
+        assert!(alone.hold.is_empty() && alone.settle.is_empty(), "{case}");
+    }
+}
+
+/// With a `range` on the entry the active rule and the width of the range change the run of
+/// the node (`Window` reaches one level beyond what is drawn, `Contiguous` every resident level
+/// up to the range end), so the judges see more than the drawn levels.
+#[test]
+fn the_range_makes_the_active_rule_matter_to_the_run() {
+    let runs = |case: OutCase| -> std::collections::BTreeSet<Option<Run>> {
+        RULES
+            .iter()
+            .flat_map(|rule| FARS.iter().map(move |far| (*rule, *far)))
+            .map(|(rule, far)| zoom_out_case(case, rule, far).run)
+            .collect()
+    };
+    // The coarse end moves with the width of the range.
+    assert_eq!(
+        runs((6, false, 7, &[4, 5])),
+        [Some((4, 5)), Some((5, 5))].into()
+    );
+    // The fine end moves with the rule: descendants drew 5, the node has 5, 6 and 7 resident.
+    assert_eq!(
+        runs((5, false, 7, &[5, 6, 7])),
+        [Some((5, 6)), Some((5, 7))].into()
+    );
 }
 
 #[test]
