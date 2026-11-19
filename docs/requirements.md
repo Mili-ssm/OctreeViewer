@@ -198,9 +198,19 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | La GPU decide el nivel (OQ-15) | Aceptado: la CPU decide solo la residencia. | [ADR 0055](adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) |
 | Planes cerrados | Pasan a `docs/records/archive/`, corrigiendo los enlaces. | [Cómo retomar](records/archive/retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026) |
 
-## Catálogo: funcional o técnico, duro o blando (propuesta 14-11-2026)
+## Resoluciones del 19-11-2026
 
-**Propuesta pendiente de revisión del propietario.** Funcional: lo que el producto debe lograr (el fin). Técnico: el medio elegido. Duro: necesidad real (usuario, producto, legal, seguridad o resultado fijado por el propietario) que solo cambia con una decisión suya. Blando: medio elegido o medida temporal que se puede abandonar cuando la ganancia supere el coste; «Revisar si» da la condición. «Por confirmar» marca la dureza dudosa. Los ASM-* son supuestos, no requisitos: no se clasifican. Los umbrales numéricos de los RQ son objetivos medibles de un fin duro; su cifra concreta es revisable.
+| Pregunta | Resolución | Registro |
+| --- | --- | --- |
+| Visor nativo o sin cabeza (OQ-10) | Solo web por ahora: la política de LOD y de carga se queda en `viewer_wasm` (TA4 no se hace); se reabre si aparece una necesidad nativa o sin cabeza. | [#18](https://github.com/Mili-ssm/OctreeViewer/issues/18) |
+| `opt-level` de `release` | Se acepta `opt-level = 3` (velocidad). | [ADR 0057](adr/0057-release-optimiza-velocidad.md), [#20](https://github.com/Mili-ssm/OctreeViewer/issues/20) |
+| ≤ 16,7 ms sin tiempo de GPU (R3-Q31) | Donde el navegador mide el tiempo de GPU (`timestamp-query`) se usa ese tiempo; donde no, el p95 del intervalo entre frames (`requestAnimationFrame`) ≤ 16,7 ms a 60 Hz. | [#19](https://github.com/Mili-ssm/OctreeViewer/issues/19) |
+| Factor de continuidad (RF-05) | Se mantiene 1 × el espaciado; la demo deja cambiar el factor. | [#17](https://github.com/Mili-ssm/OctreeViewer/issues/17) |
+| Catálogo funcional/técnico | Aceptado; las filas «Por confirmar» se deciden abajo (RF-06, RF-25, RQ-08, CON-06, CON-10). | [#26](https://github.com/Mili-ssm/OctreeViewer/issues/26) |
+
+## Catálogo: funcional o técnico, duro o blando (aceptado 19-11-2026)
+
+**Aceptado por el propietario el 19-11-2026** (propuesta del 14-11-2026). Funcional: lo que el producto debe lograr (el fin). Técnico: el medio elegido. Duro: necesidad real (usuario, producto, legal, seguridad o resultado fijado por el propietario) que solo cambia con una decisión suya. Blando: medio elegido o medida temporal que se puede abandonar cuando la ganancia supere el coste; «Revisar si» da la condición. «Por confirmar» marca la dureza dudosa. Los ASM-* son supuestos, no requisitos: no se clasifican. Los umbrales numéricos de los RQ son objetivos medibles de un fin duro; su cifra concreta es revisable.
 
 | ID | Funcional o técnico | Duro o blando | Por qué | Revisar si |
 | --- | --- | --- | --- | --- |
@@ -209,7 +219,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RF-03 | Funcional | Duro | P1: cubos 3D obligatorios | — |
 | RF-04 | Funcional | Duro | Fidelidad: no inventar datos | — |
 | RF-05 | Funcional | Blando | Opcional por nube; mejora visual | Un modo mejor lo sustituya |
-| RF-06 | Funcional | Por confirmar | Es el modo por defecto, ¿o el comportamiento es la necesidad? | El propietario decida el modo por defecto |
+| RF-06 | Funcional | Duro el comportamiento; blando que el modo fijo sea el predeterminado | Ver algo enseguida y que el detalle llegue poco a poco es la necesidad, en cualquier modo (propietario, 19-11-2026) | Otro modo pase a ser el predeterminado |
 | RF-07 | Funcional | Blando | Opcional; 16,7 ms es la meta de fluidez | Cambie la meta de fotogramas |
 | RF-08 | Técnico | Blando | Medio para no bloquear el frame (ADR 0018) | Otra estrategia dé la misma fluidez |
 | RF-09 | Funcional | Duro | Nubes locales y remotas (P6) | — |
@@ -221,7 +231,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RF-22 | Funcional | Duro | Mezclar CRS exige reproyección (ADR 0021) | — |
 | RF-23 | Técnico | Duro | Resolución del propietario; sustenta RF-02 y la fusión | Otra técnica dé celdas coincidentes |
 | RF-24 | Funcional | Duro | Sin pérdida de metadatos LAS (ADR 0022) | — |
-| RF-25 | Funcional | Por confirmar | Protege al usuario de fallos tardíos; ¿requisito o salvaguarda? | — |
+| RF-25 | Funcional | Duro | Fallar tras horas por falta de disco es un fallo de producto; la cifra de la estimación es revisable (propietario, 19-11-2026) | — |
 | RF-26 | Técnico | Blando | Mecanismo de identidad de checkpoint | Otro mecanismo detecte fuentes cambiadas |
 | RF-27 | Técnico | Blando | Límite del formato (ADR 0007) | El formato admita más atributos |
 | RF-28 | Funcional | Blando | Refleja el alcance validado hoy (Majadas) | Se valide un tamaño mayor |
@@ -230,7 +240,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RQ-01–RQ-05 | Funcional | Duro | Fluidez, escala y memoria acotada (propósito) | Cifras: cambie el equipo o la red de referencia |
 | RQ-06 | Técnico | Blando | Objetivo sin medir (ASM-03) | El spike de temporales lo mida |
 | RQ-07 | Técnico | Blando | Protege coste de conversión; cifra revisada por el propietario (ADR 0043) | Ver «Revisar si» del ADR 0043 |
-| RQ-08 | Técnico | Por confirmar | Garantiza reproducibilidad; ¿lo exige el usuario o es comodidad de pruebas? | — |
+| RQ-08 | Técnico | Duro | Un fichero sale igual se convierta donde se convierta: reproducibilidad y confianza en los datos (propietario, 19-11-2026) | — |
 | RQ-09 | Funcional | Duro | Fidelidad de nivel de detalle; la tolerancia del 0,5 % es blanda (ADR 0034) | La tolerancia cueste más que lo que gana |
 | RQ-10 | Funcional | Duro | Accesibilidad de la app pública | — |
 | RQ-11 | Funcional | Duro | Demuestra la puerta de escala | — |
@@ -239,11 +249,11 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | CON-03 | Funcional | Duro | Licencia (legal) | — |
 | CON-04 | Técnico | Duro | Resolución del propietario (ADR 0026) | Decisión del propietario |
 | CON-05 | Funcional | Duro | Criterio de publicación del propietario | — |
-| CON-06 | Funcional | Por confirmar | Sin razón registrada | — |
+| CON-06 | Funcional | Blando | Inglés como único idioma mientras nadie pida otro; evita montar traducción antes de la 1.0 (propietario, 19-11-2026) | Se plantee traducir la UI o la API |
 | CON-07 | Técnico | Blando | Atomics requieren nightly (ADR 0011, 0024) | Estabilice `build-std` con atomics |
 | CON-08 | Técnico | Blando | Límite práctico del navegador | Se valide la conversión web a mayor escala |
 | CON-09 | Técnico | Blando | Elección de implementación (ADR 0025) | Una dependencia externa sea mejor |
-| CON-10 | Técnico | Por confirmar | Cada ADR citado tiene su propia razón | Un ADR citado se sustituya |
+| CON-10 | Técnico | Blando | Cada ADR citado tiene su propia razón (propietario, 19-11-2026) | Un ADR citado se sustituya |
 | ~~**Orden de filas de la fuente dentro de cada bloque**~~ (`crates/viewer_format/src/contracts.rs:11,28`; `occupied_point_block.rs`, `occupied_cell_index.rs` en `viewer_core`) | Técnico | Blando | **Retirado** (propietario, 14-11-2026, [ADR 0041](adr/0041-orden-de-filas-libre-por-bloque.md)): se cumplió la condición de revisión; el orden Morton por bloque, cuando reduce la geometría, deja el `.oct` un 35 % más pequeño en Belvedere v7.5 ([registro](records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md)). La estimación previa (0,63 %) solo contaba quitar el índice de filas | Ver «Revisar si» del ADR 0041 |
 | **Instancia de 16 B** (ADR 0035) | Técnico | Blando | Medio de la ruta de celdas | Cambie la compactación o la oclusión |
 | **Pool de celdas de 512 MiB** (ADR 0040) | Técnico | Blando | Medio dentro de la GPU mínima de 4 GB | Un adaptador objetivo no lo admita |
@@ -261,8 +271,8 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | OQ-06 | ~~Direccionamiento compacto de nodos: nivel `u8` + camino relativo `u16` (5 niveles × 3 bits) con nodos ancla de prefijo completo cada 5 niveles (propietario, 02-11-2026)~~ | Adoptado en [ADR 0030](adr/0030-jerarquia-paginada-por-anclas.md): nodos de página por (profundidad relativa `u8`, camino `u16`) bajo un ancla de prefijo completo | — |
 | OQ-07 ([#25](https://github.com/Mili-ssm/OctreeViewer/issues/25)) | Profundidad del visor por encima de 24: claves `u64` en CPU y posiciones relativas a un ancla cercana en GPU (WGSL no tiene `u64`) | Majadas y Belvedere llegan a ~22 y las nubes locales ya tienen raíz ajustada | Reanudar R3 (celdas ancladas por nodo) |
 | OQ-08 | No dibujar celdas ocultas: HZB en dos pasadas por página (Tarea 16), raymarching por píxel o un híbrido ([opciones](records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md); propietario, 05-11-2026) | La Tarea 16a pasa con compactación y Hi-Z por celda en dos fases: Majadas dentro de una hoja a 4 px en 4,39 ms en la peor dirección ([registro](records/benchmarks/R3_T16_OCCLUSION_05-11-2026.md)); el raymarching no se activa (ADR 0035) | La Tarea 16b o la 17 superan 16,7 ms en Majadas dentro de una hoja a 4 px |
-| OQ-09 | ~~¿Debe conservarse el orden de filas de la fuente dentro de cada bloque en V7 final? El orden Morton quitaría el índice de fila por punto del códec de ocupación ([revisión, TF1](records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#formato))~~ | Resuelta (propietario, 14-11-2026): requisito técnico blando; se mantiene el orden mientras el ahorro medido (0,63 %) no compense el coste ([catálogo](#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026)). **Revisada el mismo día** con la medida del orden híbrido (−35 % en el `.oct`, [registro](records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md)): V7 deja el orden libre por bloque y el escritor elige el más pequeño ([ADR 0041](adr/0041-orden-de-filas-libre-por-bloque.md)) | — |
-| OQ-10 ([#18](https://github.com/Mili-ssm/OctreeViewer/issues/18)) | ¿Se prevé un visor nativo o sin cabeza? Decide si la política de LOD y de carga sale de `viewer_wasm` ([revisión, TA4](records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#arquitectura-y-patrones)) | Sin necesidad de producto registrada | Al planificar la API pública (ADR 0026) |
+| OQ-09 | ~~¿Debe conservarse el orden de filas de la fuente dentro de cada bloque en V7 final? El orden Morton quitaría el índice de fila por punto del códec de ocupación ([revisión, TF1](records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#formato))~~ | Resuelta (propietario, 14-11-2026): requisito técnico blando; se mantiene el orden mientras el ahorro medido (0,63 %) no compense el coste ([catálogo](#catálogo-funcional-o-técnico-duro-o-blando-aceptado-19-11-2026)). **Revisada el mismo día** con la medida del orden híbrido (−35 % en el `.oct`, [registro](records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md)): V7 deja el orden libre por bloque y el escritor elige el más pequeño ([ADR 0041](adr/0041-orden-de-filas-libre-por-bloque.md)) | — |
+| OQ-10 ([#18](https://github.com/Mili-ssm/OctreeViewer/issues/18)) | ~~¿Se prevé un visor nativo o sin cabeza? Decide si la política de LOD y de carga sale de `viewer_wasm` ([revisión, TA4](records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#arquitectura-y-patrones))~~ | Resuelta (propietario, 19-11-2026): solo web por ahora; la política se queda en `viewer_wasm` | Aparezca una necesidad nativa o sin cabeza |
 | OQ-11 ([#66](https://github.com/Mili-ssm/OctreeViewer/issues/66)) | ~~¿«Máximo un nivel de diferencia por frame» (RF-31, [ADR 0053](adr/0053-transiciones-de-un-nivel.md)) es literal, o el fin es que no se vean saltos? ([Q1](records/archive/retomar-18-11-2026.md#preguntas-de-requisitos-q1q5))~~ | Resuelta (propietario, 18-11-2026): el fin es la suavidad; se porta el experimento sin ventana y se juzga en la demo; si se ven saltos, vuelve la ventana. Predeterminado `contiguous` desde el 18-11-2026 (propietario, #66, tras #87); `window` se retira el 19-11-2026 (propietario, #66): las dos reglas acaban en la misma imagen en todas las pruebas, `window` tuvo el defecto #87 y conserva dos huecos sin arreglar, y el paso por nodo de la tarea 10 del [plan del ADR 0055](records/archive/adr-0055-rango-por-nodo.md) solo lo necesitaba ella | — |
 | OQ-12 ([#67](https://github.com/Mili-ssm/OctreeViewer/issues/67)) | ~~¿Se retira el modo octante y el modo celda pasa a ser el predeterminado de la librería? ([Q2](records/archive/retomar-18-11-2026.md#preguntas-de-requisitos-q1q5))~~ | Resuelta (propietario, 18-11-2026): se retira tras validar la fase 2b en el navegador (validada por el propietario el 18-11-2026: se retira ya); el modo celda pasa a ser el predeterminado de la librería, con un ADR nuevo | [ADR 0056](adr/0056-se-retira-el-modo-octante.md) (retirado; se cierra #67 al fusionar) |
 | OQ-13 ([#68](https://github.com/Mili-ssm/OctreeViewer/issues/68)) | ~~Cerca del ojo cada punto es un cubo suelto de 4–8 px con huecos: ¿es el aspecto buscado, o los cubos no deberían bajar del espaciado de la nube? ([Q3](records/archive/retomar-18-11-2026.md#preguntas-de-requisitos-q1q5))~~ | Resuelta (propietario, 18-11-2026): se mantiene el aspecto literal por defecto; el espaciado de la nube queda como opción del selector de tamaño mínimo ([evidencia en #68](https://github.com/Mili-ssm/OctreeViewer/issues/68)) | — |

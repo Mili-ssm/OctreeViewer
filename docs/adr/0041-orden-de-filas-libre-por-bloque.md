@@ -4,7 +4,7 @@ Estado: Aceptada · Fecha: 14-11-2026 · Decide: propietario (OQ-09) · Coste de
 
 ## Contexto
 - El contrato actual conserva el orden de filas de la fuente dentro de cada bloque. Es un requisito técnico blando
-  ([catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026)): se revisa si el
+  ([catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-aceptado-19-11-2026)): se revisa si el
   ahorro medido supera el 5 %.
 - En Belvedere v7.5, escribir cada bloque en orden Morton cuando eso reduce su geometría deja el `.oct` un 35 % más
   pequeño y no descarga más bytes por vista; la carga remota tarda lo mismo a 4 px y un ~6 % más a 1 px,

@@ -4,7 +4,7 @@ Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Revisa la cifra 
 
 ## Contexto
 - RQ-07 pedía que convertir a V7 final costase ≤ +30 % de tiempo y de RSS frente a V5. El
-  [catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026) lo clasifica
+  [catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-aceptado-19-11-2026) lo clasifica
   como técnico y blando: el 30 % era una elección, revisable si una ganancia de lectura o disco compensa más.
 - Medida en Belvedere, en este equipo y con el perfil de medida `perf` ([registro C4](../records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md#razón-v75v5-actual)):
   v7.5 con orden híbrido tarda ×1,99 (×2,03 con el orden de la fuente) y usa +36 % de RSS pico (+39 %), pero

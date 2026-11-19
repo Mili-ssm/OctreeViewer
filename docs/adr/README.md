@@ -11,7 +11,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0005](0005-identidades-exactas-v7n-pre-por-candidato.md) | Cada candidato de writer V7 tiene identidad exacta `v7.N-pre` | Aceptada (revisar) |
 | [0006](0006-politica-de-version-solo-en-viewer-format.md) | La política de versiones vive solo en `viewer_format` | Aceptada |
 | [0007](0007-limites-por-defecto-del-lector.md) | El lector aplica límites por defecto configurables | Aceptada |
-| [0008](0008-perfiles-release-y-perf.md) | `release` optimiza tamaño; `perf` optimiza velocidad para benchmarks | Aceptada |
+| [0008](0008-perfiles-release-y-perf.md) | `release` optimiza tamaño; `perf` optimiza velocidad para benchmarks | Sustituida en parte por [0057](0057-release-optimiza-velocidad.md) (`opt-level`) |
 | [0009](0009-transporte-web-por-blob-local.md) | El transporte web es Blob local, sin HTTP Range | Sustituida por [0023](0023-fuentes-locales-y-remotas.md) |
 | [0010](0010-migracion-a-wgpu-30-y-glam-0-34.md) | Migrar el renderer a wgpu/naga 30 y glam 0.34 | Aceptada |
 | [0011](0011-nightly-obligatorio-con-fecha-fija.md) | Rust nightly obligatorio con fecha fija | Aceptada |
@@ -60,3 +60,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0054](0054-el-objetivo-de-px-es-el-tamano-minimo.md) | El objetivo de px es el tamaño mínimo del vóxel y el mínimo en longitud está activo por defecto (0,1 mm) (cambia RQ-09) | Aceptada |
 | [0055](0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) | En modo celda la GPU decide el nivel dibujado y la CPU solo la residencia: conjunto activo contiguo (precisa ADR 0050 y 0053; cambia la lectura de RF-31 y R3-Q21) | Aceptada |
 | [0056](0056-se-retira-el-modo-octante.md) | Se retira el modo octante: el modo celda es el único y el predeterminado; se borra `setCellLod` (sustituye a 0034; precisa 0050 y 0055) | Aceptada |
+| [0057](0057-release-optimiza-velocidad.md) | `release` optimiza velocidad con `opt-level = 3` (sustituye a 0008 en ese punto) | Aceptada |

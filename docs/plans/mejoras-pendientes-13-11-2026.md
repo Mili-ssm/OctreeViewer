@@ -153,6 +153,6 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
 
 ## Decisiones del propietario pendientes
 
-Viven en issues con la etiqueta [`pregunta-propietario`](https://github.com/Mili-ssm/OctreeViewer/issues?q=is%3Aopen+label%3Apregunta-propietario):
+Viven en issues con la etiqueta [`pregunta-propietario`](https://github.com/Mili-ssm/OctreeViewer/issues?q=is%3Aopen+label%3Apregunta-propietario).
 RF-05 ([#17](https://github.com/Mili-ssm/OctreeViewer/issues/17)), OQ-10 ([#18](https://github.com/Mili-ssm/OctreeViewer/issues/18)), B1b.3 ([#19](https://github.com/Mili-ssm/OctreeViewer/issues/19)) y ADR 0008
-([#20](https://github.com/Mili-ssm/OctreeViewer/issues/20)); el codificador propio del ADR 0025 va tras el congelado ([#14](https://github.com/Mili-ssm/OctreeViewer/issues/14)).
+([#20](https://github.com/Mili-ssm/OctreeViewer/issues/20)) se resolvieron el 19-11-2026 ([resoluciones](../requirements.md#resoluciones-del-19-11-2026)); el codificador propio del ADR 0025 va tras el congelado ([#14](https://github.com/Mili-ssm/OctreeViewer/issues/14)).
