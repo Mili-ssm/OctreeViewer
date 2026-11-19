@@ -853,15 +853,10 @@ impl Harness {
                     != wanted_set.iter().filter(|depth| **depth > hi).count()
             {
                 1
-            } else if entry.node_anchor.is_some_and(|anchor| anchor < lo)
-                && wanted_set.iter().any(|depth| *depth < lo)
-                && wanted_set
-                    .iter()
-                    .filter(|depth| **depth >= lo)
-                    .eq(today.iter())
-            {
+            } else if entry.node_anchor.is_some_and(|anchor| anchor < lo) && run.0 < lo {
                 // The anchor stays at `prev` below `lo`: the extra coarse depths refine in every
-                // visible cell, so nothing of them is drawn.
+                // visible cell, so nothing of them is drawn. Decided on the anchor and the run's
+                // coarse end, not on the set: today's set may also hold a depth below `lo`.
                 2
             } else if prev.is_none() {
                 3

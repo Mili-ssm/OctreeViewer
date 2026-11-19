@@ -6072,3 +6072,37 @@ fn the_planned_cut_carries_the_node_run_and_the_pool_keeps_the_applied_run() {
     );
     assert_eq!(Some(applied), own.first().copied().zip(own.last().copied()));
 }
+
+#[test]
+fn a_node_entering_with_no_before_takes_its_prev_from_the_history() {
+    // Task 10b, C1: the hold's `before` is empty when its cover rule finds no covering cell of
+    // the cut (`Cover::Nothing`), yet today's per-octant machinery starts the entering node from
+    // the depth its applied ancestor drew. `prev` follows that history and is never `None` when
+    // there is one.
+    let mut rig = hold_rig();
+    let zoom = camera("zoom");
+    for _ in 0..9 {
+        d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+    }
+    let root = NodeId::new(1);
+    let child = NodeId::new(2);
+    let finest = rig.pool.applied_finest[&root];
+    let node = &rig.nodes[&child];
+    assert!(
+        !rig.pool.applied_drawn.contains_key(&child) && !rig.pool.applied_run.contains_key(&child),
+        "setup: the child did not draw"
+    );
+    let empty = FastMap::default();
+    assert_eq!(
+        rig.pool.node_prev(child, node, None, &empty, &grid()),
+        Some(finest),
+        "the ancestor's finest drawn depth, from the entering seed"
+    );
+    // A `before` of the hold wins over the seed.
+    let mut before = FastMap::default();
+    before.insert(child, 9);
+    assert_eq!(
+        rig.pool.node_prev(child, node, None, &before, &grid()),
+        Some(9)
+    );
+}

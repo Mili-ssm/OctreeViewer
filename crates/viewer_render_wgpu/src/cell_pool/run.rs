@@ -146,9 +146,44 @@ pub(super) fn node_run(input: &RunInput<'_>) -> NodeRun {
 }
 
 impl CellPool {
+    /// The `prev` of `node_run`: the finest depth that drew over the node's footprint before, from
+    /// the first source that has a history. In order: the fine end of the node's own applied run
+    /// (without D5, B3); the finest of its own applied per-octant depths when it drew but has no
+    /// run; the shared `before` of the hold (B5); the finest depth of the entering seed today's
+    /// per-octant machinery starts from (`prev_state_seeded`). The last one matters because
+    /// `before` is empty when the hold's cover rule finds no covering cell of the current cut
+    /// (`Cover::Nothing`), while the seed reads the nearest applied ancestor (or descendants) and
+    /// today's draw starts from it.
+    pub(super) fn node_prev(
+        &self,
+        id: NodeId,
+        node: &PoolNode,
+        cap: Option<&u8>,
+        before: &FastMap<NodeId, u8>,
+        grid: &CellGrid,
+    ) -> Option<u8> {
+        self.applied_run
+            .get(&id)
+            .map(|(_, top)| *top)
+            .or_else(|| {
+                self.applied_drawn
+                    .get(&id)
+                    .and_then(|drawn| drawn.iter().flatten().max().copied())
+            })
+            .or_else(|| before.get(&id).copied())
+            .or_else(|| {
+                let buildable = capped_range(node.buildable, cap);
+                self.prev_state_seeded(id, node.bounds, buildable, grid)
+                    .drawn
+                    .iter()
+                    .flatten()
+                    .max()
+                    .copied()
+            })
+    }
+
     /// Fills the `node_*` fields of `entries` (the real cut, before it is applied). `prev` is the
-    /// fine end of the applied run without the D5 depth (B3) and, for every node that did not
-    /// draw, `before` (B5, C2: `hold::before_finest`, computed for all the cut nodes). The usable depths are those `cell_active_depths`
+    /// what was drawn over its footprint before (`node_prev`). The usable depths are those `cell_active_depths`
     /// accepts over the node's cell span. The target is `min(hi, finest drawable stored or
     /// buildable depth under the fit cap)`.
     pub(super) fn fill_node_runs(
@@ -179,11 +214,7 @@ impl CellPool {
                 continue;
             };
             let out = node_run(&RunInput {
-                prev: self
-                    .applied_run
-                    .get(&id)
-                    .map(|(_, top)| *top)
-                    .or_else(|| before.get(&id).copied()),
+                prev: self.node_prev(id, node, cap, before, grid),
                 range: (lo, hi),
                 target,
                 usable: &usable,
