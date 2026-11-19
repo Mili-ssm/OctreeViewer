@@ -1,6 +1,6 @@
 # Demo: color estable, WASD, maquetación y segunda nube
 
-Estado: en curso · 19-11-2026 · petición del propietario del 19-11-2026; rama `feat/demo-color-wasd-layout`
+Estado: completado · 19-11-2026 · petición del propietario del 19-11-2026; fusionado en #91 y #92 (`c4db3fa`, `cb17ee6`); demo publicada desde `cb17ee6`
 
 **Conclusión.** Cuatro arreglos de la demo pedidos por el propietario y, después, el pendiente #89. El color
 por elevación e intensidad deja de depender de la vista; el WASD pasa a moverse respecto a la cámara, de forma
@@ -49,5 +49,5 @@ fallo en la compilación anterior, así que la evidencia del arreglo es el test 
 - [x] **5. #89, lints pedantes.** Comprobar: `scripts/check.sh` 23/23. Hecho en la rama `chore/89-pedantic-lints`
   (`3bb9980` mecánico, `f20765b` de criterio): ~706 avisos → 0; las excepciones son locales y con motivo (las
   exportaciones de wasm-bindgen reciben los objetos JS por valor).
-- [ ] **6. Cierre.** Comprobar: `scripts/check.sh` y el navegador en la punta; PR; fusión y publicación de la
+- [x] **6. Cierre.** Comprobar: `scripts/check.sh` y el navegador en la punta; PR; fusión y publicación de la
   demo solo con el visto bueno del propietario.
