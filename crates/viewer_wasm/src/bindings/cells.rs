@@ -41,6 +41,7 @@ use crate::{
         BuilderCells, BuilderOutput, CellsStats, Continuity, TARGET_PIXELS_RANGE, ViewerCells,
         WASM_CPU_BUDGET_BYTES, driver_config,
     },
+    lod_metadata::crs_unit_js,
     scene_builder::SceneBuilderCore,
 };
 
@@ -366,6 +367,13 @@ impl WasmSceneBuilder {
     pub(super) fn add_open_fields(&self, result: &JsValue) -> Result<(), JsValue> {
         let object: &Object = result.unchecked_ref();
         set(object, "cellPath", &JsValue::from_str(self.cell_path))?;
+        if let Some(core) = self.core.as_ref() {
+            set(
+                object,
+                "crsUnit",
+                &crs_unit_js(&core.session().dataset().crs_unit())?,
+            )?;
+        }
         set(object, "cellsInfo", &self.cells_info()?)
     }
 

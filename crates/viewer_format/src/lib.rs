@@ -11,6 +11,7 @@ mod checkpoint_record;
 mod codec;
 mod contracts;
 mod crc32;
+mod crs_unit;
 mod error;
 #[cfg(feature = "experimental")]
 pub mod experimental_tuple_dictionary;
@@ -44,6 +45,7 @@ pub(crate) const MAX_SCHEMA_ATTRIBUTES: usize = 256;
 pub use codec::{BlockCodec, CodecError, EncodedBlock, compress_block, decompress_block};
 pub use contracts::{BlockEncoder, OctreeReader, OctreeWriter, PreparedOctreeWriter};
 pub use crc32::{Crc32, crc32};
+pub use crs_unit::{CrsLinearUnit, CrsUnit};
 pub use error::FormatError;
 pub use geometry::GeometryEncoding;
 pub use geometry::{

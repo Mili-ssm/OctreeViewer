@@ -26,7 +26,7 @@ use crate::{
     browser_io::{BrowserBlobReader, BrowserReadStats},
     cells_glue::ReadPhase,
     lod_driver::{LodStep, LodStepResult, SceneSink, assemble_async_block, update_lod_view_paged},
-    lod_metadata::LodDatasetDescriptor,
+    lod_metadata::{LodDatasetDescriptor, dataset_unit},
     lod_session::LodSession,
 };
 use viewer_core::NodeId;
@@ -136,6 +136,10 @@ pub(super) fn open_paged(
         .global_frame()
         .and_then(|_| format.format_metadata().crs())
         .map(str::to_owned);
+    let crs_unit = format
+        .format_metadata()
+        .global_frame()
+        .map(|frame| dataset_unit(&frame.crs().linear_unit()));
     let mut attribute_ranges = Vec::new();
     for (schema_index, attribute) in metadata.hierarchy().attributes().iter().enumerate() {
         let mut row = Vec::new();
@@ -154,6 +158,7 @@ pub(super) fn open_paged(
         cache_bytes as usize,
     )
     .with_crs(crs)
+    .with_crs_unit(crs_unit)
     .with_global_frame(format.format_version().uses_global_frame());
     let dataset = with_page_source(dataset, &source)?;
     let context = AsyncFormatContext {
@@ -259,12 +264,17 @@ pub(super) fn open_format(
         .global_frame()
         .and_then(|_| reader.format_metadata().crs())
         .map(str::to_owned);
+    let crs_unit = reader
+        .format_metadata()
+        .global_frame()
+        .map(|frame| dataset_unit(&frame.crs().linear_unit()));
     let dataset = LodDataset::from_shared_metadata_and_visual_scale(
         metadata,
         visual_scale,
         cache_bytes as usize,
     )
     .with_crs(crs)
+    .with_crs_unit(crs_unit)
     .with_global_frame(reader.format_version().uses_global_frame());
     let page_source = reader.page_source().cloned();
     let dataset = match &page_source {

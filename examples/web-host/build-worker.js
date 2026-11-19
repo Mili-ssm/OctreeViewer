@@ -490,6 +490,7 @@ async function openDataset(data) {
         attributeSchema: descriptor.attributeSchema,
         hasAttributes: descriptor.hasAttributes,
         sourcePointCount: descriptor.sourcePointCount ?? null,
+        crsUnit: descriptor.crsUnit ?? null,
     };
     builder = nextBuilder;
     reader = nextReader;

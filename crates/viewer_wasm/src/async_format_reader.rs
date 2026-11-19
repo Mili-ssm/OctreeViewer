@@ -13,7 +13,10 @@ use wasm_bindgen::{JsCast, prelude::*};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::Blob;
 
-use crate::lod_dataset::WorkClock;
+use crate::{
+    lod_dataset::WorkClock,
+    lod_metadata::{crs_unit_js, dataset_unit},
+};
 
 type Reader = FormatReader<Cursor<Vec<u8>>>;
 const DEFAULT_ASYNC_READ_BUDGET_BYTES: u32 = 256 * 1024 * 1024;
@@ -334,6 +337,10 @@ impl WasmAsyncFormatReader {
             && let Some(crs) = metadata.crs()
         {
             set(&descriptor, "crs", &JsValue::from_str(crs))?;
+        }
+        if let Some(frame) = metadata.global_frame() {
+            let unit = dataset_unit(&frame.crs().linear_unit());
+            set(&descriptor, "crsUnit", &crs_unit_js(&unit)?)?;
         }
         set(
             &descriptor,

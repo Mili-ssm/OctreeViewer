@@ -1209,6 +1209,7 @@ function startAsyncDataset(data, requestId = null) {
                 attributeSchema: descriptor.attributeSchema,
                 hasAttributes: descriptor.hasAttributes,
                 sourcePointCount: descriptor.sourcePointCount ?? null,
+                crsUnit: descriptor.crsUnit ?? null,
             };
             asyncFormatReader = reader;
             asyncHasAttributes = descriptor.hasAttributes;

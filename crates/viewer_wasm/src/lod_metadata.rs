@@ -1,10 +1,12 @@
-use crate::lod_dataset::LodDataset;
+use crate::lod_dataset::{DatasetUnit, LodDataset};
+use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use std::sync::Arc;
 use viewer_core::{
     AttributeDataType, AttributeDescriptor, BlockId, CoordinateFrame, DatasetMetadata,
     HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
+use wasm_bindgen::JsValue;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +26,9 @@ pub(crate) struct LodDatasetDescriptor {
     pub(crate) source_point_count: Option<String>,
     #[serde(default)]
     pub(crate) crs: Option<String>,
+    /// Linear unit of that CRS; absent means the dataset carries none (metres, assumed).
+    #[serde(default)]
+    pub(crate) crs_unit: Option<DatasetUnit>,
     /// Tight data extent (world space); absent means the root bounds.
     #[serde(default)]
     pub(crate) data_min: Option<[f64; 3]>,
@@ -162,8 +167,48 @@ impl LodDatasetDescriptor {
             self.visual_scale,
             self.cache_bytes,
         )
-        .with_crs(self.crs))
+        .with_crs(self.crs)
+        .with_crs_unit(self.crs_unit))
     }
+}
+
+/// The page-facing form of a CRS unit (`viewer_format` is not a dependency of the native build).
+pub(crate) fn dataset_unit(unit: &viewer_format::CrsUnit) -> DatasetUnit {
+    use viewer_format::CrsLinearUnit;
+    let (name, metres_per_unit) = match &unit.unit {
+        CrsLinearUnit::Metres => ("metre", Some(1.0)),
+        CrsLinearUnit::Linear {
+            name,
+            metres_per_unit,
+        } => (name.as_str(), Some(*metres_per_unit)),
+        CrsLinearUnit::Geographic => ("degree", None),
+    };
+    DatasetUnit {
+        name: name.to_owned(),
+        metres_per_unit,
+        assumed: unit.assumed,
+        unrecognised: unit.unrecognised,
+    }
+}
+
+/// `{ unit, metresPerUnit, geographic, assumed, unrecognised }` of a dataset's CRS (ADR 0049, D6),
+/// in the result of an open and in the descriptor; `metresPerUnit` is null for a geographic CRS.
+pub(crate) fn crs_unit_js(unit: &DatasetUnit) -> Result<JsValue, JsValue> {
+    let object = Object::new();
+    let set = |name: &str, value: JsValue| Reflect::set(&object, &name.into(), &value);
+    set("unit", JsValue::from_str(&unit.name))?;
+    set(
+        "metresPerUnit",
+        unit.metres_per_unit
+            .map_or(JsValue::NULL, JsValue::from_f64),
+    )?;
+    set(
+        "geographic",
+        JsValue::from_bool(unit.metres_per_unit.is_none()),
+    )?;
+    set("assumed", JsValue::from_bool(unit.assumed))?;
+    set("unrecognised", JsValue::from_bool(unit.unrecognised))?;
+    Ok(object.into())
 }
 
 fn parse_u64(value: &str, field: &str) -> Result<u64, String> {
