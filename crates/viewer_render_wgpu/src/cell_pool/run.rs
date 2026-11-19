@@ -103,8 +103,12 @@ pub(super) fn node_run(input: &RunInput<'_>) -> NodeRun {
     // B2: closest to `prev` towards the target, else closest overall.
     let from = prev.unwrap_or(target);
     let (min, max) = (from.min(target), from.max(target));
+    // The view coarsens (`prev` above the target): the anchor goes to the usable depth nearest the
+    // target, so the fine end comes down and the levels above the wish are released. Anchored on
+    // `prev` it would stay there for ever, because the next `prev` is this run's fine end.
+    let aim = if from > target { target } else { from };
     let Some(mut anchor) =
-        closest(usable, from, min, max).or_else(|| closest(usable, from, 0, u8::MAX))
+        closest(usable, aim, min, max).or_else(|| closest(usable, from, 0, u8::MAX))
     else {
         return NodeRun::default();
     };
@@ -114,6 +118,7 @@ pub(super) fn node_run(input: &RunInput<'_>) -> NodeRun {
     // B6, C1: the level the node waits for never arrives; hop to the nearest usable depth beyond
     // it, towards the target (never past it) or towards the coarsest wish (never past it): still
     // one run.
+    let mut given_up = false;
     if let Some((is_fine, step)) = pending_step(fine, coarse, refining)
         && waited_step == Some(step)
     {
@@ -124,10 +129,14 @@ pub(super) fn node_run(input: &RunInput<'_>) -> NodeRun {
                 .filter(|depth| *depth > run.1 && *depth <= target)
                 .min()
         } else {
+            // Not past the coarsest wish, nor so coarse that the run stops short of the target.
             usable
                 .iter()
                 .copied()
                 .filter(|depth| *depth < run.0 && coarsest_wish.is_none_or(|wish| *depth >= wish))
+                .filter(|depth| {
+                    clipped(run_of(usable, *depth), *depth, range).1 >= run.1.min(target)
+                })
                 .max()
         };
         if let Some(hop) = hop {
@@ -135,13 +144,23 @@ pub(super) fn node_run(input: &RunInput<'_>) -> NodeRun {
             run = clipped(run_of(usable, anchor), anchor, range);
             (fine, coarse) = steps(usable, run, target, coarsest_wish);
         }
+        // The level did not arrive in `STEP_WAIT_FRAMES` and the node cannot hop over it (or the
+        // hop lands on the same missing level from the other side): it rests on this run, so
+        // that a view whose wishes straddle a level that never comes still settles. The level
+        // stays requested; when it arrives the run grows.
+        given_up =
+            pending_step(fine, coarse, refining).is_some_and(|(_, step)| waited_step == Some(step));
     }
-    let stage = run.1 < target || coarsest_wish.is_some_and(|wish| wish < run.0);
+    let stage = !given_up && (run.1 < target || coarsest_wish.is_some_and(|wish| wish < run.0));
     NodeRun {
         anchor: Some(anchor),
         run: Some(run),
         stage,
-        step: pending_step(fine, coarse, refining).map(|(_, step)| step),
+        step: if given_up {
+            None
+        } else {
+            pending_step(fine, coarse, refining).map(|(_, step)| step)
+        },
     }
 }
 
@@ -268,9 +287,10 @@ impl CellPool {
         let usable = without_detached_d5(usable, d5);
         let cap = self.caps.get(&id);
         let (b_lo, b_hi) = capped_range(node.buildable, cap);
-        let finest = self
-            .drawable_stored(&capped(&node.stored, cap), grid, node.bounds)
-            .into_iter()
+        let stored = self.drawable_stored(&capped(&node.stored, cap), grid, node.bounds);
+        let finest = stored
+            .iter()
+            .copied()
             .chain((b_lo.max(span_lo) <= b_hi.min(span_hi)).then_some(b_hi.min(span_hi)))
             .max();
         let target = finest?.min(hi);
@@ -283,7 +303,15 @@ impl CellPool {
                 .node_waits
                 .get(&id)
                 .and_then(|(step, frames, _)| (*frames >= STEP_WAIT_FRAMES).then_some(*step)),
-            coarsest_wish: entry.wanted.iter().flatten().min().copied(),
+            // The stored depth that serves the coarsest wish (`served_depth`): a wish that is only
+            // buildable is requested but the node rests on the stored level until it arrives.
+            coarsest_wish: entry.wanted.iter().flatten().min().map(|wish| {
+                if stored.is_empty() {
+                    *wish
+                } else {
+                    served_depth(&stored, *wish)
+                }
+            }),
         });
         Some((target, out))
     }
@@ -351,15 +379,16 @@ mod tests {
             ..input(Some(8), (5, 13), 13, &usable)
         });
         assert_eq!(out.run, Some((5, 8)));
-        assert_eq!(out.step, Some(9));
+        assert_eq!(out.step, None, "given up");
     }
 
     #[test]
-    fn zoom_out_fast_keeps_the_run_of_prev() {
-        // B1: prev 12, hi 8: the run is 10..=12, not empty and not a jump to 5.
+    fn zoom_out_fast_comes_down_to_the_usable_depth_nearest_the_target() {
+        // prev 12, hi 8: the fine end comes down to 10, not empty and not a jump to 5; anchored
+        // on prev it would stay at 12 for ever and nothing above the wish would be released.
         let out = node_run(&input(Some(12), (8, 8), 8, &[5, 10, 11, 12]));
-        assert_eq!(out.anchor, Some(12));
-        assert_eq!(out.run, Some((10, 12)));
+        assert_eq!(out.anchor, Some(10));
+        assert_eq!(out.run, Some((10, 10)));
         assert!(!out.stage && out.step.is_none());
     }
 
@@ -392,7 +421,7 @@ mod tests {
         assert_eq!(out.run, Some((6, 6)), "clipped at the anchor, below lo");
         // Prev gone but a depth lies between prev and the target: that one, not a coarser one.
         let out = node_run(&input(Some(12), (8, 8), 8, &[5, 10, 11]));
-        assert_eq!(out.anchor, Some(11));
+        assert_eq!(out.anchor, Some(10));
     }
 
     #[test]
@@ -418,7 +447,7 @@ mod tests {
         assert_eq!(out.run, Some((5, 5)));
         // An anchor above hi keeps itself: `max(hi, anchor)`.
         let out = node_run(&input(Some(12), (5, 8), 8, &[11, 12, 13]));
-        assert_eq!(out.run, Some((11, 12)));
+        assert_eq!(out.run, Some((11, 11)));
     }
 
     #[test]
@@ -466,7 +495,10 @@ mod tests {
             ..input(Some(7), (5, 14), 14, &[5, 6, 7])
         });
         assert_eq!(out.run, Some((5, 7)));
-        assert_eq!(out.step, Some(8));
+        assert_eq!(
+            out.step, None,
+            "given up: the level did not arrive and there is nowhere to hop"
+        );
         // Nor does it move a node that reached its target.
         let out = node_run(&RunInput {
             waited_step: Some(8),
@@ -510,7 +542,7 @@ mod tests {
             ..input(Some(7), (5, 14), 9, &[5, 6, 7, 12])
         });
         assert_eq!(out.run, Some((5, 7)));
-        assert_eq!(out.step, Some(8));
+        assert_eq!(out.step, None, "given up");
     }
 
     #[test]
@@ -530,27 +562,34 @@ mod tests {
     }
 
     #[test]
-    fn zoom_out_asks_for_the_coarse_level_and_hops_after_the_wait() {
-        // C1, node 34: range (7, 7), usable 7, 11, 12, prev 12, coarsest wish 7.
-        let node = input(Some(12), (7, 7), 7, &[7, 11, 12]);
+    fn zoom_out_asks_for_the_coarse_level_and_gives_up_after_the_wait() {
+        // C1, node 34: range (7, 7), usable 11, 12, prev 12, coarsest wish 7.
+        let node = input(Some(12), (7, 7), 7, &[11, 12]);
         let node = RunInput {
             coarsest_wish: Some(7),
             ..node
         };
         let out = node_run(&node);
-        assert_eq!((out.anchor, out.run), (Some(12), Some((11, 12))));
+        assert_eq!((out.anchor, out.run), (Some(11), Some((11, 11))));
         assert!(out.stage, "draws finer than the wish");
         assert_eq!(out.step, Some(10), "asks for the level under the run");
-        // A wait that was counted for another level does not hop.
+        // A wait that was counted for another level does not give up.
         let out = node_run(&RunInput {
             waited_step: Some(8),
             ..node
         });
-        assert_eq!(out.run, Some((11, 12)));
-        // The wait for 10 expired: hop to the nearest usable depth coarser than the run.
+        assert_eq!(out.step, Some(10));
+        // The wait for 10 expired and nothing coarser is usable: the node rests.
         let out = node_run(&RunInput {
             waited_step: Some(10),
             ..node
+        });
+        assert_eq!(out.run, Some((11, 11)));
+        assert!(!out.stage && out.step.is_none());
+        // With the wish level usable the run goes straight to it.
+        let out = node_run(&RunInput {
+            coarsest_wish: Some(7),
+            ..input(Some(12), (7, 7), 7, &[7, 11, 12])
         });
         assert_eq!((out.anchor, out.run), (Some(7), Some((7, 7))));
         assert!(!out.stage && out.step.is_none());
@@ -565,7 +604,20 @@ mod tests {
             ..input(Some(12), (8, 12), 12, &[5, 11, 12])
         });
         assert_eq!(out.run, Some((11, 12)));
-        assert_eq!(out.step, Some(10));
+        assert_eq!(out.step, None, "given up");
+    }
+
+    #[test]
+    fn a_wish_that_straddles_a_missing_level_hops_once_and_rests() {
+        // Wishes 5 and 7, only 5 and 7 usable: the fine end hops over the missing 6 and the
+        // coarse end waits for the same 6, so the node rests on 7 instead of going back.
+        let out = node_run(&RunInput {
+            waited_step: Some(6),
+            coarsest_wish: Some(5),
+            ..input(Some(5), (5, 7), 7, &[5, 7])
+        });
+        assert_eq!(out.run, Some((7, 7)));
+        assert!(!out.stage && out.step.is_none());
     }
 
     #[test]

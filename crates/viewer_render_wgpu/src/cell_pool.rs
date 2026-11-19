@@ -80,13 +80,15 @@ use viewer_core::{NodeId, SpatialBounds};
 use crate::camera::VERTICAL_FOV;
 use crate::node_cells::{node_range, representative_depth_for_spacing};
 
+#[cfg(test)]
+use crate::cell_cut::drawn_levels;
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
     cell_cut::{
         FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_wanted,
-        cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels, in_cell_range,
-        masked_probes, octant_wanted_depth_in, octant_wanted_depth_near, octants_in_front,
-        probe_region, served_depth, view_range_hi_at, view_range_lo,
+        cell_cut_ranged, cell_cut_with, cell_depth_range, in_cell_range, masked_probes,
+        octant_wanted_depth_in, octant_wanted_depth_near, octants_in_front, probe_region,
+        served_depth, view_range_hi_at, view_range_lo,
     },
     cell_range::nearest_occupied_depth,
     representative_depth,

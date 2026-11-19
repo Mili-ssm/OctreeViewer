@@ -549,7 +549,11 @@ fn partitions_the_view(first: &[u8], second: &[u8]) {
         );
         assert!(failures.is_empty(), "{}", failures.join("\n"));
         assert!(points > 500, "too few points checked: {points}");
-        assert!(multi_depth > 0, "no pose drew two depths of a node");
+        // One run per node: on a chain with gaps a node's run is a single level, so only a
+        // contiguous chain can draw two depths of a node (the other detached depth is D5).
+        if first.windows(2).all(|pair| pair[1] == pair[0] + 1) {
+            assert!(multi_depth > 0, "no pose drew two depths of a node");
+        }
         true
     });
 }
