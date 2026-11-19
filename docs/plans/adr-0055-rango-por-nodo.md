@@ -1,8 +1,15 @@
 # ADR 0055 en modo celda: rango por nodo y puerta de residencia
 
-Estado: en curso · 18-11-2026 · tramo A hecho y fusionado (#79); tramos B y C replanteados el 18-11-2026 tras retirar el modo octante ([ADR 0056](../adr/0056-se-retira-el-modo-octante.md)) y resolver OQ-16; pre-mortem del replanteo aplicado el 18-11-2026
+Estado: completado · 19-11-2026 · salida reducida por decisión del propietario: hechas las tareas 1 a 9, la retirada de `Window`, el arreglo de #87 y un tramo activo por nodo; el cambio de comportamiento de la tarea 10 y las tareas 11 y 12 no se hacen (experimento aparcado en la PR en borrador [#88](https://github.com/Mili-ssm/OctreeViewer/pull/88)); se archiva al fusionar #86
 
-**Conclusión.** Tres tramos, cada uno entregable por separado. El **A** está hecho: `cell_pool.rs` dividido y el
+**Cierre (19-11-2026).** El rango por nodo manda en lo que se pide (cota por datos, peticiones desde el rango) y
+la retención la decide el tramo activo del nodo juzgado contra el gemelo de la GPU; cada nodo emite un solo tramo
+activo. La maquinaria por octante (pasos, semillas, juez por octante) **se queda**: al conectar el tramo único por
+nodo como fuente de la emisión aparecieron reglas que el diseño no tenía y 28 tests en rojo, para un beneficio
+visible pequeño; el propietario eligió el arreglo mínimo. Evidencia en el
+[registro del cierre](../records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md).
+
+**Conclusión (texto original).** Tres tramos, cada uno entregable por separado. El **A** está hecho: `cell_pool.rs` dividido y el
 extremo grueso `lo` del rango calculado con una cota por nodo. El **B** hace que el rango por nodo mande de verdad:
 `hi` limitado por datos, peticiones y residencia desde el rango, y los campos por octante sustituidos por rango y
 ancla por nodo. El **C** sustituye la retención por nodo por una puerta de residencia y borra la maquinaria por
@@ -281,7 +288,7 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
     comportamiento. Resumen de la GPU idéntico.
   - [x] (86a5052) `stages` cuenta nodos (antes octantes); en reposo sigue en 0. `poolStages` cambia de escala (la
     demo solo comprueba `=== 0`; anotar en `PROBES.md` al cerrar).
-  - [ ] **Commit de comportamiento**: peticiones, protección, retención (`covers_in` incluido) y emisión desde
+  - [ ] ~~**Commit de comportamiento**~~ (no se hace: aparcado en #88, decisión del propietario 19-11-2026; en su lugar, un tramo activo por nodo en `cell_active_depths`, a123fe3, y `active_gaps == 0` obligatorio, af75572; `stages` vuelve a contar octantes, f5d25ef): peticiones, protección, retención (`covers_in` incluido) y emisión desde
     `node_run`; `busy` espera a `node_step` (probado y aplazado: sin este commit nadie pide `node_step` y tres tests
     de GPU del driver no se asientan); la espera agotada sube `residency_epoch`; el caso del D5 suelto como único
     usable del rango; la aserción `active_gaps == 0`.
