@@ -2184,19 +2184,13 @@ fn seed_resident(pool: &mut CellPool, node: u64, depths: &[u8]) {
     }
 }
 
-/// `eval_hold` on `cut` as `cell_cut` would draw it with the resident levels of the pool, every
-/// octant wanting `wanted`, and nothing held.
-fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
-    let grid = grid();
-    let nodes: &FastMap<NodeId, PoolNode> = &rig
-        .nodes
-        .iter()
-        .map(|(id, node)| (*id, node.clone()))
-        .collect();
-    let entries = cell_cut_with(
+/// The entries `cell_cut` would draw for `cut` with the resident levels of the pool, every
+/// octant wanting `wanted`.
+fn entries_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> Vec<CellCutEntry> {
+    cell_cut_with(
         cut,
         &|id| {
-            let node = nodes.get(&id)?;
+            let node = rig.nodes.get(&id)?;
             Some(CellCutNode {
                 bounds: node.bounds,
                 buildable: node.buildable,
@@ -2209,10 +2203,22 @@ fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
                     .collect(),
             })
         },
-        &grid,
+        &grid(),
         &|_, _, _| wanted,
     )
-    .unwrap();
+    .unwrap()
+}
+
+/// `eval_hold` on `cut` as `cell_cut` would draw it with the resident levels of the pool, every
+/// octant wanting `wanted`, and nothing held.
+fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
+    let grid = grid();
+    let nodes: &FastMap<NodeId, PoolNode> = &rig
+        .nodes
+        .iter()
+        .map(|(id, node)| (*id, node.clone()))
+        .collect();
+    let entries = entries_with(rig, cut, wanted);
     let none = FastSet::default();
     let eval = rig
         .pool
@@ -2289,6 +2295,194 @@ fn in_cell_mode_the_hold_threshold_is_the_finest_depth_active_in_the_ancestor() 
     rig.pool.applied_finest.insert(NodeId::new(2), nominal + 1);
     let (eval, _) = eval_with(&rig, &ids(&[10]), nominal + 1);
     assert!(eval.hold.contains(&NodeId::new(10)));
+}
+
+/// Replaces the resident levels of `node` (stored 4..=7) by `depths`, without uploading.
+fn set_resident(rig: &mut Rig, node: u64, depths: &[u8]) {
+    for depth in 4..=7 {
+        let key = rig.pool.key(NodeId::new(node), depth);
+        rig.pool.levels.remove(&key);
+    }
+    seed_resident(&mut rig.pool, node, depths);
+    rig.pool.residency_epoch += 1;
+}
+
+/// Pretends the applied cut drew `node` at `finest - 1` while its finest active depth was `finest`.
+fn set_applied(rig: &mut Rig, node: u64, finest: u8) {
+    rig.pool
+        .applied_drawn
+        .insert(NodeId::new(node), [Some(finest - 1); 8]);
+    rig.pool.applied_finest.insert(NodeId::new(node), finest);
+}
+
+/// Whether `eval_refine_hold` holds `node` when every octant of it wants `wish`, and the active
+/// run `[coarsest, finest]` it would take over with (what it draws, as `eval_refine_hold`
+/// computes it from the entering seed, through `cell_active_depths` under `rule`).
+fn refine_probe(rig: &mut Rig, node: u64, wish: u8, rule: ActiveRule) -> (bool, Option<(u8, u8)>) {
+    rig.pool.set_active_rule(rule);
+    let id = NodeId::new(node);
+    let (eval, _) = eval_with(rig, &[id], wish);
+    let data = &rig.nodes[&id];
+    let grid = grid();
+    let stored = capped(&data.stored, rig.pool.caps.get(&id));
+    let resident: Vec<u8> = rig
+        .pool
+        .drawable_stored(&stored, &grid, data.bounds)
+        .into_iter()
+        .filter(|depth| rig.pool.is_resident(rig.pool.key(id, *depth)))
+        .collect();
+    let buildable = capped_range(data.buildable, rig.pool.caps.get(&id));
+    let f = Footprint::new(&grid, data.bounds);
+    let (here, _, _) = drawn_levels(
+        &[Some(wish); 8],
+        &stored,
+        buildable,
+        &resident,
+        &rig.pool
+            .prev_state_seeded(id, data.bounds, buildable, &grid),
+        f.rep.saturating_sub(MAX_MASK_LEVELS),
+    );
+    let mut entry = entries_with(rig, &[id], wish).remove(0);
+    entry.drawn = here;
+    let depths =
+        rig.pool
+            .cell_active_depths(&entry, CellPool::node_depth(&grid, data.bounds), None);
+    let run = depths.first().zip(depths.last()).map(|(lo, hi)| (*lo, *hi));
+    (eval.hold.contains(&id), run)
+}
+
+/// Zoom in: node 2 drew with nominal depth `finest - 1` and finest active depth `finest`; its
+/// child 10 (stored 4..=7) enters the cut with the resident levels `resident` and wants `wish`.
+fn zoom_in_probe(
+    finest: u8,
+    wish: u8,
+    resident: &[u8],
+    rule: ActiveRule,
+) -> (bool, Option<(u8, u8)>) {
+    let mut rig = Rig::new(two_regions_with_coarse_children(), 512, 3, 1);
+    rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+    set_applied(&mut rig, 2, finest);
+    set_resident(&mut rig, 10, resident);
+    refine_probe(&mut rig, 10, wish, rule)
+}
+
+/// `(finest depth the ancestor drew, wish of the child, resident levels of the child, held)`.
+/// The observed rule, with `m = min(finest, wish)` and `d` the depth the child would draw
+/// (seeded at `finest`, one step towards the wish, else the resident level closest to the wish):
+/// the child is held iff `d < m`. The `finest` is the finest ACTIVE depth of the ancestor, not
+/// the nominal depth it drew (always `finest - 1` here), and the child may take over below what
+/// it wants: reaching `finest` is enough, one level more is not asked.
+const ZOOM_IN: &[(u8, u8, &[u8], bool)] = &[
+    (6, 7, &[5], true),
+    (6, 7, &[4, 5], true),
+    (6, 7, &[6], false),
+    (6, 7, &[7], false),
+    (6, 7, &[4, 7], false),
+    (6, 7, &[5, 7], false),
+    (6, 6, &[5], true),
+    (6, 6, &[4, 5], true),
+    (6, 6, &[6], false),
+    (6, 6, &[4, 7], false),
+    // The wish below what the ancestor drew bounds the threshold: it takes over at the wish.
+    (6, 5, &[4], true),
+    (6, 5, &[4, 7], true),
+    (6, 5, &[5], false),
+    (6, 5, &[5, 7], false),
+    (7, 7, &[6], true),
+    (7, 7, &[4, 5], true),
+    (7, 7, &[7], false),
+    (7, 7, &[4, 7], false),
+    (7, 4, &[4], false),
+    (5, 7, &[4], true),
+    (5, 7, &[5], false),
+    // The ancestor drew finer than the child can build (7): the wish bounds it again.
+    (8, 7, &[6], true),
+    (8, 7, &[7], false),
+];
+
+#[test]
+fn zoom_in_a_child_is_held_while_it_would_draw_below_the_ancestors_finest_depth() {
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        for (finest, wish, resident, held) in ZOOM_IN {
+            let (got, _) = zoom_in_probe(*finest, *wish, resident, rule);
+            assert_eq!(
+                got, *held,
+                "{rule:?}: ancestor finest {finest}, child wants {wish}, resident {resident:?}"
+            );
+        }
+    }
+}
+
+/// Zoom out: the children 10..=17 of node 2 drew with nominal depth `finest - 1` and finest
+/// active depth `finest` (`mixed`: only child 10 had `finest`, the others 5, so the octants of
+/// node 2 differ); node 2 (stored 4..=7, never loaded) has `resident` levels and wants `wish`.
+fn zoom_out_probe(
+    finest: u8,
+    mixed: bool,
+    wish: u8,
+    resident: &[u8],
+    rule: ActiveRule,
+) -> (bool, Option<(u8, u8)>) {
+    let (mut rig, _, _) = zoom_out_rig();
+    set_resident(&mut rig, 2, resident);
+    for child in 10..18 {
+        set_applied(
+            &mut rig,
+            child,
+            if mixed && child != 10 { 5 } else { finest },
+        );
+    }
+    refine_probe(&mut rig, 2, wish, rule)
+}
+
+/// `(finest depth of the descendants, mixed, wish of the node, resident levels, held)`. The
+/// observed rule: with `m = min(finest over its octants, wish)` and `d` the depth the node would
+/// draw (seeded at the coarsest nominal depth of the descendants over the octant, one step
+/// towards the wish), the node is held iff some octant has `d < m`.
+const ZOOM_OUT: &[(u8, bool, u8, &[u8], bool)] = &[
+    (6, false, 7, &[5], true),
+    (6, false, 7, &[4, 5], true),
+    (6, false, 7, &[5, 7], true),
+    (6, false, 7, &[6], false),
+    (6, false, 7, &[7], false),
+    (6, false, 7, &[4, 7], false),
+    (6, false, 6, &[5], true),
+    (6, false, 6, &[5, 7], true),
+    (6, false, 6, &[6], false),
+    (6, false, 6, &[4, 7], false),
+    (6, false, 5, &[4], true),
+    (6, false, 5, &[4, 7], true),
+    (6, false, 5, &[5], false),
+    (6, false, 5, &[5, 7], false),
+    (7, false, 7, &[6], true),
+    (7, false, 7, &[4, 5], true),
+    (7, false, 7, &[7], false),
+    (7, false, 7, &[5, 7], false),
+    (7, false, 6, &[5], true),
+    (7, false, 6, &[6], false),
+    (7, false, 6, &[5, 7], false),
+    (5, false, 7, &[4], true),
+    (5, false, 7, &[5], false),
+    (7, false, 4, &[4], false),
+    // One octant over a descendant that drew 7, the rest 5: the finest one counts.
+    (7, true, 7, &[6], true),
+    (7, true, 7, &[5, 6], true),
+    (7, true, 7, &[7], false),
+    (7, true, 5, &[5], false),
+];
+
+#[test]
+fn zoom_out_a_node_is_held_while_it_would_draw_below_what_its_descendants_drew() {
+    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
+        for (finest, mixed, wish, resident, held) in ZOOM_OUT {
+            let (got, _) = zoom_out_probe(*finest, *mixed, *wish, resident, rule);
+            assert_eq!(
+                got, *held,
+                "{rule:?}: descendants finest {finest} (mixed {mixed}), node wants {wish}, \
+                 resident {resident:?}"
+            );
+        }
+    }
 }
 
 #[test]
