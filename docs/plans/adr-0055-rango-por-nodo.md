@@ -231,6 +231,10 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 10: Node-level range and anchor replace the per-octant fields (R)
 
+- [ ] **10-pre.** Se retira la regla `Window` (propietario, 19-11-2026): `ActiveRule`, `applied_window`, el
+  selector de la demo, `setCellActiveRule` y `?cellActive=` (ignorado con aviso). Comprobación: las líneas
+  `SimStats` de `Contiguous` y el resumen de la entrada de la GPU, idénticos; navegador.
+
 - [ ] **10a, en este plan** (diseño del agente, 19-11-2026; **enmendado por el pre-mortem**: falta fijar los
   oráculos de 10a-bis y la decisión del propietario sobre la regla `Window` antes de ejecutar 10b).
   Ver [«Diseño de la tarea 10»](#diseño-de-la-tarea-10-campos-por-nodo).
@@ -335,10 +339,19 @@ volvería a poner ese límite. Lo que sigue sustituye a las reglas «Paso», «E
 | A8 | Parada medible: por nodo y frame, diferencia del extremo fino, del grueso y cualquier hueco no residente. Parar ante cualquier hueco, cualquier diferencia con `Contiguous`, o más de un nivel con `Window`. En el commit del paso por nodo se repiten las tablas de la tarea 8 (74 casos y los 5 mixtos) contra `node_run` | El criterio anterior no era medible |
 | A9 | Lectores que faltaban en el inventario: `hidden_held` (`plan.rs`), `seed_depths` y `required_levels` en `residency.rs`, `pages.rs` (expulsión), `drawn_digest`, `finer_drawn`, `step_hops` | Lectores sin migrar |
 
-**Dependencia del propietario.** El paso por nodo, las semillas, `STEP_WAIT_FRAMES` y `applied_window` solo los
-necesita `Window`. Si el propietario retira `Window` ([#66](https://github.com/Mili-ssm/OctreeViewer/issues/66)),
-`node_run` se reduce al tramo contiguo usable y desaparecen A3, A5 y la mitad de A1. 10a-bis no depende de esa
-decisión; 10b en adelante sí.
+**Decisión del propietario (19-11-2026): se retira `Window`** ([#66](https://github.com/Mili-ssm/OctreeViewer/issues/66),
+OQ-11). `node_run` se reduce al tramo contiguo usable; desaparecen el paso por nodo, A3, A5 y la mitad de A1. El
+diseño se rehace tras la retirada (tarea 10-pre abajo).
+
+**10a-bis hecho** (35f69f1, 19c0c2e): resumen de la entrada de la GPU (bits activos y máscara por nodo) fijado en
+P1 a P5 y en las simulaciones (sintéticas: igual a la referencia; reales: determinista en dos ejecuciones); el
+oráculo cuenta los huecos no residentes del conjunto activo (`active_gaps`). **Con `Contiguous` aparecen**: 7
+frames en la órbita real de semilla 1 (ninguno en el resto). Ejemplo: nodo 77, frame 36, activos {7, 12}, dibujados
+7 y 12 por octantes distintos, rango (12, 12), deseo 7 en todos los octantes; 8 a 10 no residentes y 11 recién
+subido (aún no usable). Es el hueco de la regla actual: cada nivel dibujado usable abre su propio tramo. Un tramo
+único por nodo lo elimina por construcción, así que la aserción dura se activa en la tarea 10, no antes. El rango
+(12, 12) con deseo 7 es la misma pregunta abierta de [#87](https://github.com/Mili-ssm/OctreeViewer/issues/87)
+(`far` 12 con octantes que desean 7). Un nivel recién subido cuenta como hueco: la GPU aún no lo tiene.
 
 Criterios de parada de la tarea 10 (sustituyen al del diseño):
 
