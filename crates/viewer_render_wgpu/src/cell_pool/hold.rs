@@ -256,15 +256,18 @@ impl CellPool {
             }
             let held = hold.contains(&id);
             // Per octant of the node: the deepest level that drew over it before.
+            // `limit` counts the D5 depth (the hold's `before`, R3-Q21); `limit_run` does not (B3,
+            // the `prev` of `node_run`).
             let mut limit: [Option<u8>; 8] = [None; 8];
+            let mut limit_run: [Option<u8>; 8] = [None; 8];
             if let Some((ancestor, gap)) = above
                 && let Some(drawn) = self.applied_drawn.get(&ancestor)
             {
-                for (o, slot) in limit.iter_mut().enumerate() {
-                    *slot = f
+                for o in 0..8 {
+                    let ceilings = f
                         .octants_of(gap, o)
-                        .filter_map(|a| self.before_ceiling(ancestor, drawn[a]))
-                        .max();
+                        .filter_map(|a| self.before_ceiling(ancestor, drawn[a]));
+                    (limit[o], limit_run[o]) = max_ceilings(ceilings);
                 }
             }
             // The covering node may not have drawn over this zone before (it is new in the cut
@@ -279,12 +282,12 @@ impl CellPool {
                     else {
                         continue;
                     };
-                    for (o, slot) in limit.iter_mut().enumerate() {
-                        if slot.is_none() {
-                            *slot = f
+                    for o in 0..8 {
+                        if limit[o].is_none() {
+                            let ceilings = f
                                 .octants_of(k, o)
-                                .filter_map(|a| self.before_ceiling(far, drawn[a]))
-                                .max();
+                                .filter_map(|a| self.before_ceiling(far, drawn[a]));
+                            (limit[o], limit_run[o]) = max_ceilings(ceilings);
                         }
                     }
                 }
@@ -292,9 +295,10 @@ impl CellPool {
             for (d, k) in &below {
                 let df = Footprint::new(grid, self.applied_index.nodes[d].bounds);
                 for (o, drawn) in self.applied_drawn[d].iter().enumerate() {
-                    if let Some(depth) = self.before_ceiling(*d, *drawn) {
+                    if let Some((depth, run)) = self.before_ceiling(*d, *drawn) {
                         for a in df.octants_of(*k, o) {
                             limit[a] = limit[a].max(Some(depth));
+                            limit_run[a] = limit_run[a].max(Some(run));
                         }
                     }
                 }
@@ -320,7 +324,7 @@ impl CellPool {
                     .unwrap_or(entry.wanted)
             };
             let before = before_finest(&limit, &wanted);
-            if let Some(before) = before {
+            if let Some(before) = before_finest(&limit_run, &wanted) {
                 out.before.insert(id, before);
             }
             // `before` is kept for every node that has something under or over it (C2), also the
@@ -399,12 +403,28 @@ impl CellPool {
 }
 
 impl CellPool {
-    /// The depth the applied cut may have drawn over an octant of `id` where it drew `drawn`, for
-    /// `before` (B3): up to the fine end of the node's active run WITHOUT its D5 depth, which is
-    /// a part apart. (`drawn_ceiling` of the seeds still counts the D5 depth.)
-    fn before_ceiling(&self, id: NodeId, drawn: Option<u8>) -> Option<u8> {
-        drawn.map(|depth| depth.max(self.applied_run.get(&id).map_or(depth, |run| run.1)))
+    /// What the applied cut may have drawn over an octant of `id` where it drew `drawn`, as
+    /// `(finest, run)`: `finest` up to the finest active depth of the node INCLUDING its D5
+    /// depth, which the hold's `before` needs because the GPU draws per cell the coarsest active
+    /// depth that does not refine, so it can be the D5 depth (R3-Q21; it is `drawn_ceiling`);
+    /// `run` up to the fine end of the node's active run WITHOUT it (B3), the anchor of
+    /// `node_run`.
+    fn before_ceiling(&self, id: NodeId, drawn: Option<u8>) -> Option<(u8, u8)> {
+        drawn.map(|depth| {
+            let run = self
+                .applied_run
+                .get(&id)
+                .map_or(depth, |run| depth.max(run.1));
+            (self.drawn_ceiling(id, drawn).unwrap_or(depth), run)
+        })
     }
+}
+
+/// The componentwise maximum of `before_ceiling`s, `(None, None)` when there are none.
+fn max_ceilings(ceilings: impl Iterator<Item = (u8, u8)>) -> (Option<u8>, Option<u8>) {
+    ceilings.fold((None, None), |(finest, run), (f, r)| {
+        (finest.max(Some(f)), run.max(Some(r)))
+    })
 }
 
 /// The finest depth that drew over any octant a node wants (B5): the `before` of the gate and the

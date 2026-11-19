@@ -2295,11 +2295,41 @@ fn in_cell_mode_the_hold_threshold_is_the_finest_depth_active_in_the_ancestor() 
         .applied_drawn
         .insert(NodeId::new(2), [Some(nominal); 8]);
     rig.pool.applied_finest.insert(NodeId::new(2), nominal + 1);
-    rig.pool
-        .applied_run
-        .insert(NodeId::new(2), (nominal, nominal + 1));
     let (eval, _) = eval_with(&rig, &ids(&[10]), nominal + 1);
     assert!(eval.hold.contains(&NodeId::new(10)));
+}
+
+#[test]
+fn the_hold_threshold_counts_the_d5_depth_above_the_run_of_the_ancestor() {
+    // Node 2 drew its run at the nominal depth (5) and its D5 depth two levels above (7): the
+    // GPU can draw 7 over a cell whose own run refines, so child 10 (5 resident, wants 6) would
+    // coarsen it and is held. The run alone (B3) would say 5 drew before and release it; that
+    // is only for the anchor of `node_run`, and `before` for the anchor stays without D5.
+    let nodes = two_regions_with_coarse_children();
+    let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
+    rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+    let child = nodes[&NodeId::new(10)].clone();
+    seed_resident(&mut rig.pool, 10, &[child.stored[0]]);
+    rig.pool.residency_epoch += 1;
+    let nominal = child.stored[0];
+    rig.pool
+        .applied_drawn
+        .insert(NodeId::new(2), [Some(nominal); 8]);
+    rig.pool.applied_finest.insert(NodeId::new(2), nominal + 2);
+    rig.pool
+        .applied_run
+        .insert(NodeId::new(2), (nominal, nominal));
+    let id = NodeId::new(10);
+    let (eval, _) = eval_with(&rig, &ids(&[10]), nominal + 1);
+    assert!(eval.hold.contains(&id), "the D5 depth drew over it");
+    assert_eq!(
+        eval.before.get(&id),
+        Some(&nominal),
+        "the anchor's `before` does not count D5"
+    );
+    rig.pool.applied_finest.insert(NodeId::new(2), nominal);
+    let (eval, _) = eval_with(&rig, &ids(&[10]), nominal + 1);
+    assert!(!eval.hold.contains(&id), "without the D5 depth it releases");
 }
 
 /// Replaces the resident levels of `node` (stored 4..=7) by `depths`, without uploading.
@@ -2312,17 +2342,12 @@ fn set_resident(rig: &mut Rig, node: u64, depths: &[u8]) {
     rig.pool.residency_epoch += 1;
 }
 
-/// Pretends the applied cut drew `node` at `finest - 1` while its finest active depth was `finest`
-/// (no D5 depth above it).
+/// Pretends the applied cut drew `node` at `finest - 1` while its finest active depth was `finest`.
 fn set_applied(rig: &mut Rig, node: u64, finest: u8) {
     rig.pool
         .applied_drawn
         .insert(NodeId::new(node), [Some(finest - 1); 8]);
     rig.pool.applied_finest.insert(NodeId::new(node), finest);
-    // `before` reads the fine end of the run without D5 (B3): here the run is the finest depth.
-    rig.pool
-        .applied_run
-        .insert(NodeId::new(node), (finest, finest));
 }
 
 /// How wide a node's range is in a probe: `Wide` starts at the coarsest depth the node can draw
@@ -6041,36 +6066,71 @@ fn a_residency_change_measures_the_octants_in_view_at_the_current_pose() {
     );
 }
 
+/// Plans `frames` frames of the root of `hold_rig` and checks the `node_*` fields of each against
+/// their definition. Returns the frames that carried a step and the last entry.
+fn plan_and_check_runs(rig: &mut Rig, frames: usize) -> (usize, CellCutEntry) {
+    let zoom = camera("zoom");
+    let root = NodeId::new(1);
+    let mut steps = 0;
+    let mut last = None;
+    for frame in 0..frames {
+        let plan = d5_step_at(rig, &ids(&[1]), &zoom, 2.0);
+        let entry = plan.entries.iter().find(|e| e.node == root).expect("root");
+        let (anchor, run, target) = (
+            entry.node_anchor.expect("an anchor"),
+            entry.node_run.expect("a run"),
+            entry.node_target.expect("a target"),
+        );
+        assert!((run.0..=run.1).contains(&anchor));
+        assert!(run.1 <= target.max(anchor));
+        let wish = entry.wanted.iter().flatten().min().copied();
+        assert_eq!(
+            entry.node_stage,
+            run.1 < target || wish.is_some_and(|wish| wish < run.0),
+            "frame {frame}: {entry:?}"
+        );
+        assert_eq!(
+            entry.node_stage,
+            entry.node_step.is_some(),
+            "frame {frame}: a staged node asks for a level"
+        );
+        if let Some(step) = entry.node_step {
+            steps += 1;
+            assert!(step == run.1 + 1 || step + 1 == run.0, "frame {frame}");
+        }
+        last = Some(entry.clone());
+    }
+    (steps, last.expect("a frame was planned"))
+}
+
 #[test]
 fn the_planned_cut_carries_the_node_run_and_the_pool_keeps_the_applied_run() {
     // Plumbing of plan task 10b: `fill_node_runs` fills the `node_*` fields of the planned
     // entries and `plan` stores the applied run (without D5) that the next frame reads as `prev`.
     let mut rig = hold_rig();
-    let zoom = camera("zoom");
     let root = NodeId::new(1);
-    let mut plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
-    for _ in 0..8 {
-        plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
-    }
-    let entry = plan.entries.iter().find(|e| e.node == root).expect("root");
-    let (anchor, run, target) = (
-        entry.node_anchor.expect("an anchor"),
-        entry.node_run.expect("a run"),
-        entry.node_target.expect("a target"),
-    );
-    assert!((run.0..=run.1).contains(&anchor));
-    assert!(run.1 <= target.max(anchor));
-    assert_eq!(entry.node_stage, run.1 < target);
-    if let Some(step) = entry.node_step {
-        assert!(entry.node_stage && (step == run.1 + 1 || step + 1 == run.0));
-    }
+    let (_, entry) = plan_and_check_runs(&mut rig, 9);
     let applied = rig.pool.applied_run_of(root).expect("the root was applied");
     let own = rig.pool.cell_active_depths(
-        &plan.entries[0],
+        &entry,
         CellPool::node_depth(&grid(), rig.nodes[&root].bounds),
         None,
     );
     assert_eq!(Some(applied), own.first().copied().zip(own.last().copied()));
+}
+
+#[test]
+fn a_planned_node_waiting_for_a_level_is_staged_and_names_it() {
+    // The same plumbing with a residency gap: nothing above depth 8 is resident, so the run
+    // stops short of its target and the node asks for the level that extends it.
+    let mut rig = hold_rig();
+    for depth in 9..=14 {
+        let key = rig.pool.key(NodeId::new(1), depth);
+        rig.pool.levels.remove(&key);
+    }
+    rig.pool.residency_epoch += 1;
+    let (steps, _) = plan_and_check_runs(&mut rig, 3);
+    assert!(steps > 0, "a run short of its target has a step");
 }
 
 #[test]

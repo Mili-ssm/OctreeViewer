@@ -507,10 +507,10 @@ struct Totals {
 /// order they are tried.
 const RUN_CLASSES: [&str; 7] = [
     "gap",
-    "above_hi",
-    "below_lo",
     "entering",
     "prev_unusable",
+    "above_hi",
+    "below_lo",
     "fine_end",
     "unclassified",
 ];
@@ -848,19 +848,23 @@ impl Harness {
                 .collect();
             let class = if today.windows(2).any(|pair| pair[1] != pair[0] + 1) {
                 0
+            } else if prev.is_none() {
+                1
+            } else if prev.is_some_and(|(_, fine)| !usable.contains(&fine)) {
+                2
             } else if top > hi
                 && today.iter().filter(|depth| **depth > hi).count()
                     != wanted_set.iter().filter(|depth| **depth > hi).count()
             {
-                1
-            } else if entry.node_anchor.is_some_and(|anchor| anchor < lo) && run.0 < lo {
+                3
+            } else if entry.node_anchor.is_some_and(|anchor| anchor < lo)
+                && run.0 < lo
+                && today.iter().all(|depth| (run.0..=run.1).contains(depth))
+            {
                 // The anchor stays at `prev` below `lo`: the extra coarse depths refine in every
                 // visible cell, so nothing of them is drawn. Decided on the anchor and the run's
-                // coarse end, not on the set: today's set may also hold a depth below `lo`.
-                2
-            } else if prev.is_none() {
-                3
-            } else if prev.is_some_and(|(_, fine)| !usable.contains(&fine)) {
+                // coarse end, and only when today's set lies inside the run (plus D5, which is
+                // already out of `today`): today's set may also hold a depth below `lo`.
                 4
             } else if bottom == run.0 && top != run.1 {
                 5

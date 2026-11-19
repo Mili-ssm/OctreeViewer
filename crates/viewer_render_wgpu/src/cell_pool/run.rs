@@ -15,8 +15,8 @@ pub(super) struct RunInput<'a> {
     /// The finest depth the node can reach: `min(hi, finest stored or buildable depth, fit cap)`.
     pub target: u8,
     /// Usable depths of the node inside its cell span, ascending. Contract (B3): the D5 depth is
-    /// NOT an input unless it is contiguous with the rest, so the anchor never lands on it; the
-    /// caller leaves it out.
+    /// NOT an input unless it is contiguous with the rest (then it belongs to the same run
+    /// anyway), so the anchor never lands on it; see `without_detached_d5`.
     pub usable: &'a [u8],
     /// The pending step that has waited `STEP_WAIT_FRAMES` frames (B6, C1): only that level may
     /// make the anchor hop, so a wait never outlives the step it was counted for.
@@ -60,8 +60,8 @@ fn run_of(usable: &[u8], anchor: u8) -> (u8, u8) {
 }
 
 /// B1 clip to `[min(lo, anchor), max(hi, anchor)]`, as `cell_active_depths` does today (`lo` and
-/// `hi` widened by what is drawn). B1's text says `min(lo, run.lo)`, which would clip nothing
-/// below; see the report of task 10b.
+/// `hi` widened by what is drawn). The text of B1 says `min(lo, run.lo)`, which would never clip
+/// below `lo`: the run is cut at `lo` unless the anchor itself lies below it.
 fn clipped(run: (u8, u8), anchor: u8, (lo, hi): (u8, u8)) -> (u8, u8) {
     (run.0.max(lo.min(anchor)), run.1.min(hi.max(anchor)))
 }
@@ -145,11 +145,28 @@ pub(super) fn node_run(input: &RunInput<'_>) -> NodeRun {
     }
 }
 
+/// `usable` without the D5 depth `d5` when no other usable depth is next to it: a detached D5
+/// depth is a part apart that the emission adds (B3), and as an input it would let a hop land on
+/// it. Next to a usable depth it is part of that run and stays; so does a D5 depth that is the
+/// only usable one, because the node has nothing else to anchor on (A4).
+fn without_detached_d5(usable: Vec<u8>, d5: Option<u8>) -> Vec<u8> {
+    let Some(d5) = d5 else {
+        return usable;
+    };
+    let next_to = |depth: u8| usable.contains(&depth);
+    let attached = (d5 > 0 && next_to(d5 - 1)) || next_to(d5.saturating_add(1));
+    if attached || usable == [d5] {
+        usable
+    } else {
+        usable.into_iter().filter(|depth| *depth != d5).collect()
+    }
+}
+
 impl CellPool {
     /// The `prev` of `node_run`: the finest depth that drew over the node's footprint before, from
-    /// the first source that has a history. In order: the fine end of the node's own applied run
-    /// (without D5, B3); the finest of its own applied per-octant depths when it drew but has no
-    /// run; the shared `before` of the hold (B5); the finest depth of the entering seed today's
+    /// the first source that has a history. None of them counts the D5 depth (B3). In order: the
+    /// fine end of the node's own applied run; the finest of its own applied per-octant depths
+    /// other than D5 when it drew but has no run; the shared `before` of the hold (B5); the finest depth of the entering seed today's
     /// per-octant machinery starts from (`prev_state_seeded`). The last one matters because
     /// `before` is empty when the hold's cover rule finds no covering cell of the current cut
     /// (`Cover::Nothing`), while the seed reads the nearest applied ancestor (or descendants) and
@@ -166,9 +183,15 @@ impl CellPool {
             .get(&id)
             .map(|(_, top)| *top)
             .or_else(|| {
-                self.applied_drawn
-                    .get(&id)
-                    .and_then(|drawn| drawn.iter().flatten().max().copied())
+                self.applied_drawn.get(&id).and_then(|drawn| {
+                    let d5 = self.applied_d5.get(&id);
+                    drawn
+                        .iter()
+                        .flatten()
+                        .filter(|depth| Some(*depth) != d5)
+                        .max()
+                        .copied()
+                })
             })
             .or_else(|| before.get(&id).copied())
             .or_else(|| {
@@ -182,9 +205,10 @@ impl CellPool {
             })
     }
 
-    /// Fills the `node_*` fields of `entries` (the real cut, before it is applied). `prev` is the
-    /// what was drawn over its footprint before (`node_prev`). The usable depths are those `cell_active_depths`
-    /// accepts over the node's cell span. The target is `min(hi, finest drawable stored or
+    /// Fills the `node_*` fields of `entries` (the real cut, before it is applied). `prev` is what
+    /// was drawn over the node's footprint before (`node_prev`). The usable depths are those
+    /// `cell_active_depths` accepts over the node's cell span, less a detached D5 depth
+    /// (`without_detached_d5`). The target is `min(hi, finest drawable stored or
     /// buildable depth under the fit cap)`.
     pub(super) fn fill_node_runs(
         &self,
@@ -203,6 +227,13 @@ impl CellPool {
             let usable: Vec<u8> = (span_lo..=span_hi)
                 .filter(|depth| self.is_usable(self.key(id, *depth)))
                 .collect();
+            let d5 = entry
+                .mask
+                .iter()
+                .any(|word| *word != 0)
+                .then(|| self.d5_resident(id, node, grid))
+                .flatten();
+            let usable = without_detached_d5(usable, d5);
             let cap = self.caps.get(&id);
             let (b_lo, b_hi) = capped_range(node.buildable, cap);
             let finest = self
@@ -269,6 +300,29 @@ mod tests {
             waited_step: None,
             coarsest_wish: None,
         }
+    }
+
+    #[test]
+    fn a_detached_d5_depth_is_not_usable_but_an_attached_one_is() {
+        assert_eq!(
+            without_detached_d5(vec![5, 6, 7, 8, 13], Some(13)),
+            [5, 6, 7, 8]
+        );
+        assert_eq!(
+            without_detached_d5(vec![5, 6, 7, 8, 9], Some(9)),
+            [5, 6, 7, 8, 9]
+        );
+        assert_eq!(without_detached_d5(vec![5, 13], None), [5, 13]);
+        assert_eq!(without_detached_d5(vec![13], Some(13)), [13]);
+        // The hop of the example (own 5..=8, D5 13, target 13, waiting for 9) finds nothing to
+        // land on, where with 13 as an input it would jump to a run of (13, 13).
+        let usable = without_detached_d5(vec![5, 6, 7, 8, 13], Some(13));
+        let out = node_run(&RunInput {
+            waited_step: Some(9),
+            ..input(Some(8), (5, 13), 13, &usable)
+        });
+        assert_eq!(out.run, Some((5, 8)));
+        assert_eq!(out.step, Some(9));
     }
 
     #[test]

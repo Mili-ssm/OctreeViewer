@@ -121,8 +121,9 @@ pub struct CellCutEntry {
     /// visible octant and for one with no buildable depth inside its span.
     pub range: Option<(u8, u8)>,
     /// Node-level fields of plan task 10 (`cell_pool/run.rs`), computed by the pool next to the
-    /// per-octant ones and read by nobody yet: the anchor depth, its target, the single active run, whether
-    /// the node is staged and the depth that extends the run. `None`/`false` out of the pool.
+    /// per-octant ones and read by nobody yet: the anchor depth, its target, the single active
+    /// run, whether the node is staged and the depth that extends the run. `None`/`false` out of
+    /// the pool.
     pub node_anchor: Option<u8>,
     /// The finest depth the node can reach (`min(hi, finest stored or buildable depth, fit cap)`).
     pub node_target: Option<u8>,
