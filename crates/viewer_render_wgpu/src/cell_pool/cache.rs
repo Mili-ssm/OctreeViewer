@@ -174,21 +174,25 @@ impl CellPool {
                     target_px,
                 ),
             });
-            let depths = behind_wanted(
-                depths,
-                behind_octants(
-                    view,
-                    grid,
-                    origin,
-                    data.bounds,
-                    std::array::from_fn(|octant| data.probe_box(octant)),
-                ),
+            let behind = behind_octants(
+                view,
+                grid,
+                origin,
+                data.bounds,
+                std::array::from_fn(|octant| data.probe_box(octant)),
             );
+            let depths = behind_wanted(depths, behind);
             let depths = match finest_allowed {
                 Some(limit) => depths.map(|depth| continuity_depth(data.buildable, depth, limit)),
                 None => depths,
             };
-            let probes = std::array::from_fn(|octant| data.probe_box(octant));
+            // Octants with nothing in view are left out of the far depth and the data bound, like
+            // `behind_wanted` leaves them out of the wishes: the union box of a node whose octants
+            // are all behind can still pass the in-view test through a corner that is not in view.
+            let probes = mask_behind(
+                std::array::from_fn(|octant| data.probe_box(octant)),
+                behind.0,
+            );
             let far = {
                 // `lo` of the node's range: the on-axis bound of `node_view_range` (ADR 0055
                 // plan, task 4); a node wholly behind the eye or without data wants the coarsest

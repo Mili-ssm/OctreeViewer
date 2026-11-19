@@ -315,6 +315,20 @@ pub(crate) fn behind_octants(
     })
 }
 
+/// The probes of the octants with data in view: a `behind` octant (see `behind_octants`) becomes
+/// `Empty`, so `probe_region` and the data bound measure only what can be drawn. The `behind` set
+/// (not "not in front of the eye plane") is the mask because an octant that crosses the plane is
+/// visible: dropping it would collapse the eye node's far depth.
+pub(crate) fn mask_behind(probes: [ProbeBox; 8], behind: u8) -> [ProbeBox; 8] {
+    std::array::from_fn(|o| {
+        if behind >> o & 1 == 1 {
+            ProbeBox::Empty
+        } else {
+            probes[o]
+        }
+    })
+}
+
 /// A behind octant wants the finest wish among the in-front octants (none in front: its own).
 pub(crate) fn behind_wanted(depths: [u8; 8], (behind, front): (u8, u8)) -> [u8; 8] {
     let Some(finest) = (0..8)

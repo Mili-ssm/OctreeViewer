@@ -2140,6 +2140,94 @@ fn an_octant_behind_the_eye_does_not_widen_the_range() {
     assert_eq!(range(0), Some((4, 4)));
 }
 
+/// The `lo` of a node as the pool computes it: over the octants with data in view only.
+fn masked_lo(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    bounds: SpatialBounds,
+    probes: [ProbeBox; 8],
+    target: f64,
+) -> (Option<SpatialBounds>, u8) {
+    let (behind, _) = behind_octants(view, grid, [0.0; 3], bounds, probes);
+    let region = probe_region(bounds, mask_behind(probes, behind));
+    let lo = view_range_lo(view, grid, [0.0; 3], region, (3, 12), target, None).unwrap_or(3);
+    (region, lo)
+}
+
+#[test]
+fn a_node_with_every_data_octant_behind_has_the_coarsest_far_depth() {
+    // Two data boxes far off the view axis, one each side, ahead of the eye: each is outside the
+    // frustum (behind), but the union box spans the axis, so the union alone passes the in-view
+    // test and its farthest corner (depth 1000) would give a far depth of 10.
+    let (view, grid) = (along_x(), huge_grid());
+    let bounds = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    let data = |y: [f64; 2]| {
+        ProbeBox::Data(SpatialBounds::new([-890.0, y[0], -10.0], [100.0, y[1], 10.0]).unwrap())
+    };
+    let mut probes = [ProbeBox::Empty; 8];
+    probes[0] = data([1500.0, 2000.0]);
+    probes[1] = data([-2000.0, -1500.0]);
+    let target = 1.0;
+    let unmasked = probe_region(bounds, probes);
+    let far = view_range_lo(&view, &grid, [0.0; 3], unmasked, (3, 12), target, None);
+    assert_eq!(
+        far,
+        Some(10),
+        "setup: the union box passes the in-view test"
+    );
+    let (behind, _) = behind_octants(&view, &grid, [0.0; 3], bounds, probes);
+    assert_eq!(behind, 0xFF, "setup: every octant is behind or empty");
+    let (region, lo) = masked_lo(&view, &grid, bounds, probes, target);
+    assert_eq!(region, None);
+    let wishes: Vec<u8> = (0..8)
+        .map(|o| {
+            octant_wanted_depth_in(
+                &view,
+                &grid,
+                [0.0; 3],
+                bounds,
+                o,
+                probes[o],
+                (3, 12),
+                target,
+            )
+        })
+        .collect();
+    assert!(wishes.iter().all(|wish| *wish == 3), "{wishes:?}");
+    assert_eq!(lo, 3, "far depth finer than every wish");
+}
+
+#[test]
+fn masking_the_behind_octants_leaves_the_eye_nodes_far_depth_unchanged() {
+    // The eye inside the node: octants behind the eye plane are dropped, those crossing it (and the
+    // ones in front) stay, so `lo` is what the whole node gives.
+    let grid = huge_grid();
+    let bounds = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    let probes: [ProbeBox; 8] =
+        std::array::from_fn(|o| ProbeBox::Data(octant_box(bounds, o).unwrap()));
+    for at in [
+        [900.0, 0.0, 0.0],
+        [0.0, -900.0, 100.0],
+        [-500.0, 500.0, 500.0],
+    ] {
+        let view = posed([10.0, 20.0, 30.0], at);
+        for target in [1.0, 4.0, 16.0] {
+            let all = view_range_lo(
+                &view,
+                &grid,
+                [0.0; 3],
+                probe_region(bounds, probes),
+                (3, 12),
+                target,
+                None,
+            )
+            .unwrap_or(3);
+            let (_, lo) = masked_lo(&view, &grid, bounds, probes, target);
+            assert_eq!(lo, all, "at {at:?} target {target}");
+        }
+    }
+}
+
 #[test]
 fn entries_without_a_range_input_have_no_range() {
     let nodes = root_with(&[0, 1, 2, 3], &[0, 1, 2, 3]);
