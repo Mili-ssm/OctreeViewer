@@ -2,7 +2,7 @@
 
 /**
  * JS result shape: `{kind, values, pointCount, components?, name?, dataType?}`.
- * Positions are Float32Array xyz; geometry is Float32Array xyz + RGB bytes; colors are RGB bytes.
+ * Positions are `Float32Array` xyz; geometry is `Float32Array` xyz + RGB bytes; colors are RGB bytes.
  * Attributes preserve their declared integer/float type in a JS typed array.
  */
 export class WasmAsyncFormatReader {
@@ -890,7 +890,7 @@ export class WasmVoxelViewer {
     /**
      * Render worker of a build-worker setup: creates the driver for the dataset described by
      * the builder's `cellsInfo` (`origin`, `rootMin`, `rootSide`). Returns the `cellPath`. The
-     * first `takeCellMessages` carries `driverReplaced`.
+     * first `takeCellMessages` carries `driverReplaced`. Follow it with `setCellElevationRange`.
      * @param {Float64Array} origin
      * @param {Float64Array} root_min
      * @param {number} root_side
@@ -1048,6 +1048,21 @@ export class WasmVoxelViewer {
      */
     fitScene() {
         const ret = wasm.wasmvoxelviewer_fitScene(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * Flies the camera relative to the view: `forward` on the horizontal plane, `right` along the
+     * screen's right and `up` along dataset Z, all in units of the orbit distance.
+     * @param {number} forward
+     * @param {number} right
+     * @param {number} up
+     * @returns {boolean}
+     */
+    flyCamera(forward, right, up) {
+        const ret = wasm.wasmvoxelviewer_flyCamera(this.__wbg_ptr, forward, right, up);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1352,6 +1367,19 @@ export class WasmVoxelViewer {
      */
     setCellCut(message) {
         const ret = wasm.wasmvoxelviewer_setCellCut(this.__wbg_ptr, message);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * Fixes the elevation colour range of the remote cells path to `[min, max]` (absolute
+     * dataset Z, `cellsInfo.elevationRange`), so the colour does not depend on the view. Without
+     * it the range follows the stored levels. No-op when the path is off.
+     * @param {number} min
+     * @param {number} max
+     */
+    setCellElevationRange(min, max) {
+        const ret = wasm.wasmvoxelviewer_setCellElevationRange(this.__wbg_ptr, min, max);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
@@ -3169,12 +3197,12 @@ function __wbg_get_imports() {
         },
         __wbindgen_generic_0000000000000004: function(arg0, arg1) {
             // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("any")], shim_idx: 554, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__117);
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__119);
             return ret;
         },
         __wbindgen_generic_0000000000000005: function(arg0, arg1) {
             // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("undefined")], shim_idx: 554, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__118);
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__120);
             return ret;
         },
         __wbindgen_generic_0000000000000006: function(arg0) {
@@ -3231,15 +3259,15 @@ function wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bin
     }
 }
 
-function wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__117(arg0, arg1, arg2) {
-    const ret = wasm.wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__117(arg0, arg1, arg2);
+function wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__119(arg0, arg1, arg2) {
+    const ret = wasm.wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__119(arg0, arg1, arg2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
-function wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__118(arg0, arg1, arg2) {
-    const ret = wasm.wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__118(arg0, arg1, arg2);
+function wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__120(arg0, arg1, arg2) {
+    const ret = wasm.wasm_bindgen_540468089f657b51___convert__closures_____invoke___wasm_bindgen_540468089f657b51___sys__JsNullable_wgpu_8448f4460114fe7c___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d134427b58e45605___result__Result_____wasm_bindgen_540468089f657b51___JsError___true__120(arg0, arg1, arg2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
