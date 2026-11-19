@@ -23,23 +23,17 @@ impl CellPool {
     ) -> Vec<u8> {
         let usable = |depth: u8| self.is_usable(self.key(entry.node, depth));
         let mut wanted = entry.required_levels();
-        // The resident depths of the range that reach the finest usable drawn one without a
-        // residency gap (ADR 0055): a range depth beyond a gap would make the per-cell rule jump
-        // to it. One run per node: the runs of the coarser drawn depths are dropped, so their
-        // cells draw a finer active depth, never a coarser one (R3-Q21). A drawn depth that is
-        // not usable yet (fresh) anchors no run.
+        // The resident depths of the range that reach a drawn one without a residency gap
+        // (ADR 0055): a range depth beyond a gap would make the per-cell rule jump
+        // to it. A drawn depth that is not usable yet (fresh) anchors no run.
         let drawn = wanted.clone();
         if let (Some((lo, hi)), Some(first), Some(last)) =
             (entry.range, drawn.first(), drawn.last())
         {
             let (lo, hi) = (lo.min(*first), hi.max(*last));
-            wanted.clear();
-            if let Some(anchor) = drawn.iter().rev().find(|depth| usable(**depth)) {
-                wanted.push(*anchor);
+            for anchor in drawn.iter().filter(|depth| usable(**depth)) {
                 wanted.extend((lo..*anchor).rev().take_while(|depth| usable(*depth)));
                 wanted.extend((anchor.saturating_add(1)..=hi).take_while(|depth| usable(*depth)));
-            } else {
-                wanted = drawn;
             }
             wanted.sort_unstable();
             wanted.dedup();

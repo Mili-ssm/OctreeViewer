@@ -425,19 +425,17 @@ fn check_partition(
 /// Contiguous chains: a node steps one level at a time (ADR 0053) through levels it stores.
 #[test]
 fn the_driver_in_cell_mode_partitions_the_view() {
-    partitions_the_view(&[0, 1, 2, 3, 4, 5, 6], &[1, 2, 3, 4, 5], true);
+    partitions_the_view(&[0, 1, 2, 3, 4, 5, 6], &[1, 2, 3, 4, 5]);
 }
 
 /// Gapped chains: nothing here builds the levels in between on demand, so each hop over a gap
-/// is a timeout hop (`STEP_WAIT_FRAMES`) and the view still settles and partitions. A node's
-/// active set is one contiguous run (ADR 0055) and no two resident levels touch here, so no pose
-/// draws two depths of a node.
+/// is a timeout hop (`STEP_WAIT_FRAMES`) and the view still settles and partitions.
 #[test]
 fn the_driver_in_cell_mode_partitions_the_view_over_gapped_chains() {
-    partitions_the_view(&[0, 2, 4, 6], &[1, 3, 5], false);
+    partitions_the_view(&[0, 2, 4, 6], &[1, 3, 5]);
 }
 
-fn partitions_the_view(first: &[u8], second: &[u8], expect_multi_depth: bool) {
+fn partitions_the_view(first: &[u8], second: &[u8]) {
     use super::lod::{LodNodeScene, random_pose};
     for_each_adapter(CellLimitMode::Auto, |h| {
         if !h.runs_test_pool {
@@ -551,11 +549,7 @@ fn partitions_the_view(first: &[u8], second: &[u8], expect_multi_depth: bool) {
         );
         assert!(failures.is_empty(), "{}", failures.join("\n"));
         assert!(points > 500, "too few points checked: {points}");
-        assert_eq!(
-            multi_depth > 0,
-            expect_multi_depth,
-            "{multi_depth} poses drew two depths of a node"
-        );
+        assert!(multi_depth > 0, "no pose drew two depths of a node");
         true
     });
 }
