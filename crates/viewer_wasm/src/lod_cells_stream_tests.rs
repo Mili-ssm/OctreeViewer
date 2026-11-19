@@ -22,10 +22,10 @@ use viewer_render_wgpu::cell_lod::{
     LodView, MAX_NODE_SPAN, NodeLod, cell_lo, drawn_depth_at, edge_px, min_child_edge_px, refines,
 };
 use viewer_render_wgpu::{
-    ActiveRule, CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan,
-    MASK_WORDS, NODE_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo,
-    SceneBounds, ViewProjection, VoxelBuildLimits, cell_cut_digest, gpu_input_digest,
-    node_view_range, representative_depth,
+    CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan, MASK_WORDS,
+    NODE_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, SceneBounds,
+    ViewProjection, VoxelBuildLimits, cell_cut_digest, gpu_input_digest, node_view_range,
+    representative_depth,
 };
 use viewer_render_wgpu::{
     CellGrid, MAX_CELL_DEPTH, node_cell_level, representative_depth_for_spacing,
@@ -575,9 +575,6 @@ struct Harness {
     last_plan: Option<FramePlan>,
     last_stage: Option<f64>,
     totals: Totals,
-    /// Which range depths a cell-mode node activates; applied to the driver at the start of
-    /// every frame, so a replaced driver keeps it.
-    rule: ActiveRule,
     /// The camera of the frame being checked, for the cell-mode twin.
     cell_ctx: Option<CellCtx>,
     /// Cell mode: what the last evaluation was made over, to skip identical frames.
@@ -701,7 +698,6 @@ impl Harness {
             last_plan: None,
             last_stage: None,
             totals: Totals::default(),
-            rule: ActiveRule::default(),
             cell_ctx: None,
             cell_signature: None,
             cell_memory: HashMap::new(),
@@ -1019,13 +1015,11 @@ impl Harness {
 
     /// ADR 0055 ("Decision"): the active depths of a node are a contiguous run of resident depths.
     /// Between the coarsest and the finest active depth of a node, every depth that is resident,
-    /// usable and inside the node's span is active (`cell_active_depths` under both
-    /// `ActiveRule`s), except the D5 depth of a node with a mask, which the pool appends
+    /// usable and inside the node's span is active (`cell_active_depths`), except the D5 depth of a node with a mask, which the pool appends
     /// apart from the run (`d5_active`: the smallest resident depth from `node_depth + 3`), so it
     /// is left out of the run and never reported itself. Usable is the pool's own (`is_usable`:
     /// resident and not uploaded this frame).
     fn check_active_runs(&mut self, number: usize, plan: &FramePlan, nodes: &[CellNode]) {
-        let rule = self.rule;
         let pool = self.driver.pool();
         let mut problems = Vec::new();
         for node in nodes {
@@ -1051,9 +1045,9 @@ impl Harness {
                 let range = entry.and_then(|entry| entry.range);
                 let drawn = entry.map(CellCutEntry::required_levels);
                 problems.push(format!(
-                    "frame {number}: node {:?} (rule {:?}) has resident usable depths {missing:?} \
+                    "frame {number}: node {:?} has resident usable depths {missing:?} \
                      missing inside its active run {run:?} (D5 {d5:?}, range {range:?}, drawn {drawn:?})",
-                    node.id, rule
+                    node.id
                 ));
             }
         }
@@ -1069,7 +1063,7 @@ impl Harness {
     /// `Totals::active_gaps`; the first case is kept in `first_gap`. Runs on every frame, also
     /// the ones `check_cell_cut` skips as identical, because residency moves without the plan.
     fn check_active_gaps(&mut self, number: usize, plan: &FramePlan) {
-        let (rule, pool) = (self.rule, self.driver.pool());
+        let pool = self.driver.pool();
         let grid = self.dataset.cell_grid();
         let hierarchy = self.dataset.metadata.hierarchy();
         let mut found = Vec::new();
@@ -1118,7 +1112,7 @@ impl Harness {
                     (depth, pool.is_resident(key), pool.is_usable(key))
                 };
                 found.push(format!(
-                    "frame {number}: node {:?} (rule {rule:?}) active {run:?} skips non-usable \
+                    "frame {number}: node {:?} active {run:?} skips non-usable \
                      buildable depths {missing:?} (depth, resident, usable: {:?}; buildable \
                      {span:?}, D5 {d5:?}, range {:?}, drawn {:?}, wanted {:?})",
                     entry.node,
@@ -1159,7 +1153,6 @@ impl Harness {
     }
 
     fn frame(&mut self, view: &ViewProjection) -> FrameInfo {
-        self.driver.set_active_rule(self.rule);
         self.target.eye = view.camera().position();
         let step = CellStep {
             view,
@@ -2494,14 +2487,7 @@ fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in_cell_mode() {
 /// to a depth whose cells measure a fraction of a pixel (black holes).
 #[test]
 fn a_node_holding_the_eye_keeps_contiguous_active_depths_and_no_sub_pixel_cells() {
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        a_node_holding_the_eye_keeps_contiguous_active_depths_under(rule);
-    }
-}
-
-fn a_node_holding_the_eye_keeps_contiguous_active_depths_under(rule: ActiveRule) {
     let (mut h, origin, scale) = sample_harness();
-    h.rule = rule;
     let viewport = [870, 750];
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
     let mk = |eye: [f64; 3], target: [f64; 3]| {
@@ -2597,16 +2583,14 @@ fn a_node_holding_the_eye_keeps_contiguous_active_depths_under(rule: ActiveRule)
 /// pose: from the initial fit, 8 wheel steps of -0.3 zoom each, then a right drag of 120 px
 /// upward on an 870 x 750 canvas). For every face of every node of the cut it takes a grid of
 /// point pairs straddling the face, asks the twin of the GPU rule (`drawn_depth_at`) which node
-/// draws each side and at which depth, and prints, per active rule, the nodes' active, resident,
+/// draws each side and at which depth, and prints, the nodes' active, resident,
 /// wanted and drawn depths and ranges, a histogram of the level differences of the pairs where
 /// both samples are on screen, and the worst pairs with their screen position.
 /// Run: `cargo test --offline --profile fast -p viewer_wasm p4_border_levels -- --ignored --nocapture`.
 #[test]
 #[ignore = "diagnostic: prints the level difference across the P4 node borders"]
 fn p4_border_levels() {
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        let _ = p4_border_levels_under(rule);
-    }
+    let _ = p4_border_levels_under();
 }
 
 /// ADR 0055 plan, task 4: at P4 node 14 (beside node 8, which draws level 10 across their border)
@@ -2614,7 +2598,7 @@ fn p4_border_levels() {
 /// differs by more than one level. `node_far_depth` gave node 14 the range 11..13.
 #[test]
 fn at_p4_node_14_can_draw_the_level_its_border_needs() {
-    let (histogram, node_14) = p4_border_levels_under(ActiveRule::default());
+    let (histogram, node_14) = p4_border_levels_under();
     let (lo, _) = node_14.expect("node 14 has a range at P4");
     assert!(lo <= 10, "node 14 range.lo {lo} > 10");
     assert!(
@@ -2624,11 +2608,8 @@ fn at_p4_node_14_can_draw_the_level_its_border_needs() {
 }
 
 /// Returns the histogram of the visible border pairs by level difference, and the range of node 14.
-fn p4_border_levels_under(
-    rule: ActiveRule,
-) -> (std::collections::BTreeMap<u8, usize>, Option<(u8, u8)>) {
+fn p4_border_levels_under() -> (std::collections::BTreeMap<u8, usize>, Option<(u8, u8)>) {
     let (mut h, origin, scale) = sample_harness();
-    h.rule = rule;
     let viewport = [870, 750];
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
     // The host fits the camera to the data extent (`LodDataset::fit_camera`).
@@ -2649,7 +2630,7 @@ fn p4_border_levels_under(
     assert!(p4_camera.orbit(0.0, -120.0 / 750.0));
     let p4 = ViewProjection::new(p4_camera, viewport, scale, VoxelBuildLimits::default());
     println!(
-        "== rule {rule:?}: P4 eye {:?} target {:?} (dataset frame of the close-pose test: eye \
+        "== P4 eye {:?} target {:?} (dataset frame of the close-pose test: eye \
          [31.958, 38.760, 6.118] target [31.958, 31.958, 1.9995])",
         p4_camera.position(),
         p4_camera.target()
@@ -2808,7 +2789,7 @@ fn p4_border_levels_under(
     }
     println!("-- visible border pairs by level difference: {histogram:?}");
     if let Ok(dir) = std::env::var("P4_DUMP") {
-        std::fs::write(format!("{dir}/pairs-{rule:?}.txt"), dump).unwrap();
+        std::fs::write(format!("{dir}/pairs.txt"), dump).unwrap();
     }
     println!("-- level differences per 50 px screen row band: {bands:?}");
     let mut worst: Vec<_> = groups.iter().collect();
@@ -2876,9 +2857,8 @@ fn demo_pose_camera(fit: OrbitCamera, pose: &str) -> OrbitCamera {
 }
 
 /// The sample settled at `pose` (from the initial fit, like `p4_border_levels`).
-fn settled_sample_pose(pose: &str, rule: ActiveRule) -> (Harness, ViewProjection) {
+fn settled_sample_pose(pose: &str) -> (Harness, ViewProjection) {
     let (mut h, origin, scale) = sample_harness();
-    h.rule = rule;
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
     let data = h.dataset.metadata.hierarchy().stats().data_bounds;
     let mut fit = OrbitCamera::default();
@@ -2902,32 +2882,25 @@ fn settled_sample_pose(pose: &str, rule: ActiveRule) -> (Harness, ViewProjection
     (h, view)
 }
 
-/// `gpu_input_digest` of the settled cut at each demo pose and active rule, golden. It hashes what
+/// `gpu_input_digest` of the settled cut at each demo pose, golden. It hashes what
 /// the GPU receives per node (active-depth bits, mask, node depth), not the per-octant fields of
 /// the entries, so it must not change while those fields are replaced by node-level ones. The
 /// cut goldens of `cell_cut_tests.rs` are pure cuts without a pool, so they emit no active bits:
 /// these poses stand in for them.
 const GPU_INPUT_GOLDEN: &[(&str, u64)] = &[
-    ("P1/Contiguous", 0x2f2f4f1ab372490e),
-    ("P1/Window", 0x2f2f4f1ab372490e),
-    ("P2/Contiguous", 0xe0f88c8d0cc168e4),
-    ("P2/Window", 0xe0f88c8d0cc168e4),
-    ("P3/Contiguous", 0xdc13ecd06a8491cc),
-    ("P3/Window", 0xdc13ecd06a8491cc),
-    ("P4/Contiguous", 0xdfa4469dd7dfe145),
-    ("P4/Window", 0xdfa4469dd7dfe145),
-    ("P5/Contiguous", 0xe105c88c8ae150cc),
-    ("P5/Window", 0xe105c88c8ae150cc),
+    ("P1", 0x2f2f4f1ab372490e),
+    ("P2", 0xe0f88c8d0cc168e4),
+    ("P3", 0xdc13ecd06a8491cc),
+    ("P4", 0xdfa4469dd7dfe145),
+    ("P5", 0xe105c88c8ae150cc),
 ];
 
 #[test]
 fn the_gpu_input_at_the_sample_poses_is_pinned() {
     let mut actual = Vec::new();
     for pose in ["P1", "P2", "P3", "P4", "P5"] {
-        for rule in [ActiveRule::Contiguous, ActiveRule::Window] {
-            let (h, _) = settled_sample_pose(pose, rule);
-            actual.push((format!("{pose}/{rule:?}"), h.totals.gpu_digest_last));
-        }
+        let (h, _) = settled_sample_pose(pose);
+        actual.push((pose.to_owned(), h.totals.gpu_digest_last));
     }
     let matches = actual.len() == GPU_INPUT_GOLDEN.len()
         && actual
@@ -3577,7 +3550,7 @@ fn twin_wanted_range_vs_node_range() {
         .unwrap_or(LATTICE_PX);
     let poses = std::env::var("TWIN_POSES").unwrap_or_else(|_| "P1,P2,P3,P4,P5".into());
     for pose in poses.split(',') {
-        let (h, view) = settled_sample_pose(pose, ActiveRule::default());
+        let (h, view) = settled_sample_pose(pose);
         let camera = view.camera();
         println!(
             "######## {pose}: eye {:.3?} target {:.3?} lattice {lattice} px, depth ratio {DEPTH_RATIO}, \
@@ -3600,7 +3573,7 @@ fn twin_wanted_range_vs_node_range() {
 fn range_violations(poses: &[&str], lo_side: bool) -> Vec<String> {
     let mut violations = Vec::new();
     for pose in poses {
-        let (h, view) = settled_sample_pose(pose, ActiveRule::default());
+        let (h, view) = settled_sample_pose(pose);
         for r in twin_rows(&h, &view, LATTICE_PX) {
             let (Some((emin, emax)), Some((lo, hi)), Some((tmin, tmax))) =
                 (r.twin_eps, r.range, r.twin)
@@ -4315,7 +4288,7 @@ fn data_bounded_hi_vs_node_range() {
     let (mut slack_d, mut d_vs_c, mut violations) = (Vec::new(), Vec::new(), Vec::new());
     let mut stats: Vec<SourceStats> = (0..SOURCES.len()).map(|_| SourceStats::default()).collect();
     for pose in poses.split(',') {
-        let (h, view) = settled_sample_pose(pose, ActiveRule::default());
+        let (h, view) = settled_sample_pose(pose);
         let rows = twin_rows(&h, &view, lattice);
         let pool = h.driver.pool().resident_pages();
         println!("######## {pose}: pool resident pages {pool}");
@@ -4571,13 +4544,8 @@ impl Harness {
 
 /// The sample settled at `pose` like `settled_sample_pose`, with the level requests relayed when
 /// `relay` is set (what the browser does; the plain harness never answers them).
-fn settled_sample_pose_with(
-    pose: &str,
-    rule: ActiveRule,
-    relay: bool,
-) -> (Harness, ViewProjection, ViewProjection) {
+fn settled_sample_pose_with(pose: &str, relay: bool) -> (Harness, ViewProjection, ViewProjection) {
     let (mut h, origin, scale) = sample_harness();
-    h.rule = rule;
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
     let data = h.dataset.metadata.hierarchy().stats().data_bounds;
     let mut fit = OrbitCamera::default();
@@ -4646,29 +4614,21 @@ fn pages_by_depth(h: &Harness, id: NodeId) -> Vec<(u8, usize)> {
         .collect()
 }
 
-/// One line per (pose, rule, relay, node) of the eye node, its neighbour and the totals.
+/// One line per (pose, relay, node) of the eye node, its neighbour and the totals.
 /// Run: `cargo test --profile fast -p viewer_wasm --offline --lib eye_node_residency_at_poses -- --ignored --nocapture`.
 #[test]
 #[ignore = "diagnostic: eye-node residency on the built-in sample at P1 to P5"]
 fn eye_node_residency_at_poses() {
     for pose in ["P1", "P2", "P3", "P4", "P5"] {
-        for rule in [ActiveRule::Contiguous, ActiveRule::Window] {
-            // Measured equal with and without relaying the requests (the plan itself builds the
-            // levels it wishes), so only the browser-like variant runs.
-            let (h, view, _) = settled_sample_pose_with(pose, rule, true);
-            print_eye_node_residency(&h, &view, pose, rule, true);
-        }
+        // Measured equal with and without relaying the requests (the plan itself builds the
+        // levels it wishes), so only the browser-like variant runs.
+        let (h, view, _) = settled_sample_pose_with(pose, true);
+        print_eye_node_residency(&h, &view, pose, true);
     }
 }
 
-fn print_eye_node_residency(
-    h: &Harness,
-    view: &ViewProjection,
-    pose: &str,
-    rule: ActiveRule,
-    relay: bool,
-) {
-    let tag = format!("EYE pose={pose} rule={rule:?} relay={}", u8::from(relay));
+fn print_eye_node_residency(h: &Harness, view: &ViewProjection, pose: &str, relay: bool) {
+    let tag = format!("EYE pose={pose} relay={}", u8::from(relay));
     let (mut over_levels, mut over_pages) = (0_usize, 0_usize);
     for (j, node) in h.cell_nodes.iter().enumerate() {
         let hi_d = hi_d_of(h, view, j);
@@ -5112,12 +5072,8 @@ const ZOOM_HOLD_FRAMES: usize = 40;
 fn synthetic_zoom_in_lag() {
     // The last run is a control: the six finest active depths of each node are dropped from what
     // is drawn, so the lag must show up (if it stayed 0 the metric would measure nothing).
-    for (rule, drop_top) in [
-        (ActiveRule::Contiguous, 0),
-        (ActiveRule::Window, 0),
-        (ActiveRule::Contiguous, 6),
-    ] {
-        let (mut h, p2, _) = settled_sample_pose_with("P2", rule, true);
+    for drop_top in [0, 6] {
+        let (mut h, p2, _) = settled_sample_pose_with("P2", true);
         h.lag = LagLog {
             drop_top,
             on: true,
@@ -5147,6 +5103,6 @@ fn synthetic_zoom_in_lag() {
             h.record_lag(&view);
         }
         let control = if drop_top > 0 { " control" } else { "" };
-        print_lag(&format!("zoom {rule:?}{control}"), &h.lag.frames);
+        print_lag(&format!("zoom{control}"), &h.lag.frames);
     }
 }

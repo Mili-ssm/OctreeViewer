@@ -77,8 +77,6 @@ use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc, sync::Arc};
 
 use viewer_core::{NodeId, SpatialBounds};
 
-pub use crate::cell_cut::ActiveRule;
-
 use crate::camera::VERTICAL_FOV;
 use crate::node_cells::{node_range, representative_depth_for_spacing};
 
@@ -631,9 +629,6 @@ pub struct CellPool {
     /// `STEP_WAIT_FRAMES` the octant hops to the resident level closest to its drawn depth
     /// (ADR 0053).
     step_waits: FastMap<(NodeId, usize), StepWait>,
-    /// Cell mode: per node of the applied cut that was already active in the previous cut, the
-    /// depths its range residents may take: that span widened by one level at each end.
-    applied_window: FastMap<NodeId, (u8, u8)>,
     /// Cell mode: the D5 depth each masked node had active at the last applied frame. Retained
     /// frames keep it (the caps may drop below it, but the GPU record still holds the mask).
     applied_d5: FastMap<NodeId, u8>,
@@ -655,7 +650,6 @@ pub struct CellPool {
     /// Levels whose upload completed in the current plan: a level is first drawn one frame after
     /// its last page is written, so cell mode does not activate them yet (the D5 depth included).
     fresh: FastSet<LevelKey>,
-    active_rule: ActiveRule,
     free_masks: BTreeSet<u32>,
     next_mask: u32,
     events: Vec<CellPoolEvent>,
@@ -710,7 +704,6 @@ impl CellPool {
             applied_finest: FastMap::default(),
             applied_span: FastMap::default(),
             step_waits: FastMap::default(),
-            applied_window: FastMap::default(),
             applied_d5: FastMap::default(),
             applied_digest: 0,
             applied_cover: FastSet::default(),
@@ -725,7 +718,6 @@ impl CellPool {
             pinned: FastSet::default(),
             mask_slots: FastMap::default(),
             fresh: FastSet::default(),
-            active_rule: ActiveRule::Contiguous,
             free_masks: BTreeSet::new(),
             next_mask: 0,
             events: Vec::new(),
@@ -740,27 +732,6 @@ impl CellPool {
     /// non-finite side restores the literal mode.
     pub fn set_min_side(&mut self, min_side: Option<f64>) {
         self.min_side = min_side.filter(|side| side.is_finite() && *side > 0.0);
-    }
-
-    /// Chooses which range depths are active (`ActiveRule`). A change drops the memos of the
-    /// cuts planned under the old rule and marks every mask slot stale, so the next plan
-    /// re-derives the active depths and sends a fresh `MaskUpdate` for each node; no level is
-    /// rebuilt or re-uploaded.
-    pub fn set_active_rule(&mut self, rule: ActiveRule) {
-        if self.active_rule == rule {
-            return;
-        }
-        self.active_rule = rule;
-        self.wanted_memo = None;
-        self.real_memo = None;
-        self.depths.clear();
-        for slot in self.mask_slots.values_mut() {
-            slot.stale = true;
-        }
-    }
-
-    pub fn active_rule(&self) -> ActiveRule {
-        self.active_rule
     }
 
     /// Node depth of `bounds`: the depth whose levels span its octants.

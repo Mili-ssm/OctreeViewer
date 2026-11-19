@@ -1125,10 +1125,10 @@ fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
             root_side: 1.0,
         };
         // The scene must produce at least one retained frame whose active set moves
-        // (`retained_changes > 0` below). Re-chosen from 0x7a11 on 18-11-2026 when `lo` became
-        // coarser (ADR 0055): the old scene then gave none, this one gives 3. A seed with 0
-        // fails that guard instead of passing vacuously.
-        let mut rng = Rng(0x7a12);
+        // (`retained_changes > 0` below). Re-chosen from 0x7a12 on 19-11-2026 when the window
+        // rule was retired: under the contiguous rule most seeds give none, this one gives 1. A
+        // seed with 0 fails that guard instead of passing vacuously.
+        let mut rng = Rng(0x7a19);
         let scene = [
             LodNodeScene::random(&mut rng, unit, 1, [0, 1, 0], &[0, 2, 4, 6], 0, 1200),
             LodNodeScene::random(&mut rng, unit, 1, [1, 0, 0], &[1, 3, 5], 0, 500),
@@ -1142,8 +1142,6 @@ fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
             coordinate_origin: [0.0; 3],
             cpu_budget_bytes: u64::MAX,
         });
-        // Only the window rule produces retained frames with a moved active set (the seed above).
-        driver.set_active_rule(crate::ActiveRule::Window);
         let mut cut = Vec::new();
         for (index, node) in scene.iter().enumerate() {
             let id = NodeId::new(index as u64 + 1);

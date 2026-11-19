@@ -60,7 +60,7 @@ pub use cell_pages::{
     PageFrame, PageInfo, decode_cell, pack_level, srgb_to_linear_table,
 };
 pub use cell_pool::{
-    ActiveLevel, ActiveRule, CellPool, CellPoolEvent, CutApply, DEFAULT_POOL_PAGES,
+    ActiveLevel, CellPool, CellPoolEvent, CutApply, DEFAULT_POOL_PAGES,
     DEFAULT_UPLOAD_BUDGET_BYTES, FramePlan, HIGH_PERCENT, LOW_PERCENT, LevelKey, MaskUpdate,
     POOL_PAGE_BYTES, PageUpload, PoolConfig, PoolCounters, PoolNode, gpu_input_digest,
     usable_pages,

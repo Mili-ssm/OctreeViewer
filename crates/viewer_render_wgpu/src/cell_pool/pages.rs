@@ -192,7 +192,6 @@ impl CellPool {
         self.applied_finest.clear();
         self.applied_span.clear();
         self.step_waits.clear();
-        self.applied_window.clear();
         self.applied_d5.clear();
         self.old_released.clear();
         self.applied_digest = 0;

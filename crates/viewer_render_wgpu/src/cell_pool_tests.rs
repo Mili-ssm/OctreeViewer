@@ -2391,10 +2391,9 @@ fn eval_pair(
 
 /// Whether `eval_hold` and `eval_refine_hold` hold `node` when every octant of it wants `wish`,
 /// and the active depths it would take over with: the entry is built as `plan` would (the drawn
-/// levels from the entering seed and a `range`), so the active rule (`rule`) sees the range
+/// levels from the entering seed and a `range`), so the active depths see the range
 /// residents.
-fn refine_probe(rig: &mut Rig, node: u64, wish: u8, rule: ActiveRule, far: Far) -> Probe {
-    rig.pool.set_active_rule(rule);
+fn refine_probe(rig: &mut Rig, node: u64, wish: u8, far: Far) -> Probe {
     let id = NodeId::new(node);
     let mut entries = entries_with(rig, &[id], wish);
     set_range(rig, &mut entries[0], far);
@@ -2530,17 +2529,12 @@ fn parts(verdict: &Verdict) -> Option<Parts> {
     }
 }
 
-const RULES: [ActiveRule; 2] = [ActiveRule::Window, ActiveRule::Contiguous];
 const FARS: [Far; 2] = [Far::Wide, Far::Near];
 
 /// Zoom in: node 2 drew with nominal depth `finest - 1` and finest active depth `finest` (`low`:
 /// half of its octants drew `finest - 2`, so its active set is `finest - 2..=finest`); its child
 /// 10 (stored 4..=7) enters the cut with the resident levels `resident` and wants `wish`.
-fn zoom_in_case(
-    (finest, low, wish, resident): (u8, bool, u8, &[u8]),
-    rule: ActiveRule,
-    far: Far,
-) -> Verdict {
+fn zoom_in_case((finest, low, wish, resident): (u8, bool, u8, &[u8]), far: Far) -> Verdict {
     let mut rig = Rig::new(two_regions_with_coarse_children(), 512, 3, 1);
     rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
     set_applied(&mut rig, 2, finest);
@@ -2549,7 +2543,7 @@ fn zoom_in_case(
         rig.pool.applied_drawn.insert(NodeId::new(2), drawn);
     }
     set_resident(&mut rig, 10, resident);
-    let probe = refine_probe(&mut rig, 10, wish, rule, far);
+    let probe = refine_probe(&mut rig, 10, wish, far);
     let grid = grid();
     let ancestor_depth = CellPool::node_depth(&grid, rig.nodes[&NodeId::new(2)].bounds);
     assert_eq!(
@@ -2584,18 +2578,14 @@ fn zoom_in_case(
 /// Zoom out: the children 10..=17 of node 2 drew with nominal depth `finest - 1` and finest
 /// active depth `finest` (`mixed`: only child 10 had `finest`, the others 5, so the octants of
 /// node 2 differ); node 2 (stored 4..=7, never loaded) has `resident` levels and wants `wish`.
-fn zoom_out_case(
-    (finest, mixed, wish, resident): (u8, bool, u8, &[u8]),
-    rule: ActiveRule,
-    far: Far,
-) -> Verdict {
+fn zoom_out_case((finest, mixed, wish, resident): (u8, bool, u8, &[u8]), far: Far) -> Verdict {
     let (mut rig, _, _) = zoom_out_rig();
     set_resident(&mut rig, 2, resident);
     let finest_of = |child: usize| if mixed && child != 10 { 5 } else { finest };
     for child in 10..18 {
         set_applied(&mut rig, child as u64, finest_of(child));
     }
-    let probe = refine_probe(&mut rig, 2, wish, rule, far);
+    let probe = refine_probe(&mut rig, 2, wish, far);
     let grid = grid();
     let child_depth = CellPool::node_depth(&grid, rig.nodes[&NodeId::new(10)].bounds);
     assert_eq!(
@@ -2727,28 +2717,18 @@ fn assert_parts<C: std::fmt::Debug + PartialEq>(
     }
 }
 
-/// Judges one case under every active rule and range.
-fn judge(case: &str, held: bool, run: &dyn Fn(ActiveRule, Far) -> Verdict) -> Vec<Option<Parts>> {
-    let mut seen = Vec::new();
-    for rule in RULES {
-        for far in FARS {
-            seen.push(assert_judged(
-                &format!("{rule:?} {far:?} {case}"),
-                &run(rule, far),
-                held,
-            ));
-        }
-    }
-    seen
+/// Judges one case under every range.
+fn judge(case: &str, held: bool, run: &dyn Fn(Far) -> Verdict) -> Vec<Option<Parts>> {
+    FARS.iter()
+        .map(|far| assert_judged(&format!("{far:?} {case}"), &run(*far), held))
+        .collect()
 }
 
 #[test]
 fn zoom_in_a_child_is_held_while_it_would_draw_below_the_ancestors_finest_depth() {
     for (finest, wish, resident, held) in ZOOM_IN {
         let case: InCase = (*finest, false, *wish, *resident);
-        let seen = judge(&format!("{case:?}"), *held, &|rule, far| {
-            zoom_in_case(case, rule, far)
-        });
+        let seen = judge(&format!("{case:?}"), *held, &|far| zoom_in_case(case, far));
         assert_parts(&case, ZOOM_IN_PARTS, &seen);
     }
 }
@@ -2757,9 +2737,7 @@ fn zoom_in_a_child_is_held_while_it_would_draw_below_the_ancestors_finest_depth(
 fn zoom_in_with_octants_that_drew_different_depths_is_judged_by_the_twin() {
     for (finest, wish, resident, held) in ZOOM_IN_LOW {
         let case: InCase = (*finest, true, *wish, *resident);
-        let seen = judge(&format!("{case:?}"), *held, &|rule, far| {
-            zoom_in_case(case, rule, far)
-        });
+        let seen = judge(&format!("{case:?}"), *held, &|far| zoom_in_case(case, far));
         assert_parts(&case, ZOOM_IN_PARTS, &seen);
     }
 }
@@ -2768,9 +2746,7 @@ fn zoom_in_with_octants_that_drew_different_depths_is_judged_by_the_twin() {
 fn zoom_out_a_node_is_held_while_it_would_draw_below_what_its_descendants_drew() {
     for (finest, mixed, wish, resident, held) in ZOOM_OUT {
         let case: OutCase = (*finest, *mixed, *wish, *resident);
-        let seen = judge(&format!("{case:?}"), *held, &|rule, far| {
-            zoom_out_case(case, rule, far)
-        });
+        let seen = judge(&format!("{case:?}"), *held, &|far| zoom_out_case(case, far));
         assert_parts(&case, ZOOM_OUT_PARTS, &seen);
     }
 }
@@ -2820,8 +2796,8 @@ const ZOOM_OUT: &[(u8, bool, u8, &[u8], bool)] = &[
     (6, true, 7, &[4, 5, 7], true),
     (6, true, 6, &[4, 6], true),
     (6, true, 6, &[4, 5], true),
-    // The descendants drew 5 and the node holds the levels above: its run end depends on the
-    // active rule (`the_range_makes_the_active_rule_matter_to_the_run`).
+    // The descendants drew 5 and the node holds the levels above: its run end follows the
+    // resident levels (`the_range_moves_the_run_ends`).
     (5, false, 7, &[5, 6, 7], false),
     (5, true, 7, &[4, 5, 6, 7], false),
 ];
@@ -2885,16 +2861,13 @@ fn a_node_already_held_is_judged_like_a_fresh_one_while_its_zone_is_drawn() {
     }
 }
 
-/// With a `range` on the entry the active rule and the width of the range change the run of
-/// the node (`Window` reaches one level beyond what is drawn, `Contiguous` every resident level
-/// up to the range end), so the judges see more than the drawn levels.
+/// With a `range` on the entry its width changes the run of the node (every resident level up
+/// to the range end is active), so the judges see more than the drawn levels.
 #[test]
-fn the_range_makes_the_active_rule_matter_to_the_run() {
+fn the_range_moves_the_run_ends() {
     let runs = |case: OutCase| -> std::collections::BTreeSet<Option<Run>> {
-        RULES
-            .iter()
-            .flat_map(|rule| FARS.iter().map(move |far| (*rule, *far)))
-            .map(|(rule, far)| zoom_out_case(case, rule, far).run)
+        FARS.iter()
+            .map(|far| zoom_out_case(case, *far).run)
             .collect()
     };
     // The coarse end moves with the width of the range.
@@ -2902,11 +2875,8 @@ fn the_range_makes_the_active_rule_matter_to_the_run() {
         runs((6, false, 7, &[4, 5])),
         [Some((4, 5)), Some((5, 5))].into()
     );
-    // The fine end moves with the rule: descendants drew 5, the node has 5, 6 and 7 resident.
-    assert_eq!(
-        runs((5, false, 7, &[5, 6, 7])),
-        [Some((5, 6)), Some((5, 7))].into()
-    );
+    // The fine end reaches every resident level: descendants drew 5, the node has 5, 6 and 7.
+    assert_eq!(runs((5, false, 7, &[5, 6, 7])), [Some((5, 7))].into());
 }
 
 #[test]
@@ -4850,32 +4820,6 @@ fn retained_frames_advance_the_step_wait() {
 }
 
 #[test]
-fn a_node_entering_the_cut_widens_its_window_one_level_per_frame() {
-    // Only depth 9 serves the node when it enters the cut (range 7..=11), so it draws 9 alone.
-    // The other depths of the range become resident afterwards: the active span takes one level
-    // at each end per frame, not the whole range at once (ADR 0053).
-    let nodes = HashMap::from([(
-        NodeId::new(1),
-        d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
-    )]);
-    let mut rig = Rig::new(nodes, 4096, 64, 10_000);
-    rig.pool.set_active_rule(ActiveRule::Window);
-    seed_resident(&mut rig.pool, 1, &[2, 9]);
-    rig.pool.residency_epoch += 1;
-    let cam = camera("zoom");
-    let plan = d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
-    assert_eq!(plan.entries[0].range, Some((7, 11)), "setup");
-    assert_eq!(active_depths(&plan, &rig, 1), [9], "entering the cut");
-    seed_more(&mut rig, 1, &[7, 8, 10, 11]);
-    let spans: Vec<Vec<u8>> = (0..3)
-        .map(|_| active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1))
-        .collect();
-    assert_eq!(spans[0], [8, 9, 10], "one level either side");
-    assert_eq!(spans[1], [7, 8, 9, 10, 11], "one more level either side");
-    assert_eq!(spans[2], spans[1], "the range is covered");
-}
-
-#[test]
 fn a_node_activates_the_contiguous_resident_run_of_its_range() {
     // Only depth 9 serves the node when it enters the cut (range 7..=11), so it draws 9 alone.
     // A range depth beyond a residency gap stays inactive (ADR 0055, proposed): with 10 missing,
@@ -4886,7 +4830,6 @@ fn a_node_activates_the_contiguous_resident_run_of_its_range() {
         d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
     )]);
     let mut rig = Rig::new(nodes, 4096, 64, 10_000);
-    rig.pool.set_active_rule(ActiveRule::Contiguous);
     seed_resident(&mut rig.pool, 1, &[2, 9]);
     rig.pool.residency_epoch += 1;
     let cam = camera("zoom");
@@ -4899,30 +4842,6 @@ fn a_node_activates_the_contiguous_resident_run_of_its_range() {
     seed_more(&mut rig, 1, &[7, 8, 10]);
     let full = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
     assert_eq!(full, [7, 8, 9, 10, 11], "the whole range is resident");
-}
-
-#[test]
-fn switching_the_active_rule_replans_without_a_camera_change() {
-    let nodes = HashMap::from([(
-        NodeId::new(1),
-        d5_node(SIDE, &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
-    )]);
-    let mut rig = Rig::new(nodes, 4096, 64, 10_000);
-    rig.pool.set_active_rule(ActiveRule::Window);
-    seed_resident(&mut rig.pool, 1, &[2, 9]);
-    rig.pool.residency_epoch += 1;
-    let cam = camera("zoom");
-    d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0);
-    seed_more(&mut rig, 1, &[7, 8, 10, 11]);
-    let windowed = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
-    assert_eq!(windowed, [8, 9, 10], "the window widens one level");
-    rig.pool.set_active_rule(ActiveRule::Contiguous);
-    let contiguous = active_depths(&d5_step_at(&mut rig, &ids(&[1]), &cam, 2.0), &rig, 1);
-    assert_eq!(
-        contiguous,
-        [7, 8, 9, 10, 11],
-        "the rule change is applied at once"
-    );
 }
 
 /// Children of node 2 (ids 10..=17) that store depths 4..=10, with node 2 drawing depth 6 under
@@ -5032,56 +4951,6 @@ fn a_leaving_node_hands_back_one_level() {
     );
 }
 
-#[test]
-fn cell_reset_restarts_the_active_window() {
-    // Only depth 9 serves the node when it enters the cut (range 7..=11); the rest of the range
-    // arrives and the window widens to all of it. After a reset the node enters again: it must
-    // start from the depth it draws, one level either side, and widen one level per frame, with
-    // neither the window nor the finest depth it had before the reset.
-    let stored: Vec<u8> = (2..=12).collect();
-    let nodes = HashMap::from([(NodeId::new(1), d5_node(SIDE, &stored))]);
-    let mut rig = Rig::new(nodes, 4096, 64, 10_000);
-    rig.pool.set_active_rule(ActiveRule::Window);
-    seed_resident(&mut rig.pool, 1, &[2, 9]);
-    rig.pool.residency_epoch += 1;
-    let cam = camera("zoom");
-    let cut = ids(&[1]);
-    let enter = |rig: &mut Rig| {
-        let plan = d5_step_at(rig, &cut, &cam, 2.0);
-        assert_eq!(plan.entries[0].range, Some((7, 11)), "setup");
-        assert_eq!(active_depths(&plan, rig, 1), [9], "entering the cut");
-    };
-    enter(&mut rig);
-    seed_more(&mut rig, 1, &[7, 8, 10, 11]);
-    let mut plan = d5_step_at(&mut rig, &cut, &cam, 2.0);
-    for _ in 0..2 {
-        plan = d5_step_at(&mut rig, &cut, &cam, 2.0);
-    }
-    // Guard: a range with lo < hi whose active depths include ones no octant draws.
-    let (lo, hi) = plan.entries[0].range.expect("a cell-mode node has a range");
-    let drawn = plan.entries[0].required_levels();
-    let widened = active_depths(&plan, &rig, 1);
-    assert!(
-        lo < hi && widened.iter().any(|d| !drawn.contains(d)),
-        "{lo}..{hi} {widened:?} vs {drawn:?}"
-    );
-    assert_eq!(widened, [7, 8, 9, 10, 11], "setup: the window is wide");
-
-    let _ = rig.pool.reset();
-    rig.pool.residency_epoch += 1;
-    // The first frame after the reset already finds 7 resident, two levels from the drawn 9 and
-    // inside the range: only a stale window would activate it.
-    seed_resident(&mut rig.pool, 1, &[2, 7, 9]);
-    enter(&mut rig);
-    seed_more(&mut rig, 1, &[8, 10, 11]);
-    let spans: Vec<Vec<u8>> = (0..3)
-        .map(|_| active_depths(&d5_step_at(&mut rig, &cut, &cam, 2.0), &rig, 1))
-        .collect();
-    assert_eq!(spans[0], [8, 9, 10], "one level either side again");
-    assert_eq!(spans[1], [7, 8, 9, 10, 11], "one more level either side");
-    assert_eq!(spans[2], spans[1], "the range is covered");
-}
-
 /// The eight octant nodes with stored (and buildable) depths 4..=12: in the zoom camera the
 /// near ones get a range of several depths.
 fn wide_octant_nodes() -> HashMap<NodeId, PoolNode> {
@@ -5109,9 +4978,9 @@ fn count_range_depths(plan: &FramePlan) -> usize {
         .sum()
 }
 
-fn an_active_range_depth_is_never_evicted_under_pressure_with(rule: ActiveRule) {
+#[test]
+fn an_active_range_depth_is_never_evicted_under_pressure() {
     let mut rig = Rig::new(wide_octant_nodes(), 80, 2, 1);
-    rig.pool.set_active_rule(rule);
     let cut = ids(&CHILDREN);
     let (mut evictions, mut range_depths_active, mut previously_active) = (0, 0, 0);
     let mut previous: HashSet<LevelKey> = HashSet::new();
@@ -5156,140 +5025,120 @@ fn an_active_range_depth_is_never_evicted_under_pressure_with(rule: ActiveRule) 
 }
 
 #[test]
-fn an_active_range_depth_is_never_evicted_under_pressure() {
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        an_active_range_depth_is_never_evicted_under_pressure_with(rule);
-    }
-}
-
-#[test]
 fn cap_clamps_the_range_and_fit_reports_it_with_wide_ranges() {
     // The eight near nodes want ranges of several depths in the zoom camera, which do not fit:
     // the fit caps the farthest nodes first and reports it, and no capped node keeps an active
     // depth finer than its cap.
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        let mut rig = Rig::new(wide_octant_nodes(), 80, 64, 1);
-        rig.pool.set_active_rule(rule);
-        let cut = ids(&CHILDREN);
-        let cam = camera("zoom");
-        let near = by_distance(&cam, &CHILDREN);
-        let (mut reported, mut capped_range_depths) = (0, 0);
-        for frame in 0..40 {
-            let plan = rig.step(&cut, &cam, 2.0);
-            if plan.counters.pool_coarsened == 0 {
+    let mut rig = Rig::new(wide_octant_nodes(), 80, 64, 1);
+    let cut = ids(&CHILDREN);
+    let cam = camera("zoom");
+    let near = by_distance(&cam, &CHILDREN);
+    let (mut reported, mut capped_range_depths) = (0, 0);
+    for frame in 0..40 {
+        let plan = rig.step(&cut, &cam, 2.0);
+        if plan.counters.pool_coarsened == 0 {
+            continue;
+        }
+        reported += 1;
+        assert_eq!(
+            plan.coarsened_nodes.len(),
+            plan.counters.pool_coarsened as usize,
+            "frame {frame}"
+        );
+        // Farthest first: the farthest node is capped, and walking from the farthest to the
+        // nearest node the caps never get coarser (an uncapped node in between is allowed:
+        // the fit skips a node whose coarsening saves no pages).
+        let farthest = *near.last().expect("nodes");
+        assert!(
+            plan.coarsened_nodes.contains(&NodeId::new(farthest)),
+            "frame {frame}: {:?}",
+            plan.coarsened_nodes
+        );
+        let caps: Vec<u8> = near
+            .iter()
+            .rev()
+            .filter_map(|id| rig.pool.caps.get(&NodeId::new(*id)).copied())
+            .collect();
+        assert!(caps.is_sorted(), "frame {frame}: caps far to near {caps:?}");
+        for key in plan.fetch_requests.iter().chain(&plan.level_requests) {
+            if let Some(cap) = rig.pool.caps.get(&key.node) {
+                assert!(
+                    key.depth <= *cap,
+                    "frame {frame}: {key:?} requested above cap {cap}"
+                );
+            }
+        }
+        for entry in &plan.entries {
+            let Some(cap) = rig.pool.caps.get(&entry.node) else {
                 continue;
-            }
-            reported += 1;
-            assert_eq!(
-                plan.coarsened_nodes.len(),
-                plan.counters.pool_coarsened as usize,
-                "frame {frame}"
-            );
-            // Farthest first: the farthest node is capped, and walking from the farthest to the
-            // nearest node the caps never get coarser (an uncapped node in between is allowed:
-            // the fit skips a node whose coarsening saves no pages).
-            let farthest = *near.last().expect("nodes");
-            assert!(
-                plan.coarsened_nodes.contains(&NodeId::new(farthest)),
-                "frame {frame}: {:?}",
-                plan.coarsened_nodes
-            );
-            let caps: Vec<u8> = near
-                .iter()
-                .rev()
-                .filter_map(|id| rig.pool.caps.get(&NodeId::new(*id)).copied())
-                .collect();
-            assert!(caps.is_sorted(), "frame {frame}: caps far to near {caps:?}");
-            for key in plan.fetch_requests.iter().chain(&plan.level_requests) {
-                if let Some(cap) = rig.pool.caps.get(&key.node) {
-                    assert!(
-                        key.depth <= *cap,
-                        "frame {frame}: {key:?} requested above cap {cap}"
-                    );
-                }
-            }
-            for entry in &plan.entries {
-                let Some(cap) = rig.pool.caps.get(&entry.node) else {
-                    continue;
-                };
-                let drawn = entry.required_levels();
-                for level in plan.active.iter().filter(|l| l.key.node == entry.node) {
-                    assert!(
-                        level.key.depth <= *cap,
-                        "frame {frame}: {:?} above cap {cap}",
-                        level.key
-                    );
-                    if entry.range.is_some_and(|(lo, hi)| lo < hi)
-                        && !drawn.contains(&level.key.depth)
-                    {
-                        capped_range_depths += 1;
-                    }
+            };
+            let drawn = entry.required_levels();
+            for level in plan.active.iter().filter(|l| l.key.node == entry.node) {
+                assert!(
+                    level.key.depth <= *cap,
+                    "frame {frame}: {:?} above cap {cap}",
+                    level.key
+                );
+                if entry.range.is_some_and(|(lo, hi)| lo < hi) && !drawn.contains(&level.key.depth)
+                {
+                    capped_range_depths += 1;
                 }
             }
         }
-        assert!(
-            reported > 0,
-            "{rule:?}: the fit never reported a coarsening"
-        );
-        assert!(
-            capped_range_depths > 0,
-            "{rule:?}: no capped node had a range-only active depth"
-        );
-        rig.assert_stepping_was_checked();
     }
+    assert!(reported > 0, "the fit never reported a coarsening");
+    assert!(
+        capped_range_depths > 0,
+        "no capped node had a range-only active depth"
+    );
+    rig.assert_stepping_was_checked();
 }
 
 #[test]
 fn every_active_depth_is_fully_uploaded_with_a_wide_range() {
     // One page per frame: levels spend several frames partially uploaded, while their node's
     // range already holds resident depths. No frame may activate a level that lacks pages.
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        let mut rig = Rig::new(wide_octant_nodes(), 4096, 1, 1);
-        rig.pool.set_active_rule(rule);
-        let cut = ids(&CHILDREN);
-        let cam = camera("zoom");
-        let (mut range_depths_active, mut partial) = (0, 0);
-        for frame in 0..200 {
-            let plan = rig.step(&cut, &cam, 2.0);
-            range_depths_active += count_range_depths(&plan);
-            let active: HashSet<LevelKey> = plan.active.iter().map(|level| level.key).collect();
-            for key in &active {
-                assert!(
-                    rig.pool.is_resident(*key),
-                    "frame {frame}: {key:?} is not resident"
-                );
-                let pages = rig.pool.level(*key).expect("level").pages.len();
-                let uploaded = (0..pages)
-                    .filter(|page| rig.gpu.slot_of.contains_key(&(*key, *page)))
-                    .count();
-                assert_eq!(uploaded, pages, "frame {frame}: {key:?} lacks pages");
-            }
-            partial += rig
-                .pool
-                .levels
-                .iter()
-                .filter(|(key, level)| {
-                    !active.contains(key)
-                        && matches!(&level.state, LevelState::Uploading { slots, pages_done }
-                            if *pages_done < slots.len())
-                })
+    let mut rig = Rig::new(wide_octant_nodes(), 4096, 1, 1);
+    let cut = ids(&CHILDREN);
+    let cam = camera("zoom");
+    let (mut range_depths_active, mut partial) = (0, 0);
+    for frame in 0..200 {
+        let plan = rig.step(&cut, &cam, 2.0);
+        range_depths_active += count_range_depths(&plan);
+        let active: HashSet<LevelKey> = plan.active.iter().map(|level| level.key).collect();
+        for key in &active {
+            assert!(
+                rig.pool.is_resident(*key),
+                "frame {frame}: {key:?} is not resident"
+            );
+            let pages = rig.pool.level(*key).expect("level").pages.len();
+            let uploaded = (0..pages)
+                .filter(|page| rig.gpu.slot_of.contains_key(&(*key, *page)))
                 .count();
+            assert_eq!(uploaded, pages, "frame {frame}: {key:?} lacks pages");
         }
-        assert!(
-            range_depths_active > 0,
-            "{rule:?}: no range-only active depth occurred"
-        );
-        assert!(
-            partial > 0,
-            "{rule:?}: no level was ever observed partially uploaded"
-        );
-        rig.assert_stepping_was_checked();
+        partial += rig
+            .pool
+            .levels
+            .iter()
+            .filter(|(key, level)| {
+                !active.contains(key)
+                    && matches!(&level.state, LevelState::Uploading { slots, pages_done }
+                        if *pages_done < slots.len())
+            })
+            .count();
     }
+    assert!(
+        range_depths_active > 0,
+        "no range-only active depth occurred"
+    );
+    assert!(partial > 0, "no level was ever observed partially uploaded");
+    rig.assert_stepping_was_checked();
 }
 
 /// Root 1 (stored 2..=14) with its eight children 2..=9 (stored 5..=14). Only depths 2..=11 of
 /// the root are resident, so its active range stops at 11 and stays there once it leaves the cut.
-fn hold_rig(rule: ActiveRule) -> Rig {
+fn hold_rig() -> Rig {
     let mut nodes = octant_nodes();
     nodes.insert(
         NodeId::new(1),
@@ -5301,7 +5150,6 @@ fn hold_rig(rule: ActiveRule) -> Rig {
         child.buildable = (5, 14);
     }
     let mut rig = d5_rig(nodes);
-    rig.pool.set_active_rule(rule);
     seed_resident(&mut rig.pool, 1, &(2..=11).collect::<Vec<u8>>());
     rig.pool.residency_epoch += 1;
     rig
@@ -5314,53 +5162,45 @@ fn hold_threshold_is_the_finest_active_depth_end_to_end() {
     // ones). Child 2 wants 12: with only 9 or 10 resident it would draw below what the ancestor
     // showed there, so it stays held; it takes over once it can draw the ancestor's finest
     // active depth (11), although that is below the 12 it wants.
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        let mut rig = hold_rig(rule);
-        let zoom = camera("zoom");
-        let mut plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
-        for _ in 0..8 {
-            plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
-        }
-        let root = NodeId::new(1);
-        let (lo, hi) = plan.entries[0].range.expect("a cell-mode node has a range");
-        let finest = rig.pool.applied_finest[&root];
-        // Child 2 sits under octant 0 of the root.
-        let nominal = rig.pool.applied_drawn[&root][0].expect("octant 0 draws");
-        // Guards: a wide range whose finest active depth is finer than the octant's drawn one.
-        assert!(lo < hi, "{rule:?}: range {lo}..{hi}");
-        assert!(active_depths(&plan, &rig, 1).len() > 1, "{rule:?}");
-        assert!(
-            nominal + 2 < finest,
-            "{rule:?}: nominal {nominal}, finest {finest}"
-        );
-        let cut = ids(&CHILDREN);
-        let child = NodeId::new(2);
-        for (resident, held) in [
-            (vec![nominal + 1], true),
-            (vec![finest - 1], true),
-            (vec![finest], false),
-        ] {
-            seed_more(&mut rig, 2, &resident);
-            for frame in 0..2 {
-                let plan = d5_step_at(&mut rig, &cut, &zoom, 0.125);
-                let entry = plan
-                    .entries
-                    .iter()
-                    .find(|e| e.node == child)
-                    .expect("child");
-                let wanted = entry.wanted[0].expect("child wants a depth");
-                assert!(finest < wanted, "{rule:?}: the child wants {wanted}");
-                assert_eq!(
-                    rig.pool.hold.contains(&child),
-                    held,
-                    "{rule:?} resident {resident:?} frame {frame}"
-                );
-                assert_eq!(entry.drawn[0].is_some(), !held, "{rule:?} {resident:?}");
-                assert_eq!(
-                    rig.pool.applied_finest[&root], finest,
-                    "{rule:?}: threshold moved"
-                );
-            }
+    let mut rig = hold_rig();
+    let zoom = camera("zoom");
+    let mut plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+    for _ in 0..8 {
+        plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+    }
+    let root = NodeId::new(1);
+    let (lo, hi) = plan.entries[0].range.expect("a cell-mode node has a range");
+    let finest = rig.pool.applied_finest[&root];
+    // Child 2 sits under octant 0 of the root.
+    let nominal = rig.pool.applied_drawn[&root][0].expect("octant 0 draws");
+    // Guards: a wide range whose finest active depth is finer than the octant's drawn one.
+    assert!(lo < hi, "range {lo}..{hi}");
+    assert!(active_depths(&plan, &rig, 1).len() > 1);
+    assert!(nominal + 2 < finest, "nominal {nominal}, finest {finest}");
+    let cut = ids(&CHILDREN);
+    let child = NodeId::new(2);
+    for (resident, held) in [
+        (vec![nominal + 1], true),
+        (vec![finest - 1], true),
+        (vec![finest], false),
+    ] {
+        seed_more(&mut rig, 2, &resident);
+        for frame in 0..2 {
+            let plan = d5_step_at(&mut rig, &cut, &zoom, 0.125);
+            let entry = plan
+                .entries
+                .iter()
+                .find(|e| e.node == child)
+                .expect("child");
+            let wanted = entry.wanted[0].expect("child wants a depth");
+            assert!(finest < wanted, "the child wants {wanted}");
+            assert_eq!(
+                rig.pool.hold.contains(&child),
+                held,
+                "resident {resident:?} frame {frame}"
+            );
+            assert_eq!(entry.drawn[0].is_some(), !held, "{resident:?}");
+            assert_eq!(rig.pool.applied_finest[&root], finest, "threshold moved");
         }
     }
 }
@@ -5372,51 +5212,43 @@ fn real_memo_is_recomputed_when_only_the_active_span_changes() {
     // the finest active depth falls to 10 with the pose, the cut and every level of the child
     // unchanged. The next frame must read the new span and release the child; the memo must not
     // keep the decision taken under the old one.
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        let mut rig = hold_rig(rule);
-        let zoom = camera("zoom");
-        let root = NodeId::new(1);
-        let child = NodeId::new(2);
-        let mut plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
-        for _ in 0..8 {
-            plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
-        }
-        let finest = rig.pool.applied_finest[&root];
-        assert!(
-            active_depths(&plan, &rig, 1).len() > 1,
-            "{rule:?}: no wide range"
-        );
-        seed_more(&mut rig, 2, &[finest - 1]);
-        let cut = ids(&CHILDREN);
-        let mut reused = false;
-        for frame in 0..10 {
-            let plan = d5_step_at(&mut rig, &cut, &zoom, 0.125);
-            reused |= plan.counters.real_reused;
-            assert!(
-                rig.pool.hold.contains(&child),
-                "{rule:?} frame {frame}: held"
-            );
-        }
-        // Guards: the decision was memoised, and it depends on the span (finest - 1 is below it).
-        assert!(reused, "{rule:?}: the real cut was never reused");
-        assert_eq!(rig.pool.applied_finest[&root], finest, "{rule:?}");
-        let gone = rig.pool.key(root, finest);
-        assert!(rig.pool.levels.remove(&gone).is_some());
-        rig.pool.residency_epoch += 1;
-        // The frame that applies the smaller span still judges against what was on screen; the
-        // next one must judge against the new span.
-        let first = d5_step_at(&mut rig, &cut, &zoom, 0.125);
-        assert!(!first.counters.real_reused, "{rule:?}: stale real cut");
-        assert!(rig.pool.applied_finest[&root] < finest, "{rule:?}");
-        let plan = d5_step_at(&mut rig, &cut, &zoom, 0.125);
-        assert!(!rig.pool.hold.contains(&child), "{rule:?}: still held");
-        let entry = plan
-            .entries
-            .iter()
-            .find(|e| e.node == child)
-            .expect("child");
-        assert_eq!(entry.drawn[0], Some(finest - 1), "{rule:?}");
+    let mut rig = hold_rig();
+    let zoom = camera("zoom");
+    let root = NodeId::new(1);
+    let child = NodeId::new(2);
+    let mut plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+    for _ in 0..8 {
+        plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
     }
+    let finest = rig.pool.applied_finest[&root];
+    assert!(active_depths(&plan, &rig, 1).len() > 1, "no wide range");
+    seed_more(&mut rig, 2, &[finest - 1]);
+    let cut = ids(&CHILDREN);
+    let mut reused = false;
+    for frame in 0..10 {
+        let plan = d5_step_at(&mut rig, &cut, &zoom, 0.125);
+        reused |= plan.counters.real_reused;
+        assert!(rig.pool.hold.contains(&child), "frame {frame}: held");
+    }
+    // Guards: the decision was memoised, and it depends on the span (finest - 1 is below it).
+    assert!(reused, "the real cut was never reused");
+    assert_eq!(rig.pool.applied_finest[&root], finest);
+    let gone = rig.pool.key(root, finest);
+    assert!(rig.pool.levels.remove(&gone).is_some());
+    rig.pool.residency_epoch += 1;
+    // The frame that applies the smaller span still judges against what was on screen; the
+    // next one must judge against the new span.
+    let first = d5_step_at(&mut rig, &cut, &zoom, 0.125);
+    assert!(!first.counters.real_reused, "stale real cut");
+    assert!(rig.pool.applied_finest[&root] < finest);
+    let plan = d5_step_at(&mut rig, &cut, &zoom, 0.125);
+    assert!(!rig.pool.hold.contains(&child), "still held");
+    let entry = plan
+        .entries
+        .iter()
+        .find(|e| e.node == child)
+        .expect("child");
+    assert_eq!(entry.drawn[0], Some(finest - 1));
 }
 
 #[test]
@@ -5425,52 +5257,49 @@ fn requests_rank_first_step_then_coarse_to_fine_nearest_first() {
     // the zoom camera the near ones want a range of depths. Every depth of the node ranges is
     // requested from one source, so apart from the step depths the requests rank by depth, coarse
     // to fine, then nearest node first (and by id on an exact tie).
-    for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
-        let mut nodes = octant_nodes();
-        for node in nodes.values_mut() {
-            node.stored = vec![4, 12];
-            node.buildable = (4, 12);
-        }
-        let mut rig = d5_rig(nodes);
-        rig.pool.set_active_rule(rule);
-        for id in CHILDREN {
-            seed_resident(&mut rig.pool, id, &[4, 12]);
-        }
-        rig.pool.residency_epoch += 1;
-        // Off the symmetry axis, so no two nodes of a pair are at the same distance.
-        let mut zoom = camera("zoom");
-        zoom.orbit(-0.03, 0.02);
-        let cut = ids(&CHILDREN);
-        let mut plan = d5_step_at(&mut rig, &cut, &zoom, 2.0);
-        for _ in 0..3 {
-            plan = d5_step_at(&mut rig, &cut, &zoom, 2.0);
-        }
-        let requests: Vec<(u64, u8)> = plan
-            .level_requests
-            .iter()
-            .map(|key| (key.node.get(), key.depth))
-            .collect();
-        let near = by_distance(&zoom, &CHILDREN);
-        let at = |id: u64| near.iter().position(|n| *n == id).expect("node");
-        // The nearer node of each pair has the higher id, so the id tie-break cannot give the order.
-        assert!(at(3) < at(2) && at(9) < at(8), "{near:?}");
-        // Guard: a node asks for several depths, so the order within a node is exercised.
-        assert!(
-            requests.iter().filter(|r| r.0 == 9).count() > 1,
-            "{rule:?}: {requests:?}"
-        );
-        assert!(requests.is_sorted_by_key(|r| r.1), "{rule:?}: {requests:?}");
-        // Within a depth the nearer node of a pair goes first (here the ranking is by the
-        // distance to the node box, which `by_distance` only approximates for the other nodes).
-        let first = |node: u64, depth: u8| requests.iter().position(|r| *r == (node, depth));
-        // Both nodes of a pair ask for these depths (the restored rule: up to the spacing depth,
-        // plus what an octant wants).
-        for (nearer, farther, depths) in [(9, 8, 8..=11), (3, 2, 7..=8)] {
-            for depth in depths {
-                let a = first(nearer, depth).expect("nearer requested");
-                let b = first(farther, depth).expect("farther requested");
-                assert!(a < b, "{rule:?} depth {depth}: {requests:?}");
-            }
+    let mut nodes = octant_nodes();
+    for node in nodes.values_mut() {
+        node.stored = vec![4, 12];
+        node.buildable = (4, 12);
+    }
+    let mut rig = d5_rig(nodes);
+    for id in CHILDREN {
+        seed_resident(&mut rig.pool, id, &[4, 12]);
+    }
+    rig.pool.residency_epoch += 1;
+    // Off the symmetry axis, so no two nodes of a pair are at the same distance.
+    let mut zoom = camera("zoom");
+    zoom.orbit(-0.03, 0.02);
+    let cut = ids(&CHILDREN);
+    let mut plan = d5_step_at(&mut rig, &cut, &zoom, 2.0);
+    for _ in 0..3 {
+        plan = d5_step_at(&mut rig, &cut, &zoom, 2.0);
+    }
+    let requests: Vec<(u64, u8)> = plan
+        .level_requests
+        .iter()
+        .map(|key| (key.node.get(), key.depth))
+        .collect();
+    let near = by_distance(&zoom, &CHILDREN);
+    let at = |id: u64| near.iter().position(|n| *n == id).expect("node");
+    // The nearer node of each pair has the higher id, so the id tie-break cannot give the order.
+    assert!(at(3) < at(2) && at(9) < at(8), "{near:?}");
+    // Guard: a node asks for several depths, so the order within a node is exercised.
+    assert!(
+        requests.iter().filter(|r| r.0 == 9).count() > 1,
+        "{requests:?}"
+    );
+    assert!(requests.is_sorted_by_key(|r| r.1), "{requests:?}");
+    // Within a depth the nearer node of a pair goes first (here the ranking is by the
+    // distance to the node box, which `by_distance` only approximates for the other nodes).
+    let first = |node: u64, depth: u8| requests.iter().position(|r| *r == (node, depth));
+    // Both nodes of a pair ask for these depths (the restored rule: up to the spacing depth,
+    // plus what an octant wants).
+    for (nearer, farther, depths) in [(9, 8, 8..=11), (3, 2, 7..=8)] {
+        for depth in depths {
+            let a = first(nearer, depth).expect("nearer requested");
+            let b = first(farther, depth).expect("farther requested");
+            assert!(a < b, "depth {depth}: {requests:?}");
         }
     }
 }
@@ -5719,77 +5548,43 @@ fn the_cached_depths_look_at_the_data_bound_again_when_a_resident_level_changes(
 
 #[test]
 fn the_active_set_has_no_gap_between_a_drawn_depth_and_the_range() {
-    // (range, drawn, resident, window, expected under `Contiguous`, expected under `Window`).
-    type Case = (
-        (u8, u8),
-        u8,
-        &'static [u8],
-        (u8, u8),
-        &'static [u8],
-        &'static [u8],
-    );
+    // (range, drawn, resident, expected active depths).
+    type Case = ((u8, u8), u8, &'static [u8], &'static [u8]);
     let cases: [Case; 4] = [
-        // Drawn coarser than the range: depth 11 is resident, usable and inside the window.
-        (
-            (12, 12),
-            10,
-            &[2, 7, 10, 11, 12],
-            (10, 13),
-            &[10, 11, 12],
-            &[10, 11, 12],
-        ),
+        // Drawn coarser than the range: depth 11 is resident, usable and inside the range.
+        ((12, 12), 10, &[2, 7, 10, 11, 12], &[10, 11, 12]),
         // Drawn finer than the range.
-        (
-            (8, 9),
-            11,
-            &[2, 8, 9, 10, 11],
-            (7, 12),
-            &[8, 9, 10, 11],
-            &[8, 9, 10, 11],
-        ),
-        // A residency gap between the drawn depth and the range: `Contiguous` stops at it. The
-        // `Window` rule does not: it keeps the range depth across the gap (ADR 0055 forbids it;
-        // pinned here as the known gap of that rule, not as intended behaviour).
-        ((12, 12), 10, &[2, 10, 12], (10, 13), &[10], &[10, 12]),
-        // A drawn depth below the window (a hop of several levels): the window clamp leaves 8 and
-        // 9 out of the `Window` set, a known gap as above.
+        ((8, 9), 11, &[2, 8, 9, 10, 11], &[8, 9, 10, 11]),
+        // A residency gap between the drawn depth and the range: the run stops at it.
+        ((12, 12), 10, &[2, 10, 12], &[10]),
+        // A drawn depth far from the range end (a hop of several levels): the run reaches it.
         (
             (12, 12),
             7,
             &[2, 7, 8, 9, 10, 11, 12],
-            (10, 13),
             &[7, 8, 9, 10, 11, 12],
-            &[7, 10, 11, 12],
         ),
     ];
-    for (n, (range, drawn, resident, window, contiguous, windowed)) in cases.into_iter().enumerate()
-    {
-        for (rule, expected) in [
-            (ActiveRule::Contiguous, contiguous),
-            (ActiveRule::Window, windowed),
-        ] {
-            let mut nodes = octant_nodes();
-            nodes.insert(
-                NodeId::new(1),
-                d5_node(SIDE, &(2..=12).collect::<Vec<u8>>()),
-            );
-            let mut rig = d5_rig(nodes);
-            rig.pool.set_active_rule(rule);
-            seed_resident(&mut rig.pool, 1, resident);
-            rig.pool.applied_window.insert(NodeId::new(1), window);
-            let entry = CellCutEntry {
-                node: NodeId::new(1),
-                wanted: [Some(7); 8],
-                drawn: [Some(drawn); 8],
-                stage: [false; 8],
-                step: [None; 8],
-                range: Some(range),
-                mask: [0; 8],
-            };
-            let node_depth = CellPool::node_depth(&grid(), rig.nodes[&NodeId::new(1)].bounds);
-            let active = rig.pool.cell_active_depths(&entry, node_depth, None);
-            assert_eq!(active, expected, "case {n} under {rule:?}");
-        }
+    for (n, (range, drawn, resident, expected)) in cases.into_iter().enumerate() {
+        let mut nodes = octant_nodes();
+        nodes.insert(
+            NodeId::new(1),
+            d5_node(SIDE, &(2..=12).collect::<Vec<u8>>()),
+        );
+        let mut rig = d5_rig(nodes);
+        seed_resident(&mut rig.pool, 1, resident);
+        let entry = CellCutEntry {
+            node: NodeId::new(1),
+            wanted: [Some(7); 8],
+            drawn: [Some(drawn); 8],
+            stage: [false; 8],
+            step: [None; 8],
+            range: Some(range),
+            mask: [0; 8],
+        };
+        let node_depth = CellPool::node_depth(&grid(), rig.nodes[&NodeId::new(1)].bounds);
+        let active = rig.pool.cell_active_depths(&entry, node_depth, None);
+        assert_eq!(active, expected, "case {n}");
     }
 }
 
@@ -5920,7 +5715,6 @@ struct CapRow {
 fn cap_row(
     zoom_in: bool,
     (cap, target, before_target, resident, injected): (u8, f64, f64, &[u8], bool),
-    rule: ActiveRule,
     frames: usize,
 ) -> CapRow {
     let node = NodeId::new(if zoom_in { 10 } else { 2 });
@@ -5933,12 +5727,10 @@ fn cap_row(
     };
     let setup = || {
         let (mut rig, cam) = if zoom_in {
-            let mut rig = Rig::new(two_regions_with_coarse_children(), CAP_POOL, 3, 1);
-            rig.pool.set_active_rule(rule);
+            let rig = Rig::new(two_regions_with_coarse_children(), CAP_POOL, 3, 1);
             (rig, camera("fit"))
         } else {
-            let mut rig = Rig::new(two_regions(), CAP_POOL, 3, 1);
-            rig.pool.set_active_rule(rule);
+            let rig = Rig::new(two_regions(), CAP_POOL, 3, 1);
             (rig, camera("fit"))
         };
         let last = if zoom_in {
@@ -5975,7 +5767,7 @@ fn cap_row(
             step(&mut rig, &cam);
         }
         let probes =
-            [Far::Wide, Far::Near].map(|far| refine_probe(&mut rig, node.get(), wish, rule, far));
+            [Far::Wide, Far::Near].map(|far| refine_probe(&mut rig, node.get(), wish, far));
         let owner_depth = probes[0].node_depth;
         let befores: Vec<Owner> = if zoom_in {
             vec![Owner {
@@ -6063,30 +5855,25 @@ fn a_capped_node_the_gate_releases_draws_nothing_coarser_than_before_with_the_se
             for cap in [4u8, 5, 6] {
                 for resident in [&[4u8, 5, 6, 7][..], &[4, 7], &[5, 7], &[4, 5]] {
                     for injected in [false, true] {
-                        for rule in RULES {
-                            let case = (cap, target, before_target, resident, injected);
-                            let row = cap_row(zoom_in, case, rule, 2);
-                            let name = format!(
-                                "zoom_in {zoom_in} {rule:?} {case:?} wish {}: {row:?}",
-                                row.wish
-                            );
-                            // `fit` lifts a cap the uncapped cut fits under: not a capped row.
-                            if !row.cap_stayed || row.released.is_none() {
-                                continue;
-                            }
-                            rows += 1;
-                            zoom_in_rows += usize::from(zoom_in);
-                            zoom_out_rows += usize::from(!zoom_in);
-                            above_cap += usize::from(row.emitted.last().is_some_and(|d| *d > cap));
-                            let finest = row.emitted.last().copied();
-                            let lower = row
-                                .gate
-                                .iter()
-                                .flatten()
-                                .any(|(_, hi)| finest.is_none_or(|f| f < *hi));
-                            if row.oracle.is_err() || lower || row.gate_releases.contains(&false) {
-                                failures.push(name);
-                            }
+                        let case = (cap, target, before_target, resident, injected);
+                        let row = cap_row(zoom_in, case, 2);
+                        let name = format!("zoom_in {zoom_in} {case:?} wish {}: {row:?}", row.wish);
+                        // `fit` lifts a cap the uncapped cut fits under: not a capped row.
+                        if !row.cap_stayed || row.released.is_none() {
+                            continue;
+                        }
+                        rows += 1;
+                        zoom_in_rows += usize::from(zoom_in);
+                        zoom_out_rows += usize::from(!zoom_in);
+                        above_cap += usize::from(row.emitted.last().is_some_and(|d| *d > cap));
+                        let finest = row.emitted.last().copied();
+                        let lower = row
+                            .gate
+                            .iter()
+                            .flatten()
+                            .any(|(_, hi)| finest.is_none_or(|f| f < *hi));
+                        if row.oracle.is_err() || lower || row.gate_releases.contains(&false) {
+                            failures.push(name);
                         }
                     }
                 }
@@ -6125,22 +5912,20 @@ fn a_node_whose_wish_is_clamped_below_the_ancestor_is_released_and_a_missing_lev
         (&[4, 5, 6, 7], &[5], 6, 7, true),
     ];
     for (index, (stored, resident, finest, wish, held)) in rows.iter().enumerate() {
-        for rule in RULES {
-            for far in FARS {
-                let mut rig = Rig::new(two_regions_with_coarse_children(), 512, 3, 1);
-                rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
-                set_applied(&mut rig, 2, *finest);
-                {
-                    let node = rig.nodes.get_mut(&NodeId::new(10)).expect("node 10");
-                    node.stored = stored.to_vec();
-                    node.buildable = (stored[0], *stored.last().expect("stored"));
-                }
-                set_resident(&mut rig, 10, resident);
-                let probe = refine_probe(&mut rig, 10, *wish, rule, far);
-                let case = format!("row {index} {rule:?} {far:?}: {probe:?}");
-                assert_eq!(probe.held, *held, "{case}");
-                assert_eq!(probe.old_held, *held, "{case}");
+        for far in FARS {
+            let mut rig = Rig::new(two_regions_with_coarse_children(), 512, 3, 1);
+            rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+            set_applied(&mut rig, 2, *finest);
+            {
+                let node = rig.nodes.get_mut(&NodeId::new(10)).expect("node 10");
+                node.stored = stored.to_vec();
+                node.buildable = (stored[0], *stored.last().expect("stored"));
             }
+            set_resident(&mut rig, 10, resident);
+            let probe = refine_probe(&mut rig, 10, *wish, far);
+            let case = format!("row {index} {far:?}: {probe:?}");
+            assert_eq!(probe.held, *held, "{case}");
+            assert_eq!(probe.old_held, *held, "{case}");
         }
     }
 }

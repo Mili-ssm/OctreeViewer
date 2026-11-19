@@ -150,11 +150,7 @@ fn cells_bench() {
     let view = ViewProjection::new(camera, VIEWPORT, real.scale, VoxelBuildLimits::default());
     let h = &mut real.harness;
     h.soft_checks = true;
-    // `BENCH_RULE=window` (default contiguous, the library default) for the residency measurements
-    // of OQ-14; the pool is the production one (65 536 pages = 512 MiB).
-    if env_or("BENCH_RULE", "contiguous") == "window" {
-        h.rule = ActiveRule::Window;
-    }
+    // The pool is the production one (65 536 pages = 512 MiB).
     let (mut overflow_peak, mut coarsened_peak, mut gpu_coarsened_peak) = (0u32, 0u32, 0usize);
     let mut cpu_coarsened_peak = 0usize;
     // Peak RSS counts only the run, not the leaf search above.
@@ -292,7 +288,7 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
 \"frame_ms\":{{\"median\":{:.3},\"p95\":{:.3},\"max\":{:.3}}},\
 \"driver_cpu_bytes_end\":{cpu_bytes},\"driver_cpu_bytes_peak\":{peak_cpu},\
 \"cpu_cell_bytes_end\":{},\"cpu_cell_bytes_peak\":{peak_cell_cpu},\
-\"mode\":\"cell\",\"rule\":\"{}\",\"pool_capacity_pages\":{},\
+\"mode\":\"cell\",\"rule\":\"contiguous\",\"pool_capacity_pages\":{},\
 \"pool_resident_mib_end\":{:.1},\"pool_resident_mib_peak\":{:.1},\"pool_overflow_peak\":{overflow_peak},\
 \"pool_coarsened_peak\":{coarsened_peak},\"gpu_coarsened_peak\":{gpu_coarsened_peak},\"cpu_coarsened_peak\":{cpu_coarsened_peak},\
 \"pool_resident_pages_end\":{resident_end},\"dataset_pages_resident\":{pages_used},\
@@ -315,11 +311,6 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
         fm[1],
         fm[2],
         last.cpu_cell_bytes,
-        if h.rule == ActiveRule::Contiguous {
-            "contiguous"
-        } else {
-            "window"
-        },
         viewer_render_wgpu::DEFAULT_POOL_PAGES,
         f64::from(last.resident_pages) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1048576.0,
         f64::from(t.resident_peak) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1048576.0,

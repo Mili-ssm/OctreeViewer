@@ -27,9 +27,9 @@ use std::{
 use viewer_core::{BlockId, NodeId, PointBlock};
 use viewer_format::OctreeReader;
 use viewer_render_wgpu::{
-    ActiveRule, CellDriver, CellGrid, CellTarget, CutApply, DriverConfig, FrameReport, OrbitCamera,
-    PoolConfig, PoolCounters, ViewProjection, VoxelBuildLimits, cell_cut_digest,
-    decode_node_levels, encode_node_levels,
+    CellDriver, CellGrid, CellTarget, CutApply, DriverConfig, FrameReport, OrbitCamera, PoolConfig,
+    PoolCounters, ViewProjection, VoxelBuildLimits, cell_cut_digest, decode_node_levels,
+    encode_node_levels,
 };
 
 use crate::{
@@ -138,17 +138,6 @@ impl Continuity {
         reference_spacing
             .filter(|spacing| self.enabled && spacing.is_finite() && *spacing > 0.0)
             .map(|spacing| spacing * self.factor)
-    }
-}
-
-/// The `setCellActiveRule` argument: exactly `"window"` or `"contiguous"`.
-pub(crate) fn parse_active_rule(rule: &str) -> Result<ActiveRule, String> {
-    match rule {
-        "window" => Ok(ActiveRule::Window),
-        "contiguous" => Ok(ActiveRule::Contiguous),
-        other => Err(format!(
-            "unknown cell active rule {other:?}: expected \"window\" or \"contiguous\""
-        )),
     }
 }
 
@@ -558,7 +547,6 @@ pub(crate) struct ViewerCells {
     level_requests: Option<Vec<(NodeId, u8)>>,
     probe_last: Cell<Option<u64>>,
     continuity: Continuity,
-    active_rule: ActiveRule,
     /// Reference spacing of the open cloud (`cellsInfo`), for the continuity minimum.
     reference_spacing: Option<f64>,
 }
@@ -594,7 +582,6 @@ impl ViewerCells {
             level_requests: None,
             probe_last: Cell::new(None),
             continuity: Continuity::default(),
-            active_rule: ActiveRule::Contiguous,
             reference_spacing: None,
         }
     }
@@ -623,15 +610,6 @@ impl ViewerCells {
         self.view_dirty = true;
         self.probe_last.set(None);
         Ok(())
-    }
-
-    /// Window or contiguous-run active depths (cell mode); like the mode, applied on the next
-    /// frame without building or sending any node again.
-    pub(crate) fn set_active_rule(&mut self, rule: ActiveRule) {
-        self.active_rule = rule;
-        self.driver.set_active_rule(rule);
-        self.view_dirty = true;
-        self.probe_last.set(None);
     }
 
     #[cfg(test)]
@@ -883,7 +861,6 @@ pub(crate) struct InProcessCells {
     /// Pages the last update needed and lacked (`pendingPageAnchors`).
     pending_pages: Vec<NodeId>,
     continuity: Continuity,
-    active_rule: ActiveRule,
 }
 
 /// Where a block read starts and ends, so the caller can account the browser reads it caused.
@@ -923,7 +900,6 @@ impl InProcessCells {
             probe: RefCell::new(CutRestProbe::default()),
             pending_pages: Vec::new(),
             continuity: Continuity::default(),
-            active_rule: ActiveRule::Contiguous,
         }
     }
 
@@ -938,13 +914,6 @@ impl InProcessCells {
         self.continuity = continuity;
         self.dirty = true;
         Ok(())
-    }
-
-    /// Window or contiguous-run active depths; the next update applies it to the driver.
-    pub(crate) fn set_active_rule(&mut self, rule: ActiveRule) {
-        self.active_rule = rule;
-        self.dirty = true;
-        *self.probe.get_mut() = CutRestProbe::default();
     }
 
     pub(crate) fn pending_pages(&self) -> &[NodeId] {
@@ -988,7 +957,6 @@ impl InProcessCells {
             self.continuity
                 .effective_min_side(dataset.reference_spacing()),
         );
-        self.driver.set_active_rule(self.active_rule);
         let mut rounds = 0;
         loop {
             let mut order = Vec::new();

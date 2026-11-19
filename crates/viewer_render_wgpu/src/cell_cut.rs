@@ -68,20 +68,6 @@ impl Hasher for FxHasher {
 pub(crate) type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 pub(crate) type FastSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 
-/// Cell mode: which resident depths of a node's range are active besides the drawn ones.
-/// `Contiguous` is the default since 18-11-2026 (OQ-11, issue #66, after #87); `Window` stays
-/// selectable so the owner can compare both rules while zooming, and the loser will be deleted.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ActiveRule {
-    /// A window around the applied span that widens one level per applied frame at each end
-    /// (ADR 0053). Kept for comparison.
-    Window,
-    /// All at once: the resident, non-fresh depths of the range that reach a usable drawn depth
-    /// without a residency gap (ADR 0055). The default.
-    #[default]
-    Contiguous,
-}
-
 /// Depths `node_depth..=node_depth + MAX_NODE_SPAN` a node may activate in cell mode (E2).
 pub(crate) fn cell_depth_range(node_depth: u8) -> (u8, u8) {
     (

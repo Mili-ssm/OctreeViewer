@@ -288,7 +288,6 @@ impl Sim {
         self.render_seen = self.view_gen;
         self.h.target.eye = view.camera().position();
         self.h.set_cell_ctx(view, self.h.target_px);
-        self.h.driver.set_active_rule(self.h.rule);
         let draw = draw_cell_cut(
             &mut self.h.driver,
             &mut self.h.target,
@@ -555,49 +554,21 @@ fn synthetic_cpu_bytes(views: &[ViewProjection]) -> u64 {
     h.driver.cpu_bytes()
 }
 
-/// The sims run under both active rules (`Sim::render_step` applies the harness's).
-const RULES: [ActiveRule; 2] = [ActiveRule::Window, ActiveRule::Contiguous];
-
-fn with_rule(mut h: Harness, rule: ActiveRule) -> Harness {
-    h.rule = rule;
-    h
-}
-
 fn synthetic_case(name: &str, views: Vec<ViewProjection>, seeds: &[u64], inject: Inject) {
-    for rule in RULES {
-        synthetic_case_under(rule, name, &views, seeds, inject);
-    }
-}
-
-fn synthetic_case_under(
-    rule: ActiveRule,
-    name: &str,
-    views: &[ViewProjection],
-    seeds: &[u64],
-    inject: Inject,
-) {
-    let views = views.to_vec();
     let full = synthetic_cpu_bytes(&views);
     // Small: a third of what the whole run keeps; idle nodes are forgotten and built again.
     let budget = full / 3;
-    let (expected, expected_gpu) = in_process_digest(
-        with_rule(synthetic_harness(1 << 20, 2.0), rule),
-        budget,
-        &views,
-    );
+    let (expected, expected_gpu) =
+        in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
     let mut reports = 0;
     for seed in seeds {
-        let mut sim = Sim::new(
-            with_rule(synthetic_harness(1 << 20, 2.0), rule),
-            budget,
-            *seed,
-        );
+        let mut sim = Sim::new(synthetic_harness(1 << 20, 2.0), budget, *seed);
         let digest = sim.run(&views, inject, 200_000);
-        check_stats(&format!("synthetic {name} {rule:?} seed {seed}"), &sim);
-        assert_eq!(digest, expected, "{name} {rule:?} seed {seed}");
+        check_stats(&format!("synthetic {name} seed {seed}"), &sim);
+        assert_eq!(digest, expected, "{name} seed {seed}");
         assert_eq!(
             sim.stats.gpu_digest_last, expected_gpu,
-            "GPU input of the final cut, {name} {rule:?} seed {seed}"
+            "GPU input of the final cut, {name} seed {seed}"
         );
         assert!(sim.stats.node_messages > 0);
         if inject.driver_replaced_at.is_some() {
@@ -1341,24 +1312,11 @@ fn real_views(real: &Real, orbit: bool) -> Vec<ViewProjection> {
 /// or less the in-process run itself never settles, it forgets and rebuilds two nodes per frame
 /// at stage 8 (a finding of R3 Task 10a2: the budget has no hysteresis below the working set).
 fn real_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64], inject: Inject) {
-    for rule in RULES {
-        real_case_under(rule, name, orbit, budget_percent, seeds, inject);
-    }
-}
-
-fn real_case_under(
-    rule: ActiveRule,
-    name: &str,
-    orbit: bool,
-    budget_percent: u64,
-    seeds: &[u64],
-    inject: Inject,
-) {
     let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20);
     let Some(real) = open() else { return };
     let views = real_views(&real, orbit);
     // A fraction of what an unlimited run keeps.
-    let mut unlimited = with_rule(real.harness, rule);
+    let mut unlimited = real.harness;
     unlimited.driver = driver_for(&unlimited.dataset, u64::MAX);
     for view in &views {
         unlimited.frame(view);
@@ -1366,20 +1324,19 @@ fn real_case_under(
     unlimited.settle(views.last().unwrap(), 3, 20_000);
     let budget = unlimited.driver.cpu_bytes() * budget_percent / 100;
     println!(
-        "belvedere {name} {rule:?}: unlimited run keeps {} bytes, budget {budget}",
+        "belvedere {name}: unlimited run keeps {} bytes, budget {budget}",
         unlimited.driver.cpu_bytes()
     );
-    let (expected, expected_gpu) =
-        in_process_digest(with_rule(open().unwrap().harness, rule), budget, &views);
+    let (expected, expected_gpu) = in_process_digest(open().unwrap().harness, budget, &views);
     for seed in seeds {
-        let mut sim = Sim::new(with_rule(open().unwrap().harness, rule), budget, *seed);
+        let mut sim = Sim::new(open().unwrap().harness, budget, *seed);
         let digest = sim.run(&views, inject, 400_000);
-        check_stats(&format!("belvedere {name} {rule:?} seed {seed}"), &sim);
-        println!("belvedere {name} {rule:?} seed {seed}: digest {digest} in-process {expected}");
-        assert_eq!(digest, expected, "belvedere {name} {rule:?} seed {seed}");
+        check_stats(&format!("belvedere {name} seed {seed}"), &sim);
+        println!("belvedere {name} seed {seed}: digest {digest} in-process {expected}");
+        assert_eq!(digest, expected, "belvedere {name} seed {seed}");
         assert_eq!(
             sim.stats.gpu_digest_last, expected_gpu,
-            "GPU input of the final cut, belvedere {name} {rule:?} seed {seed}"
+            "GPU input of the final cut, belvedere {name} seed {seed}"
         );
     }
 }
@@ -1401,29 +1358,24 @@ fn real_sim_belvedere_dolly_reaches_the_in_process_digest() {
 /// in `real_case`; the in-process digest is not recomputed.
 fn real_lag_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64]) {
     let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20);
-    for rule in RULES {
-        let Some(real) = open() else { return };
-        let views = real_views(&real, orbit);
-        let mut unlimited = with_rule(real.harness, rule);
-        unlimited.driver = driver_for(&unlimited.dataset, u64::MAX);
-        for view in &views {
-            unlimited.frame(view);
-        }
-        unlimited.settle(views.last().unwrap(), 3, 20_000);
-        let budget = unlimited.driver.cpu_bytes() * budget_percent / 100;
-        for seed in seeds {
-            let mut sim = Sim::new(with_rule(open().unwrap().harness, rule), budget, *seed);
-            sim.h.lag.on = true;
-            sim.h.lag.per_node = 8192;
-            sim.run(&views, Inject::default(), 400_000);
-            check_stats(&format!("belvedere {name} {rule:?} seed {seed}"), &sim);
-            print_lag(
-                &format!("belvedere {name} {rule:?} seed {seed}"),
-                &sim.h.lag.frames,
-            );
-            if let Some((_, text)) = &sim.h.lag.worst_in_clip {
-                println!("IN_CLIP_SAMPLE belvedere {name} {rule:?} seed {seed}: {text}");
-            }
+    let Some(real) = open() else { return };
+    let views = real_views(&real, orbit);
+    let mut unlimited = real.harness;
+    unlimited.driver = driver_for(&unlimited.dataset, u64::MAX);
+    for view in &views {
+        unlimited.frame(view);
+    }
+    unlimited.settle(views.last().unwrap(), 3, 20_000);
+    let budget = unlimited.driver.cpu_bytes() * budget_percent / 100;
+    for seed in seeds {
+        let mut sim = Sim::new(open().unwrap().harness, budget, *seed);
+        sim.h.lag.on = true;
+        sim.h.lag.per_node = 8192;
+        sim.run(&views, Inject::default(), 400_000);
+        check_stats(&format!("belvedere {name} seed {seed}"), &sim);
+        print_lag(&format!("belvedere {name} seed {seed}"), &sim.h.lag.frames);
+        if let Some((_, text)) = &sim.h.lag.worst_in_clip {
+            println!("IN_CLIP_SAMPLE belvedere {name} seed {seed}: {text}");
         }
     }
 }

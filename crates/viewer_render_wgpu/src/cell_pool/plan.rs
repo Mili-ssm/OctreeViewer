@@ -428,14 +428,6 @@ impl CellPool {
                     .iter()
                     .map(|entry| (entry.node, entry.drawn))
                     .collect();
-                self.applied_window = self
-                    .applied
-                    .iter()
-                    .filter_map(|entry| {
-                        let (lo, hi) = self.applied_span.get(&entry.node)?;
-                        Some((entry.node, (lo.saturating_sub(1), hi.saturating_add(1))))
-                    })
-                    .collect();
                 self.applied_digest = drawn_digest(&self.applied);
                 self.applied_cover.clone_from(&memo.hold_ancestors);
                 self.index_applied(nodes, grid);
