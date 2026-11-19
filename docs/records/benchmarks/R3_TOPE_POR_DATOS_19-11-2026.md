@@ -6,7 +6,7 @@ antes y libera las páginas que el pool precargaba junto al ojo en escenas peque
 el ahorro es mínimo (72 de 45 806 páginas a 1 px). Para conectarla hubo que **redefinir la cota**: la de la tarea 5
 hacía depender el corte final del orden de llegada de los niveles.
 
-Es la tarea 7a del [plan del ADR 0055 en modo celda](../../plans/adr-0055-rango-por-nodo.md). Continúa los registros
+Es la tarea 7a del [plan del ADR 0055 en modo celda](../archive/adr-0055-rango-por-nodo.md). Continúa los registros
 de la [cota por datos](R3_EXTREMO_FINO_POR_DATOS_18-11-2026.md) y de sus
 [fuentes](R3_FUENTES_COTA_POR_DATOS_18-11-2026.md).
 

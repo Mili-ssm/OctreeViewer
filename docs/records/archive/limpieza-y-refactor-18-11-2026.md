@@ -104,7 +104,7 @@ el módulo original.
 ## Decisiones del propietario
 
 Respondidas el 18-11-2026: las respuestas y su estado están en
-[Cómo retomar](../../plans/retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026).
+[Cómo retomar](retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026).
 
 | # | Decisión | Datos |
 | --- | --- | --- |

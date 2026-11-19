@@ -54,7 +54,7 @@ Todas terminaron asentadas, sin huecos (`hole_frames` 0).
 
 - Para OQ-14: en Majadas el tramo contiguo cabe con un 29 % de margen en el peor caso medido. La respuesta del
   propietario («si no cabe, sube el objetivo de px de toda la nube») no llega a aplicarse con estas poses.
-- El margen se reduce si el rango por nodo se ensancha: el [plan del ADR 0055](../../plans/adr-0055-rango-por-nodo.md)
+- El margen se reduce si el rango por nodo se ensancha: el [plan del ADR 0055](../archive/adr-0055-rango-por-nodo.md)
   debe repetir esta medida tras cambiar el extremo fino del rango.
 
 ## Límites

@@ -1,6 +1,6 @@
 # Fase 2b: rango de niveles por nodo y transiciones de un nivel (#44) Implementation Plan
 
-Estado: en pausa · 18-11-2026 · fase 2b del [plan maestro](nivel-pedido-y-lod-por-celda.md); replanteada en [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md) (propuesta pendiente del propietario)
+Estado: en pausa · 19-11-2026 · su rango por nodo lo ejecutó el [plan del ADR 0055](../records/archive/adr-0055-rango-por-nodo.md) ([registro de cierre](../records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)); fase 2b del [plan maestro](nivel-pedido-y-lod-por-celda.md); replanteada en [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md) (propuesta pendiente del propietario)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -7,7 +7,7 @@ la retención la decide el tramo activo del nodo juzgado contra el gemelo de la 
 quedan: el arreglo de «un solo tramo» se revirtió porque empeoraba esas celdas. La maquinaria por octante (pasos, semillas, juez por octante) **se queda**: al conectar el tramo único por
 nodo como fuente de la emisión aparecieron reglas que el diseño no tenía y 28 tests en rojo, para un beneficio
 visible pequeño; el propietario eligió el arreglo mínimo. Evidencia en el
-[registro del cierre](../records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md).
+[registro del cierre](../benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md).
 
 **Conclusión (texto original).** Tres tramos, cada uno entregable por separado. El **A** está hecho: `cell_pool.rs` dividido y el
 extremo grueso `lo` del rango calculado con una cota por nodo. El **B** hace que el rango por nodo mande de verdad:
@@ -17,8 +17,8 @@ octante que queda sin uso. Desde el 18-11-2026 no hay modo octante: ya no existe
 alimentado, y lo que antes solo se podía borrar «tras retirar el modo octante» entra en el tramo C.
 
 Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
-[replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md#tareas), que desarrollan el
-[ADR 0055](../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md). El paso 3 (medir Majadas) va aparte
+[replanteamiento](../../plans/replanteamiento-lod-por-celda-18-11-2026.md#tareas), que desarrollan el
+[ADR 0055](../../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md). El paso 3 (medir Majadas) va aparte
 ([#69](https://github.com/Mili-ssm/OctreeViewer/issues/69)).
 
 ## Decisiones (agente, 18-11-2026)
@@ -26,13 +26,13 @@ Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 | # | Decisión | Por qué |
 | --- | --- | --- |
 | D1 | Dividir `cell_pool.rs` antes de cambiar comportamiento | El paso 1 borra unas 230 de sus 4028 líneas; el resto compartido sigue hasta #67. La puerta «solo se mueve» funciona mejor sin cambios en vuelo, y un trabajador no edita con seguridad un fichero de 4000 líneas |
-| D2 | El rango `[lo, hi]` es una cota: contiene todo nivel que el gemelo de la GPU pide dentro de nodo ∩ datos ∩ vista | Es lo que exige el ADR 0055 (rango conservador). El `lo` actual no lo cumple en P4 ([registro](../records/benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md)) |
-| D3 | El oráculo de las simulaciones se independiza de `wanted`/`stage` antes de cambiar lo que significan | Si no, el cambio aflojaría el oráculo sin que nadie lo note (ya pasó: [replanteamiento, «Por qué se atascó»](replanteamiento-lod-por-celda-18-11-2026.md#por-qué-se-atascó)) |
+| D2 | El rango `[lo, hi]` es una cota: contiene todo nivel que el gemelo de la GPU pide dentro de nodo ∩ datos ∩ vista | Es lo que exige el ADR 0055 (rango conservador). El `lo` actual no lo cumple en P4 ([registro](../benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md)) |
+| D3 | El oráculo de las simulaciones se independiza de `wanted`/`stage` antes de cambiar lo que significan | Si no, el cambio aflojaría el oráculo sin que nadie lo note (ya pasó: [replanteamiento, «Por qué se atascó»](../../plans/replanteamiento-lod-por-celda-18-11-2026.md#por-qué-se-atascó)) |
 | D4 | Los campos por octante de `CellCutEntry` (`wanted`, `drawn`, `stage`, `step`) se **sustituyen** por rango y ancla por nodo; no se rellenan a nivel de nodo (replanteada el 18-11-2026) | Rellenarlos era para no tocar el código compartido con el modo octante, que ya no existe. Queda vigente lo que el pre-mortem encontró: cada lector hay que adaptarlo (`finer_drawn`, la ruta en solitario de `eval_refine_hold`, el tope de `fit`, `needed_levels`, `lost_zones`, el resumen del corte, el `busy` del driver) y la demo da por alcanzado el objetivo con `poolStages === 0` |
 | D5 | La regla de activos (`ActiveRule`) no se toca aquí | La elige el propietario ([#66](https://github.com/Mili-ssm/OctreeViewer/issues/66)); las tareas valen para las dos |
 | D6 | La puerta de residencia (tareas 9 y 10) va antes de borrar semillas y `drawn_ceiling` (tarea 11) | `eval_refine_hold` usa las dos: borrarlas antes deja un estado intermedio que congela al hijo o engrosa la imagen (pre-mortem) |
 | D7 | Los niveles del tramo se piden de grueso a fino | Con la regla contigua, `hi` no se activa hasta que llegan los intermedios; pedirlo primero retrasa el refinado visible |
-| D8 | `hi` se limita por datos: se calcula a la distancia de la celda ocupada más cercana del nodo, no en el recorte cercano del LOD (propietario, OQ-16, 18-11-2026) | La cota fiel a la regla pide el último nivel en puntos sin datos. Medido: la cota por datos contiene lo pedido en 44 de 44 casos con 0 o 1 niveles de holgura ([registro](../records/benchmarks/R3_EXTREMO_FINO_POR_DATOS_18-11-2026.md)) |
+| D8 | `hi` se limita por datos: se calcula a la distancia de la celda ocupada más cercana del nodo, no en el recorte cercano del LOD (propietario, OQ-16, 18-11-2026) | La cota fiel a la regla pide el último nivel en puntos sin datos. Medido: la cota por datos contiene lo pedido en 44 de 44 casos con 0 o 1 niveles de holgura ([registro](../benchmarks/R3_EXTREMO_FINO_POR_DATOS_18-11-2026.md)) |
 | D9 | La celda ocupada más cercana se estima con las cajas de página del nivel residente más fino, no recorriendo celdas | Recorrer celdas son millones de operaciones por frame. Cuánto afloja la cota hay que medirlo (tarea 5) |
 
 ## Restricciones
@@ -45,7 +45,7 @@ Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 - Las tareas marcadas **R** añaden las simulaciones reales
   (`R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast --offline --lib -- --ignored real_sim --nocapture`)
   con `unexcused_drops`, `zone_coarsenings` y `lost_samples` a 0. Sus líneas `SimStats` ordenadas se comparan con la
-  [línea base](../records/benchmarks/R3_LINEA_BASE_CELDA_18-11-2026.md): un cambio se explica en la tarea o se para.
+  [línea base](../benchmarks/R3_LINEA_BASE_CELDA_18-11-2026.md): un cambio se explica en la tarea o se para.
 - Antes de fusionar: `FUZZ_CHECK=0 scripts/check.sh` y navegador en las poses P1 a P4.
 - Un trabajo en un worktree aparte compila con su propio `CARGO_TARGET_DIR`.
 
@@ -80,7 +80,7 @@ Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 
 - [x] (52e56e5) `p4_border_levels` imprime el diagnóstico de `far`: la esquina que sondea `node_far_depth` está
   1174 px fuera de pantalla, donde la perspectiva plana estira la celda.
-- [x] (52e56e5) Medida en P1 a P5 ([registro](../records/benchmarks/R3_RANGO_GEMELO_18-11-2026.md)): la cota
+- [x] (52e56e5) Medida en P1 a P5 ([registro](../benchmarks/R3_RANGO_GEMELO_18-11-2026.md)): la cota
   candidata contiene lo que pide el gemelo en 46 de 46 casos, con holgura 0 en `lo` y de 0 a 1 en `hi`. Las
   simulaciones s1 y s7 no se midieron (otro arnés).
 - [x] (52e56e5) Propiedad `the_node_range_contains_what_the_twin_wants_within_one_level`, ignorada: hoy falla con
@@ -125,7 +125,7 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 ### Task 5a: Measure the sources of the data bound (no wiring)
 
 - [x] (6416ad5) Cuatro fuentes medidas, con y sin recorte a la vista
-  ([registro](../records/benchmarks/R3_FUENTES_COTA_POR_DATOS_18-11-2026.md)). Todas son válidas; sin recorte todas
+  ([registro](../benchmarks/R3_FUENTES_COTA_POR_DATOS_18-11-2026.md)). Todas son válidas; sin recorte todas
   vuelven al último nivel. **Fuente elegida: cajas de página del nivel residente más fino, recortadas a la vista**:
   igual a la cota celda a celda en el nodo que contiene el ojo, estable al quitar niveles finos, +36 páginas
   estimadas en Majadas. Límite aceptado: en el nodo contiguo al ojo queda 3 o 4 niveles holgada (la caja de una
@@ -174,7 +174,7 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 - [x] (d8e49d8) Fijado lo de hoy: residencia del nodo del ojo en P1 a P5, retraso en dolly, órbitas y zoom
   sintético, y Majadas. Los niveles más finos que la cota no se dibujaban en ninguna muestra ocupada.
 - [x] (66f7ac6, 5d46959) `Ctx::depth` limita el deseo por octante a `max(lo, hi_d)`; peticiones, pasos, `stage` y
-  `fit` lo siguen sin más cambios ([registro](../records/benchmarks/R3_TOPE_POR_DATOS_19-11-2026.md)).
+  `fit` lo siguen sin más cambios ([registro](../benchmarks/R3_TOPE_POR_DATOS_19-11-2026.md)).
   **La cota de la tarea 5 no servía conectada**: al depender del nivel residente más fino, el corte final dependía
   del orden de llegada. Ahora es el mínimo, entre los niveles residentes `L`, de `max(b(L), L)`, y un nivel sin
   cajas a la vista aporta `L`; sin histéresis. Tests que fallan antes: el nodo del ojo no pide niveles sobre la cota,

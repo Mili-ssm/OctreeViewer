@@ -6,7 +6,7 @@ demasiado fino en 5 de 46 casos y `hi` de 3 a 6 niveles corto en 6. Una cota de 
 en los 46 casos, con 0 niveles de holgura en `lo` y de 0 a 1 en `hi`. El extremo fino que pide el gemelo junto al
 ojo lo fija el recorte cercano del LOD en puntos sin datos: es una cuestión de presupuesto, no de fórmula.
 
-Es la tarea 2 del [plan del ADR 0055 en modo celda](../../plans/adr-0055-rango-por-nodo.md). Medida nativa, sin
+Es la tarea 2 del [plan del ADR 0055 en modo celda](../archive/adr-0055-rango-por-nodo.md). Medida nativa, sin
 GPU, con tests ignorados que solo imprimen.
 
 ## Condiciones
