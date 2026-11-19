@@ -210,7 +210,8 @@ para la medida.
   SHA difiere de la línea base, parar y buscar el fallo en el lector (offset, `carry`) antes de medir nada más. Si la
   unión de segmentos añade > 5 % del tiempo total o > 30 s, añadir una tarea 4b (unir copiando tramas sin
   recomprimir) antes de cerrar B.
-- [ ] **Step 4:** escribir el registro fechado (línea base, fase B, equipo, perfil `release`, opciones por defecto) y
+- [ ] **Step 4:** escribir el registro fechado (línea base, fase B, equipo, perfil `release`, opciones por defecto, línea de
+  comando exacta) con los `samples.tsv` de cada medida copiados a `docs/records/benchmarks/data/temporales-cli-<dd-mm-aaaa>/`, y
   actualizar los documentos listados; `python3 scripts/check_docs_links.py` y `python3 scripts/check_docs_index.py`
   → OK.
 - [ ] **Step 5:** commit `git commit -m "docs: measure compressed spools against the CLI baseline (RQ-06)"`.
