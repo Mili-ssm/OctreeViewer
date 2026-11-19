@@ -463,6 +463,7 @@ impl CellPool {
         // The wait of each stepping octant of what is on screen (the per-octant fields, deleted by
         // task 11): every frame counts.
         let mut waits = FastMap::default();
+        let mut expired = false;
         for entry in &self.applied {
             for o in 0..8 {
                 if let (Some(w), Some(drawn), Some(next)) =
@@ -474,14 +475,15 @@ impl CellPool {
                         // This frame is the first of the wait.
                         _ => 1,
                     };
+                    expired |= frames == STEP_WAIT_FRAMES;
                     waits.insert((entry.node, o), (key, frames));
                 }
             }
         }
         self.step_waits = waits;
         // The wait of each node for its `node_step`; at the limit the cut is planned again so the
-        // anchor hops (B6).
-        if self.advance_node_waits() {
+        // anchor hops (B6). The per-octant wait (until task 11) expires the same way.
+        if self.advance_node_waits() || expired {
             self.residency_epoch += 1;
         }
         for entry in &self.applied {
