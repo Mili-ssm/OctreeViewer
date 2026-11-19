@@ -25,6 +25,8 @@ pub struct SourceInfo {
     pub record_length: usize,
     pub point_format: las::point::Format,
     pub transforms: las::Vector<las::Transform>,
+    /// The source declares a CRS the output does not store (cleared by `for_options` for
+    /// formats with a global frame, which keep it in `crs`); reported as not preserved.
     pub has_crs: bool,
     /// CRS read from the projection records (local when there is none); written by `v7.4-pre`.
     pub crs: CrsRecord,
@@ -172,6 +174,7 @@ impl SourceInfo {
         let origin = root.frame_origin_quanta.map(quanta_to_units);
         self.frame = CoordinateFrame::new(origin)?;
         self.global = Some(root);
+        self.has_crs = false;
         Ok(self)
     }
 }

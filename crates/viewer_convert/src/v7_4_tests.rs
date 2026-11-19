@@ -348,3 +348,34 @@ fn fixed_parameters_cannot_be_overridden_and_ept_is_refused() {
     ));
     assert_eq!(options().points_per_block(), 64_000);
 }
+
+fn report_for(version: FormatVersion, vlrs: Vec<Vlr>, name: &str) -> Vec<String> {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join(format!("{name}.las"));
+    write_las(&input, &cloud(50, [10.0, 20.0, 1.0], 5.0, 2), vlrs);
+    let options = ConvertOptions::new(262_144, 0.01)
+        .unwrap()
+        .with_format_version(version)
+        .unwrap();
+    convert_file(&input, &dir.path().join(format!("{name}.oct")), options)
+        .unwrap()
+        .omitted_dimensions
+}
+
+#[test]
+fn crs_is_reported_as_not_preserved_only_when_the_format_drops_it() {
+    let has_crs = |dims: &[String]| dims.iter().any(|d| d == "CRS/WKT metadata");
+    let wkt = || vec![vlr(2112, WKT.as_bytes().to_vec())];
+    // Stores the CRS in its global frame.
+    assert!(!has_crs(&report_for(FormatVersion::V7_PRE4, wkt(), "a")));
+    assert!(!has_crs(&report_for(FormatVersion::V7, wkt(), "b")));
+    // No CRS record in the format.
+    assert!(has_crs(&report_for(FormatVersion::V7_PRE3, wkt(), "c")));
+    // Source without CRS: nothing to report.
+    assert!(!has_crs(&report_for(
+        FormatVersion::V7_PRE3,
+        Vec::new(),
+        "d"
+    )));
+    assert!(!has_crs(&report_for(FormatVersion::V7, Vec::new(), "e")));
+}
