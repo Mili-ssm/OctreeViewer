@@ -121,7 +121,7 @@ pub struct CellCutEntry {
     /// visible octant and for one with no buildable depth inside its span.
     pub range: Option<(u8, u8)>,
     /// Node-level fields of plan task 10 (`cell_pool/run.rs`), computed by the pool next to the
-    /// per-octant ones and read by nobody yet: the anchor depth, its target, the single active
+    /// per-octant ones; presence readers use the anchor (`claims`): the anchor depth, its target, the single active
     /// run, whether the node is staged and the depth that extends the run. `None`/`false` out of
     /// the pool.
     pub node_anchor: Option<u8>,
@@ -136,6 +136,13 @@ pub struct CellCutEntry {
 }
 
 impl CellCutEntry {
+    /// Does the node draw `octant`? The presence of `drawn[octant]`, read from the node level:
+    /// the octant is not fully masked and the node has an anchor (a resident level of the list the
+    /// cut used).
+    pub(crate) fn claims(&self, octant: usize) -> bool {
+        self.node_anchor.is_some() && !self.octant_hidden(octant)
+    }
+
     /// Is the 4^3 block of `octant` fully hidden under resident selected descendants?
     pub fn octant_hidden(&self, octant: usize) -> bool {
         octant_fully_masked(&self.mask, octant)

@@ -3563,7 +3563,8 @@ fn a_descendant_under_a_node_that_draws_does_not_stand_in_when_the_mask_cannot_h
     }
 }
 
-/// An entry of `node` drawing the given octants at depth 7.
+/// An entry of `node` drawing the given octants at depth 7. The anchor is set as the pool does
+/// (presence readers read it): a depth when some octant draws.
 fn drawing(node: u64, octants: &[usize]) -> CellCutEntry {
     CellCutEntry {
         node: NodeId::new(node),
@@ -3572,7 +3573,7 @@ fn drawing(node: u64, octants: &[usize]) -> CellCutEntry {
         stage: [false; 8],
         step: [None; 8],
         range: None,
-        node_anchor: None,
+        node_anchor: (!octants.is_empty()).then_some(7),
         node_target: None,
         node_run: None,
         node_stage: false,

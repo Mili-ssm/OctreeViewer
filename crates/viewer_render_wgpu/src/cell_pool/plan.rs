@@ -290,6 +290,21 @@ impl CellPool {
                 Err(CellCutError::DescendantTooFine { .. }) => None,
                 Err(other) => return Err(other),
             };
+            let eval = entries.as_deref().map_or_else(
+                || HoldEval {
+                    hold: hold.clone(),
+                    settle: hold.clone(),
+                    ..HoldEval::default()
+                },
+                |entries| {
+                    self.eval_hold(entries, live_cut, nodes, grid, hold, &|id, o, data| {
+                        ctx.depth(id, o, data)
+                    })
+                },
+            );
+            if let Some(entries) = entries.as_mut() {
+                self.fill_node_runs(entries, &given.borrow(), &eval.before, nodes, grid);
+            }
             let planned_missing = entries.as_deref().map_or(cut.len() as u32, |entries| {
                 missing_levels(entries) + found.excluded.len() as u32
             });
@@ -311,21 +326,6 @@ impl CellPool {
                 entries.as_deref().map_or((cut.len() as u32, 0), |entries| {
                     uncovered_levels(entries, nodes, grid)
                 });
-            let eval = entries.as_deref().map_or_else(
-                || HoldEval {
-                    hold: hold.clone(),
-                    settle: hold.clone(),
-                    ..HoldEval::default()
-                },
-                |entries| {
-                    self.eval_hold(entries, live_cut, nodes, grid, hold, &|id, o, data| {
-                        ctx.depth(id, o, data)
-                    })
-                },
-            );
-            if let Some(entries) = entries.as_mut() {
-                self.fill_node_runs(entries, &given.borrow(), &eval.before, nodes, grid);
-            }
             self.real_memo = Some(RealMemo {
                 generation,
                 residency_epoch: self.residency_epoch,
@@ -962,7 +962,7 @@ impl CellPool {
         let hidden_held = if apply == CutApply::Applied {
             self.applied
                 .iter()
-                .filter(|e| hold.contains(&e.node) && e.wanted.iter().all(Option::is_none))
+                .filter(|e| hold.contains(&e.node) && (0..8).all(|o| e.octant_hidden(o)))
                 .count() as u32
         } else {
             0
