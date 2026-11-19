@@ -231,7 +231,8 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 10: Node-level range and anchor replace the per-octant fields (R)
 
-- [ ] **10a, en este plan** (diseño del agente, 19-11-2026; pendiente de pre-mortem antes de ejecutar 10b).
+- [ ] **10a, en este plan** (diseño del agente, 19-11-2026; **enmendado por el pre-mortem**: falta fijar los
+  oráculos de 10a-bis y la decisión del propietario sobre la regla `Window` antes de ejecutar 10b).
   Ver [«Diseño de la tarea 10»](#diseño-de-la-tarea-10-campos-por-nodo).
 - [ ] **10b.** `CellCutEntry` gana los campos por nodo junto a los viejos y los lectores se pasan de uno en uno,
   un commit cada uno: `busy` del driver, `stages`, el tope de `fit`, `lost_zones`, el resumen del corte.
@@ -315,8 +316,38 @@ Orden (cada paso, un commit con los tests en verde):
    comportamiento); `applied_drawn` pasa a guardar el ancla.
 4. **10c a 10e**, como están descritas arriba.
 
-Parada propia de este diseño: si en 10b-1 el conjunto activo desde `[lo, anchor]` difiere del actual en más de un
-nivel en alguna simulación real, el ancla por nodo no describe lo que hoy se dibuja: parar y replantear.
+### Enmiendas del pre-mortem (19-11-2026)
+
+**La regla «Paso» de arriba queda refutada para la regla por defecto.** Con `Contiguous`, el conjunto activo ya se
+extiende hoy desde cada nivel dibujado usable hasta `hi`, sin límite de un nivel por frame
+(`cell_pool/active.rs`, y ADR 0055: «no hay ventana de un nivel por frame»). Un ancla que avanza un nivel por frame
+volvería a poner ese límite. Lo que sigue sustituye a las reglas «Paso», «Entrada al corte» y al «Orden».
+
+| # | Enmienda | Fallo que evita |
+| --- | --- | --- |
+| A1 | `anchor` = extremo fino del tramo activo **emitido**. Con `Contiguous`: el tramo contiguo usable máximo hasta `hi`, sin límite por frame. Con `Window`: la ventana `applied_window` ± 1 de hoy. El paso por nodo y `STEP_WAIT_FRAMES` solo existen para `Window` | Reintroducir el límite que el ADR 0055 quitó; saltar el criterio de parada en 10b-1 |
+| A2 | Una sola función pura `node_run(prev, lo, hi, usables, regla, espera agotada) -> Option<Run>` para el corte, la retención (`eval_hold`), la emisión, `stage` y el oráculo. La retención se cambia en el mismo commit que el paso por nodo | La puerta predice un tramo y el plan emite otro: al alejarse, una zona se engrosa sin que `zone_coarsenings` lo vea |
+| A3 | Semilla al alejarse = el extremo fino aplicado **más fino** de los descendientes sustituidos (igual al `before` de la puerta), no el más grueso; al acercarse, `applied_finest` del antepasado. Luego se recorta a un nivel usable | Ídem |
+| A4 | Invariante: el ancla es un nivel usable de la lista de residentes que usa el corte (tras retención, tope y `finer_drawn`) dentro del tramo del nodo, o `None` solo si esa lista está vacía. Propiedad de 10b-1: `anchor.is_some()` ⇔ algún `drawn[o]` es `Some`, en cada frame | Ancla en un nivel no usable: hueco, o `poolStages === 0` con la imagen más gruesa; presencia calculada con otra residencia |
+| A5 | Una espera agotada nunca cruza un nivel no residente: baja el objetivo y se cuenta. `stage` = extremo emitido < objetivo | Conjunto activo con hueco (`{11, 18}`): celdas subpíxel con todos los contadores a 0 |
+| A6 | **10a-bis, antes de 10b**: (i) golden de la entrada de la GPU (máscara y bits activos por nodo) en los goldens de corte y las simulaciones, idéntico byte a byte durante 10b-2 a 10b-6 y 10c; (ii) el oráculo marca los huecos de niveles **no residentes** dentro del tramo activo (los dos huecos conocidos de `Window`, exentos por nombre); (iii) test de mutación: engrosar un octante de un nodo que tiene otro octante en espera debe contar; (iv) en reposo, `stages == 0` ⇒ ninguna muestra más gruesa que su deseo | Aflojar el oráculo sin notarlo (D3) |
+| A7 | Orden: 10e (oráculo sobre campos por nodo) **antes** del paso por nodo; 10c y 10d en un solo commit guiado por el compilador con el golden (i) sin cambios; hasta entonces, las peticiones usan la unión de los pasos por octante | Commits intermedios que no pueden estar en verde; el oráculo reescrito dentro de «quitar campos» |
+| A8 | Parada medible: por nodo y frame, diferencia del extremo fino, del grueso y cualquier hueco no residente. Parar ante cualquier hueco, cualquier diferencia con `Contiguous`, o más de un nivel con `Window`. En el commit del paso por nodo se repiten las tablas de la tarea 8 (74 casos y los 5 mixtos) contra `node_run` | El criterio anterior no era medible |
+| A9 | Lectores que faltaban en el inventario: `hidden_held` (`plan.rs`), `seed_depths` y `required_levels` en `residency.rs`, `pages.rs` (expulsión), `drawn_digest`, `finer_drawn`, `step_hops` | Lectores sin migrar |
+
+**Dependencia del propietario.** El paso por nodo, las semillas, `STEP_WAIT_FRAMES` y `applied_window` solo los
+necesita `Window`. Si el propietario retira `Window` ([#66](https://github.com/Mili-ssm/OctreeViewer/issues/66)),
+`node_run` se reduce al tramo contiguo usable y desaparecen A3, A5 y la mitad de A1. 10a-bis no depende de esa
+decisión; 10b en adelante sí.
+
+Criterios de parada de la tarea 10 (sustituyen al del diseño):
+
+- 10b-1: en algún frame de una simulación real, los bits activos de la regla nueva difieren de los de hoy.
+- En el commit del paso por nodo, algún caso juzgado por el gemelo donde `run_covers` sobre `node_run` discrepa.
+- Un hueco no residente llega al oráculo en alguna simulación.
+- `poolStages === 0` con una muestra más gruesa que su deseo, o `stages > 0` en reposo.
+- Un commit necesita tocar `stage_excuses`, el recuento `!staged` o el tope `wanted` fuera de 10e.
+- Frames hasta asentarse en dolly u órbitas por encima de 1,2 × en un commit que solo mueve un lector.
 
 ## Riesgos y su comprobación
 
