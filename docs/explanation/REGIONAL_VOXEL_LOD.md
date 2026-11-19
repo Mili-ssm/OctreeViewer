@@ -282,7 +282,7 @@ consumo de bloques que requiera agregación.
 ## Selección por celda en la GPU (fase 2a, 16-11-2026)
 
 El pase de slots decide **por celda** qué nivel activo de un nodo dibuja cada punto, de modo que las
-fronteras entre niveles siguen la distancia de cada celda y no los bordes de octante. Hasta el 18-11-2026 existió además un
+fronteras entre niveles siguen la distancia de cada celda y no los bordes de octante. Hasta el 19-11-2026 (en `main`; retirada decidida el 18-11-2026) existió además un
 modo por octante (un nivel por octante de nodo); se retiró ([ADR 0056](../adr/0056-se-retira-el-modo-octante.md)) y la
 selección por celda es el único modo. La CPU sigue calculando internamente profundidades por octante, que alimentan la
 maquinaria por celda; el [plan del ADR 0055](../records/archive/adr-0055-rango-por-nodo.md) las sustituye por un rango por nodo. Diseño y decisiones E1–E8 en el [plan de la fase 2a](../records/archive/fase-2a-lod-por-celda-en-gpu.md#design-decisions-agent-16-11-2026);

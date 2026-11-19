@@ -238,7 +238,7 @@ nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
 - [x] `docs/requirements.md`, `docs/explanation/REGIONAL_VOXEL_LOD.md` y `docs/estado.md` dejan de describir el
   modo octante como vigente (commit `0838b22`).
 - [x] Al fusionar, se cierran #59 y #67. (19-11-2026: cerradas.)
-- [x] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4. (19-11-2026: `scripts/check.sh` 23/23 y navegador en fddfb6c, en verde.)
+- [x] `FUZZ_CHECK=0 scripts/check.sh`; navegador en P1 a P4. (19-11-2026: `FUZZ_CHECK=0 scripts/check.sh` 23 de 23 y navegador en P1 a P4, zoom, giro y Belvedere, los dos en `fddfb6c`, en verde.)
 - [x] El [plan del ADR 0055](adr-0055-rango-por-nodo.md) queda reescrito sin la restricción del modo octante: su D4
   pasa de «rellenar» a «sustituir», el borrado que esperaba a la retirada entra en su tramo C y `hi` se limita por
   datos (OQ-16).
