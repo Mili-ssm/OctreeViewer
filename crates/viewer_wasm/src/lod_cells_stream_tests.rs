@@ -780,9 +780,49 @@ impl Harness {
         };
         self.totals.gpu_digest = (self.totals.gpu_digest ^ gpu).wrapping_mul(0x0000_0100_0000_01b3);
         self.totals.gpu_digest_last = gpu;
+        self.check_node_presence(number, plan);
         self.check_active_gaps(number, plan);
         self.check_run_diff(number, plan);
         self.check_cell_cut(number, plan, digest);
+    }
+
+    /// Presence invariant of the node anchor (plan task 10, A4): a node has an anchor exactly
+    /// when some octant is drawn, and an octant is drawn exactly when it is not fully masked and
+    /// the node has an anchor.
+    fn check_node_presence(&self, number: usize, plan: &FramePlan) {
+        let pool = self.driver.pool();
+        for entry in &plan.entries {
+            let depths = |keep: &dyn Fn(viewer_render_wgpu::LevelKey) -> bool| -> Vec<u8> {
+                (0..=40)
+                    .filter(|depth| keep(pool.key(entry.node, *depth)))
+                    .collect()
+            };
+            let (usable, resident) = (
+                depths(&|key| pool.is_usable(key)),
+                depths(&|key| pool.is_resident(key)),
+            );
+            let anchored = entry.node_anchor.is_some();
+            let drawn_any = entry.drawn.iter().any(Option::is_some);
+            assert_eq!(
+                anchored, drawn_any,
+                "A4 at frame {number}: node {:?} anchor {:?} drawn {:?} mask {:x?} range {:?} \\
+                 wanted {:?} usable {usable:?} resident {resident:?}",
+                entry.node, entry.node_anchor, entry.drawn, entry.mask, entry.range, entry.wanted
+            );
+            for octant in 0..8 {
+                assert_eq!(
+                    entry.drawn[octant].is_some(),
+                    !entry.octant_hidden(octant) && anchored,
+                    "presence at frame {number}: node {:?} octant {octant} anchor {:?} drawn {:?} \
+                     mask {:x?} wanted {:?}",
+                    entry.node,
+                    entry.node_anchor,
+                    entry.drawn,
+                    entry.mask,
+                    entry.wanted
+                );
+            }
+        }
     }
 
     /// Measurement, no assertion: for every node of the applied cut, compares the depths the GPU

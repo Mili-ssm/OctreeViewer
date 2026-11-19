@@ -136,6 +136,11 @@ pub struct CellCutEntry {
 }
 
 impl CellCutEntry {
+    /// Is the 4^3 block of `octant` fully hidden under resident selected descendants?
+    pub fn octant_hidden(&self, octant: usize) -> bool {
+        octant_fully_masked(&self.mask, octant)
+    }
+
     /// Distinct drawn depths, ascending: the levels that must be resident.
     pub fn required_levels(&self) -> Vec<u8> {
         let mut depths: Vec<u8> = self.drawn.iter().flatten().copied().collect();
