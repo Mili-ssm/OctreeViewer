@@ -2326,10 +2326,12 @@ enum Far {
     Near,
 }
 
-/// What `refine_probe` saw: whether `eval_refine_hold` holds the node, and the depths
-/// `cell_active_depths` emits for the entry it would draw with.
+/// What `refine_probe` saw: whether `eval_hold` (production) and `eval_refine_hold` (the
+/// per-octant hold of before) hold the node, and the depths `cell_active_depths` emits for the
+/// entry it would draw with.
 struct Probe {
     held: bool,
+    old_held: bool,
     active: Vec<u8>,
     node_depth: u8,
 }
@@ -2344,13 +2346,58 @@ impl Probe {
     }
 }
 
-/// Whether `eval_refine_hold` holds `node` when every octant of it wants `wish`, and the active
-/// depths it would take over with: the entry is built as `plan` would (the drawn levels from the
-/// entering seed and a `range`), so the active rule (`rule`) sees the range residents.
+/// Sets the `range` of `entry` as `cell_cut_ranged` would: `(far.min(near), near)`, see `Far`.
+fn set_range(rig: &Rig, entry: &mut CellCutEntry, far: Far) {
+    let data = &rig.nodes[&entry.node];
+    let node_depth = CellPool::node_depth(&grid(), data.bounds);
+    let buildable = capped_range(data.buildable, rig.pool.caps.get(&entry.node));
+    let (lo, hi) = cell_depth_range(node_depth);
+    let (lo, hi) = (lo.max(buildable.0), hi.min(buildable.1));
+    let near = entry
+        .wanted
+        .iter()
+        .flatten()
+        .max()
+        .map_or(hi, |wanted| (*wanted).clamp(lo, hi));
+    let far = match far {
+        Far::Wide => lo,
+        Far::Near => near,
+    };
+    entry.range = Some((far.min(near), near));
+}
+
+/// `eval_hold` and `eval_refine_hold` on `entries` (the real cut, nothing held yet).
+fn eval_pair(
+    rig: &Rig,
+    entries: &[CellCutEntry],
+    cut: &[NodeId],
+    wish: u8,
+) -> (HoldEval, HoldEval) {
+    let nodes: FastMap<NodeId, PoolNode> = rig
+        .nodes
+        .iter()
+        .map(|(id, node)| (*id, node.clone()))
+        .collect();
+    let none = FastSet::default();
+    let wanted = |_: NodeId, _: usize, _: &CellCutNode| wish;
+    (
+        rig.pool
+            .eval_hold(entries, cut, &nodes, &grid(), &none, &wanted),
+        rig.pool
+            .eval_refine_hold(entries, cut, &nodes, &grid(), &none, &wanted),
+    )
+}
+
+/// Whether `eval_hold` and `eval_refine_hold` hold `node` when every octant of it wants `wish`,
+/// and the active depths it would take over with: the entry is built as `plan` would (the drawn
+/// levels from the entering seed and a `range`), so the active rule (`rule`) sees the range
+/// residents.
 fn refine_probe(rig: &mut Rig, node: u64, wish: u8, rule: ActiveRule, far: Far) -> Probe {
     rig.pool.set_active_rule(rule);
     let id = NodeId::new(node);
-    let (eval, _) = eval_with(rig, &[id], wish);
+    let mut entries = entries_with(rig, &[id], wish);
+    set_range(rig, &mut entries[0], far);
+    let (eval, old) = eval_pair(rig, &entries, &[id], wish);
     let data = &rig.nodes[&id];
     let grid = grid();
     let stored = capped(&data.stored, rig.pool.caps.get(&id));
@@ -2372,24 +2419,12 @@ fn refine_probe(rig: &mut Rig, node: u64, wish: u8, rule: ActiveRule, far: Far) 
         f.rep.saturating_sub(MAX_MASK_LEVELS),
     );
     let node_depth = CellPool::node_depth(&grid, data.bounds);
-    let mut entry = entries_with(rig, &[id], wish).remove(0);
+    let mut entry = entries.remove(0);
     entry.drawn = here;
-    let (lo, hi) = cell_depth_range(node_depth);
-    let (lo, hi) = (lo.max(buildable.0), hi.min(buildable.1));
-    let near = entry
-        .wanted
-        .iter()
-        .flatten()
-        .max()
-        .map_or(hi, |wanted| (*wanted).clamp(lo, hi));
-    let far = match far {
-        Far::Wide => lo,
-        Far::Near => near,
-    };
-    entry.range = Some((far.min(near), near));
     let active = rig.pool.cell_active_depths(&entry, node_depth, None);
     Probe {
         held: eval.hold.contains(&id),
+        old_held: old.hold.contains(&id),
         active,
         node_depth,
     }
@@ -2466,10 +2501,12 @@ fn twin_releases(after: &Owner, wish: u8, samples: &[(Owner, [f64; 3])]) -> Resu
     Ok(())
 }
 
-/// What the three judges say about one case. `eval` holds the node (`eval_refine_hold`), `gate`
-/// releases it (`run_covers` on the real run), `oracle` releases it (the twin).
+/// What the judges say about one case. `eval_holds` is the production decision (`eval_hold`),
+/// `old_holds` the per-octant hold of before (`eval_refine_hold`), `gate_releases` is `run_covers`
+/// on the real run, `oracle` releases it (the twin).
 struct Verdict {
     eval_holds: bool,
+    old_holds: bool,
     gate_releases: bool,
     oracle: Result<(), String>,
     run: Option<Run>,
@@ -2485,7 +2522,7 @@ enum Parts {
 }
 
 fn parts(verdict: &Verdict) -> Option<Parts> {
-    match (verdict.eval_holds, verdict.gate_releases) {
+    match (verdict.old_holds, verdict.gate_releases) {
         (true, true) => Some(Parts::EvalHoldsLonger),
         (false, false) => Some(Parts::EvalReleasesEarly),
         _ => None,
@@ -2536,6 +2573,7 @@ fn zoom_in_case(
     let low_run = finest - 1 - u8::from(low);
     Verdict {
         eval_holds: probe.held,
+        old_holds: probe.old_held,
         gate_releases: run_covers(run, &[(low_run, finest)], wish),
         oracle: twin_releases(&after, wish, &samples),
         run,
@@ -2584,6 +2622,7 @@ fn zoom_out_case(
     let run = probe.run();
     Verdict {
         eval_holds: probe.held,
+        old_holds: probe.old_held,
         gate_releases: run_covers(run, &runs, wish),
         oracle: twin_releases(&after, wish, &samples),
         run,
@@ -2646,20 +2685,25 @@ type InCase = (u8, bool, u8, &'static [u8]);
 /// `(finest, mixed, wish, resident)` of a zoom-out row, see `zoom_out_case`.
 type OutCase = (u8, bool, u8, &'static [u8]);
 
-/// Checks one verdict: the twin oracle and the gate agree, and `eval_refine_hold` held the node
-/// iff `held`. Returns where `eval_refine_hold` and the gate part ways.
+/// Checks one verdict: the production decision releases the node iff the twin oracle does (and
+/// iff `run_covers` does), and `eval_refine_hold` held the node iff `held`. Returns where
+/// `eval_refine_hold` and the gate part ways.
 fn assert_judged(case: &str, verdict: &Verdict, held: bool) -> Option<Parts> {
     let run = verdict.run;
     assert!(run.is_some(), "{case}: the node must have a run");
     assert_eq!(
-        verdict.eval_holds, held,
+        verdict.old_holds, held,
         "{case}: eval_refine_hold, run {run:?}"
     );
     assert_eq!(
         verdict.oracle.is_ok(),
-        verdict.gate_releases,
-        "{case}: run_covers and the twin disagree, run {run:?}: {:?}",
+        !verdict.eval_holds,
+        "{case}: eval_hold and the twin disagree, run {run:?}: {:?}",
         verdict.oracle
+    );
+    assert_eq!(
+        verdict.gate_releases, !verdict.eval_holds,
+        "{case}: eval_hold and run_covers disagree, run {run:?}"
     );
     parts(verdict)
 }
@@ -2792,6 +2836,7 @@ fn eval_held(rig: &Rig, id: u64, covering: &[u64], wish: u8) -> HoldEval {
         .map(|(id, node)| (*id, node.clone()))
         .collect();
     let mut entries = entries_with(rig, &[id], wish);
+    set_range(rig, &mut entries[0], Far::Wide);
     for node in covering {
         entries.extend(entries_with(rig, &[NodeId::new(*node)], wish));
     }
@@ -2827,7 +2872,12 @@ fn a_node_already_held_is_judged_like_a_fresh_one_while_its_zone_is_drawn() {
         let case = format!("zoom out {finest} {mixed} {wish} {resident:?}");
         let children: Vec<u64> = (10..18).collect();
         let covered = eval_held(&rig, 2, &children, *wish);
-        assert_eq!(covered.hold.contains(&NodeId::new(2)), *held, "{case}");
+        // The rows `eval_refine_hold` held longer than the twin needs are released now.
+        let held = *held
+            && !ZOOM_OUT_PARTS
+                .iter()
+                .any(|(c, _)| *c == (*finest, *mixed, *wish, *resident));
+        assert_eq!(covered.hold.contains(&NodeId::new(2)), held, "{case}");
         assert!(covered.settle.contains(&NodeId::new(2)), "{case}");
         let alone = eval_held(&rig, 2, &[], *wish);
         assert!(alone.hold.is_empty() && alone.settle.is_empty(), "{case}");
@@ -3188,6 +3238,13 @@ fn zoom_out(target: f64) {
     assert!(waiting > 0 && taken);
     // With a wanted level finer than the coarsest, the node sits held while it has a level.
     assert_eq!(held_with_level, target < 8.0);
+    // At a fixed pose the hold stays empty once it has emptied: no flicker, nothing stepping.
+    for frame in 0..50 {
+        let plan = rig.step(&cut, &cam, target);
+        assert_eq!(plan.counters.held_nodes, 0, "rest frame {frame}");
+        assert!(rig.pool.hold.is_empty(), "rest frame {frame}");
+        assert_eq!(plan.counters.stages, 0, "rest frame {frame}");
+    }
 }
 
 #[test]
@@ -4238,6 +4295,36 @@ fn children_wait_for_the_parent_d5_level() {
     assert_eq!(plan.counters.held_nodes, 0);
     assert_ne!(mask_of(&plan, 1), [0; 8]);
     assert!(plan.active.iter().any(|l| l.key.node == NodeId::new(21)));
+}
+
+/// `add_d5_gate` in `eval_hold` on a multi-node cut: the child 21 is held, and node 1 recorded as
+/// its covering ancestor, while node 1 draws but has no resident D5 depth, whether or not the
+/// applied cut already drew node 1 (then the refine hold also looks at the child, and agrees).
+#[test]
+fn the_d5_gate_holds_a_child_while_its_ancestor_has_no_d5_depth() {
+    let (child, parent) = (NodeId::new(21), NodeId::new(1));
+    let cam = camera("fit");
+    for applied in [false, true] {
+        let mut rig = d5_pair();
+        if applied {
+            let plan = d5_step(&mut rig, &ids(&[1]), &cam);
+            assert_eq!(plan.apply, CutApply::Applied);
+            assert!(!rig.pool.applied_drawn.is_empty(), "setup");
+        }
+        for wish in [5, 7] {
+            let (eval, _) = eval_with(&rig, &ids(&[1, 21]), wish);
+            let case = format!("applied {applied} wish {wish}");
+            assert_eq!(eval.hold, FastSet::from_iter([child]), "{case}");
+            assert_eq!(eval.settle, FastSet::from_iter([child]), "{case}");
+            assert_eq!(eval.ancestors, FastSet::from_iter([parent]), "{case}");
+        }
+        seed_more(&mut rig, 1, &[4]);
+        let (eval, _) = eval_with(&rig, &ids(&[1, 21]), 7);
+        assert!(
+            eval.hold.is_empty() && eval.settle.is_empty() && eval.ancestors.is_empty(),
+            "applied {applied}: with the D5 depth resident nothing is held"
+        );
+    }
 }
 
 #[test]
