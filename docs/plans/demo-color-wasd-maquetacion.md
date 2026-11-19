@@ -37,6 +37,7 @@ si cabe, la demo ofrece una segunda nube real (un recorte de Belvedere).
   de página, el menú hace scroll propio y el teclado y el foco siguen funcionando.
 - [x] **4. Segunda nube (prescindible).** Comprobar: el recorte se convierte y verifica
   (`viewer_convert verify`), la demo lo abre desde un selector, la atribución aparece y los ficheros caben.
+
 Hecho (19-11-2026): 1 en `ab392d9` y `b681853` (el respaldo del cubo raíz estiraba la rampa: el worker pasa
 `elevationRange`); 2 en `43855b8` y `e38c013` (0,3 radios de órbita por segundo: a 1 radio por segundo, 1 s de W
 sacaba la muestra de la vista); 3 en `5a2d51f`; 4 en `f41798c`, `b390a64`, `f26de18` y `ee5734e` (600 × 600 m,
