@@ -660,6 +660,7 @@ impl LodDataset {
     }
 
     fn cache_block(&mut self, block: PointBlock) -> Result<CacheInsertResult, LodDatasetError> {
+        let block = oq09_sort::maybe_sort(block);
         let id = block.id();
         if !self.metadata.hierarchy().references_block(id) {
             return Err(LodDatasetError::UnknownBlock(id));
@@ -1421,3 +1422,93 @@ mod cells_tests;
 #[cfg(test)]
 #[path = "lod_cells_stream_tests.rs"]
 mod cells_stream_tests;
+
+/// OQ-09 experiment: Morton-sorts a block's points once on cache insert (`OQ09_VIEWER_SORT=1`).
+pub mod oq09_sort {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::OnceLock;
+    use std::time::Instant;
+    use viewer_core::{AttributeColumn, AttributeValues, PointBatch, PointBlock};
+
+    pub static SORT_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub static SORT_BLOCKS: AtomicU64 = AtomicU64::new(0);
+
+    fn enabled() -> bool {
+        static ON: OnceLock<bool> = OnceLock::new();
+        *ON.get_or_init(|| std::env::var("OQ09_VIEWER_SORT").is_ok_and(|v| v == "1"))
+    }
+
+    fn spread(v: u64) -> u64 {
+        let mut x = v & 0x1f_ffff;
+        x = (x | x << 32) & 0x1f00000000ffff;
+        x = (x | x << 16) & 0x1f0000ff0000ff;
+        x = (x | x << 8) & 0x100f00f00f00f00f;
+        x = (x | x << 4) & 0x10c30c30c30c30c3;
+        (x | x << 2) & 0x1249249249249249
+    }
+
+    fn permute<T: Copy>(v: &[T], order: &[u32], comps: usize) -> Vec<T> {
+        let mut out = Vec::with_capacity(v.len());
+        for &i in order {
+            out.extend_from_slice(&v[i as usize * comps..(i as usize + 1) * comps]);
+        }
+        out
+    }
+
+    fn permute_values(v: &AttributeValues, o: &[u32], c: usize) -> AttributeValues {
+        match v {
+            AttributeValues::U8(v) => AttributeValues::U8(permute(v, o, c)),
+            AttributeValues::I8(v) => AttributeValues::I8(permute(v, o, c)),
+            AttributeValues::U16(v) => AttributeValues::U16(permute(v, o, c)),
+            AttributeValues::I16(v) => AttributeValues::I16(permute(v, o, c)),
+            AttributeValues::U32(v) => AttributeValues::U32(permute(v, o, c)),
+            AttributeValues::I32(v) => AttributeValues::I32(permute(v, o, c)),
+            AttributeValues::U64(v) => AttributeValues::U64(permute(v, o, c)),
+            AttributeValues::I64(v) => AttributeValues::I64(permute(v, o, c)),
+            AttributeValues::F32(v) => AttributeValues::F32(permute(v, o, c)),
+            AttributeValues::F64(v) => AttributeValues::F64(permute(v, o, c)),
+        }
+    }
+
+    pub fn maybe_sort(block: PointBlock) -> PointBlock {
+        if !enabled() || block.points().len() < 2 {
+            return block;
+        }
+        let started = Instant::now();
+        let (id, batch, attrs) = block.into_parts();
+        let pts = batch.into_points();
+        let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for p in &pts {
+            for a in 0..3 {
+                lo[a] = lo[a].min(p.position[a]);
+                hi[a] = hi[a].max(p.position[a]);
+            }
+        }
+        let scale: [f32; 3] = std::array::from_fn(|a| {
+            let e = hi[a] - lo[a];
+            if e > 0.0 { 2_097_151.0 / e } else { 0.0 }
+        });
+        let key = |p: &viewer_core::Point| -> u64 {
+            let q = |a: usize| ((p.position[a] - lo[a]) * scale[a]) as u64;
+            spread(q(0)) | spread(q(1)) << 1 | spread(q(2)) << 2
+        };
+        let mut order: Vec<(u64, u32)> =
+            pts.iter().enumerate().map(|(i, p)| (key(p), i as u32)).collect();
+        order.sort_unstable();
+        let order: Vec<u32> = order.into_iter().map(|(_, i)| i).collect();
+        let sorted: Vec<viewer_core::Point> = order.iter().map(|&i| pts[i as usize]).collect();
+        let n = sorted.len();
+        let attrs: Vec<AttributeColumn> = attrs
+            .iter()
+            .map(|c| {
+                let comps = c.descriptor().component_count() as usize;
+                AttributeColumn::new(c.descriptor().clone(), permute_values(c.values(), &order, comps), n)
+                    .expect("permuted column keeps its row count")
+            })
+            .collect();
+        let out = PointBlock::new(id, PointBatch::new(sorted), attrs);
+        SORT_NANOS.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        SORT_BLOCKS.fetch_add(1, Ordering::Relaxed);
+        out
+    }
+}

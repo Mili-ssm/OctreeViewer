@@ -264,6 +264,7 @@ fn cells_bench() {
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
         "../../target/r3-t9c2b-{dataset}-{pose}-{px}px.json"
     ));
+    eprintln!("OQ09_SORT total_ms={:.3} blocks={}", crate::lod_dataset::oq09_sort::SORT_NANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e6, crate::lod_dataset::oq09_sort::SORT_BLOCKS.load(std::sync::atomic::Ordering::Relaxed));
     std::fs::write(&out, &json).unwrap();
     println!("BENCH {json}");
     println!("BENCH json: {}", out.display());
