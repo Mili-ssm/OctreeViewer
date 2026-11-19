@@ -231,24 +231,22 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 10: Node-level range and anchor replace the per-octant fields (R)
 
-- [ ] **10-pre.** Se retira la regla `Window` (propietario, 19-11-2026): `ActiveRule`, `applied_window`, el
+- [x] **10-pre.** Se retira la regla `Window` (propietario, 19-11-2026): `ActiveRule`, `applied_window`, el
   selector de la demo, `setCellActiveRule` y `?cellActive=` (ignorado con aviso). Comprobación: las líneas
   `SimStats` de `Contiguous` y el resumen de la entrada de la GPU, idénticos; navegador.
+  Hecho en d108004 (crates) y HASH2 (demo y binding); la parte del navegador la verifica la sesión principal.
 
-- [ ] **10a, en este plan** (diseño del agente, 19-11-2026; **enmendado por el pre-mortem**: falta fijar los
-  oráculos de 10a-bis y la decisión del propietario sobre la regla `Window` antes de ejecutar 10b).
-  Ver [«Diseño de la tarea 10»](#diseño-de-la-tarea-10-campos-por-nodo).
-- [ ] **10b.** `CellCutEntry` gana los campos por nodo junto a los viejos y los lectores se pasan de uno en uno,
-  un commit cada uno: `busy` del driver, `stages`, el tope de `fit`, `lost_zones`, el resumen del corte.
-- [ ] **10c.** Se quitan los campos por octante; los goldens y resúmenes que cambian se rehacen comprobando a mano
-  una muestra de entradas, con el motivo escrito.
-- [ ] **10d.** Los tests se migran (unas 290 referencias en más de diez ficheros) y el oráculo de pasos de
-  `cell_pool_tests` se sustituye por uno del tramo activo.
-- [ ] **10e.** El oráculo de las simulaciones juzga solo celdas ocupadas, con el rango por nodo como tope y una
-  excusa específica (el nivel que falta fue expulsado o limitado por el `fit` en ese frame); parte del parche
-  guardado de la tarea 6.
-- [ ] Test de la regla `Window`: con la cámara quieta, el tramo activo llega a `[lo, hi]` en como mucho `hi − lo`
-  frames y el driver sigue ocupado mientras tanto.
+- [ ] **10a** (diseño rehecho el 19-11-2026 tras retirar `Window`): ver
+  [«Diseño de la tarea 10»](#diseño-de-la-tarea-10-campos-por-nodo). Falta su pre-mortem.
+- [ ] **10b.** `node_run` (función pura) y los campos por nodo, calculados junto a los viejos sin lectores. Parada:
+  en algún frame de una simulación real, los bits activos de `node_run` difieren de los de hoy fuera de los frames
+  con hueco (`active_gaps`), que es justo lo que corrige.
+- [ ] **10c.** Un lector por commit (`busy` del driver, `stages`, `fit` y peticiones, presencia en `fallback.rs`,
+  `cell_active_depths`, retención): resumen de la entrada de la GPU idéntico en cada uno, salvo el último.
+- [ ] **10d.** Oráculo de las simulaciones sobre los campos por nodo (lo aplazado de la tarea 6): solo celdas
+  ocupadas, el rango por nodo como tope, excusa específica; `active_gaps` pasa a aserción (0). Antes de 10e (D3).
+- [ ] **10e.** El tramo de `node_run` pasa a ser el emitido (aquí cambia el comportamiento) y se quitan los campos
+  por octante; tests migrados (unas 290 referencias) en un commit guiado por el compilador.
 
 ### Task 11: Delete the per-octant machinery (R)
 
@@ -265,102 +263,44 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ## Diseño de la tarea 10: campos por nodo
 
-**Conclusión.** `CellCutEntry` pasa de cuatro arrays por octante a cuatro valores por nodo: `range`, `anchor`,
-`stage` y `step`. La GPU ya solo recibe el conjunto de niveles activos del nodo y la máscara 8³; lo único que
-dependía de verdad de un valor por octante es el paso de un nivel por frame (ADR 0053), que pasa a ser por nodo.
+Rehecho el 19-11-2026 tras retirar `Window`; sustituye al primer diseño y sus enmiendas (en el historial de git:
+`5668487`, `94451f3`). De aquellas enmiendas siguen vigentes A2, A4, A6 (hecha en 10a-bis), A7, A8 y A9.
 
-Inventario de lectores (19-11-2026, sobre `cefcc04`): de unos 40 usos en producción, los valores por octante solo
-son esenciales en la cadena de pasos (`drawn_levels`, `prev_state`, `step_waits`, `step_hops`, semillas). El resto
-reduce a máximo, «alguno», recuento o conjunto, o a **presencia** (`drawn[o].is_some()`), que equivale a «octante no
-enmascarado y el nodo tiene algún nivel residente en su tramo».
+**Conclusión.** Un nodo tiene **un único tramo activo**: el tramo contiguo máximo de niveles usables que contiene su
+**ancla**. La GPU ya solo recibe ese conjunto y la máscara; con `Contiguous` no hay límite de un nivel por frame
+(ADR 0055), así que no hace falta paso ni semillas por octante.
 
-| Campo nuevo | Significado | Sustituye a |
-| --- | --- | --- |
-| `range: Option<(u8, u8)>` | `[lo, hi]`: `lo` de `node_view_range`; `hi` = el deseo más fino del nodo, ya limitado por la cota por datos y el tramo construible (`node_range` de la tarea 7b) | `wanted[o]` y el `range` actual |
-| `anchor: Option<u8>` | Nivel más fino que el nodo puede tener activo este frame. `None`: nada residente en su tramo. Avanza como mucho un nivel por frame hacia `hi` (ADR 0053) | `drawn[o]` |
-| `stage: bool` | El ancla no ha llegado al objetivo alcanzable: `anchor < min(hi, nivel almacenado más fino o el construible que se puede pedir, tope del fit)` | `stage[o]` |
-| `step: Option<u8>` | Nivel siguiente que el ancla espera (ancla ± 1), si no es residente y usable | `step[o]` |
+| Campo | Significado |
+| --- | --- |
+| `range: Option<(u8, u8)>` | `[lo, hi]`, como hoy (`node_range`: `hi` incluye el deseo más fino, ya limitado por la cota por datos) |
+| `anchor: Option<u8>` | El nivel usable del tramo del nodo más cercano a `prev`; empate, el más grueso. `None` solo si no hay ninguno (A4) |
+| `run: Option<(u8, u8)>` | Tramo contiguo máximo de niveles usables que contiene el ancla, recortado a `[min(lo, ancla), hi]` |
+| `stage: bool` | `run.hi < objetivo`, con objetivo = `min(hi, nivel más fino almacenado o pedible, tope del fit)`; un nivel rechazado baja el objetivo (A5) |
+| `step: Option<u8>` | El nivel que extiende el tramo hacia el objetivo (`run.hi + 1`) o hacia `lo` (`run.lo − 1`); es lo que se pide con prioridad |
 
-Reglas:
+`prev`, de dónde parte el ancla:
 
-- **Activos.** `cell_active_depths` toma los niveles residentes y usables de `[lo, anchor]` según la regla de
-  activos; ya no recibe niveles «dibujados». El nivel D5 sigue como hoy.
-- **Paso.** Con `prev` = ancla aplicada del nodo: si `hi > prev`, el ancla es el nivel usable más fino `≤ prev + 1`;
-  si `hi < prev`, baja a `max(hi, prev − 1)`; el salto por espera agotada (`STEP_WAIT_FRAMES`) se conserva, con una
-  entrada por nodo en `step_waits`.
-- **Entrada al corte** (nodo sin ancla aplicada). Al acercarse, `prev` = nivel activo más fino del antepasado que
-  dibujaba (`applied_finest`), recortado al tramo del nodo. Al alejarse, `prev` = el ancla aplicada más gruesa de
-  los descendientes que sustituye. La retención (`run_covers`, tarea 9) decide cuándo entra; no cambia.
-- **Presencia.** Los lectores de `fallback.rs` (`covers_in`, `uncovered_levels`, `lost_zones`, `octant_covered`,
-  `missing_levels`) usan `octant_fully_masked(mask, o)` y `anchor.is_some()`.
-- **`stages`.** El contador pasa de octantes a nodos (más los términos `applied_covered` y `too_fine_excluded`, que
-  se reescalan a nodos). La demo y las sondas solo comprueban `poolStages === 0`, que no cambia de significado.
-- **Resúmenes.** `cell_cut_digest` y `drawn_digest` resumen `range`, `anchor`, `stage`, `step` y la máscara: todos
-  los goldens cambian una vez (10c).
+- Nodo que ya dibujaba: el extremo fino de su tramo aplicado.
+- Al acercarse (entra bajo un antepasado): `applied_finest` del antepasado, como el `before` de `run_covers`.
+- Al alejarse (sustituye a descendientes): el extremo fino aplicado **más fino** de ellos, también el `before`.
 
-Qué deja de existir en la tarea 11: las semillas por octante (`seed.rs`), `PrevState` por octante, `finer_drawn`
-por octante (pasa a «niveles sobre el tope que estaban activos») y el juez `PerOctant`.
+Así la puerta de la tarea 9 y el tramo emitido salen de la misma función (`node_run`, A2): el nodo se libera cuando
+`run.hi ≥ min(before, deseo)`, y lo que se libera es exactamente ese tramo.
 
-Qué cambia de comportamiento, y cómo se comprueba:
+Por qué el ancla más cercana a `prev`: es la que evita saltos. Si hay dos tramos separados por un hueco (el ejemplo
+del nodo 77: niveles 7 y 12 usables, 8 a 11 no), se queda el que continúa lo que se veía; el otro se activa cuando
+llegan los niveles del hueco. Hoy se activan los dos y la GPU salta entre ellos.
 
-| Cambio | Riesgo | Comprobación |
-| --- | --- | --- |
-| Un nodo cuyos octantes hoy dibujan niveles distintos tiene un único ancla | El conjunto activo puede diferir en un nivel durante el paso | La GPU ya elige por celda entre los activos: el oráculo del gemelo de la tarea 8, las simulaciones reales y P1 a P4 en el navegador |
-| El paso es por nodo | Un nodo con deseos muy dispares (cerca y lejos) llega a `hi` en `hi − ancla` frames, no antes | Test de la regla `Window` de esta tarea; frames hasta asentarse en dolly y órbitas ≤ 1,5 × |
-| `stages` cuenta nodos | Cifras de `poolStages` no comparables con las anteriores | Solo se usa `=== 0`; se anota en `PROBES.md` |
+Qué desaparece en la tarea 11: `stepped_depth`, `drawn_levels`, `PrevState`, `STEP_WAIT_FRAMES`, `step_waits`,
+`step_hops`, `seed.rs`, el juez `PerOctant` y `finer_drawn` por octante (pasa a «niveles activos sobre el tope»).
 
-Orden (cada paso, un commit con los tests en verde):
+Riesgos propios:
 
-1. **10b-1.** `CellCutEntry` gana `anchor`, `stage_node`, `step_node` calculados junto a los campos viejos, sin
-   lectores. Test: en cada simulación, `anchor` = máximo de `drawn`, `stage_node` = algún `stage`, y el conjunto
-   activo calculado desde `[lo, anchor]` es igual al de hoy; las discrepancias se listan, no se ocultan.
-2. **10b-2 a 10b-6.** Un lector por commit: `busy` del driver, `stages`, tope del `fit` y peticiones
-   (`needed_levels`, `requested_levels`, `steps`), presencia en `fallback.rs`, `cell_active_depths`.
-3. **10b-7.** El paso por nodo sustituye a `drawn_levels` y a las semillas como fuente del ancla (aquí cambia el
-   comportamiento); `applied_drawn` pasa a guardar el ancla.
-4. **10c a 10e**, como están descritas arriba.
-
-### Enmiendas del pre-mortem (19-11-2026)
-
-**La regla «Paso» de arriba queda refutada para la regla por defecto.** Con `Contiguous`, el conjunto activo ya se
-extiende hoy desde cada nivel dibujado usable hasta `hi`, sin límite de un nivel por frame
-(`cell_pool/active.rs`, y ADR 0055: «no hay ventana de un nivel por frame»). Un ancla que avanza un nivel por frame
-volvería a poner ese límite. Lo que sigue sustituye a las reglas «Paso», «Entrada al corte» y al «Orden».
-
-| # | Enmienda | Fallo que evita |
-| --- | --- | --- |
-| A1 | `anchor` = extremo fino del tramo activo **emitido**. Con `Contiguous`: el tramo contiguo usable máximo hasta `hi`, sin límite por frame. Con `Window`: la ventana `applied_window` ± 1 de hoy. El paso por nodo y `STEP_WAIT_FRAMES` solo existen para `Window` | Reintroducir el límite que el ADR 0055 quitó; saltar el criterio de parada en 10b-1 |
-| A2 | Una sola función pura `node_run(prev, lo, hi, usables, regla, espera agotada) -> Option<Run>` para el corte, la retención (`eval_hold`), la emisión, `stage` y el oráculo. La retención se cambia en el mismo commit que el paso por nodo | La puerta predice un tramo y el plan emite otro: al alejarse, una zona se engrosa sin que `zone_coarsenings` lo vea |
-| A3 | Semilla al alejarse = el extremo fino aplicado **más fino** de los descendientes sustituidos (igual al `before` de la puerta), no el más grueso; al acercarse, `applied_finest` del antepasado. Luego se recorta a un nivel usable | Ídem |
-| A4 | Invariante: el ancla es un nivel usable de la lista de residentes que usa el corte (tras retención, tope y `finer_drawn`) dentro del tramo del nodo, o `None` solo si esa lista está vacía. Propiedad de 10b-1: `anchor.is_some()` ⇔ algún `drawn[o]` es `Some`, en cada frame | Ancla en un nivel no usable: hueco, o `poolStages === 0` con la imagen más gruesa; presencia calculada con otra residencia |
-| A5 | Una espera agotada nunca cruza un nivel no residente: baja el objetivo y se cuenta. `stage` = extremo emitido < objetivo | Conjunto activo con hueco (`{11, 18}`): celdas subpíxel con todos los contadores a 0 |
-| A6 | **10a-bis, antes de 10b**: (i) golden de la entrada de la GPU (máscara y bits activos por nodo) en los goldens de corte y las simulaciones, idéntico byte a byte durante 10b-2 a 10b-6 y 10c; (ii) el oráculo marca los huecos de niveles **no residentes** dentro del tramo activo (los dos huecos conocidos de `Window`, exentos por nombre); (iii) test de mutación: engrosar un octante de un nodo que tiene otro octante en espera debe contar; (iv) en reposo, `stages == 0` ⇒ ninguna muestra más gruesa que su deseo | Aflojar el oráculo sin notarlo (D3) |
-| A7 | Orden: 10e (oráculo sobre campos por nodo) **antes** del paso por nodo; 10c y 10d en un solo commit guiado por el compilador con el golden (i) sin cambios; hasta entonces, las peticiones usan la unión de los pasos por octante | Commits intermedios que no pueden estar en verde; el oráculo reescrito dentro de «quitar campos» |
-| A8 | Parada medible: por nodo y frame, diferencia del extremo fino, del grueso y cualquier hueco no residente. Parar ante cualquier hueco, cualquier diferencia con `Contiguous`, o más de un nivel con `Window`. En el commit del paso por nodo se repiten las tablas de la tarea 8 (74 casos y los 5 mixtos) contra `node_run` | El criterio anterior no era medible |
-| A9 | Lectores que faltaban en el inventario: `hidden_held` (`plan.rs`), `seed_depths` y `required_levels` en `residency.rs`, `pages.rs` (expulsión), `drawn_digest`, `finer_drawn`, `step_hops` | Lectores sin migrar |
-
-**Decisión del propietario (19-11-2026): se retira `Window`** ([#66](https://github.com/Mili-ssm/OctreeViewer/issues/66),
-OQ-11). `node_run` se reduce al tramo contiguo usable; desaparecen el paso por nodo, A3, A5 y la mitad de A1. El
-diseño se rehace tras la retirada (tarea 10-pre abajo).
-
-**10a-bis hecho** (35f69f1, 19c0c2e): resumen de la entrada de la GPU (bits activos y máscara por nodo) fijado en
-P1 a P5 y en las simulaciones (sintéticas: igual a la referencia; reales: determinista en dos ejecuciones); el
-oráculo cuenta los huecos no residentes del conjunto activo (`active_gaps`). **Con `Contiguous` aparecen**: 7
-frames en la órbita real de semilla 1 (ninguno en el resto). Ejemplo: nodo 77, frame 36, activos {7, 12}, dibujados
-7 y 12 por octantes distintos, rango (12, 12), deseo 7 en todos los octantes; 8 a 10 no residentes y 11 recién
-subido (aún no usable). Es el hueco de la regla actual: cada nivel dibujado usable abre su propio tramo. Un tramo
-único por nodo lo elimina por construcción, así que la aserción dura se activa en la tarea 10, no antes. El rango
-(12, 12) con deseo 7 es la misma pregunta abierta de [#87](https://github.com/Mili-ssm/OctreeViewer/issues/87)
-(`far` 12 con octantes que desean 7). Un nivel recién subido cuenta como hueco: la GPU aún no lo tiene.
-
-Criterios de parada de la tarea 10 (sustituyen al del diseño):
-
-- 10b-1: en algún frame de una simulación real, los bits activos de la regla nueva difieren de los de hoy.
-- En el commit del paso por nodo, algún caso juzgado por el gemelo donde `run_covers` sobre `node_run` discrepa.
-- Un hueco no residente llega al oráculo en alguna simulación.
-- `poolStages === 0` con una muestra más gruesa que su deseo, o `stages > 0` en reposo.
-- Un commit necesita tocar `stage_excuses`, el recuento `!staged` o el tope `wanted` fuera de 10e.
-- Frames hasta asentarse en dolly u órbitas por encima de 1,2 × en un commit que solo mueve un lector.
+| Riesgo | Comprobación |
+| --- | --- |
+| El tramo único deja fuera un nivel que hoy se dibuja (otro tramo tras un hueco) | Es el cambio buscado; se limita a los frames con `active_gaps > 0` (10b) y se juzga con el gemelo de la GPU |
+| `stage` no llega a 0 en reposo por un objetivo inalcanzable | Criterio «`stages > 0` en reposo»; test con un nivel rechazado |
+| El ancla cae en un nivel recién subido y el tramo queda vacío | El ancla solo elige niveles usables (A4) |
 
 ## Riesgos y su comprobación
 
