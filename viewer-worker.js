@@ -934,9 +934,11 @@ function syncBuildView(force = false, retryFailed = false) {
     // Read together with the camera: the viewer's epoch is the one the cells cut is judged against.
     const cellViewEpoch = cellsRemote ? viewer.viewEpoch() : undefined;
     const viewport = Array.from(viewer.viewportSize());
-    if (!force && lastSentView && lastSentView.targetPx === targetVoxelPixels
+    // The cut must not refine below the effective minimum side (RQ-09): the driver's side, in dataset units.
+    const minSide = cellsRemote ? (viewer.cellStats?.()?.continuityMinSide ?? null) : null;
+    if (!force && lastSentView && lastSentView.targetPx === targetVoxelPixels && lastSentView.minSide === minSide
         && sameValues(lastSentView.viewport, viewport) && sameValues(lastSentView.camera, camera)) return;
-    lastSentView = { camera, viewport, targetPx: targetVoxelPixels };
+    lastSentView = { camera, viewport, targetPx: targetVoxelPixels, minSide };
     viewEpoch += 1;
     viewSentAt.set(viewEpoch, performance.now());
     if (viewSentAt.size > 256) viewSentAt.delete(viewSentAt.keys().next().value);
@@ -950,6 +952,7 @@ function syncBuildView(force = false, retryFailed = false) {
         viewport,
         visualScale: remoteVisualScale,
         targetPx: targetVoxelPixels,
+        minSide,
         retryFailed,
     });
 }
@@ -1038,7 +1041,8 @@ function handleBuildMessage(data) {
             viewer.beginRemoteDataset(
                 opened.visualScale, opened.coordinateOrigin, opened.boundsMin, opened.boundsMax,
             );
-            const { name, bytes } = pendingOpen;
+            const { name } = pendingOpen;
+            const bytes = pendingOpen.bytes ?? data.fileBytes ?? null;
             pendingOpen.opened = opened;
             builtOpened = opened;
             lastScene = null;
@@ -1333,6 +1337,7 @@ function applyContinuity(enabled, factor) {
     viewer.setContinuity(enabled, factor);
     continuitySetting = [enabled, factor];
     renderSettingChanged();
+    requestLodUpdate();
     return true;
 }
 
@@ -1341,6 +1346,7 @@ function applyMinLength(side) {
     viewer.setMinLength(side);
     minLengthSetting = [side];
     renderSettingChanged();
+    requestLodUpdate();
     return side;
 }
 

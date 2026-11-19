@@ -3,6 +3,7 @@ import {
     FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,
     renderPathStatsLines, summarizeFrameReplies,
 } from "./benchmark-metrics.mjs";
+import { sidecarUrl } from "./http-range-source.mjs";
 import { crsUnitPolicy, lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";
 import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
@@ -549,7 +550,12 @@ function openUrlFromQuery() {
         const value = Number(params.get(name));
         if (params.get(name) !== null && Number.isFinite(value) && value >= 0) readOptions[name] = Math.trunc(value);
     }
-    const attributes = attrs === "none" ? undefined : { url: attrs ? absolute(attrs) : `${url}attrs`, ...readOptions };
+    let sidecar = attrs ? absolute(attrs) : null;
+    if (!sidecar && attrs !== "none") {
+        // A URL with no file name (`.../dir/`) has no sidecar: open without one and let the open report the error.
+        try { sidecar = sidecarUrl(url); } catch { sidecar = null; }
+    }
+    const attributes = attrs === "none" || !sidecar ? undefined : { url: sidecar, ...readOptions };
     openProjectFile({ url, ...readOptions }, decodeURIComponent(new URL(url).pathname.split("/").pop()), attributes);
 }
 
@@ -575,6 +581,8 @@ function handleWorkerMessage(event) {
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
         syncCellControls();
+        // A recreated worker starts in fixed mode: send the selected px mode (a no-op when it matches).
+        worker.postMessage({ type: "pxMode", mode: pxMode.value });
         sendMinLength();
         requestFrameOnce();
         if (reopenAfterRecreate) {
