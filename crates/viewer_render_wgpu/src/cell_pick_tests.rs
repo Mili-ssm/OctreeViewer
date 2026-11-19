@@ -1162,7 +1162,6 @@ fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
                 .unwrap();
             cut.push(id);
         }
-        driver.set_lod_mode(crate::LodMode::Cell);
 
         let mut pool = new_pool(h);
         let mut held = std::collections::HashMap::new();

@@ -138,17 +138,8 @@ impl CellPool {
                 .flatten()
                 .map(|cached| cached.depths);
             let exact = hints.is_none();
-            // Octant mode keeps the geometric probe: it still has the degenerate-probe hole (a box
-            // reaching the eye asks for the finest depth), tracked as a follow-up. Only cell
-            // mode probes the data extent and gives behind or empty octants their siblings' wish.
-            let cell = self.lod_mode == LodMode::Cell;
-            let probe = |octant: usize| {
-                if cell {
-                    data.probe_box(octant)
-                } else {
-                    ProbeBox::Geometric
-                }
-            };
+            // The probe is the data extent; behind or empty octants take their siblings' wish.
+            let probe = |octant: usize| data.probe_box(octant);
             let depths = std::array::from_fn(|octant| match hints {
                 Some(hints) => octant_wanted_depth_near(
                     view,
@@ -172,25 +163,21 @@ impl CellPool {
                     target_px,
                 ),
             });
-            let depths = if cell {
-                behind_wanted(
-                    depths,
-                    behind_octants(
-                        view,
-                        grid,
-                        origin,
-                        data.bounds,
-                        std::array::from_fn(|octant| data.probe_box(octant)),
-                    ),
-                )
-            } else {
-                depths
-            };
+            let depths = behind_wanted(
+                depths,
+                behind_octants(
+                    view,
+                    grid,
+                    origin,
+                    data.bounds,
+                    std::array::from_fn(|octant| data.probe_box(octant)),
+                ),
+            );
             let depths = match finest_allowed {
                 Some(limit) => depths.map(|depth| continuity_depth(data.buildable, depth, limit)),
                 None => depths,
             };
-            let far = if self.lod_mode == LodMode::Cell {
+            let far = {
                 let probes = std::array::from_fn(|octant| data.probe_box(octant));
                 // `lo` of the node's range: the on-axis bound of `node_view_range` (ADR 0055
                 // plan, task 4); a node wholly behind the eye or without data wants the coarsest
@@ -207,8 +194,6 @@ impl CellPool {
                 )
                 .unwrap_or(data.buildable.0);
                 (far, octants_in_front(view, origin, data.bounds, probes))
-            } else {
-                (0, 0)
             };
             let differs = was.is_none_or(|cached| cached.depths != depths || cached.far != far);
             if extra_set.contains(&id) {

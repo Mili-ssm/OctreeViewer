@@ -68,18 +68,6 @@ impl Hasher for FxHasher {
 pub(crate) type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 pub(crate) type FastSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 
-/// How a node's levels are chosen for drawing.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum LodMode {
-    /// One level per octant; a spanning level (depth <= the node's) is drawn whole and alone.
-    Octant,
-    /// Several levels per node may draw at once, chosen per cell by the GPU: the active set is
-    /// the closest resident level of each octant, restricted to the depths a node record can
-    /// hold (`cell_depth_range`). The default.
-    #[default]
-    Cell,
-}
-
 /// Cell mode: which resident depths of a node's range are active besides the drawn ones.
 /// Temporary option so the owner can compare both rules while zooming (OQ-11, issue #66).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -140,9 +128,9 @@ pub struct CellCutEntry {
     /// The depth each octant waits for to take its next step towards `wanted` (ADR 0053): the
     /// adjacent depth, drawn once resident. `None` when the octant is not stepping.
     pub step: [Option<u8>; 8],
-    /// Cell mode only: the depths `(lo, hi)` the node spans on screen, `lo <= hi`. `hi` is the
+    /// The depths `(lo, hi)` the node spans on screen, `lo <= hi`. `hi` is the
     /// finest near depth of its octants wholly in front of the eye plane, `lo` the depth wanted at its corner
-    /// farthest along the view (ADR 0054 rule). `None` in octant mode, for a node with no
+    /// farthest along the view (ADR 0054 rule). `None` for a node with no
     /// visible octant and for one with no buildable depth inside its span.
     pub range: Option<(u8, u8)>,
     /// Bit `x + 8y + 64z` of the node's 8^3 grid; 1 = hidden under a resident selected
@@ -935,62 +923,32 @@ pub(crate) fn drawn_levels(
     resident: &[u8],
     prev: &PrevState,
     node_depth: u8,
-    mode: LodMode,
 ) -> DrawnLevels {
     let mut drawn = [None; 8];
     let mut stage = [false; 8];
     let mut step = [None; 8];
-    if mode == LodMode::Cell {
-        // No level below the node or beyond its span can draw, and no depth is forced on the
-        // others: the node draws the closest resident level of each octant.
-        let stored = in_cell_range(stored, node_depth);
-        let resident = in_cell_range(resident, node_depth);
-        if stored.is_empty() {
-            return (drawn, stage, step);
-        }
-        let (lo, hi) = cell_depth_range(node_depth);
-        let buildable = (buildable.0.max(lo), buildable.1.min(hi));
-        for o in 0..8 {
-            if let Some(w) = wanted[o]
-                && let Some((depth, next)) = stepped_depth(
-                    prev.drawn[o],
-                    served_depth(&stored, w),
-                    buildable,
-                    &resident,
-                    prev.timed_out[o],
-                )
-            {
-                drawn[o] = Some(depth);
-                stage[o] = depth < w;
-                step[o] = next;
-            }
-        }
+    // No level below the node or beyond its span can draw, and no depth is forced on the
+    // others: the node draws the closest resident level of each octant.
+    let stored = in_cell_range(stored, node_depth);
+    let resident = in_cell_range(resident, node_depth);
+    if stored.is_empty() {
         return (drawn, stage, step);
     }
+    let (lo, hi) = cell_depth_range(node_depth);
+    let buildable = (buildable.0.max(lo), buildable.1.min(hi));
     for o in 0..8 {
         if let Some(w) = wanted[o]
             && let Some((depth, next)) = stepped_depth(
                 prev.drawn[o],
-                served_depth(stored, w),
+                served_depth(&stored, w),
                 buildable,
-                resident,
+                &resident,
                 prev.timed_out[o],
             )
         {
             drawn[o] = Some(depth);
             stage[o] = depth < w;
             step[o] = next;
-        }
-    }
-    // A spanning level is drawn whole, so it must be the only level the node draws:
-    // otherwise its cells would overlap the finer ones of the other octants.
-    let spanning = drawn.iter().flatten().copied().find(|d| *d <= node_depth);
-    if let Some(spanning) = spanning {
-        for o in 0..8 {
-            if let Some(w) = wanted[o] {
-                drawn[o] = Some(spanning);
-                stage[o] = spanning < w;
-            }
         }
     }
     (drawn, stage, step)
@@ -1011,7 +969,7 @@ pub fn cell_cut(
     coordinate_origin: [f64; 3],
     target_px: f64,
 ) -> Result<Vec<CellCutEntry>, CellCutError> {
-    cell_cut_with(cut, node, grid, LodMode::Cell, &|_, octant, data| {
+    cell_cut_with(cut, node, grid, &|_, octant, data| {
         octant_wanted_depth(
             view,
             grid,
@@ -1032,10 +990,9 @@ pub(crate) fn cell_cut_with(
     cut: &[NodeId],
     node: &dyn Fn(NodeId) -> Option<CellCutNode>,
     grid: &CellGrid,
-    mode: LodMode,
     wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
 ) -> Result<Vec<CellCutEntry>, CellCutError> {
-    cell_cut_ranged(cut, node, grid, mode, wanted_depth, None, None)
+    cell_cut_ranged(cut, node, grid, wanted_depth, None, None)
 }
 
 /// `(far, front)` of a node: `far` as `node_view_range` gives `lo`, `front` from `octants_in_front`.
@@ -1058,7 +1015,6 @@ pub(crate) fn cell_cut_ranged(
     cut: &[NodeId],
     node: &dyn Fn(NodeId) -> Option<CellCutNode>,
     grid: &CellGrid,
-    mode: LodMode,
     wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
     far: Option<&FarDepth<'_>>,
     prev: Option<&PrevDrawn<'_>>,
@@ -1091,11 +1047,8 @@ pub(crate) fn cell_cut_ranged(
         });
         // Cell mode: a node whose resident levels all lie outside its span draws nothing, so it
         // must not hide its ancestors' cells.
-        has_resident.push(if mode == LodMode::Cell {
-            !in_cell_range(&data.resident, rep.saturating_sub(MAX_MASK_LEVELS)).is_empty()
-        } else {
-            !data.resident.is_empty()
-        });
+        has_resident
+            .push(!in_cell_range(&data.resident, rep.saturating_sub(MAX_MASK_LEVELS)).is_empty());
         nodes.push(data);
     }
 
@@ -1144,39 +1097,21 @@ pub(crate) fn cell_cut_ranged(
     }
 
     for ((entry, data), placed) in entries.iter_mut().zip(&nodes).zip(&placed) {
-        let finest = data.buildable.1;
         let node_depth = placed.rep.saturating_sub(MAX_MASK_LEVELS);
-        // A level at depth <= the node's spans octants and cannot be split; when no finer level is
-        // buildable, the whole node uses the finest one.
-        let spans_all = finest <= node_depth;
-        // Cell mode: a wanted depth is clamped to the usable range; nothing below the node is
+        // A wanted depth is clamped to the usable range; nothing below the node is
         // wanted, and a node with no buildable depth inside the range keeps the view's depth
         // (nothing of it can draw, see `drawn_levels`).
         let cell_range = {
             let (lo, hi) = cell_depth_range(node_depth);
             let (lo, hi) = (lo.max(data.buildable.0), hi.min(data.buildable.1));
-            (mode == LodMode::Cell && lo <= hi).then_some((lo, hi))
+            (lo <= hi).then_some((lo, hi))
         };
         for o in 0..8 {
             if octant_fully_masked(&entry.mask, o) {
                 continue;
             }
-            if mode == LodMode::Cell {
-                let w = wanted_depth(entry.node, o, data);
-                entry.wanted[o] = Some(cell_range.map_or(w, |(lo, hi)| w.clamp(lo, hi)));
-                continue;
-            }
-            let mut wanted = if spans_all {
-                finest
-            } else {
-                wanted_depth(entry.node, o, data)
-            };
-            if wanted <= node_depth && !spans_all {
-                wanted = (data.buildable.0..=data.buildable.1)
-                    .find(|depth| *depth > node_depth)
-                    .expect("a finer buildable level exists");
-            }
-            entry.wanted[o] = Some(wanted);
+            let w = wanted_depth(entry.node, o, data);
+            entry.wanted[o] = Some(cell_range.map_or(w, |(lo, hi)| w.clamp(lo, hi)));
         }
         if let (Some(far), Some((lo, hi))) = (far, cell_range) {
             let (far, front) = far(entry.node, data);
@@ -1199,7 +1134,6 @@ pub(crate) fn cell_cut_ranged(
             &data.resident,
             &prev.map_or_else(PrevState::default, |prev| prev(entry.node)),
             node_depth,
-            mode,
         );
     }
     Ok(entries)

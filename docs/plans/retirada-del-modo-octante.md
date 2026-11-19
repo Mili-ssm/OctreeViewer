@@ -1,6 +1,6 @@
 # Retirada del modo octante
 
-Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 6b hechas
+Estado: en curso · 18-11-2026 · ejecuta el [ADR 0056](../adr/0056-se-retira-el-modo-octante.md) (propietario, 18-11-2026); plan del agente a partir del mapa de alcance del 18-11-2026; pre-mortem aplicado el 18-11-2026; tareas 1 a 9 hechas
 
 **Conclusión.** Primero se sabe qué cambia y después se cambia: línea base del modo celda (hecha), ensayo que
 clasifica los tests que fallan al pasar todo a modo celda, oráculo de pasos para modo celda, y solo entonces el
@@ -198,25 +198,37 @@ nivel activo (se amplía en la tarea 8 con un nivel suelto dentro del tramo).
 
 ### Task 7: Delete the explicitly-octant render tests
 
-- [ ] Se borran los tests de render que tienen el modo octante como sujeto (5 de `cell_cut_tests`, 2 de
-  `cell_pool_tests`, el golden de octante, duplicado ya por el de celda) y se porta
-  `the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter` (`cell_driver_gpu_tests.rs`) con el gemelo
-  de celda como oráculo y al menos un adaptador. Se conservan los tests unitarios de pasos de `cell_cut_tests`.
+- [x] (82cd7cf) Los tests de render ya no ejercitan el modo octante: 6 borrados (regla de retención por octante,
+  cambio de modo, registro sin cambios al mover el ojo, un test de reinicio contenido en otro, dos de promoción por
+  octantes que abarcan), 4 pierden su mitad de octante y el resto se portan a la ruta de celda, incluidos los tests
+  unitarios de pasos. `the_driver_draws_like_the_cpu_path_at_a_far_origin_on_every_adapter` usa el gemelo de celda
+  como oráculo y corrió en dos adaptadores (diferencia máxima de 5e-7 con tolerancia de 5e-4). 414 tests de render;
+  goldens de celda intactos; ninguna mención a `LodMode::Octant` en los tests de render. Se conserva el golden
+  antiguo `cell_cut_digest_golden`: su tabla no es comparable entrada a entrada con la del corte simple en modo
+  celda porque usan resúmenes distintos.
 
 ### Task 8: wasm sims and glue tests, one mode (R)
 
-- [ ] Se colapsan las macros de dos modos (queda el test de celda con el nombre simple), se cambian los literales
-  de los arneses wasm y los tests fuera de las macros, se borra el oráculo de octante y se portan
-  `a_digest_is_not_at_rest_right_after_the_pool_was_lost` (`lod_cells_sim_tests.rs`) y los tests con presupuesto
-  en bytes de octante (`synthetic_cpu_bytes(Cell)` con la misma fracción; se anotan las dos cifras).
-  Comprobación: resumen de las simulaciones reales igual que la línea base.
+- [x] (3a8d28e) Las cinco macros de dos modos y el par suelto se colapsan en el test de celda con el nombre simple
+  (22 tests renombrados); se borran los dos tests de cambio de modo y el oráculo de octante; se portan cuatro tests
+  (los tres de presupuesto conservan su fracción: 553 688 bytes en octante antes, 603 272 en celda ahora). 168
+  tests de wasm y 16 ignorados. Las cuatro simulaciones reales de celda dan los mismos contadores y resúmenes que
+  la línea base (cambian la etiqueta, que ya no nombra el modo, y tres campos de octante que eran siempre 0).
+  Se conserva `CutView::holes`, que el modo celda usa en las simulaciones del pegamento.
+- [x] (3a8d28e) Autotest del oráculo de celda ampliado: quitar el nivel más fino de un tramo se detecta; quitar uno
+  de en medio **no** (no hay comprobación de contigüidad): test ignorado e issue
+  [#83](https://github.com/Mili-ssm/OctreeViewer/issues/83).
 
-### Task 9: Delete the branches and `LodMode`, file by file (R)
+### Task 9: Delete the branches and `LodMode` (R)
 
-- [ ] Un commit por fichero (`cell_cut`, cada `cell_pool/*`, `cell_driver`, `cells_glue`, `cell_pool_bench`), con
-  los goldens de las tareas 1 y 4 y las simulaciones reales tras cada uno; al final, el enum. Atención a los
-  guardas `!= Cell → return` de `seed.rs` y `hold.rs` y a `drawn_levels`, donde el código de octante va detrás del
-  `return` del bloque de celda.
+- [x] (75bc1ff) `LodMode`, sus setters y parámetros y todas las ramas de octante desaparecen de producción (15
+  ficheros, 427 líneas menos). Fue un solo commit y no uno por fichero: quitar la variante, plegar las condiciones
+  y borrar el enum tocan las mismas líneas, y un estado intermedio no pasa clippy. Puertas sobre el estado final:
+  414 y 168 tests con la misma lista de nombres, los cuatro goldens con sus tablas intactas, simulaciones reales
+  idénticas, `scripts/check.sh` con sus 23 pasos, navegador en P1 a P4 (P2 a P4 por debajo del 0,03 % de píxeles
+  distintos; P1 en 0,108 % frente a una captura de dos compilaciones atrás) y una revisión de las 39 condiciones
+  simplificadas (38 correctas; la restante es el comentario del banco, que la tarea 10 corrige).
+  Sin comprobar en navegador: la recuperación tras perder el pool (la demo no tiene cómo provocarla).
 
 ### Task 10: Shader path without a LOD view, docs, and closing
 

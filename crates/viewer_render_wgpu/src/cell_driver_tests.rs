@@ -1462,7 +1462,6 @@ fn reordered_level_requests_are_not_a_change() {
 #[test]
 fn anchors_follow_the_eye() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
-    fx.driver.set_lod_mode(crate::LodMode::Cell);
     let cam = camera("zoom");
     let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
     let slots: HashMap<u32, NodeId> = report
@@ -1538,31 +1537,8 @@ fn assert_anchors(fx: &Fixture, report: &FrameReport, origin: [f64; 3], eye: [f6
 }
 
 #[test]
-fn octant_mode_writes_no_record_when_only_the_eye_moves() {
-    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
-    fx.driver.set_lod_mode(crate::LodMode::Octant);
-    let cam = camera("zoom");
-    let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
-    assert!(!report.plan.active.is_empty());
-    fx.gpu.record_writes.clear();
-    fx.gpu.eye = std::array::from_fn(|axis| cam.position()[axis] + [0.5, -0.25, 0.125][axis]);
-    let view = fx.view(&cam);
-    let report = fx
-        .driver
-        .frame(&mut fx.gpu, &ids(&CHILDREN), &view, 4.0)
-        .expect("frame");
-    assert!(report.plan.mask_updates.is_empty());
-    assert!(
-        fx.gpu.record_writes.is_empty(),
-        "{:?}",
-        fx.gpu.record_writes
-    );
-}
-
-#[test]
 fn anchors_follow_the_origin_and_the_scale() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
-    fx.driver.set_lod_mode(crate::LodMode::Cell);
     let cam = camera("zoom");
     let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
     assert!(!report.plan.active.is_empty());
@@ -1609,55 +1585,8 @@ fn anchors_follow_the_origin_and_the_scale() {
 }
 
 #[test]
-fn records_are_rewritten_after_a_reset() {
-    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
-    let cam = camera("zoom");
-    fx.run(40, &ids(&CHILDREN), &cam, 4.0);
-
-    let events = fx.driver.reset();
-    assert!(!events.is_empty());
-    fx.gpu.lose_pool();
-    // The eye moved meanwhile: a frame stamp surviving the reset would skip the anchors.
-    let moved: [f64; 3] =
-        std::array::from_fn(|axis| cam.position()[axis] + [0.5, 0.25, -0.125][axis]);
-    let mut drawn = false;
-    for _ in 0..60 {
-        fx.gpu.eye = moved;
-        let view = fx.view(&cam);
-        let report = fx
-            .driver
-            .frame(&mut fx.gpu, &ids(&CHILDREN), &view, 4.0)
-            .expect("frame");
-        // Every page of the table reads a record that was written this life of the target.
-        for (_, entry) in &fx.gpu.table {
-            let slot = entry.0[4];
-            assert!(fx.gpu.mask_words.contains_key(&slot), "slot {slot}");
-        }
-        assert_anchors(&fx, &report, ORIGIN, moved);
-        drawn |= !report.plan.active.is_empty();
-    }
-    assert!(drawn);
-
-    // Same when only the target lost its pool.
-    fx.gpu.lose_pool();
-    let mut last = None;
-    for _ in 0..60 {
-        fx.gpu.eye = cam.position();
-        let view = fx.view(&cam);
-        let report = fx
-            .driver
-            .frame(&mut fx.gpu, &ids(&CHILDREN), &view, 4.0)
-            .expect("frame");
-        assert_anchors(&fx, &report, ORIGIN, cam.position());
-        last = Some(report);
-    }
-    assert!(!last.unwrap().plan.active.is_empty());
-}
-
-#[test]
 fn a_reused_mask_slot_gets_the_full_record_of_its_new_node() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
-    fx.driver.set_lod_mode(crate::LodMode::Cell);
     let cam = camera("zoom");
     let first = fx.run(40, &ids(&[2, 3]), &cam, 4.0);
     let first_slots: HashSet<u32> = first.plan.active.iter().map(|a| a.mask_slot).collect();
@@ -1784,28 +1713,13 @@ fn record_active(words: &[u32; NODE_WORDS]) -> u64 {
 #[test]
 fn driver_in_cell_mode_writes_records_and_uniform() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
-    fx.driver.set_lod_mode(crate::LodMode::Octant);
     let cam = camera("zoom");
     let cut = ids(&CHILDREN);
     let viewport = [VIEWPORT[0] as f32, VIEWPORT[1] as f32];
 
-    // Octant mode hands the target no view.
+    // The camera's view, the final target and the scaled `min_side`.
     fx.run(40, &cut, &cam, 4.0);
     assert!(!fx.gpu.lod_views.is_empty());
-    assert!(fx.gpu.lod_views.iter().all(Option::is_none));
-
-    // A mode switch rewrites every live record on the next frame.
-    let live: HashSet<u32> = fx.driver.node_slots.keys().copied().collect();
-    assert!(!live.is_empty());
-    fx.gpu.record_writes.clear();
-    fx.driver.set_lod_mode(crate::LodMode::Cell);
-    fx.step(&cut, &cam, 4.0);
-    let written: HashSet<u32> = fx.gpu.record_writes.iter().map(|(slot, _)| *slot).collect();
-    assert!(written.is_superset(&live), "{written:?} vs {live:?}");
-
-    // Cell mode: the camera's view, the final target and the scaled `min_side`.
-    fx.gpu.lod_views.clear();
-    fx.run(40, &cut, &cam, 4.0);
     let view = fx.gpu.lod_views.last().copied().flatten().expect("a view");
     assert_eq!(
         view,
@@ -1824,12 +1738,8 @@ fn driver_in_cell_mode_writes_records_and_uniform() {
     let view = fx.gpu.lod_views.last().copied().flatten().expect("a view");
     assert_eq!(view.min_side, 0.125);
     assert_eq!(view.target_px, 4.0);
-    fx.driver.set_lod_mode(crate::LodMode::Octant);
-    fx.step(&cut, &cam, 4.0);
-    assert_eq!(fx.gpu.lod_views.last(), Some(&None));
 
-    // Cell mode again: each record's active bits are the depths emitted for its node.
-    fx.driver.set_lod_mode(crate::LodMode::Cell);
+    // Each record's active bits are the depths emitted for its node.
     fx.run(40, &cut, &cam, 4.0);
     let report = fx.step(&cut, &cam, 4.0);
     let slots: HashSet<u32> = report.plan.active.iter().map(|a| a.mask_slot).collect();
@@ -1884,7 +1794,6 @@ fn cell_mode_records_are_rewritten_with_active_bits_after_a_reset() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
     let cam = camera("zoom");
     let cut = ids(&CHILDREN);
-    fx.driver.set_lod_mode(crate::LodMode::Cell);
     let report = fx.run(40, &cut, &cam, 4.0);
     assert_cell_records(&fx, &report, cam.position());
 
@@ -1926,7 +1835,6 @@ fn cell_mode_records_are_rewritten_with_active_bits_after_a_reset() {
 fn a_reused_mask_slot_gets_the_active_bits_and_anchor_of_its_new_node_in_cell_mode() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
     let cam = camera("zoom");
-    fx.driver.set_lod_mode(crate::LodMode::Cell);
     let first = fx.run(40, &ids(&[2, 3]), &cam, 4.0);
     let first_slots: HashSet<u32> = first.plan.active.iter().map(|a| a.mask_slot).collect();
     assert!(!first_slots.is_empty());

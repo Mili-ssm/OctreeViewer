@@ -17,7 +17,7 @@ impl CellPool {
         grid: &CellGrid,
     ) -> PrevState {
         let mut state = self.prev_state(id);
-        if self.lod_mode != LodMode::Cell || self.drew_in_applied(id) {
+        if self.drew_in_applied(id) {
             return state;
         }
         let (lo, hi) = cell_depth_range(Self::node_depth(grid, bounds));
@@ -84,12 +84,7 @@ impl CellPool {
     /// cell mode up to the finest active depth of the node (R3-Q21 needs what was actually drawn,
     /// not the octant's nominal depth).
     pub(super) fn drawn_ceiling(&self, id: NodeId, drawn: Option<u8>) -> Option<u8> {
-        match self.lod_mode {
-            LodMode::Octant => drawn,
-            LodMode::Cell => {
-                drawn.map(|depth| depth.max(self.applied_finest.get(&id).copied().unwrap_or(depth)))
-            }
-        }
+        drawn.map(|depth| depth.max(self.applied_finest.get(&id).copied().unwrap_or(depth)))
     }
 
     /// Cell mode: the depths a node entering the cut starts from (`prev_state_seeded`) and the
@@ -103,7 +98,7 @@ impl CellPool {
         caps: &FastMap<NodeId, u8>,
         grid: &CellGrid,
     ) -> Vec<u8> {
-        if self.lod_mode != LodMode::Cell || self.drew_in_applied(entry.node) {
+        if self.drew_in_applied(entry.node) {
             return Vec::new();
         }
         let buildable = capped_range(node.buildable, caps.get(&entry.node));

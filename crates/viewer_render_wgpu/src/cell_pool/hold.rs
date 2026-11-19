@@ -86,9 +86,6 @@ impl CellPool {
         nodes: &FastMap<NodeId, PoolNode>,
         grid: &CellGrid,
     ) {
-        if self.lod_mode != LodMode::Cell {
-            return;
-        }
         let mut cells: FastMap<(u8, [u64; 3]), NodeId> = FastMap::default();
         for entry in entries {
             let f = Footprint::new(grid, nodes[&entry.node].bounds);
@@ -294,7 +291,6 @@ impl CellPool {
                         })
                     },
                     grid,
-                    self.lod_mode,
                     wanted_depth,
                 );
                 solo.ok()
@@ -313,7 +309,6 @@ impl CellPool {
                     grid,
                 ),
                 f.rep.saturating_sub(MAX_MASK_LEVELS),
-                self.lod_mode,
             );
             let short = (0..8).any(|o| {
                 // The raw wanted depth, not the stored one (R3-Q21): a child storing only a

@@ -105,35 +105,6 @@ fn run(
     )
 }
 
-/// `run` in octant mode, which the public `cell_cut` no longer is.
-fn run_octant(
-    cut: &[NodeId],
-    nodes: &HashMap<NodeId, CellCutNode>,
-    camera: &OrbitCamera,
-    grid: &CellGrid,
-    origin: [f64; 3],
-    target: f64,
-) -> Result<Vec<CellCutEntry>, CellCutError> {
-    let view = view(camera);
-    cell_cut_with(
-        cut,
-        &|id| nodes.get(&id).cloned(),
-        grid,
-        LodMode::Octant,
-        &|_, octant, data| {
-            octant_wanted_depth(
-                &view,
-                grid,
-                origin,
-                data.bounds,
-                octant,
-                data.buildable,
-                target,
-            )
-        },
-    )
-}
-
 fn fixture_cuts() -> Vec<(&'static str, Vec<NodeId>)> {
     vec![
         ("root", ids(&[1])),
@@ -596,24 +567,6 @@ fn fully_masked_octant_requests_no_level() {
 }
 
 #[test]
-fn spanning_levels_promote_octants_to_the_next_buildable_level() {
-    let camera = cameras().remove(0).1;
-    let grid = dataset_grid(ORIGIN);
-    // The node is at depth 0: a level at depth 0 spans octants, so a coarse choice moves on.
-    let nodes = root_with(&[0, 2], &[0, 2]);
-    let entries = run_octant(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 1.0e6).unwrap();
-    // Depth 1 is not stored but buildable: it is the first one past the spanning level.
-    assert_eq!(entries[0].wanted, [Some(1); 8]);
-    // Nothing finer than the spanning level: every octant uses it.
-    let nodes = root_with(&[0], &[0]);
-    let entries = run_octant(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 1.0e6).unwrap();
-    assert_eq!(entries[0].wanted, [Some(0); 8]);
-    let entries = run_octant(&ids(&[1]), &nodes, &camera, &grid, ORIGIN, 0.001).unwrap();
-    assert_eq!(entries[0].wanted, [Some(0); 8]);
-    assert_eq!(entries[0].draws(), vec![(0, 0xff)]);
-}
-
-#[test]
 fn digest_tells_a_hidden_octant_from_depth_zero() {
     let entry = |wanted: Option<u8>| CellCutEntry {
         node: NodeId::new(1),
@@ -901,7 +854,6 @@ fn the_closest_level_avoids_coarsening_within_a_node() {
         &ids(&[1]),
         &|id| nodes.get(&id).cloned(),
         &dataset_grid(ORIGIN),
-        LodMode::Octant,
         &|_, octant, _| if octant < 4 { 4 } else { 6 },
     )
     .unwrap();
@@ -911,26 +863,6 @@ fn the_closest_level_avoids_coarsening_within_a_node() {
         [false, false, false, false, true, true, true, true]
     );
     assert_eq!(entries[0].draws(), vec![(4, 0xff)]);
-}
-
-#[test]
-fn a_spanning_level_wins_also_when_other_octants_have_finer_resident_levels() {
-    // Octant 0 wants depth 1 (above the node's detail), the others depth 3. With 0 and 3
-    // resident, the closest level of octant 0 is the coarser 0 (R3-Q21: the closest resident
-    // one), a spanning level, so the node draws 0 whole and every octant is a stage.
-    let nodes = root_with(&[0, 1, 3], &[0, 3]);
-    let entries = cell_cut_with(
-        &ids(&[1]),
-        &|id| nodes.get(&id).cloned(),
-        &dataset_grid(ORIGIN),
-        LodMode::Octant,
-        &|_, octant, _| if octant == 0 { 1 } else { 3 },
-    )
-    .unwrap();
-    assert_eq!(entries[0].wanted[0], Some(1));
-    assert_eq!(entries[0].drawn, [Some(0); 8]);
-    assert_eq!(entries[0].draws(), vec![(0, 0xff)]);
-    assert_eq!(entries[0].stage, [true; 8]);
 }
 
 #[test]
@@ -1309,7 +1241,6 @@ fn run_cell_mode_from(
         cut,
         &|id| nodes.get(&id).cloned(),
         grid,
-        LodMode::Cell,
         &|_, octant, data| {
             octant_wanted_depth(
                 &view,
@@ -1545,7 +1476,7 @@ const CELL_PLAIN_GOLDEN: &[(&str, u64)] = &[
 ];
 
 /// The plain `cell_cut` computes through `cell_cut_with` (no range input, no previous state).
-/// Once octant mode is retired it does so in cell mode: this pins what it will return.
+/// It computes in cell mode: this pins what it returns.
 #[test]
 fn cell_cut_digest_golden_of_the_plain_cut_in_cell_mode() {
     let grid = dataset_grid(ORIGIN);
@@ -1558,7 +1489,6 @@ fn cell_cut_digest_golden_of_the_plain_cut_in_cell_mode() {
                     &cut,
                     &|id| nodes.get(&id).cloned(),
                     &grid,
-                    LodMode::Cell,
                     &|_, octant, data| {
                         octant_wanted_depth(
                             &view,
@@ -1794,7 +1724,6 @@ fn cell_mode_cut(nodes: &HashMap<NodeId, CellCutNode>, wanted: [u8; 8]) -> CellC
         &ids(&[1]),
         &|id| nodes.get(&id).cloned(),
         &dataset_grid(ORIGIN),
-        LodMode::Cell,
         &|_, octant, _| wanted[octant],
     )
     .unwrap()
@@ -1861,16 +1790,6 @@ fn cell_mode_clamps_active_depths_to_the_node_span() {
     let entry = cell_mode_cut(&nodes, [small_depth; 8]);
     assert_eq!(entry.wanted, [Some(small_depth); 8]);
     assert_eq!(entry.drawn, [None; 8]);
-    // Octant mode would draw it.
-    let octant = cell_cut_with(
-        &ids(&[1]),
-        &|id| nodes.get(&id).cloned(),
-        &dataset_grid(ORIGIN),
-        LodMode::Octant,
-        &|_, _, _| small_depth + 2,
-    )
-    .unwrap();
-    assert_eq!(octant[0].drawn, [Some(below); 8]);
 }
 
 #[test]
@@ -1889,7 +1808,6 @@ fn cell_mode_ignores_children_resident_only_outside_their_span() {
             &ids(cut),
             &|id| nodes.get(&id).cloned(),
             &grid,
-            LodMode::Cell,
             &|_, _, data| data.buildable.1,
         )
     };
@@ -1986,7 +1904,6 @@ fn ranged_entry(
         &ids(&[1]),
         &|_| Some(node.clone()),
         grid,
-        LodMode::Cell,
         &|_, octant, data| {
             octant_wanted_depth(view, grid, [0.0; 3], bounds, octant, data.buildable, target)
         },
@@ -2211,7 +2128,6 @@ fn an_octant_behind_the_eye_does_not_widen_the_range() {
             &ids(&[1]),
             &|id| nodes.get(&id).cloned(),
             &dataset_grid(ORIGIN),
-            LodMode::Cell,
             &|_, octant, _| if octant < 4 { 12 } else { 5 },
             Some(&|_, _| (4, front)),
             None,
@@ -2225,7 +2141,7 @@ fn an_octant_behind_the_eye_does_not_widen_the_range() {
 }
 
 #[test]
-fn octant_mode_entries_have_no_range() {
+fn entries_without_a_range_input_have_no_range() {
     let nodes = root_with(&[0, 1, 2, 3], &[0, 1, 2, 3]);
     let camera = cameras().remove(0).1;
     let entries = run(
@@ -2241,13 +2157,7 @@ fn octant_mode_entries_have_no_range() {
 }
 
 /// One octant drawing `prev` that wants `w`, over `stored` buildable in `3..=12`.
-fn step_one(
-    prev: Option<u8>,
-    w: u8,
-    stored: &[u8],
-    resident: &[u8],
-    mode: LodMode,
-) -> (Option<u8>, Option<u8>) {
+fn step_one(prev: Option<u8>, w: u8, stored: &[u8], resident: &[u8]) -> (Option<u8>, Option<u8>) {
     let (drawn, _, step) = drawn_levels(
         &[Some(w); 8],
         stored,
@@ -2257,9 +2167,8 @@ fn step_one(
             drawn: [prev; 8],
             timed_out: [false; 8],
         },
-        // Octant mode: a node depth that spans nothing here.
+        // A node depth whose span holds every stored depth here.
         0,
-        mode,
     );
     (drawn[0], step[0])
 }
@@ -2269,20 +2178,20 @@ fn stepping_never_jumps_past_the_wanted_depth() {
     let stored = [7, 8, 9, 10];
     // Drew 10, now wants 8: only {7, 10} resident keeps 10 and waits for 9.
     assert_eq!(
-        step_one(Some(10), 8, &stored, &[7, 10], LodMode::Octant),
+        step_one(Some(10), 8, &stored, &[7, 10]),
         (Some(10), Some(9))
     );
     assert_eq!(
-        step_one(Some(10), 8, &stored, &[7, 9, 10], LodMode::Octant),
+        step_one(Some(10), 8, &stored, &[7, 9, 10]),
         (Some(9), Some(8))
     );
     // Then 9 -> 8 once 8 is resident, and it stops there.
     assert_eq!(
-        step_one(Some(9), 8, &stored, &[7, 8, 9, 10], LodMode::Octant),
+        step_one(Some(9), 8, &stored, &[7, 8, 9, 10]),
         (Some(8), None)
     );
     assert_eq!(
-        step_one(Some(8), 8, &stored, &[7, 8, 9, 10], LodMode::Octant),
+        step_one(Some(8), 8, &stored, &[7, 8, 9, 10]),
         (Some(8), None)
     );
 }
@@ -2291,38 +2200,23 @@ fn stepping_never_jumps_past_the_wanted_depth() {
 fn stepping_refines_one_level_per_frame() {
     let stored = [3, 4, 5, 6, 7];
     let resident = [3, 4, 5, 6, 7];
-    assert_eq!(
-        step_one(Some(3), 7, &stored, &resident, LodMode::Octant),
-        (Some(4), Some(5))
-    );
-    assert_eq!(
-        step_one(Some(4), 7, &stored, &resident, LodMode::Octant),
-        (Some(5), Some(6))
-    );
+    assert_eq!(step_one(Some(3), 7, &stored, &resident), (Some(4), Some(5)));
+    assert_eq!(step_one(Some(4), 7, &stored, &resident), (Some(5), Some(6)));
     // The adjacent level is not resident yet: keep drawing, and ask for it.
     assert_eq!(
-        step_one(Some(3), 7, &stored, &[3, 5, 7], LodMode::Octant),
+        step_one(Some(3), 7, &stored, &[3, 5, 7]),
         (Some(3), Some(4))
     );
     // A chain pruned to {3, 7} whose depths in between are buildable asks for the adjacent one.
-    assert_eq!(
-        step_one(Some(3), 7, &[3, 7], &[3, 7], LodMode::Octant),
-        (Some(3), Some(4))
-    );
+    assert_eq!(step_one(Some(3), 7, &[3, 7], &[3, 7]), (Some(3), Some(4)));
 }
 
 #[test]
 fn a_first_draw_uses_the_closest_resident() {
     let stored = [7, 8, 9, 10];
-    assert_eq!(
-        step_one(None, 8, &stored, &[7, 10], LodMode::Octant),
-        (Some(7), Some(8))
-    );
+    assert_eq!(step_one(None, 8, &stored, &[7, 10]), (Some(7), Some(8)));
     // A previous depth that is no longer resident counts as no previous.
-    assert_eq!(
-        step_one(Some(9), 8, &stored, &[7, 10], LodMode::Octant),
-        (Some(7), Some(8))
-    );
+    assert_eq!(step_one(Some(9), 8, &stored, &[7, 10]), (Some(7), Some(8)));
 }
 
 #[test]
@@ -2339,7 +2233,6 @@ fn cell_mode_keeps_the_stepped_depth_active() {
             timed_out: [false; 8],
         },
         7,
-        LodMode::Cell,
     );
     assert_eq!(drawn, [Some(10); 8]);
     assert_eq!(step, [Some(9); 8]);

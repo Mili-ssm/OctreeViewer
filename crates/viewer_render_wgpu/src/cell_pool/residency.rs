@@ -46,7 +46,6 @@ impl CellPool {
                 cut,
                 &lookup,
                 ctx.grid,
-                self.lod_mode,
                 &|id, o, data| ctx.depth(id, o, data),
                 Some(&|id, data| ctx.far(id, data)),
                 None,
@@ -67,7 +66,7 @@ impl CellPool {
     /// never deeper than the spacing depth, so the single-point tail is not built for the range.
     /// The spacing depth is the finest stored depth of the node (the chain of the node ends at
     /// the first fully separated level, or where it is too sparse to page), or its
-    /// representative depth when nothing is stored. Octant mode has no range: both are empty.
+    /// representative depth when nothing is stored.
     pub(super) fn range_depths(
         &self,
         entry: &CellCutEntry,
@@ -137,11 +136,7 @@ impl CellPool {
             // Cell mode only sees the stored levels inside the node's span.
             let stored = capped(&node.stored, caps.get(&entry.node));
             let stored = self.drawable_stored(&stored, grid, node.bounds);
-            let coarsest = match self.lod_mode {
-                LodMode::Octant => coarsest(&node.stored, caps.get(&entry.node)),
-                LodMode::Cell => stored.first().copied(),
-            };
-            if let Some(coarsest) = coarsest {
+            if let Some(coarsest) = stored.first().copied() {
                 set.insert(self.key(entry.node, coarsest));
             }
             // A wanted depth is fetched as the stored one that serves it; when it is not stored
@@ -197,8 +192,7 @@ impl CellPool {
             let buildable = capped_range(node.buildable, caps.get(&entry.node));
             // Cell mode: no stored level can draw, so the coarsest buildable one inside the
             // span is requested first (it is also what the node pins).
-            if self.lod_mode == LodMode::Cell
-                && stored.is_empty()
+            if stored.is_empty()
                 && let Some(depth) = self.coarsest_in_span(buildable, grid, node.bounds)
             {
                 set.insert(self.key(entry.node, depth));
