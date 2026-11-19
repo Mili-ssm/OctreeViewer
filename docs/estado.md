@@ -61,8 +61,11 @@ Hecho (19-11-2026): [arreglos de la demo](records/archive/demo-color-wasd-maquet
 
 Pendiente (el detalle vive en issues y PR; los huecos transitorios del conjunto activo que cuenta el oráculo se aceptan, ver el [cierre](records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)):
 
+- [PR #97](https://github.com/Mili-ssm/OctreeViewer/pull/97): unidad del CRS (fase 3 del [plan del LOD por celda](plans/nivel-pedido-y-lod-por-celda.md), ADR 0049 D6), lista para fusionar; después hay que regenerar el recorte de Belvedere (`scripts/make-demo-belvedere.sh`, ahora conserva el CRS) y republicar la demo.
+- Siguiente trabajo: D4, plantilla `{url}` en la API pública ([#11](https://github.com/Mili-ssm/OctreeViewer/issues/11), [proyecto #27](https://github.com/Mili-ssm/OctreeViewer/issues/27)), empezando por su plan. Del plan del LOD por celda quedan la 2c (medir en el navegador que ninguna celda salta más de un nivel) y el cierre.
+- [#96](https://github.com/Mili-ssm/OctreeViewer/issues/96): el conversor avisa «CRS no preservado» aunque `v7.4-pre` y posteriores lo guardan.
 - [PR #88](https://github.com/Mili-ssm/OctreeViewer/pull/88): experimento en borrador y aparcado (tramo único como fuente de la emisión y borrado de la maquinaria por octante).
-- [#69](https://github.com/Mili-ssm/OctreeViewer/issues/69) (OQ-14): residencia de Majadas, abierta.
+- Preguntas del propietario que aún no tocan (su condición no se cumple): OQ-01 a OQ-04 y OQ-07 ([#21](https://github.com/Mili-ssm/OctreeViewer/issues/21)–[#25](https://github.com/Mili-ssm/OctreeViewer/issues/25)). [#69](https://github.com/Mili-ssm/OctreeViewer/issues/69) (OQ-14) se cerró el 19-11-2026: Majadas cabe en el pool.
 
 Activo (D3c completado el 15-11-2026; PR #1 y #29 fusionadas en `main`); siguiente trabajo en [Cómo retomar](plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026).
 Lo pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) y las ramas en [PRs](https://github.com/Mili-ssm/OctreeViewer/pulls) ([reglas](../CONTRIBUTING.md#issues-y-prs)): `feat/r3-v75` se integró con la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1) y los experimentos son PRs en borrador con la etiqueta `experimento` (#2–#10).
