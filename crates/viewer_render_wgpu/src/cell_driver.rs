@@ -937,12 +937,7 @@ impl CellDriver {
         }
         self.masks_allocated = 0;
         self.node_slots.clear();
-        // Back to the levels still stored: what was evicted before is not requested again.
-        self.stored_colors = self
-            .nodes
-            .values()
-            .flat_map(|node| node.colors.iter().map(|(_, ranges)| *ranges))
-            .fold(CellColorRanges::default(), CellColorRanges::merge);
+        // `stored_colors` stays: the cloud is the same, so its colours must not change.
         self.anchor_frame = None;
         self.armed = false;
         self.failed = false;

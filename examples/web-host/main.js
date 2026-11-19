@@ -312,9 +312,10 @@ function createFlight() {
         active: () => held.size > 0,
         /** Returns whether the key is a flight key the page should consume. */
         press(event, now) {
+            // Any key refreshes Shift, so pressing it while W is held speeds up at once.
+            shift = Boolean(event.shiftKey);
             const key = String(event.key).toLowerCase();
             if (!(key in FLIGHT_KEYS) || event.ctrlKey || event.altKey || event.metaKey) return false;
-            shift = Boolean(event.shiftKey);
             if (held.size === 0) last = now;
             held.add(key);
             return true;

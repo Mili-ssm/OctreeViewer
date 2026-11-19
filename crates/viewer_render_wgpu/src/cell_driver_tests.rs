@@ -954,9 +954,9 @@ fn stored_colour_ranges_only_grow_and_reset_with_the_generation() {
     let gone = driver.nodes.remove(&NodeId::new(2));
     assert!(gone.is_some());
     assert_eq!(intensity(&driver), Some([40.0, 900.0]));
-    // A pool reset keeps what the stored levels hold (here the narrower node).
+    // Nor does a pool reset (device lost): the cloud and so its colours are the same.
     let _ = driver.reset();
-    assert_eq!(intensity(&driver), Some([40.0, 40.0]));
+    assert_eq!(intensity(&driver), Some([40.0, 900.0]));
     // A new colour generation discards the old ranges.
     driver
         .add_packed_generation(cell_generation(1, 1), level_with(3, 70.0))

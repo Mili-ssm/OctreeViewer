@@ -572,6 +572,13 @@ test("held WASD/QE keys fly the camera each frame, scaled by dt, Shift and the s
         assert.ok(Math.abs(camera.flyForward - 0.3 * 0.4) < 1e-12, "Shift multiplies by 4");
         assert.equal(camera.flyRight, 0);
         assert.ok(Math.abs(camera.flyUp + 0.3 * 0.4) < 1e-12);
+        // Shift pressed or released while W is held changes the speed on the next frame.
+        key("keyup", { key: "Shift" });
+        camera = frame(100);
+        assert.ok(Math.abs(camera.flyForward - 0.3 * 0.1) < 1e-12, "Shift released");
+        key("keydown", { key: "Shift", shiftKey: true });
+        camera = frame(100);
+        assert.ok(Math.abs(camera.flyForward - 0.3 * 0.4) < 1e-12, "Shift pressed while W is held");
         key("keyup", { key: "q" });
         key("keyup", { key: "w" });
         camera = frame(100);

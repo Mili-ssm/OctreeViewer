@@ -25,7 +25,7 @@ si cabe, la demo ofrece una segunda nube real (un recorte de Belvedere).
 | WASD respecto a la cámara (adelante y lado en el plano horizontal según el giro; Q/E vertical), continuo mientras la tecla está pulsada, con `dt` por frame, y en los dos modos de cámara | Es lo que espera un usuario de un visor 3D; la autorrepetición no da movimiento continuo |
 | Velocidad proporcional a la distancia de la cámara al objetivo; la rueda en modo pájaro sigue siendo el multiplicador | La misma tecla se nota igual en Majadas y en la muestra |
 | Majadas no entra en la demo | Su registro no declara licencia (`data/datasets/README.md`) y ocupa GB; GitHub Pages admite 100 MB por fichero |
-| Segunda nube: recorte de Belvedere (CC BY 4.0, RGB real), ≤ 50 MB por fichero, con atribución en la página | Datos reales con licencia que permite publicarlos |
+| Segunda nube: recorte de Belvedere (CC BY 4.0, RGB real), ≤ 40 MB entre `.oct` y `.octattrs` (lo comprueba el script), con atribución en la página | Datos reales con licencia que permite publicarlos |
 
 ## Tareas
 
