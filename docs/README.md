@@ -33,6 +33,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 | [Temporales del conversor](plans/temporales-del-conversor.md) | Bajar el disco temporal del CLI de 11 × a ≤ 2 × el LAZ (RQ-06) sin cambiar la salida: spools comprimidos (LZ4 por planos) y escritura por subárbol. | aprobado |
+| [Temporales, fase B](plans/temporales-del-conversor-fase-b.md) | Plan de implementación de los spools comprimidos (planos de bytes + LZ4) y de la medida de temporales. | pendiente |
 
 ## Explicación
 
