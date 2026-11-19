@@ -5642,6 +5642,48 @@ fn the_active_set_has_no_gap_between_a_drawn_depth_and_the_range() {
     }
 }
 
+#[test]
+fn the_active_set_is_one_run_around_the_finest_usable_drawn_depth() {
+    // (range, drawn per octant, resident, expected active depths). Octants drawing depths that a
+    // residency gap separates give one run, the one holding the finest usable drawn depth;
+    // the coarser run is dropped (its cells draw the finer depth), never the finer one.
+    type Case = ((u8, u8), [u8; 2], &'static [u8], &'static [u8]);
+    let cases: [Case; 3] = [
+        // The node-77 case: 8..=11 are not usable between the drawn 7 and 12.
+        ((7, 7), [7, 12], &[2, 7, 12], &[12]),
+        // The runs touch: one run, unchanged.
+        ((7, 7), [7, 9], &[2, 7, 8, 9], &[7, 8, 9]),
+        // The finest drawn depth is not usable (fresh): the coarser one anchors the run.
+        ((7, 7), [7, 12], &[2, 7, 8], &[7, 8]),
+    ];
+    for (n, (range, drawn, resident, expected)) in cases.into_iter().enumerate() {
+        let mut nodes = octant_nodes();
+        nodes.insert(
+            NodeId::new(1),
+            d5_node(SIDE, &(2..=12).collect::<Vec<u8>>()),
+        );
+        let mut rig = d5_rig(nodes);
+        seed_resident(&mut rig.pool, 1, resident);
+        let entry = CellCutEntry {
+            node: NodeId::new(1),
+            wanted: [Some(7); 8],
+            drawn: std::array::from_fn(|octant| Some(drawn[octant % 2])),
+            stage: [false; 8],
+            step: [None; 8],
+            range: Some(range),
+            node_anchor: None,
+            node_target: None,
+            node_run: None,
+            node_stage: false,
+            node_step: None,
+            mask: [0; 8],
+        };
+        let node_depth = CellPool::node_depth(&grid(), rig.nodes[&NodeId::new(1)].bounds);
+        let active = rig.pool.cell_active_depths(&entry, node_depth, None);
+        assert_eq!(active, expected, "case {n}");
+    }
+}
+
 // ---- The wish is capped at the data bound (ADR 0055 plan, task 7a) --------------------------
 
 /// The finest depth any octant of `id` wishes in `plan`, and the finest depth requested for it.
