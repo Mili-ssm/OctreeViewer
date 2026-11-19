@@ -505,9 +505,10 @@ struct Totals {
 
 /// Classes of a difference between today's active set of a node and its `node_run` run, in the
 /// order they are tried.
-const RUN_CLASSES: [&str; 6] = [
+const RUN_CLASSES: [&str; 7] = [
     "gap",
     "above_hi",
+    "below_lo",
     "entering",
     "prev_unusable",
     "fine_end",
@@ -518,9 +519,9 @@ const RUN_CLASSES: [&str; 6] = [
 struct RunDiff {
     /// Nodes compared, and the ones that differ per class.
     compared: usize,
-    classes: [usize; 6],
+    classes: [usize; 7],
     /// First example per class.
-    examples: [Option<String>; 6],
+    examples: [Option<String>; 7],
     /// Differing nodes whose run top is below / above today's top.
     coarser: usize,
     finer: usize,
@@ -785,15 +786,16 @@ impl Harness {
     }
 
     /// Measurement, no assertion: for every node of the applied cut, compares the depths the GPU
-    /// gets today (the active levels, minus the D5 depth when it is not contiguous with the rest)
-    /// with the run of `node_run` (`CellCutEntry::node_run`), and classifies each difference.
+    /// gets today (the active levels) with the run of `node_run` (`CellCutEntry::node_run`) plus
+    /// the D5 depth the emission adds (`new_d5`), and classifies each difference. The classes are
+    /// decided on the sets without the D5 depth.
     fn check_run_diff(&mut self, number: usize, plan: &FramePlan) {
         let pool = self.driver.pool();
         let hierarchy = self.dataset.metadata.hierarchy();
         let grid = self.dataset.cell_grid();
         let mut diff = std::mem::take(&mut self.totals.run_diff);
         for entry in &plan.entries {
-            let (Some((_, hi)), Some(run), Some(node)) =
+            let (Some((lo, hi)), Some(run), Some(node)) =
                 (entry.range, entry.node_run, hierarchy.node(entry.node))
             else {
                 continue;
@@ -807,7 +809,8 @@ impl Harness {
                     (base + 3..=base + MAX_NODE_SPAN)
                         .find(|depth| pool.is_resident(pool.key(entry.node, *depth)))
                 })
-                .flatten();
+                .flatten()
+                .filter(|depth| pool.is_usable(pool.key(entry.node, *depth)));
             let mut today: Vec<u8> = plan
                 .active
                 .iter()
@@ -815,19 +818,30 @@ impl Harness {
                 .map(|level| level.key.depth)
                 .collect();
             today.sort_unstable();
-            if let Some(d5) = d5
-                && !(today.contains(&(d5 + 1)) || d5 > 0 && today.contains(&(d5 - 1)))
-            {
-                today.retain(|depth| *depth != d5);
-            }
             let (Some(&top), Some(&bottom)) = (today.last(), today.first()) else {
                 continue;
             };
             diff.compared += 1;
-            let wanted_set: Vec<u8> = (run.0..=run.1).collect();
-            if today == wanted_set {
+            let mut ours: Vec<u8> = (run.0..=run.1).collect();
+            if let Some(d5) = d5
+                && !ours.contains(&d5)
+            {
+                ours.push(d5);
+                ours.sort_unstable();
+            }
+            if today == ours {
                 continue;
             }
+            // Without the D5 depth, which is a part apart: the run against its own set.
+            let today: Vec<u8> = today
+                .into_iter()
+                .filter(|depth| Some(*depth) != d5)
+                .collect();
+            let wanted_set: Vec<u8> = (run.0..=run.1).collect();
+            let (top, bottom) = (
+                today.last().copied().unwrap_or(top),
+                today.first().copied().unwrap_or(bottom),
+            );
             let prev = diff.prev.get(&entry.node).copied();
             let usable: Vec<u8> = (0..=40)
                 .filter(|depth| pool.is_usable(pool.key(entry.node, *depth)))
@@ -839,14 +853,24 @@ impl Harness {
                     != wanted_set.iter().filter(|depth| **depth > hi).count()
             {
                 1
-            } else if prev.is_none() {
+            } else if entry.node_anchor.is_some_and(|anchor| anchor < lo)
+                && wanted_set.iter().any(|depth| *depth < lo)
+                && wanted_set
+                    .iter()
+                    .filter(|depth| **depth >= lo)
+                    .eq(today.iter())
+            {
+                // The anchor stays at `prev` below `lo`: the extra coarse depths refine in every
+                // visible cell, so nothing of them is drawn.
                 2
-            } else if prev.is_some_and(|(_, fine)| !usable.contains(&fine)) {
+            } else if prev.is_none() {
                 3
-            } else if bottom == run.0 && top != run.1 {
+            } else if prev.is_some_and(|(_, fine)| !usable.contains(&fine)) {
                 4
-            } else {
+            } else if bottom == run.0 && top != run.1 {
                 5
+            } else {
+                6
             };
             diff.classes[class] += 1;
             if run.1 < top {
@@ -857,10 +881,12 @@ impl Harness {
             let example = || {
                 format!(
                     "{} frame {number}: node {:?} today {today:?} node_run {run:?} range {:?} \
-                     anchor {:?} prev {prev:?} usable {usable:?} stage {} step {:?} D5 {d5:?}",
+                     target {:?} anchor {:?} prev {prev:?} usable {usable:?} stage {} step {:?} \
+                     D5 {d5:?}",
                     RUN_CLASSES[class],
                     entry.node,
                     entry.range,
+                    entry.node_target,
                     entry.node_anchor,
                     entry.node_stage,
                     entry.node_step

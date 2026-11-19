@@ -76,7 +76,7 @@ struct SimStats {
     /// `RunDiff` of the harness: nodes compared, differences per class of `RUN_CLASSES`, and the
     /// ones whose run top is below / above today's top.
     run_compared: usize,
-    run_classes: [usize; 6],
+    run_classes: [usize; 7],
     run_coarser: usize,
     run_finer: usize,
 }
