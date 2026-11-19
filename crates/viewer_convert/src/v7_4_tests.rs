@@ -348,3 +348,64 @@ fn fixed_parameters_cannot_be_overridden_and_ept_is_refused() {
     ));
     assert_eq!(options().points_per_block(), 64_000);
 }
+
+/// Converts a small cloud with `vlrs` and returns the omitted dimensions and, for a format with a
+/// global frame with a non-local CRS, the stored CRS identity.
+fn report_for(
+    version: FormatVersion,
+    vlrs: Vec<Vlr>,
+    name: &str,
+) -> (Vec<String>, Option<(String, u32)>) {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join(format!("{name}.las"));
+    let output = dir.path().join(format!("{name}.oct"));
+    write_las(&input, &cloud(50, [10.0, 20.0, 1.0], 5.0, 2), vlrs);
+    let options = ConvertOptions::new(262_144, 0.01)
+        .unwrap()
+        .with_format_version(version)
+        .unwrap();
+    let omitted = convert_file(&input, &output, options)
+        .unwrap()
+        .omitted_dimensions;
+    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    let stored = reader.format_metadata().global_frame().and_then(|frame| {
+        frame
+            .crs()
+            .identity()
+            .map(|(authority, code)| (authority.to_owned(), code))
+    });
+    (omitted, stored)
+}
+
+#[test]
+fn crs_is_reported_as_not_preserved_only_when_the_format_drops_it() {
+    let reported = |(dims, _): &(Vec<String>, _)| dims.iter().any(|d| d == "CRS/WKT metadata");
+    let wkt = || vec![vlr(2112, WKT.as_bytes().to_vec())];
+    let epsg = Some(("EPSG".to_owned(), 32632));
+    // Stored in the global frame: not reported.
+    for (version, name) in [
+        (FormatVersion::V7_PRE4, "a"),
+        (FormatVersion::V7_PRE5, "a5"),
+        (FormatVersion::V7, "b"),
+    ] {
+        let report = report_for(version, wkt(), name);
+        assert!(!reported(&report), "{version:?}");
+        assert_eq!(report.1, epsg, "{version:?} stores the CRS");
+    }
+    // No CRS record in the format: reported.
+    assert!(reported(&report_for(FormatVersion::V7_PRE3, wkt(), "c")));
+    // A WKT record that is not UTF-8 cannot be read: the CRS falls back to local, so it is lost.
+    let latin1 = b"PROJCS[\"Z\xfcrich\"]".to_vec();
+    let report = report_for(FormatVersion::V7, vec![vlr(2112, latin1)], "d");
+    assert!(
+        reported(&report),
+        "an unreadable CRS is reported even in v7"
+    );
+    // Source without CRS: nothing to report.
+    assert!(!reported(&report_for(
+        FormatVersion::V7_PRE3,
+        Vec::new(),
+        "e"
+    )));
+    assert!(!reported(&report_for(FormatVersion::V7, Vec::new(), "f")));
+}
