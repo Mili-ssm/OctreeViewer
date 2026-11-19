@@ -29,14 +29,22 @@ si cabe, la demo ofrece una segunda nube real (un recorte de Belvedere).
 
 ## Tareas
 
-- [ ] **1. Color estable.** Comprobar: un test del driver con dos cortes distintos del mismo dataset da los
+- [x] **1. Color estable.** Comprobar: un test del driver con dos cortes distintos del mismo dataset da los
   mismos rangos; en el navegador, el modo elevación no cambia de color al girar y acercarse.
-- [ ] **2. WASD.** Comprobar: tests de la cámara (W avanza en la dirección de la vista proyectada en el plano);
+- [x] **2. WASD.** Comprobar: tests de la cámara (W avanza en la dirección de la vista proyectada en el plano);
   en el navegador, mantener W mueve de forma continua y visible en la muestra y en Belvedere.
-- [ ] **3. Maquetación.** Comprobar con Playwright en escritorio y móvil: el lienzo ocupa la ventana sin scroll
+- [x] **3. Maquetación.** Comprobar con Playwright en escritorio y móvil: el lienzo ocupa la ventana sin scroll
   de página, el menú hace scroll propio y el teclado y el foco siguen funcionando.
-- [ ] **4. Segunda nube (prescindible).** Comprobar: el recorte se convierte y verifica
+- [x] **4. Segunda nube (prescindible).** Comprobar: el recorte se convierte y verifica
   (`viewer_convert verify`), la demo lo abre desde un selector, la atribución aparece y los ficheros caben.
+Hecho (19-11-2026): 1 en `ab392d9` y `b681853` (el respaldo del cubo raíz estiraba la rampa: el worker pasa
+`elevationRange`); 2 en `43855b8` y `e38c013` (0,3 radios de órbita por segundo: a 1 radio por segundo, 1 s de W
+sacaba la muestra de la vista); 3 en `5a2d51f`; 4 en `f41798c`, `b390a64`, `f26de18` y `ee5734e` (600 × 600 m,
+1,32 M puntos, 21 MB; se descarga entera porque el servidor de desarrollo no admite Range). Navegador: maquetación
+en escritorio y móvil, WASD en los dos modos y Belvedere pasan; la prueba del color con la rueda no reproduce el
+fallo en la compilación anterior, así que la evidencia del arreglo es el test del driver
+`the_frame_hands_the_target_ranges_that_do_not_depend_on_the_cut`.
+
 - [ ] **5. #89, lints pedantes.** Comprobar: `scripts/check.sh` 23/23.
 - [ ] **6. Cierre.** Comprobar: `scripts/check.sh` y el navegador en la punta; PR; fusión y publicación de la
   demo solo con el visto bueno del propietario.
