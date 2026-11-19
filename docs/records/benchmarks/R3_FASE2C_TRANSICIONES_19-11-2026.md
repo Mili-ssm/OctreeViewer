@@ -4,12 +4,13 @@
 [#99](https://github.com/Mili-ssm/OctreeViewer/issues/99)). Es la comprobación de la fase 2c del
 [plan del nivel pedido y el LOD por celda](../../plans/nivel-pedido-y-lod-por-celda.md).
 
-**Conclusión:** en Belvedere (datos reales) la puerta del ADR 0053 se cumple en pantalla; en el octree sintético del
-arnés, no.
+**Conclusión:** la puerta espacial del ADR 0053 se cumple en pantalla en Belvedere (datos reales) y no en el octree
+sintético del arnés; la temporal (que no filtra por pantalla) no se cumple en ninguno de los dos: 280 saltos en una
+órbita de Belvedere y 62–1338 por simulación en el sintético.
 
 | Datos | Pares vecinos en pantalla, dibujados por nodos distintos, con más de un nivel de diferencia | Saltos de más de un nivel dentro de un nodo entre dos frames |
 | --- | --- | --- |
-| Belvedere, 4 simulaciones reales | 0 (de 22 a 44 pares visibles) | 0, salvo 280 en la órbita de semilla 7 |
+| Belvedere, 4 simulaciones reales | 0 (de 0 a 44 pares visibles) | 0, salvo 280 en la órbita de semilla 7 |
 | Belvedere, 3 casos del arnés de streaming | sin pares visibles | 0 a 343 |
 | Octree sintético, 18 simulaciones `sim_synthetic_*` | 48 a 855 en las 14 con pares visibles (0,9 % a 22,4 %; las peores, el dolly) | 62 a 1338 |
 
@@ -25,7 +26,7 @@ en la demo. El plan pide abrir una pregunta si la puerta no se cumple: es OQ-17.
 | Dato | Valor |
 | --- | --- |
 | Revisión | `cd90b7f` (`main`, tras fusionar #95 y #97) |
-| Perfil y toolchain | `fast` (las simulaciones `real_sim` documentan `perf`; los contadores no dependen del perfil); nightly fijado en `rust-toolchain.toml` |
+| Perfil y toolchain | `fast` en los dos comandos (el mensaje de `#[ignore]` de `real_sim` sugiere `perf`; los contadores no dependen del perfil); nightly fijado en `rust-toolchain.toml` |
 | Equipo | AMD Ryzen AI 9 365, Radeon 880M |
 | Datasets | `target/render-data/belvedere-v7.oct` (simulaciones reales y casos `belvedere *` del arnés) y el octree sintético del arnés |
 | Comandos | `R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast --offline --lib -- cells_stream_tests --nocapture --test-threads=1` (70 pasan, 17 ignorados) · `… -- --ignored real_sim --nocapture --test-threads=1` (3 pasan) |
@@ -60,8 +61,8 @@ Los resúmenes (`digest`) coinciden con el «in-process» en las cuatro.
 | órbita con reinicio, semilla 5 | 0 | 1282 | 1894 / 12060 | 0 / 27 | 0, 1282 |
 
 La línea base es la del [registro del modo celda](R3_LINEA_BASE_CELDA_18-11-2026.md), anterior a retirar la regla
-`Window` (19-11-2026). La órbita de semilla 1 imprime además su hueco transitorio conocido (nodo 77, frame 36), que
-el [cierre del rango por nodo](R3_CIERRE_RANGO_POR_NODO_19-11-2026.md) acepta.
+`Window` (19-11-2026). La órbita de semilla 1 tiene además 7 frames con hueco transitorio (`active_gaps`, el primero en el frame 36,
+nodo 77), que el [cierre del rango por nodo](R3_CIERRE_RANGO_POR_NODO_19-11-2026.md) acepta.
 
 ### Simulaciones sintéticas (`sim_synthetic_*`)
 
@@ -101,6 +102,7 @@ Demo publicada desde `cd90b7f` y abierta en Chromium 1248 sin interfaz, con WebG
 
 - Los contadores salen del gemelo de Rust, no de la GPU: la GPU usa el mismo predicado (`refines`, D2 del plan),
   pero no se leyó su salida por celda en el navegador.
+- `cell_within_node` y `cell_node_changed` no filtran por pantalla: cuentan muestras dentro y fuera del frustum.
 - `cell_node_changed` compara la profundidad que dibujan dos nodos distintos, y la línea base tampoco la juzga.
 - No se ha separado qué pares sintéticos son relevos padre ↔ hijo y cuáles nodos vecinos con rangos distintos: es la
   opción 2 de OQ-17.
