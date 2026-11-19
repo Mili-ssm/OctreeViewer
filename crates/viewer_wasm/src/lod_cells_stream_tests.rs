@@ -24,8 +24,8 @@ use viewer_render_wgpu::cell_lod::{
 use viewer_render_wgpu::{
     ActiveRule, CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan,
     MASK_WORDS, NODE_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo,
-    SceneBounds, ViewProjection, VoxelBuildLimits, cell_cut_digest, node_view_range,
-    representative_depth,
+    SceneBounds, ViewProjection, VoxelBuildLimits, cell_cut_digest, gpu_input_digest,
+    node_view_range, representative_depth,
 };
 use viewer_render_wgpu::{
     CellGrid, MAX_CELL_DEPTH, node_cell_level, representative_depth_for_spacing,
@@ -492,6 +492,9 @@ struct Totals {
     /// Times each node was built, and nodes the driver forgot (CPU budget).
     builds: HashMap<NodeId, usize>,
     forgotten: usize,
+    /// FNV-1a chain of `gpu_input_digest` over every drawn frame, and the digest of the last one.
+    gpu_digest: u64,
+    gpu_digest_last: u64,
 }
 
 /// `(node, wanted, drawn)` of an entry of the last plan.
@@ -713,6 +716,16 @@ impl Harness {
     /// The oracle on the cut a frame drew (holes, coarsenings, lost samples).
     fn check_drawn_cut(&mut self, number: usize, plan: &FramePlan, digest: u64) {
         self.gate.hops += plan.counters.step_hops as usize;
+        let gpu = {
+            let grid = self.dataset.cell_grid();
+            let hierarchy = self.dataset.metadata.hierarchy();
+            gpu_input_digest(&plan.entries, &plan.active, |id| {
+                let bounds = hierarchy.node(id).expect("cut node is resident").bounds();
+                representative_depth(&grid, bounds).saturating_sub(3)
+            })
+        };
+        self.totals.gpu_digest = (self.totals.gpu_digest ^ gpu).wrapping_mul(0x0000_0100_0000_01b3);
+        self.totals.gpu_digest_last = gpu;
         self.check_cell_cut(number, plan, digest);
     }
 
@@ -2760,6 +2773,47 @@ fn settled_sample_pose(pose: &str, rule: ActiveRule) -> (Harness, ViewProjection
     h.camera_moved();
     h.settle(&view, 3, 5000);
     (h, view)
+}
+
+/// `gpu_input_digest` of the settled cut at each demo pose and active rule, golden. It hashes what
+/// the GPU receives per node (active-depth bits, mask, node depth), not the per-octant fields of
+/// the entries, so it must not change while those fields are replaced by node-level ones. The
+/// cut goldens of `cell_cut_tests.rs` are pure cuts without a pool, so they emit no active bits:
+/// these poses stand in for them.
+const GPU_INPUT_GOLDEN: &[(&str, u64)] = &[
+    ("P1/Contiguous", 0x2f2f4f1ab372490e),
+    ("P1/Window", 0x2f2f4f1ab372490e),
+    ("P2/Contiguous", 0xe0f88c8d0cc168e4),
+    ("P2/Window", 0xe0f88c8d0cc168e4),
+    ("P3/Contiguous", 0xdc13ecd06a8491cc),
+    ("P3/Window", 0xdc13ecd06a8491cc),
+    ("P4/Contiguous", 0xdfa4469dd7dfe145),
+    ("P4/Window", 0xdfa4469dd7dfe145),
+    ("P5/Contiguous", 0xe105c88c8ae150cc),
+    ("P5/Window", 0xe105c88c8ae150cc),
+];
+
+#[test]
+fn the_gpu_input_at_the_sample_poses_is_pinned() {
+    let mut actual = Vec::new();
+    for pose in ["P1", "P2", "P3", "P4", "P5"] {
+        for rule in [ActiveRule::Contiguous, ActiveRule::Window] {
+            let (h, _) = settled_sample_pose(pose, rule);
+            actual.push((format!("{pose}/{rule:?}"), h.totals.gpu_digest_last));
+        }
+    }
+    let matches = actual.len() == GPU_INPUT_GOLDEN.len()
+        && actual
+            .iter()
+            .zip(GPU_INPUT_GOLDEN)
+            .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
+    if !matches {
+        let table: String = actual
+            .iter()
+            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
+            .collect();
+        panic!("GPU input table changed; actual:\n{table}");
+    }
 }
 
 fn unit(v: [f64; 3]) -> [f64; 3] {

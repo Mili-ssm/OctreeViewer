@@ -471,6 +471,43 @@ fn drawn_digest(entries: &[CellCutEntry]) -> u64 {
     hash
 }
 
+/// FNV-1a digest of what a plan hands the GPU per node, for the test rigs: for every entry in cut
+/// order, the node id, its `node_depth`, the active-depth bits the driver writes into its record
+/// (`ActiveLevel`s of the node inside `MAX_NODE_SPAN`, bit `i` = depth `node_depth + i`) and the
+/// mask words. It reads no per-octant field of the entries, so it survives their removal. The
+/// anchor of `NodeLod` is left out: it is not a pool value (the driver derives it from the
+/// origin and scale). Not used by production code.
+#[doc(hidden)]
+pub fn gpu_input_digest(
+    entries: &[CellCutEntry],
+    active: &[ActiveLevel],
+    node_depth: impl Fn(NodeId) -> u8,
+) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |bytes: &[u8]| {
+        for byte in bytes {
+            hash = (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    feed(&(entries.len() as u64).to_le_bytes());
+    for entry in entries {
+        let depth = node_depth(entry.node);
+        let bits = active
+            .iter()
+            .filter(|level| level.key.node == entry.node)
+            .map(|level| level.key.depth)
+            .filter(|d| *d >= depth && *d - depth <= crate::cell_lod::MAX_NODE_SPAN)
+            .fold(0_u64, |bits, d| bits | 1 << (d - depth));
+        feed(&entry.node.get().to_le_bytes());
+        feed(&[depth]);
+        feed(&bits.to_le_bytes());
+        for word in entry.mask {
+            feed(&word.to_le_bytes());
+        }
+    }
+    hash
+}
+
 /// The nodes of the applied cut, as the fallback of R3-Q19 needs them.
 struct AppliedIndex {
     nodes: FastMap<NodeId, PoolNode>,

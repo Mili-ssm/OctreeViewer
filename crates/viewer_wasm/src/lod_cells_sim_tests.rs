@@ -67,6 +67,10 @@ struct SimStats {
     parent_violations: usize,
     /// Page evictions that happened while a cut was still unacknowledged.
     evictions_during_ack_lag: usize,
+    /// What the GPU received over every drawn frame (chained) and for the last one
+    /// (`gpu_input_digest`); copied from the harness totals after each drawn frame.
+    gpu_digest: u64,
+    gpu_digest_last: u64,
 }
 
 struct Sim {
@@ -302,6 +306,8 @@ impl Sim {
         }
         self.h
             .check_drawn_cut(number, &draw.report.plan, self.digest);
+        self.stats.gpu_digest = self.h.totals.gpu_digest;
+        self.stats.gpu_digest_last = self.h.totals.gpu_digest_last;
         if let Some(requests) = self.h.driver.take_level_requests() {
             self.h.lag.requests = requests.len();
             self.level_requests = Some(requests);
@@ -432,7 +438,8 @@ impl Sim {
 }
 
 /// The in-process run over the same views: a few frames per view, then settle on the last.
-fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) -> u64 {
+/// Returns the digest of the final cut and its `gpu_input_digest`.
+fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) -> (u64, u64) {
     h.driver = driver_for(&h.dataset, cpu_budget);
     for view in views {
         for _ in 0..3 {
@@ -440,7 +447,7 @@ fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) 
         }
     }
     h.settle(views.last().unwrap(), 3, 20_000);
-    h.totals.drawn_digest
+    (h.totals.drawn_digest, h.totals.gpu_digest_last)
 }
 
 fn check_stats(label: &str, sim: &Sim) {
@@ -567,7 +574,7 @@ fn synthetic_case_under(
     let full = synthetic_cpu_bytes(&views);
     // Small: a third of what the whole run keeps; idle nodes are forgotten and built again.
     let budget = full / 3;
-    let expected = in_process_digest(
+    let (expected, expected_gpu) = in_process_digest(
         with_rule(synthetic_harness(1 << 20, 2.0), rule),
         budget,
         &views,
@@ -582,6 +589,10 @@ fn synthetic_case_under(
         let digest = sim.run(&views, inject, 200_000);
         check_stats(&format!("synthetic {name} {rule:?} seed {seed}"), &sim);
         assert_eq!(digest, expected, "{name} {rule:?} seed {seed}");
+        assert_eq!(
+            sim.stats.gpu_digest_last, expected_gpu,
+            "GPU input of the final cut, {name} {rule:?} seed {seed}"
+        );
         assert!(sim.stats.node_messages > 0);
         if inject.driver_replaced_at.is_some() {
             // Every node the new driver lacked came back, whether the builder learned it from a
@@ -639,19 +650,23 @@ fn sim_synthetic_with_a_tight_page_budget_leaves_no_hole_while_acks_lag() {
         camera_jump_at: Some(a_moves),
         ..Inject::default()
     };
-    let expected = {
+    let (expected, expected_gpu) = {
         let mut h = synthetic_harness(150, 2.0);
         h.driver = driver_for(&h.dataset, u64::MAX);
         h.settle(&a, 3, 20_000);
         h.camera_moved();
         h.settle(&b, 3, 20_000);
-        h.totals.drawn_digest
+        (h.totals.drawn_digest, h.totals.gpu_digest_last)
     };
     for seed in SEEDS {
         let mut sim = synth_sim(seed, u64::MAX, 150, 2.0);
         let digest = sim.run(&views, inject, 200_000);
         check_stats(&format!("synthetic pages seed {seed}"), &sim);
         assert_eq!(digest, expected, "seed {seed}");
+        assert_eq!(
+            sim.stats.gpu_digest_last, expected_gpu,
+            "GPU input of the final cut, seed {seed}"
+        );
         assert!(sim.h.dataset.page_stats().2 > 0, "no page was evicted");
         assert!(
             sim.stats.evictions_during_ack_lag > 0,
@@ -1348,13 +1363,18 @@ fn real_case_under(
         "belvedere {name} {rule:?}: unlimited run keeps {} bytes, budget {budget}",
         unlimited.driver.cpu_bytes()
     );
-    let expected = in_process_digest(with_rule(open().unwrap().harness, rule), budget, &views);
+    let (expected, expected_gpu) =
+        in_process_digest(with_rule(open().unwrap().harness, rule), budget, &views);
     for seed in seeds {
         let mut sim = Sim::new(with_rule(open().unwrap().harness, rule), budget, *seed);
         let digest = sim.run(&views, inject, 400_000);
         check_stats(&format!("belvedere {name} {rule:?} seed {seed}"), &sim);
         println!("belvedere {name} {rule:?} seed {seed}: digest {digest} in-process {expected}");
         assert_eq!(digest, expected, "belvedere {name} {rule:?} seed {seed}");
+        assert_eq!(
+            sim.stats.gpu_digest_last, expected_gpu,
+            "GPU input of the final cut, belvedere {name} {rule:?} seed {seed}"
+        );
     }
 }
 
