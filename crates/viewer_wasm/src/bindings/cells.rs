@@ -554,6 +554,21 @@ impl WasmSceneBuilder {
         cells_stats_object(self.cell_path, &cells.stats(core.session().dataset()))
     }
 
+    /// Smallest cell side the cut may reach (RQ-09), in dataset units: the render side's
+    /// `continuityMinSide` (`null` or 0 for none). A node is not refined into children whose
+    /// coarsest cells would be smaller. A change plans again on the next `update`.
+    #[wasm_bindgen(js_name = setMinSide)]
+    pub fn set_min_side(&mut self, side: Option<f64>) -> Result<(), JsValue> {
+        let (core, cells) = self.cells_parts()?;
+        let dataset = core.session_mut().dataset_mut();
+        let before = dataset.min_side();
+        dataset.set_min_side(side);
+        if dataset.min_side() != before {
+            cells.min_side_changed();
+        }
+        Ok(())
+    }
+
     /// Epoch of the view of the next `update` (the viewer's `viewEpoch()` when it read the
     /// camera sent with it); echoed as `viewEpoch` in the update result.
     #[wasm_bindgen(js_name = setViewEpoch)]

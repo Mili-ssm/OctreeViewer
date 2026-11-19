@@ -581,6 +581,8 @@ function handleWorkerMessage(event) {
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
         syncCellControls();
+        // A recreated worker starts in fixed mode: send the selected px mode (a no-op when it matches).
+        worker.postMessage({ type: "pxMode", mode: pxMode.value });
         sendMinLength();
         requestFrameOnce();
         if (reopenAfterRecreate) {

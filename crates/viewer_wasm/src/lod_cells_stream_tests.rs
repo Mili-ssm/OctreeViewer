@@ -2250,6 +2250,54 @@ fn real_streaming_ladder_belvedere() {
     assert_eq!(real.harness.lost_samples, 0);
 }
 
+/// Settles belvedere at 1 px with `min_side` (dataset units, set as production does: the dataset
+/// for the cut, the pool for the depths), after a dolly toward the data. Returns the number of
+/// drawn octants not drawn by the root and the smallest cell side among them (dataset units).
+fn drawn_cubes_after_dolly(min_side: Option<f64>) -> (usize, f64) {
+    let mut real = open_real("belvedere-v7.oct", 1.0, 256 << 20).expect("real data required");
+    real.harness.dataset.set_min_side(min_side);
+    real.harness.driver.set_min_side(min_side);
+    let (centre, side) = real.anchors_near([0.5, 0.5, 0.5])[0];
+    for k in [4.0, 0.02] {
+        let view = real.view(centre, [0.0, -side * 0.2 * k, side * 0.12 * k]);
+        real.harness.camera_moved();
+        real.harness.settle(&view, 3, 20_000);
+    }
+    let h = &real.harness;
+    let (root, root_side) = (
+        h.dataset.metadata.hierarchy().root_id(),
+        h.dataset.cell_grid().root_side,
+    );
+    let sides: Vec<f64> = (h.last_entries.iter())
+        .filter(|(node, ..)| *node != root)
+        .flat_map(|(_, _, drawn)| drawn.iter().flatten())
+        .map(|&depth| root_side / 2.0_f64.powi(i32::from(depth)))
+        .collect();
+    (sides.len(), sides.into_iter().fold(f64::INFINITY, f64::min))
+}
+
+/// #103 on real data: with a large minimum and a small px target no cell is drawn below the
+/// minimum (the cut ignored it), and without a minimum the same poses do draw smaller cells.
+#[test]
+#[ignore = "real data (minutes): R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast --offline --lib -- --ignored real_belvedere_cells_respect_the_minimum_side"]
+fn real_belvedere_cells_respect_the_minimum_side() {
+    // Belvedere's cut nodes reach sides/8 of 16 m at this pose: 40 m makes the minimum bind.
+    const MIN_SIDE: f64 = 40.0;
+    let (samples, smallest) = drawn_cubes_after_dolly(Some(MIN_SIDE));
+    println!("with min {MIN_SIDE}: {samples} drawn octants, smallest side {smallest}");
+    assert!(samples > 0);
+    assert!(
+        smallest >= MIN_SIDE * (1.0 - 1e-3),
+        "a cell of side {smallest} is drawn below the minimum {MIN_SIDE}"
+    );
+    let (samples, smallest) = drawn_cubes_after_dolly(None);
+    println!("without min: {samples} drawn octants, smallest side {smallest}");
+    assert!(
+        smallest < MIN_SIDE,
+        "the pose must draw below {MIN_SIDE} without a minimum"
+    );
+}
+
 /// Two far-apart regions of belvedere: the views look at the nearest and the farthest root
 /// anchor from the middle of the cube.
 fn region_views(real: &Real) -> (ViewProjection, ViewProjection) {

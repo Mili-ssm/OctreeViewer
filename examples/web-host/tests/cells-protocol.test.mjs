@@ -53,6 +53,7 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
     const posted = [];
     const transfers = new Map();
     const calls = [];
+    const minSides = [];
     const updates = [];
     let receive;
     class WasmSceneBuilder {
@@ -74,6 +75,8 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
         // Like the real builder: every cells method throws while the cells path is off.
         need() { if (!this.cellsOn) throw new Error(NOT_ENABLED); }
         setViewEpoch(epoch) { this.need(); calls.push(["setViewEpoch", epoch]); this.viewEpoch = epoch; }
+        // Kept apart from `calls`: the order tests pin the exact calls around `update`.
+        setMinSide(side) { this.need(); minSides.push(side); }
         driverReplaced() { this.need(); calls.push(["driverReplaced"]); }
         poolReset() { this.need(); calls.push(["poolReset"]); }
         applyEvict(nodes) {
@@ -141,7 +144,7 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
         gen: 1, epoch: 1, viewEpoch: 7, camera: [1], viewport: [64, 64], visualScale: 2, targetPx: 4, ...fields,
     });
     const sync = async () => { await settle(); await sleep(30); };
-    return { posted, transfers, calls, send, view, sync, settle };
+    return { posted, transfers, calls, minSides, send, view, sync, settle };
 }
 
 const names = calls => calls.map(call => call[0]);
@@ -190,6 +193,17 @@ test("an update without new nodes still sends the cut but no empty nodeCells", a
     await worker.sync();
     assert.equal(worker.posted.some(item => item.type === "nodeCells"), false);
     assert.equal(worker.posted.filter(item => item.type === "cellCut").length, 1);
+});
+
+test("the view's minSide reaches the builder before update; none means no constraint", async () => {
+    const worker = await runBuildWorker();
+    worker.view({ minSide: 0.5 });
+    await worker.sync();
+    worker.view({ epoch: 2, camera: [2], minSide: null });
+    await worker.sync();
+    worker.view({ epoch: 3, camera: [3] });
+    await worker.sync();
+    assert.deepEqual(worker.minSides, [0.5, undefined, undefined]);
 });
 
 test("viewEpoch goes to the builder before update and comes back in cellCut and cellLod", async () => {
@@ -650,6 +664,22 @@ test("the view carries the viewer's epoch read with the camera", async () => {
     other.emit({ type: "opened", gen: 1, opened: opened("off") });
     await settle();
     assert.equal(plain.sent(other, "view")[0].viewEpoch, undefined);
+});
+
+test("the view carries the driver's minimum side, and a minLength or continuity change requests a new cut", async () => {
+    const render = await runRenderWorker();
+    const worker = await render.openCells();
+    const views = () => render.sent(worker, "view");
+    assert.equal(views()[0].minSide, null, "the fake driver has no minimum yet");
+    const before = views().length;
+    render.setCellStats({ continuityMinSide: 0.5 });
+    await render.send("minLength", { side: 0.5 });
+    assert.equal(views().length, before + 1, "min length requests a new cut with no camera change");
+    assert.equal(views().at(-1).minSide, 0.5);
+    render.setCellStats({ continuityMinSide: 2 });
+    await render.send("continuity", { enabled: true, factor: 8 });
+    assert.equal(views().length, before + 2, "continuity requests a new cut");
+    assert.equal(views().at(-1).minSide, 2);
 });
 
 test("a scene in cells mode is reported and not applied, in any colour mode", async () => {

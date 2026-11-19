@@ -302,6 +302,13 @@ impl BuilderCells {
         self.dirty
     }
 
+    /// The minimum side of the dataset's cut changed: plan again from the target, as for a new
+    /// pixel target.
+    pub(crate) fn min_side_changed(&mut self) {
+        self.stage_pixels = None;
+        self.dirty = true;
+    }
+
     /// The cells' colour generation changed: plan again so the nodes are built anew.
     pub(crate) fn recolored(&mut self) {
         self.dirty = true;
@@ -978,10 +985,11 @@ impl InProcessCells {
         load_block: &mut impl FnMut(&mut R, BlockId) -> Result<Option<PointBlock>, String>,
         load_page: &mut impl FnMut(&mut R, NodeId) -> Result<PageInsert, String>,
     ) -> Result<(CellPlanStats, Vec<BlockId>), String> {
-        self.driver.set_min_side(
-            self.continuity
-                .effective_min_side(dataset.reference_spacing()),
-        );
+        let min_side = self
+            .continuity
+            .effective_min_side(dataset.reference_spacing());
+        self.driver.set_min_side(min_side);
+        dataset.set_min_side(min_side);
         let mut rounds = 0;
         loop {
             let mut order = Vec::new();
