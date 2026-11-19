@@ -253,8 +253,12 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
     de la GPU idénticos byte a byte). Para 10c: los campos se calculan al construir la memoria del corte, así que
     la espera agotada debe subir `residency_epoch` como hoy `step_waits`; y `before` aún sale de
     `applied_finest` (con el D5): pasar a `applied_run` (B3) en el commit de comportamiento.
-  - [ ] Comparación por (nodo, frame) entre el tramo de `node_run` y los bits activos de hoy, cada diferencia
-    clasificada (B8). Parada: en algún frame de una simulación real, una diferencia sin clasificar.
+  - [x] (4f8a784) Comparación por (nodo, frame) entre el tramo de `node_run` y los bits activos de hoy (B8), en
+    todas las simulaciones. Reales: 7 huecos (solo órbita 1), 27 a 34 por encima de `hi`, 10 a 21 nodos que entran,
+    0 por `prev` expulsado, 13 a 19 extremo fino distinto, 0 a 4 sin clasificar; 2 frames «más grueso que hoy» por
+    simulación, todos de nodos que entran sin `prev`. Tres hallazgos de diseño (C1 a C3 abajo).
+  - [ ] Ronda de ajuste: C1 a C3 y los hallazgos de la revisión de ec9bd09; repetir la comparación. Parada: algún
+    frame «más grueso que hoy» o sin clasificar en una simulación real.
 - [ ] **10c.** Un lector por commit (`busy` del driver, `stages`, `fit` y peticiones, presencia en `fallback.rs`,
   `cell_active_depths`, retención): resumen de la entrada de la GPU idéntico en cada uno, salvo el último.
 - [ ] **10d.** Oráculo de las simulaciones sobre los campos por nodo (lo aplazado de la tarea 6): solo celdas
@@ -326,6 +330,18 @@ enmiendas mandan sobre la tabla y las reglas anteriores.
 | B9 | Orden: primero los lectores que solo reducen (`stages`, `busy`, presencia, `hidden_held`), con el resumen de la GPU idéntico; luego **un** commit de comportamiento (peticiones, retención y emisión), con la aserción `active_gaps = 0` en él; 10e solo quita campos, resumen idéntico; la migración de tests, aparte | 10d en rojo antes de 10e; promesas de resumen idéntico imposibles |
 | B10 | La tarea 11 conserva un término de deseo por nodo para los octantes detrás del ojo o que cruzan su plano (o prueba que `range` es `Some` en todo nodo que dibuja) antes de borrar las sondas | Nodos junto al plano del ojo gruesos o vacíos |
 | B11 | `step` solo hacia arriba; los niveles hacia abajo llegan por `needed`; `busy` lee `stage` | `busy` cierto para siempre por `run.lo − 1` |
+
+### Enmiendas de la comparación (19-11-2026, sobre 4f8a784)
+
+| # | Enmienda | Lo que mostró la comparación |
+| --- | --- | --- |
+| C1 | `step` también hacia abajo: si el deseo más grueso queda bajo `run.lo` y `run.lo − 1` no es usable, ese nivel se pide (con la misma espera y salto que B6, hacia lo grueso). Sustituye a B11 | Al alejarse, el nodo 34 se quedaba en (11, 12) para siempre: nadie pedía 8 a 10 y `stage` no bajaba a 0. Hoy el paso por octante los pide de uno en uno |
+| C2 | `prev` de **todo** nodo que entra = `before` (la función compartida de B5), no solo de los que juzga la retención; `None` solo si nada dibujaba sobre su huella | Los 6 frames «más grueso que hoy» de las simulaciones reales: nodos que entraban sin `prev`, anclados en el objetivo (6) cuando el antepasado dibujaba 8 |
+| C3 | La comparación cuenta el D5 que la emisión añade y separa la clase «por debajo de `lo`» (el ancla sigue en `prev` bajo `lo`: un nivel más grueso activo que no se dibuja, porque refina en toda celda visible) | Los «sin clasificar» de las formas 1 y 2 |
+
+Se acepta, por diseño, que un nodo refine nivel a nivel por su extremo fino (con salto tras la espera) aunque hoy
+salte dos niveles tras reiniciar el driver (forma 3, solo en una simulación sintética con inyección): no engrosa
+nada respecto a lo que ya se veía.
 
 Criterios de parada añadidos: un nodo con ancla que no emite nada, o cuyo extremo emitido baja de `min(prev, deseo)`;
 en pose fija tras asentarse, `stages > 0` o `needs_frame()` tras 2 × `STEP_WAIT_FRAMES`; el nodo 77 de la órbita 1 en
