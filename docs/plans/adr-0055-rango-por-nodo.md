@@ -252,7 +252,7 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
     por nodo; `before_finest` es la única fuente de `before` (B5). Nada observable cambia (simulaciones y resumen
     de la GPU idénticos byte a byte). Para 10c: los campos se calculan al construir la memoria del corte, así que
     la espera agotada debe subir `residency_epoch` como hoy `step_waits`; y `before` aún sale de
-    `applied_finest` (con el D5): pasar a `applied_run` (B3) en el commit de comportamiento.
+    `applied_finest` (con el D5), y así debe seguir para la retención (ver 9b5d027).
   - [x] (4f8a784) Comparación por (nodo, frame) entre el tramo de `node_run` y los bits activos de hoy (B8), en
     todas las simulaciones. Reales: 7 huecos (solo órbita 1), 27 a 34 por encima de `hi`, 10 a 21 nodos que entran,
     0 por `prev` expulsado, 13 a 19 extremo fino distinto, 0 a 4 sin clasificar; 2 frames «más grueso que hoy» por
@@ -265,6 +265,12 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
     semilla se recorta al tramo del nodo. **Aceptado por diseño**: no es más grueso que lo que ya se veía (R3-Q21),
     solo refina nivel a nivel; lo vigila el criterio de 1,5 × frames hasta asentarse. Desde aquí, la parada de la
     comparación es «más grueso que `prev`», no «más grueso que hoy».
+  - [x] (9b5d027) Corrección tras la revisión: 5be1a1c había cambiado decisiones de la retención en un commit «sin
+    cambio» (su `before` dejó de contar el nivel D5, que la GPU sí puede dibujar). La retención vuelve a contar el
+    D5 y el ancla no (B3 vale solo para `prev`), con un test que falla si se reintroduce; el D5 suelto sale de los
+    niveles usables de `node_run`. Comparación: 0 sin clasificar, 0 frames con el tramo bajo `prev`. Para 10e: un
+    nodo cuyo único nivel usable dentro del rango es el D5 suelto se ancla por encima de `hi` (visto en la
+    referencia en proceso, frames 31 y 32, nodo 23).
 - [ ] **10c.** Un lector por commit (`busy` del driver, `stages`, `fit` y peticiones, presencia en `fallback.rs`,
   `cell_active_depths`, retención): resumen de la entrada de la GPU idéntico en cada uno, salvo el último.
 - [ ] **10d.** Oráculo de las simulaciones sobre los campos por nodo (lo aplazado de la tarea 6): solo celdas
