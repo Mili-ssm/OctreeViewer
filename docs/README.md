@@ -33,6 +33,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
 | [Fase 2b: rango de niveles y transiciones](plans/fase-2b-rango-de-niveles-y-transiciones.md) | Plan de la fase 2b (#44): rango de niveles por nodo (de la celda más lejana a la más cercana), un nivel por frame (ADR 0053) y residencia D4. | en pausa |
 | [Replanteamiento del LOD por celda](plans/replanteamiento-lod-por-celda-18-11-2026.md) | Estado de la fase 2b, requisitos replanteados según su intención, experimentos en ramas `explore/` y preguntas para el propietario (ADR 0055, aceptado el 18-11-2026). | aprobado |
+| [Demo: color estable, WASD, maquetación y segunda nube](plans/demo-color-wasd-maquetacion.md) | Arreglos de la demo pedidos el 19-11-2026: rangos de color independientes de la vista, WASD respecto a la cámara, visor a pantalla completa y recorte de Belvedere; después #89. | en curso |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 
 ## Explicación
