@@ -23,10 +23,12 @@ pub enum CrsLinearUnit {
 }
 
 /// The unit and whether the CRS declared it (`assumed`: metres were taken for lack of a unit).
+/// `unrecognised` refines `assumed`: the CRS declared a unit this reader cannot interpret.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CrsUnit {
     pub unit: CrsLinearUnit,
     pub assumed: bool,
+    pub unrecognised: bool,
 }
 
 impl CrsUnit {
@@ -34,6 +36,7 @@ impl CrsUnit {
         Self {
             unit,
             assumed: false,
+            unrecognised: false,
         }
     }
 
@@ -41,6 +44,15 @@ impl CrsUnit {
         Self {
             unit: CrsLinearUnit::Metres,
             assumed: true,
+            unrecognised: false,
+        }
+    }
+
+    const fn unrecognised_metres() -> Self {
+        Self {
+            unit: CrsLinearUnit::Metres,
+            assumed: true,
+            unrecognised: true,
         }
     }
 
@@ -64,7 +76,11 @@ impl CrsRecord {
         match self.raw() {
             CrsRaw::None => CrsUnit::assumed_metres(),
             CrsRaw::Wkt(text) => wkt_unit(text),
-            CrsRaw::GeoTiff { key_directory, .. } => geotiff_unit(key_directory),
+            CrsRaw::GeoTiff {
+                key_directory,
+                doubles,
+                ..
+            } => geotiff_unit(key_directory, doubles),
         }
     }
 }
@@ -92,6 +108,27 @@ impl Parser<'_> {
         {
             self.pos += 1;
         }
+    }
+
+    /// A quoted string at the cursor; WKT escapes a quote as `""`. `None` when unterminated.
+    fn quoted(&mut self) -> Option<String> {
+        let mut text = Vec::new();
+        let mut pos = self.pos + 1;
+        loop {
+            match *self.bytes.get(pos)? {
+                b'"' if self.bytes.get(pos + 1) == Some(&b'"') => {
+                    text.push(b'"');
+                    pos += 2;
+                }
+                b'"' => break,
+                byte => {
+                    text.push(byte);
+                    pos += 1;
+                }
+            }
+        }
+        self.pos = pos + 1;
+        Some(String::from_utf8_lossy(&text).into_owned())
     }
 
     /// `KEYWORD[args]` (or parentheses); `None` on malformed input.
@@ -132,13 +169,9 @@ impl Parser<'_> {
                 }
                 b',' => self.pos += 1,
                 b'"' => {
-                    let start = self.pos + 1;
-                    let length = self.bytes[start..].iter().position(|byte| *byte == b'"')?;
-                    self.pos = start + length + 1;
+                    let text = self.quoted()?;
                     if node.name.is_none() {
-                        node.name = Some(
-                            String::from_utf8_lossy(&self.bytes[start..start + length]).into(),
-                        );
+                        node.name = Some(text);
                     }
                 }
                 _ => {
@@ -188,6 +221,13 @@ fn is_crs(keyword: &str) -> bool {
 
 fn node_unit(node: &Node) -> CrsUnit {
     match node.keyword.as_str() {
+        // The coordinates are those of the source CRS; the target only guides a transformation.
+        "BOUNDCRS" => node
+            .children
+            .iter()
+            .find(|child| child.keyword == "SOURCECRS")
+            .and_then(|source| source.children.iter().find(|child| is_crs(&child.keyword)))
+            .map_or_else(CrsUnit::assumed_metres, node_unit),
         "COMPD_CS" | "COMPOUNDCRS" => node
             .children
             .iter()
@@ -222,7 +262,10 @@ fn wkt_unit(text: &str) -> CrsUnit {
 
 const KEY_MODEL_TYPE: u16 = 1024;
 const KEY_PROJ_LINEAR_UNITS: u16 = 3076;
+const KEY_PROJ_LINEAR_UNIT_SIZE: u16 = 3077;
 const MODEL_TYPE_GEOGRAPHIC: u16 = 2;
+const USER_DEFINED: u16 = 32767;
+const TAG_GEO_DOUBLE_PARAMS: u16 = 34736;
 
 /// EPSG linear unit code -> (name, metres per unit).
 fn epsg_linear_unit(code: u16) -> Option<(&'static str, f64)> {
@@ -230,14 +273,20 @@ fn epsg_linear_unit(code: u16) -> Option<(&'static str, f64)> {
         9001 => ("metre", 1.0),
         9002 => ("foot", 0.3048),
         9003 => ("US survey foot", 0.304_800_609_601_219_2),
+        9005 => ("Clarke's foot", 0.304_797_265_4),
+        9014 => ("fathom", 1.8288),
         9030 => ("nautical mile", 1852.0),
         9036 => ("kilometre", 1000.0),
+        9037 => ("Clarke's yard", 0.914_391_796_2),
+        9040 => ("British yard (Sears 1922)", 0.914_398_414_616_028_7),
+        9041 => ("British foot (Sears 1922)", 0.304_799_471_538_676_2),
         _ => return None,
     })
 }
 
-/// Reads `GeoKey` ids 1024 (model type) and 3076 (projected linear units) of a `GeoTIFF` key directory.
-fn geotiff_unit(directory: &[u8]) -> CrsUnit {
+/// Reads `GeoKey` ids 1024 (model type), 3076 (projected linear units) and 3077 (their size in
+/// metres, a double of record 34736) of a `GeoTIFF` key directory.
+fn geotiff_unit(directory: &[u8], doubles: &[u8]) -> CrsUnit {
     let word = |index: usize| {
         directory
             .get(index * 2..index * 2 + 2)
@@ -246,27 +295,49 @@ fn geotiff_unit(directory: &[u8]) -> CrsUnit {
     let Some(count) = word(3) else {
         return CrsUnit::assumed_metres();
     };
-    let mut unit = CrsUnit::assumed_metres();
+    let mut code = None;
+    let mut size = None;
     for entry in 0..usize::from(count).min(MAX_GEOKEYS) {
         let base = 4 + entry * 4;
-        let (Some(key), Some(location), Some(value)) = (word(base), word(base + 1), word(base + 3))
+        let (Some(key), Some(location), Some(length), Some(value)) =
+            (word(base), word(base + 1), word(base + 2), word(base + 3))
         else {
             break;
         };
-        // Only values stored in the directory itself (location 0) are short codes.
-        if location != 0 {
-            continue;
-        }
-        if key == KEY_MODEL_TYPE && value == MODEL_TYPE_GEOGRAPHIC {
-            return CrsUnit::declared(CrsLinearUnit::Geographic);
-        }
-        if key == KEY_PROJ_LINEAR_UNITS
-            && let Some((name, factor)) = epsg_linear_unit(value)
-        {
-            unit = CrsUnit::linear(name, factor);
+        match (key, location) {
+            // Only values stored in the directory itself (location 0) are short codes.
+            (KEY_MODEL_TYPE, 0) if value == MODEL_TYPE_GEOGRAPHIC => {
+                return CrsUnit::declared(CrsLinearUnit::Geographic);
+            }
+            (KEY_PROJ_LINEAR_UNITS, 0) => code = Some(value),
+            (KEY_PROJ_LINEAR_UNIT_SIZE, TAG_GEO_DOUBLE_PARAMS) if length >= 1 => {
+                let at = usize::from(value) * 8;
+                size = doubles
+                    .get(at..at + 8)
+                    .and_then(|bytes| <[u8; 8]>::try_from(bytes).ok())
+                    .map(f64::from_le_bytes);
+            }
+            _ => {}
         }
     }
-    unit
+    let unrecognised = |unit: CrsUnit| {
+        if unit.assumed {
+            CrsUnit::unrecognised_metres()
+        } else {
+            unit
+        }
+    };
+    match code {
+        None => CrsUnit::assumed_metres(),
+        Some(USER_DEFINED) => unrecognised(size.map_or_else(CrsUnit::assumed_metres, |factor| {
+            CrsUnit::linear("user-defined unit", factor)
+        })),
+        Some(code) => unrecognised(
+            epsg_linear_unit(code).map_or_else(CrsUnit::assumed_metres, |(name, factor)| {
+                CrsUnit::linear(name, factor)
+            }),
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -349,6 +420,10 @@ mod tests {
     }
 
     fn geotiff(entries: &[(u16, u16, u16, u16)]) -> CrsUnit {
+        geotiff_with_doubles(entries, &[])
+    }
+
+    fn geotiff_with_doubles(entries: &[(u16, u16, u16, u16)], doubles: &[f64]) -> CrsUnit {
         let mut words = vec![1, 1, 0, entries.len() as u16];
         for entry in entries {
             words.extend([entry.0, entry.1, entry.2, entry.3]);
@@ -359,7 +434,10 @@ mod tests {
             0,
             CrsRaw::GeoTiff {
                 key_directory,
-                doubles: Vec::new(),
+                doubles: doubles
+                    .iter()
+                    .flat_map(|value| value.to_le_bytes())
+                    .collect(),
                 ascii: Vec::new(),
             },
         )
@@ -380,7 +458,75 @@ mod tests {
             geotiff(&[(1024, 0, 1, 2)]),
             CrsUnit::declared(CrsLinearUnit::Geographic)
         );
-        assert_eq!(geotiff(&[(3076, 0, 1, 1)]), CrsUnit::assumed_metres());
+        assert_eq!(geotiff(&[(1024, 0, 1, 1)]), CrsUnit::assumed_metres());
+    }
+
+    #[test]
+    fn geotiff_declared_but_unknown_unit_is_unrecognised() {
+        assert_eq!(geotiff(&[(3076, 0, 1, 1)]), CrsUnit::unrecognised_metres());
+        // User-defined without a usable size.
+        assert_eq!(
+            geotiff(&[(3076, 0, 1, 32767)]),
+            CrsUnit::unrecognised_metres()
+        );
+        assert_eq!(
+            geotiff_with_doubles(&[(3076, 0, 1, 32767), (3077, 34736, 1, 0)], &[-2.0]),
+            CrsUnit::unrecognised_metres()
+        );
+    }
+
+    #[test]
+    fn geotiff_user_defined_unit_reads_its_size_from_the_doubles() {
+        let entries = [(3076, 0, 1, 32767), (3077, 34736, 1, 1)];
+        let unit = geotiff_with_doubles(&entries, &[9.0, 0.3048]);
+        assert!(!unit.assumed);
+        assert!((foot(&unit) - 0.3048).abs() < 1e-15);
+        // Size key listed first; an offset past the doubles is unrecognised.
+        let reversed = [(3077, 34736, 1, 1), (3076, 0, 1, 32767)];
+        assert!((foot(&geotiff_with_doubles(&reversed, &[9.0, 0.3048])) - 0.3048).abs() < 1e-15);
+        assert_eq!(
+            geotiff_with_doubles(&entries, &[0.3048]),
+            CrsUnit::unrecognised_metres()
+        );
+    }
+
+    #[test]
+    fn epsg_table_units() {
+        let fathom = geotiff(&[(3076, 0, 1, 9014)]);
+        assert!((foot(&fathom) - 1.8288).abs() < 1e-15);
+        assert!((foot(&geotiff(&[(3076, 0, 1, 9005)])) - 0.304_797_265_4).abs() < 1e-15);
+    }
+
+    #[test]
+    fn wkt_quoted_names_unescape_doubled_quotes() {
+        let unit = wkt(r#"PROJCS["P",UNIT["a""b",0.5]]"#);
+        assert_eq!(
+            unit.unit,
+            CrsLinearUnit::Linear {
+                name: "a\"b".into(),
+                metres_per_unit: 0.5
+            }
+        );
+        // A doubled quote at the very end keeps the string open.
+        assert_eq!(wkt(r#"PROJCS["P",UNIT["a"""#), CrsUnit::assumed_metres());
+    }
+
+    #[test]
+    fn boundcrs_uses_the_source_crs() {
+        let text = r#"BOUNDCRS[SOURCECRS[PROJCRS["s",CS[Cartesian,2],LENGTHUNIT["foot",0.3048]]],TARGETCRS[PROJCRS["t",CS[Cartesian,2],LENGTHUNIT["metre",1]]],ABRIDGEDTRANSFORMATION["a",METHOD["m"]]]"#;
+        assert!((foot(&wkt(text)) - 0.3048).abs() < 1e-15);
+        let geographic = r#"BOUNDCRS[SOURCECRS[GEOGCRS["g",ANGLEUNIT["degree",0.0174532925199433]]],TARGETCRS[PROJCRS["t",LENGTHUNIT["metre",1]]]]"#;
+        assert_eq!(wkt(geographic).unit, CrsLinearUnit::Geographic);
+    }
+
+    #[test]
+    fn engineering_crs_units() {
+        let wkt2 = r#"ENGCRS["site",EDATUM["d"],CS[Cartesian,2],AXIS["x",east],LENGTHUNIT["foot",0.3048]]"#;
+        assert!((foot(&wkt(wkt2)) - 0.3048).abs() < 1e-15);
+        let wkt1 = r#"LOCAL_CS["site",LOCAL_DATUM["d",0],UNIT["US survey foot",0.3048006096012192],AXIS["x",EAST]]"#;
+        let unit = wkt(wkt1);
+        assert!(!unit.assumed);
+        assert!((foot(&unit) - 0.304_800_609_601_219_2).abs() < 1e-15);
     }
 
     #[test]
