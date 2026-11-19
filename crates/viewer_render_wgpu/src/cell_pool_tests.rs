@@ -2295,6 +2295,9 @@ fn in_cell_mode_the_hold_threshold_is_the_finest_depth_active_in_the_ancestor() 
         .applied_drawn
         .insert(NodeId::new(2), [Some(nominal); 8]);
     rig.pool.applied_finest.insert(NodeId::new(2), nominal + 1);
+    rig.pool
+        .applied_run
+        .insert(NodeId::new(2), (nominal, nominal + 1));
     let (eval, _) = eval_with(&rig, &ids(&[10]), nominal + 1);
     assert!(eval.hold.contains(&NodeId::new(10)));
 }
@@ -2309,12 +2312,17 @@ fn set_resident(rig: &mut Rig, node: u64, depths: &[u8]) {
     rig.pool.residency_epoch += 1;
 }
 
-/// Pretends the applied cut drew `node` at `finest - 1` while its finest active depth was `finest`.
+/// Pretends the applied cut drew `node` at `finest - 1` while its finest active depth was `finest`
+/// (no D5 depth above it).
 fn set_applied(rig: &mut Rig, node: u64, finest: u8) {
     rig.pool
         .applied_drawn
         .insert(NodeId::new(node), [Some(finest - 1); 8]);
     rig.pool.applied_finest.insert(NodeId::new(node), finest);
+    // `before` reads the fine end of the run without D5 (B3): here the run is the finest depth.
+    rig.pool
+        .applied_run
+        .insert(NodeId::new(node), (finest, finest));
 }
 
 /// How wide a node's range is in a probe: `Wide` starts at the coarsest depth the node can draw
@@ -3540,6 +3548,7 @@ fn drawing(node: u64, octants: &[usize]) -> CellCutEntry {
         step: [None; 8],
         range: None,
         node_anchor: None,
+        node_target: None,
         node_run: None,
         node_stage: false,
         node_step: None,
@@ -5592,6 +5601,7 @@ fn the_active_set_has_no_gap_between_a_drawn_depth_and_the_range() {
             step: [None; 8],
             range: Some(range),
             node_anchor: None,
+            node_target: None,
             node_run: None,
             node_stage: false,
             node_step: None,
@@ -6029,4 +6039,36 @@ fn a_residency_change_measures_the_octants_in_view_at_the_current_pose() {
         bound_from_pages(&rig, id, &after),
         "the bound of the pose it is evaluated at"
     );
+}
+
+#[test]
+fn the_planned_cut_carries_the_node_run_and_the_pool_keeps_the_applied_run() {
+    // Plumbing of plan task 10b: `fill_node_runs` fills the `node_*` fields of the planned
+    // entries and `plan` stores the applied run (without D5) that the next frame reads as `prev`.
+    let mut rig = hold_rig();
+    let zoom = camera("zoom");
+    let root = NodeId::new(1);
+    let mut plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+    for _ in 0..8 {
+        plan = d5_step_at(&mut rig, &ids(&[1]), &zoom, 2.0);
+    }
+    let entry = plan.entries.iter().find(|e| e.node == root).expect("root");
+    let (anchor, run, target) = (
+        entry.node_anchor.expect("an anchor"),
+        entry.node_run.expect("a run"),
+        entry.node_target.expect("a target"),
+    );
+    assert!((run.0..=run.1).contains(&anchor));
+    assert!(run.1 <= target.max(anchor));
+    assert_eq!(entry.node_stage, run.1 < target);
+    if let Some(step) = entry.node_step {
+        assert!(entry.node_stage && (step == run.1 + 1 || step + 1 == run.0));
+    }
+    let applied = rig.pool.applied_run_of(root).expect("the root was applied");
+    let own = rig.pool.cell_active_depths(
+        &plan.entries[0],
+        CellPool::node_depth(&grid(), rig.nodes[&root].bounds),
+        None,
+    );
+    assert_eq!(Some(applied), own.first().copied().zip(own.last().copied()));
 }

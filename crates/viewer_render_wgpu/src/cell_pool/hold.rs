@@ -255,12 +255,6 @@ impl CellPool {
                 continue;
             }
             let held = hold.contains(&id);
-            if held
-                && !above.is_some_and(|(a, gap)| covers_in(entries, &position, a, &f, gap))
-                && !below.iter().any(|(d, _)| position.contains_key(d))
-            {
-                continue;
-            }
             // Per octant of the node: the deepest level that drew over it before.
             let mut limit: [Option<u8>; 8] = [None; 8];
             if let Some((ancestor, gap)) = above
@@ -269,7 +263,7 @@ impl CellPool {
                 for (o, slot) in limit.iter_mut().enumerate() {
                     *slot = f
                         .octants_of(gap, o)
-                        .filter_map(|a| self.drawn_ceiling(ancestor, drawn[a]))
+                        .filter_map(|a| self.before_ceiling(ancestor, drawn[a]))
                         .max();
                 }
             }
@@ -289,7 +283,7 @@ impl CellPool {
                         if slot.is_none() {
                             *slot = f
                                 .octants_of(k, o)
-                                .filter_map(|a| self.drawn_ceiling(far, drawn[a]))
+                                .filter_map(|a| self.before_ceiling(far, drawn[a]))
                                 .max();
                         }
                     }
@@ -298,7 +292,7 @@ impl CellPool {
             for (d, k) in &below {
                 let df = Footprint::new(grid, self.applied_index.nodes[d].bounds);
                 for (o, drawn) in self.applied_drawn[d].iter().enumerate() {
-                    if let Some(depth) = self.drawn_ceiling(*d, *drawn) {
+                    if let Some(depth) = self.before_ceiling(*d, *drawn) {
                         for a in df.octants_of(*k, o) {
                             limit[a] = limit[a].max(Some(depth));
                         }
@@ -325,6 +319,18 @@ impl CellPool {
                     .and_then(|solo| solo.first().map(|e| e.wanted))
                     .unwrap_or(entry.wanted)
             };
+            let before = before_finest(&limit, &wanted);
+            if let Some(before) = before {
+                out.before.insert(id, before);
+            }
+            // `before` is kept for every node that has something under or over it (C2), also the
+            // ones the hold does not judge.
+            if held
+                && !above.is_some_and(|(a, gap)| covers_in(entries, &position, a, &f, gap))
+                && !below.iter().any(|(d, _)| position.contains_key(d))
+            {
+                continue;
+            }
             let (here, _, _) = drawn_levels(
                 &wanted,
                 &stored,
@@ -338,10 +344,6 @@ impl CellPool {
                 ),
                 f.rep.saturating_sub(MAX_MASK_LEVELS),
             );
-            let before = before_finest(&limit, &wanted);
-            if let Some(before) = before {
-                out.before.insert(id, before);
-            }
             let short = match judge {
                 Judge::Run => {
                     // The active run of the node from its own resident levels under the cap, with
@@ -393,6 +395,15 @@ impl CellPool {
             }
         }
         out
+    }
+}
+
+impl CellPool {
+    /// The depth the applied cut may have drawn over an octant of `id` where it drew `drawn`, for
+    /// `before` (B3): up to the fine end of the node's active run WITHOUT its D5 depth, which is
+    /// a part apart. (`drawn_ceiling` of the seeds still counts the D5 depth.)
+    fn before_ceiling(&self, id: NodeId, drawn: Option<u8>) -> Option<u8> {
+        drawn.map(|depth| depth.max(self.applied_run.get(&id).map_or(depth, |run| run.1)))
     }
 }
 

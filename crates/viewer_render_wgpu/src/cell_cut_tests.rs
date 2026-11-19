@@ -576,6 +576,7 @@ fn digest_tells_a_hidden_octant_from_depth_zero() {
         step: [None; 8],
         range: None,
         node_anchor: None,
+        node_target: None,
         node_run: None,
         node_stage: false,
         node_step: None,

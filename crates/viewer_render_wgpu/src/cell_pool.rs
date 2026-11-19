@@ -443,8 +443,8 @@ struct HoldEval {
     hold: FastSet<NodeId>,
     settle: FastSet<NodeId>,
     ancestors: FastSet<NodeId>,
-    /// `hold::before_finest` of each node the hold judged (B5), the `prev` of its `node_run` when
-    /// it did not draw.
+    /// `hold::before_finest` of each cut node with something that drew over its footprint (B5,
+    /// C2), the `prev` of its `node_run` when it did not draw.
     before: FastMap<NodeId, u8>,
 }
 
@@ -626,12 +626,16 @@ pub struct CellPool {
     /// Cell mode: the `(min, max)` active depths of each node of the applied cut, as last
     /// written to the records.
     applied_span: FastMap<NodeId, (u8, u8)>,
-    /// Cell mode: the active run `(min, max)` of each node of the applied cut WITHOUT the depth D5
-    /// adds (B3), as last written to the records: the `prev` of `node_run`.
+    /// Cell mode: first and last depth of each node's active set of the applied cut WITHOUT the
+    /// depth D5 adds (B3), as last written to the records. It may span a gap (today's set is not
+    /// always contiguous); only its fine end is read: the `prev` of `node_run` and, for `before`,
+    /// the finest depth that drew.
     applied_run: FastMap<NodeId, (u8, u8)>,
-    /// Per node whose run is staged by its fine end: `(run.hi, frames)` the level above `run.hi`
-    /// has not been usable. At `STEP_WAIT_FRAMES` the `node_run` anchor may hop (B6).
-    node_waits: FastMap<NodeId, (u8, u32)>,
+    /// Per node waiting for a level (`node_step`, either end, C1): `(level, frames, stamp)`, the
+    /// frames that level has not been usable and the `node_waits_stamp` of the last update. At
+    /// `STEP_WAIT_FRAMES` the `node_run` anchor may hop (B6).
+    node_waits: FastMap<NodeId, (u8, u32, u64)>,
+    node_waits_stamp: u64,
     /// Per `(node, octant)` stepping towards its wanted depth: `((drawn depth, wanted depth is
     /// finer, adjacent depth awaited), frames waited)`. Every planned frame counts, applied or
     /// retained; the key ignores the exact wanted depth, so a wanted depth flipping within the
@@ -715,6 +719,7 @@ impl CellPool {
             applied_span: FastMap::default(),
             applied_run: FastMap::default(),
             node_waits: FastMap::default(),
+            node_waits_stamp: 0,
             step_waits: FastMap::default(),
             applied_d5: FastMap::default(),
             applied_digest: 0,

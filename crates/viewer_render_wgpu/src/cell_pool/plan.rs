@@ -804,18 +804,17 @@ impl CellPool {
                 if let Some(d5) = d5 {
                     d5_depths.insert(id, d5);
                 }
-                // Exactly the depths emitted below as `ActiveLevel`s of this node.
-                let active_bits = self
-                    .cell_active_depths(&self.applied[index], node_depth, d5)
-                    .into_iter()
-                    .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth));
-                // B3: the run without the depth D5 adds.
-                {
-                    let own = self.cell_active_depths(&self.applied[index], node_depth, None);
-                    if let Some((lo, hi)) = own.first().zip(own.last()) {
-                        runs.insert(id, (*lo, *hi));
-                    }
+                // B3: the run without the depth D5 adds, and exactly the depths emitted below as
+                // `ActiveLevel`s of this node (the same plus D5, as `cell_active_depths` adds it).
+                let own = self.cell_active_depths(&self.applied[index], node_depth, None);
+                if let Some((lo, hi)) = own.first().zip(own.last()) {
+                    runs.insert(id, (*lo, *hi));
                 }
+                let active_bits = own
+                    .iter()
+                    .copied()
+                    .chain(d5)
+                    .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth));
                 if active_bits != 0 {
                     let top = node_depth + (63 - active_bits.leading_zeros()) as u8;
                     finest.insert(id, top);
