@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use viewer_core::NodeId;
 
+use super::hold::{Run, run_covers};
 use super::*;
 use crate::{
     OrbitCamera,
@@ -2404,11 +2405,14 @@ const ZOOM_IN: &[(u8, u8, &[u8], bool)] = &[
 fn zoom_in_a_child_is_held_while_it_would_draw_below_the_ancestors_finest_depth() {
     for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
         for (finest, wish, resident, held) in ZOOM_IN {
-            let (got, _) = zoom_in_probe(*finest, *wish, resident, rule);
-            assert_eq!(
-                got, *held,
+            let (got, run) = zoom_in_probe(*finest, *wish, resident, rule);
+            let case = format!(
                 "{rule:?}: ancestor finest {finest}, child wants {wish}, resident {resident:?}"
             );
+            assert_eq!(got, *held, "{case}");
+            // The same decision from the runs alone: the ancestor's is `[nominal, finest]`.
+            let ancestor = [(finest - 1, *finest)];
+            assert_eq!(run_covers(run, &ancestor, *wish), !held, "{case}: {run:?}");
         }
     }
 }
@@ -2475,11 +2479,23 @@ const ZOOM_OUT: &[(u8, bool, u8, &[u8], bool)] = &[
 fn zoom_out_a_node_is_held_while_it_would_draw_below_what_its_descendants_drew() {
     for rule in [ActiveRule::Window, ActiveRule::Contiguous] {
         for (finest, mixed, wish, resident, held) in ZOOM_OUT {
-            let (got, _) = zoom_out_probe(*finest, *mixed, *wish, resident, rule);
-            assert_eq!(
-                got, *held,
+            let (got, run) = zoom_out_probe(*finest, *mixed, *wish, resident, rule);
+            let case = format!(
                 "{rule:?}: descendants finest {finest} (mixed {mixed}), node wants {wish}, \
                  resident {resident:?}"
+            );
+            assert_eq!(got, *held, "{case}");
+            // The same decision from the runs alone: one run `[nominal, finest]` per descendant.
+            let descendants: Vec<Run> = (10..18)
+                .map(|child| {
+                    let f = if *mixed && child != 10 { 5 } else { *finest };
+                    (f - 1, f)
+                })
+                .collect();
+            assert_eq!(
+                run_covers(run, &descendants, *wish),
+                !held,
+                "{case}: {run:?}"
             );
         }
     }
@@ -5412,4 +5428,26 @@ fn at_a_fixed_pose_no_level_is_requested_twice_or_cancelled_more_than_twice() {
     assert!(repeated.is_empty(), "requested twice: {repeated:?}");
     let cancels: Vec<_> = cancelled.iter().filter(|(_, n)| **n > 2).collect();
     assert!(cancels.is_empty(), "cancelled more than twice: {cancels:?}");
+}
+
+#[test]
+fn run_covers_compares_the_run_end_with_the_finest_drawn_before_capped_by_the_wish() {
+    // Zoom in: one ancestor run `[5, 6]`; the child takes over once its run reaches 6, not 7.
+    let ancestor = [(5, 6)];
+    assert!(!run_covers(Some((4, 5)), &ancestor, 8));
+    assert!(run_covers(Some((4, 6)), &ancestor, 8));
+    assert!(run_covers(Some((6, 6)), &ancestor, 8));
+    assert!(run_covers(Some((4, 9)), &ancestor, 8));
+    // The wish bounds the threshold, also when the ancestor drew finer than the child can build.
+    assert!(run_covers(Some((4, 5)), &ancestor, 5));
+    assert!(!run_covers(Some((4, 4)), &ancestor, 5));
+    assert!(run_covers(Some((4, 5)), &[(5, 9)], 5));
+    // Zoom out: the finest of the descendants counts, whichever it is.
+    let descendants = [(3, 5), (6, 8), (4, 4)];
+    assert!(!run_covers(Some((4, 7)), &descendants, 9));
+    assert!(run_covers(Some((4, 8)), &descendants, 9));
+    assert!(run_covers(Some((4, 7)), &descendants, 7));
+    // Nothing drawn before, or nothing of the node to draw: not held by this rule.
+    assert!(run_covers(Some((4, 4)), &[], 9));
+    assert!(run_covers(None, &ancestor, 9));
 }

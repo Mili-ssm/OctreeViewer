@@ -329,3 +329,27 @@ impl CellPool {
         out
     }
 }
+
+/// The active run `[coarsest, finest]` of a node, as `CellPool::cell_active_depths` gives it.
+#[cfg(test)]
+pub(super) type Run = (u8, u8);
+
+/// Residency gate over node-level runs (plan task 8; not wired until task 9): whether a node
+/// whose run would be `run` may take over without coarsening what `before` drew over its
+/// footprint. `before` are the runs that drew there: the applied ancestor's on a zoom in, the
+/// applied descendants' on a zoom out (the node replaces them). `wish` is the finest depth the
+/// node wants.
+///
+/// Mirrors `eval_refine_hold`: the node is held iff `run.hi < min(finest of before, wish)`. The
+/// threshold is the finest depth drawn before (`drawn_ceiling`: the finest ACTIVE depth, not the
+/// nominal one), not one level more; and the wish bounds it, so a node that wants less than was
+/// drawn, or whose span cannot build what was drawn (its wish is already limited to what it can
+/// build), takes over at its wish. A node with no run (nothing drawable resident) or with nothing
+/// drawn before is not held by this rule.
+#[cfg(test)]
+pub(super) fn run_covers(run: Option<Run>, before: &[Run], wish: u8) -> bool {
+    let (Some((_, finest)), Some(drawn)) = (run, before.iter().map(|(_, hi)| *hi).max()) else {
+        return true;
+    };
+    finest >= drawn.min(wish)
+}
