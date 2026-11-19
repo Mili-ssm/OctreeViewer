@@ -2329,6 +2329,7 @@ enum Far {
 /// What `refine_probe` saw: whether `eval_hold` (production) and `eval_refine_hold` (the
 /// per-octant hold of before) hold the node, and the depths `cell_active_depths` emits for the
 /// entry it would draw with.
+#[derive(Debug)]
 struct Probe {
     held: bool,
     old_held: bool,
@@ -4299,7 +4300,9 @@ fn children_wait_for_the_parent_d5_level() {
 
 /// `add_d5_gate` in `eval_hold` on a multi-node cut: the child 21 is held, and node 1 recorded as
 /// its covering ancestor, while node 1 draws but has no resident D5 depth, whether or not the
-/// applied cut already drew node 1 (then the refine hold also looks at the child, and agrees).
+/// applied cut already drew node 1. Node 21 has levels deeper than anything node 1 drew, so the
+/// refine hold releases it: only the gate holds it (without `add_d5_gate` every leg fails).
+/// That the hold ends once the D5 depth is resident is `children_wait_for_the_parent_d5_level`.
 #[test]
 fn the_d5_gate_holds_a_child_while_its_ancestor_has_no_d5_depth() {
     let (child, parent) = (NodeId::new(21), NodeId::new(1));
@@ -4318,12 +4321,6 @@ fn the_d5_gate_holds_a_child_while_its_ancestor_has_no_d5_depth() {
             assert_eq!(eval.settle, FastSet::from_iter([child]), "{case}");
             assert_eq!(eval.ancestors, FastSet::from_iter([parent]), "{case}");
         }
-        seed_more(&mut rig, 1, &[4]);
-        let (eval, _) = eval_with(&rig, &ids(&[1, 21]), 7);
-        assert!(
-            eval.hold.is_empty() && eval.settle.is_empty() && eval.ancestors.is_empty(),
-            "applied {applied}: with the D5 depth resident nothing is held"
-        );
     }
 }
 
@@ -5894,4 +5891,256 @@ fn run_covers_compares_the_run_end_with_the_finest_drawn_before_capped_by_the_wi
     // Nothing drawn before, or nothing of the node to draw: not held by this rule.
     assert!(run_covers(Some((4, 4)), &[], 9));
     assert!(run_covers(None, &ancestor, 9));
+}
+
+/// Where the pool of the cap rows is small enough for the fit cap to stay (`fit` lifts the caps
+/// when the uncapped cut fits under the low mark).
+const CAP_POOL: u32 = 512;
+const CAP_POINTS: u64 = 3_000_000;
+
+/// What one frame of a fit-cap row saw.
+#[derive(Debug)]
+struct CapRow {
+    /// The frame (from 0) on which the node came out of the hold, if it did.
+    released: Option<usize>,
+    /// The wish the oracle is run up to, shown in a failure.
+    wish: u8,
+    /// The runs `eval_hold` builds for the node (range `Wide` and `Near`).
+    gate: [Option<Run>; 2],
+    gate_releases: [bool; 2],
+    emitted: Vec<u8>,
+    cap_stayed: bool,
+    oracle: Result<(), String>,
+}
+
+/// One zoom (`zoom_in`: child 10 over node 2; else node 2 over its children 10..=17) with a fit
+/// cap on the entering node, `resident` levels of it (never delivered more), and, when `injected`,
+/// the applied cut pretending the node already drew depth 7 (a level above the cap).
+/// Each frame is replayed from scratch so the gate is read on the very state `plan` sees.
+fn cap_row(
+    zoom_in: bool,
+    (cap, target, before_target, resident, injected): (u8, f64, f64, &[u8], bool),
+    rule: ActiveRule,
+    frames: usize,
+) -> CapRow {
+    let node = NodeId::new(if zoom_in { 10 } else { 2 });
+    let cut = if zoom_in {
+        let mut cut = ids(&region_children(10));
+        cut.push(NodeId::new(3));
+        cut
+    } else {
+        ids(&[2])
+    };
+    let setup = || {
+        let (mut rig, cam) = if zoom_in {
+            let mut rig = Rig::new(two_regions_with_coarse_children(), CAP_POOL, 3, 1);
+            rig.pool.set_active_rule(rule);
+            (rig, camera("fit"))
+        } else {
+            let mut rig = Rig::new(two_regions(), CAP_POOL, 3, 1);
+            rig.pool.set_active_rule(rule);
+            (rig, camera("fit"))
+        };
+        let last = if zoom_in {
+            rig.run(60, &ids(&[2, 3]), &cam, before_target)
+        } else {
+            rig.run(60, &ids(&region_children(10)), &cam, before_target)
+        };
+        set_resident(&mut rig, node.get(), resident);
+        for data in rig.nodes.values_mut() {
+            data.points = CAP_POINTS;
+        }
+        rig.held.insert(node);
+        rig.pool.caps.insert(node, cap);
+        if injected {
+            rig.pool.applied_drawn.insert(node, [Some(7); 8]);
+        }
+        (rig, cam, last)
+    };
+    let step = |rig: &mut Rig, cam: &OrbitCamera| d5_step_at(rig, &cut, cam, target / 2.0);
+    // The wish of the node on this view, from a first frame of a throwaway rig.
+    let wish = {
+        let (mut rig, cam, _) = setup();
+        let plan = step(&mut rig, &cam);
+        plan.entries
+            .iter()
+            .find(|e| e.node == node)
+            .and_then(|e| e.wanted.iter().flatten().max().copied())
+            .unwrap_or(0)
+    };
+    let mut found = None;
+    for frame in 0..frames {
+        let (mut rig, cam, last) = setup();
+        for _ in 0..frame {
+            step(&mut rig, &cam);
+        }
+        let probes =
+            [Far::Wide, Far::Near].map(|far| refine_probe(&mut rig, node.get(), wish, rule, far));
+        let owner_depth = probes[0].node_depth;
+        let befores: Vec<Owner> = if zoom_in {
+            vec![Owner {
+                node_depth: owner_depth - 1,
+                lo: [0.0, 0.0, 10.0],
+                active: active_depths(&last, &rig, 2),
+            }]
+        } else {
+            let top = Owner {
+                node_depth: owner_depth,
+                lo: [0.0, 0.0, 10.0],
+                active: Vec::new(),
+            };
+            (10..18)
+                .map(|child| Owner {
+                    node_depth: owner_depth + 1,
+                    lo: top.child_lo(child - 10),
+                    active: active_depths(&last, &rig, child as u64),
+                })
+                .collect()
+        };
+        let plan = step(&mut rig, &cam);
+        if depth_drawn(&plan, node).is_empty() {
+            continue;
+        }
+        let emitted = active_depths(&plan, &rig, node.get());
+        let lo = if zoom_in {
+            befores[0].child_lo(0)
+        } else {
+            [0.0, 0.0, 10.0]
+        };
+        let after = Owner {
+            node_depth: owner_depth,
+            lo,
+            active: emitted.clone(),
+        };
+        // Zoom in: the cells of the entering node; zoom out: those of each replaced descendant.
+        let samples: Vec<_> = befores
+            .iter()
+            .flat_map(|before| {
+                let at = if zoom_in { &after } else { before };
+                (0..8).map(|o| (before.clone(), at.sub_centre(o)))
+            })
+            .collect();
+        let gate = probes.each_ref().map(|p| p.run());
+        found = Some(CapRow {
+            released: Some(frame),
+            wish,
+            gate_releases: gate.map(|run| {
+                let before: Vec<Run> = befores
+                    .iter()
+                    .filter_map(|b| b.active.first().zip(b.active.last()).map(|(l, h)| (*l, *h)))
+                    .collect();
+                run_covers(run, &before, wish)
+            }),
+            gate,
+            emitted,
+            cap_stayed: rig.pool.caps.get(&node) == Some(&cap),
+            oracle: twin_releases(&after, wish, &samples),
+        });
+        break;
+    }
+    found.unwrap_or(CapRow {
+        released: None,
+        wish,
+        gate: [None; 2],
+        gate_releases: [false; 2],
+        emitted: Vec::new(),
+        cap_stayed: true,
+        oracle: Ok(()),
+    })
+}
+
+/// R3-Q21 under a fit cap: when `eval_hold` releases a node whose depths are capped, the active set
+/// `plan` really emits for it (`finer_drawn` may replace its resident levels with finer ones
+/// above the cap) draws no sampled cell coarser than what drew there before, judged by the GPU
+/// twin, and reaches at least the finest depth of the run the gate assumed.
+#[test]
+fn a_capped_node_the_gate_releases_draws_nothing_coarser_than_before_with_the_set_plan_emits() {
+    let (mut rows, mut zoom_in_rows, mut zoom_out_rows, mut above_cap) = (0, 0, 0, 0);
+    let mut failures = Vec::new();
+    for zoom_in in [true, false] {
+        // `(target now, target before)`: what the node wishes and what drew before.
+        for (target, before_target) in [(4.0, 8.0), (4.0, 16.0)] {
+            for cap in [4u8, 5, 6] {
+                for resident in [&[4u8, 5, 6, 7][..], &[4, 7], &[5, 7], &[4, 5]] {
+                    for injected in [false, true] {
+                        for rule in RULES {
+                            let case = (cap, target, before_target, resident, injected);
+                            let row = cap_row(zoom_in, case, rule, 2);
+                            let name = format!(
+                                "zoom_in {zoom_in} {rule:?} {case:?} wish {}: {row:?}",
+                                row.wish
+                            );
+                            // `fit` lifts a cap the uncapped cut fits under: not a capped row.
+                            if !row.cap_stayed || row.released.is_none() {
+                                continue;
+                            }
+                            rows += 1;
+                            zoom_in_rows += usize::from(zoom_in);
+                            zoom_out_rows += usize::from(!zoom_in);
+                            above_cap += usize::from(row.emitted.last().is_some_and(|d| *d > cap));
+                            let finest = row.emitted.last().copied();
+                            let lower = row
+                                .gate
+                                .iter()
+                                .flatten()
+                                .any(|(_, hi)| finest.is_none_or(|f| f < *hi));
+                            if row.oracle.is_err() || lower || row.gate_releases.contains(&false) {
+                                failures.push(name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} rows:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+    assert!(
+        zoom_in_rows > 0 && zoom_out_rows > 0,
+        "{zoom_in_rows} {zoom_out_rows}"
+    );
+    assert!(above_cap > 0, "no row drew a level above its cap");
+    assert!(rows > 30, "{rows} rows");
+}
+
+/// Held with no escape (characterization). A wish that the node can never reach does not exist:
+/// `cell_cut` clamps it to the node's buildable range (stored depths and fit cap), so a node
+/// whose levels stop short of what the ancestor drew is released once it reaches its own finest
+/// level (`min(what drew before, wish)`), by `eval_hold` and by the per-octant `eval_refine_hold`
+/// alike. The only long hold is a level that is stored and buildable but not resident (never
+/// delivered, e.g. refused): both judges hold it until it arrives.
+#[test]
+fn a_node_whose_wish_is_clamped_below_the_ancestor_is_released_and_a_missing_level_holds() {
+    // `(stored, resident, ancestor finest, wish, held)` of child 10 in a zoom in.
+    type Never = (&'static [u8], &'static [u8], u8, u8, bool);
+    let rows: [Never; 3] = [
+        // Stored up to 5, the ancestor drew 6: the wish clamps to 5, which is resident.
+        (&[4, 5], &[4, 5], 6, 7, false),
+        (&[4, 5], &[5], 6, 5, false),
+        // The level the ancestor drew is stored and buildable but not resident: it must arrive.
+        (&[4, 5, 6, 7], &[5], 6, 7, true),
+    ];
+    for (index, (stored, resident, finest, wish, held)) in rows.iter().enumerate() {
+        for rule in RULES {
+            for far in FARS {
+                let mut rig = Rig::new(two_regions_with_coarse_children(), 512, 3, 1);
+                rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+                set_applied(&mut rig, 2, *finest);
+                {
+                    let node = rig.nodes.get_mut(&NodeId::new(10)).expect("node 10");
+                    node.stored = stored.to_vec();
+                    node.buildable = (stored[0], *stored.last().expect("stored"));
+                }
+                set_resident(&mut rig, 10, resident);
+                let probe = refine_probe(&mut rig, 10, *wish, rule, far);
+                let case = format!("row {index} {rule:?} {far:?}: {probe:?}");
+                assert_eq!(probe.held, *held, "{case}");
+                assert_eq!(probe.old_held, *held, "{case}");
+            }
+        }
+    }
 }

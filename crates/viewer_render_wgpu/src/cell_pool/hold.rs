@@ -53,13 +53,15 @@ impl CellPool {
     }
 
     /// R3-Q21: the cut nodes of the real cut `entries` (computed with `hold` as the held set) that
-    /// would draw, in some octant, a level below `min(depth what drew there before, wanted
-    /// depth)`, judged as `cell_cut` would draw them with their resident levels. What drew there
-    /// before is the applied ancestor (`CoverRule`, the one of the fallback) and, on a zoom out,
-    /// the applied descendants of the node. A node with a covering ancestor or covering
-    /// descendants can be held; one that is already held keeps the hold only while they are in the
-    /// real cut. With descendants the wanted depths are those of the node alone: its octants that
-    /// they mask in `entries` would otherwise look finished.
+    /// would coarsen a zone they take over, plus the D5 gate (`add_d5_gate`). What drew over a
+    /// node's footprint before is the applied ancestor (`CoverRule`, the one of the fallback) and,
+    /// on a zoom out, the applied descendants of the node. The node is judged as a whole by
+    /// `run_covers`: it may take over iff the finest depth of its active run reaches
+    /// `min(finest active depth of what drew there before, finest depth it wants)`. A node with a
+    /// covering ancestor or covering descendants can be held; one that is already held keeps the
+    /// hold only while they are in the real cut. With descendants the wanted depths are those of
+    /// the node alone: its octants that they mask in `entries` would otherwise look finished.
+    /// The tests judge the rule against the GPU twin (`cell_lod::drawn_depth_at`).
     pub(super) fn eval_hold(
         &self,
         entries: &[CellCutEntry],
@@ -142,8 +144,8 @@ impl CellPool {
             .collect()
     }
 
-    /// The per-octant hold of before ADR 0055, kept for the tests that compare it with
-    /// `run_covers`; task 11 of the plan deletes it with `Judge::PerOctant`.
+    /// The per-octant rule (deleted by plan task 11), kept for the tests that compare it with
+    /// `run_covers`.
     #[cfg(test)]
     pub(super) fn eval_refine_hold(
         &self,
@@ -338,9 +340,13 @@ impl CellPool {
             );
             let short = match judge {
                 Judge::Run => {
-                    // The active run the GPU will get for the node (what `plan` emits once the
-                    // node is released) against the finest depth that drew over any octant it
-                    // wants before. A node with nothing usable to draw yet is short.
+                    // The active run of the node from its own resident levels under the cap, with
+                    // no `new_d5`, against the finest depth that drew over any octant it wants
+                    // before. `plan` may emit a different set once the node is released: under a
+                    // fit cap `finer_drawn` swaps the resident levels for finer ones above the cap
+                    // (tests: a capped node released by the gate), and `new_d5` adds a depth: the
+                    // gate ignores both, and the twin tests show the emitted set draws nothing
+                    // coarser. A node with nothing usable to draw yet is short.
                     let before = limit
                         .iter()
                         .zip(&wanted)
@@ -401,14 +407,17 @@ pub(super) type Run = (u8, u8);
 /// applied descendants' on a zoom out (the node replaces them). `wish` is the finest depth the
 /// node wants.
 ///
-/// States the GPU-rule condition, not `eval_refine_hold`'s per-octant one: among a node's active
-/// depths a cell draws the coarsest one that does not refine (`cell_lod::draws`), so the node
-/// coarsens a zone only if its finest active depth `run.1` is below what the zone drew before
-/// (the finest of `before`: the finest ACTIVE depth, not the nominal one) capped by what the view
-/// wants (`wish`). It may take over iff `run.1 >= min(finest of before, wish)`; the table tests
-/// check it against the twin on every row. The per-octant hold of before (`eval_refine_hold`) held longer (see
-/// `ZOOM_OUT_PARTS`). A node with no run (nothing drawable resident) or with nothing drawn before
-/// is not held by this rule.
+/// States the GPU-rule condition: among a node's active depths a cell draws the coarsest one
+/// that does not refine (`cell_lod::draws`), so the node coarsens a zone only if its finest active
+/// depth `run.1` is below what the zone drew before (the finest of `before`: the finest ACTIVE
+/// depth, not the nominal one) capped by what the view wants (`wish`). It may take over iff
+/// `run.1 >= min(finest of before, wish)`. The two judges, this and the per-octant rule
+/// (`eval_refine_hold`, deleted by plan task 11), are not ordered; what guarantees the gate is
+/// the twin-judged tables of `cell_pool_tests` (see `ZOOM_OUT_PARTS`).
+///
+/// `before` empty (nothing drew there) releases the node. An empty run (`None`: nothing
+/// drawable resident) also returns `true`: the caller decides it, and holds the node, because
+/// it has nothing to draw and the covering cell must keep drawing the zone.
 pub(super) fn run_covers(run: Option<Run>, before: &[Run], wish: u8) -> bool {
     let (Some((_, finest)), Some(drawn)) = (run, before.iter().map(|(_, hi)| *hi).max()) else {
         return true;
