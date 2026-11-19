@@ -24,9 +24,15 @@ src, dst = sys.argv[1], sys.argv[2]
 x0, x1, y0, y1 = map(float, sys.argv[3:7])
 kept = 0
 with laspy.open(src) as r:
-    # laspy cannot write COPC: keep the point format and scales, drop the COPC VLRs.
+    # laspy cannot write COPC: keep the point format, scales and the CRS (WKT VLR, record 2112,
+    # ADR 0049 D6), drop the COPC VLRs.
     hdr = laspy.LasHeader(version=r.header.version, point_format=r.header.point_format)
     hdr.scales, hdr.offsets = r.header.scales, r.header.offsets
+    wkt = [v for v in r.header.vlrs if v.user_id == "LASF_Projection" and v.record_id == 2112]
+    if not wkt:
+        sys.exit("source has no WKT VLR (LASF_Projection 2112)")
+    hdr.vlrs.extend(wkt)
+    hdr.global_encoding.wkt = True
     w = laspy.open(dst, mode="w", header=hdr)
     for p in r.chunk_iterator(4_000_000):
         m = (p.x >= x0) & (p.x < x1) & (p.y >= y0) & (p.y < y1)
