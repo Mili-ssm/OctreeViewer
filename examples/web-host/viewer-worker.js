@@ -1038,7 +1038,8 @@ function handleBuildMessage(data) {
             viewer.beginRemoteDataset(
                 opened.visualScale, opened.coordinateOrigin, opened.boundsMin, opened.boundsMax,
             );
-            const { name, bytes } = pendingOpen;
+            const { name } = pendingOpen;
+            const bytes = pendingOpen.bytes ?? data.fileBytes ?? null;
             pendingOpen.opened = opened;
             builtOpened = opened;
             lastScene = null;

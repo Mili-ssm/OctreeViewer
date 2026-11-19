@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Remote source through the embeddable API</title>
+<pre id="result">Running…</pre>
+<script type="module">
+// ?data=<absolute dataset URL>&buildWorker=0|1&attributes=derived|none ; the JSON result lands in #result
+// and in `window.probeResult` (see PROBES.md).
+import { probeApiRemote } from "./probe-api-remote.mjs";
+
+const params = new URLSearchParams(location.search);
+window.probeResult = await probeApiRemote(params.get("data"), {
+    buildWorker: params.get("buildWorker") === "1",
+    attributes: params.get("attributes") ?? "none",
+}).catch((error) => ({ error: String(error?.message ?? error) }));
+document.querySelector("#result").textContent = JSON.stringify(window.probeResult, null, 2);
+</script>
