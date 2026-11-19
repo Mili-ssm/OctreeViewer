@@ -29,6 +29,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | Documento | Contenido | Estado |
 | --- | --- | --- |
 | [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho y fusionado en `main`, sigue D4) |
+| [D4: fuente `{url}` en la API pública](plans/d4-fuente-url-en-la-api.md) | Contrato y tareas para que `load` de la API abra datasets remotos por HTTP Range (TW8, #11). | en curso |
 | [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050, 0052 y 0053); fase 1 y 2a fusionadas; 2b en pausa. | en curso |
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
 | [Fase 2b: rango de niveles y transiciones](plans/fase-2b-rango-de-niveles-y-transiciones.md) | Plan de la fase 2b (#44): rango de niveles por nodo (de la celda más lejana a la más cercana), un nivel por frame (ADR 0053) y residencia D4. | en pausa |
