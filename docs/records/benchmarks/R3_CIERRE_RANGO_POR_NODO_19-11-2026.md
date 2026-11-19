@@ -1,7 +1,8 @@
 # R3: cierre del plan del rango por nodo — 19-11-2026
 
-**Estado: medido; plan cerrado con salida reducida (decisión del propietario).** Cada nodo emite ya un solo tramo
-activo y el oráculo de las simulaciones exige que no tenga huecos. El cambio mayor previsto (que un tramo único por
+**Estado: medido; plan cerrado con salida reducida (decisión del propietario).** Los huecos transitorios del
+conjunto activo se quedan: el arreglo pequeño que los quitaba (un solo tramo, el del nivel dibujado más fino) se
+probó y se revirtió porque empeoraba esas mismas celdas (ver abajo). El cambio mayor previsto (que un tramo único por
 nodo, calculado sin los campos por octante, gobierne la emisión, y borrar después la maquinaria por octante) se
 intentó y se aparcó: al conectarlo aparecieron reglas que el diseño no tenía y 28 tests en rojo, para un beneficio
 visible pequeño. Queda como experimento en la PR en borrador
@@ -15,7 +16,7 @@ Cierra el [plan del ADR 0055 en modo celda](../../plans/adr-0055-rango-por-nodo.
 
 | Dato | Valor |
 | --- | --- |
-| Revisión | `af75572` (rama `feat/adr-0055-tramo-b`); experimento en `exp/adr-0055-node-run-emission` (`b11f967`) |
+| Revisión | `c23c682` (rama `feat/adr-0055-tramo-b`); experimento en `exp/adr-0055-node-run-emission` (`b11f967`) |
 | Perfil y toolchain | `fast`; rustc 1.101.0-nightly (2026-10-27) |
 | Equipo | AMD Ryzen AI 9 365 |
 | Datasets | `target/render-data/belvedere-v7.oct` (simulaciones reales: dolly semilla 3, órbitas 1 y 7, órbita con reinicio semilla 5); simulaciones sintéticas del arnés |
@@ -30,15 +31,18 @@ Las cifras solo valen para estas revisiones, perfil, datasets y equipo.
 | Se retira la regla de activos `Window` (propietario, OQ-11) | `d108004`, `f09344a` | Simulaciones con `Contiguous` y entrada de la GPU idénticas; navegador sin cambios |
 | Resumen de la entrada de la GPU (bits activos y máscara por nodo) fijado en P1 a P5 y en las simulaciones | `35f69f1` | Determinista en dos ejecuciones |
 | El `lo` de un nodo y su cota por datos miden solo octantes con datos a la vista ([#87](https://github.com/Mili-ssm/OctreeViewer/issues/87)) | `5c2f92d`, `c54b129` | Nodo 77 de la órbita 1: rango (12, 12) → (7, 7); antes pedía el nivel 12 de un nodo sin nada en pantalla (0 de 125 muestras del gemelo a la vista) |
-| Un tramo activo por nodo: el que contiene el nivel dibujado más fino | `a123fe3` | `active_gaps` 7 → 0 en la órbita 1 (resto ya en 0); solo cambia el resumen de la GPU de esa simulación |
-| `active_gaps == 0` obligatorio en las simulaciones | `af75572` | — |
+| Un tramo activo por nodo (el del nivel dibujado más fino), con `active_gaps == 0` obligatorio | `a123fe3`, `af75572`; **revertidos** en `a1e673c`, `c23c682` | Quitaba los 7 frames con hueco de la órbita 1, pero empeoraba el dibujo (abajo) |
 
-Por qué el tramo del nivel más fino: al quitar el más grueso, esas celdas dibujan un nivel activo más fino, nunca
-uno más grueso (R3-Q21).
+**Por qué se revirtió el tramo único.** La GPU dibuja en cada celda el nivel activo más grueso que no refina, y el
+más fino activo dibuja siempre. Con activos {7, 12} (nodo 77), una celda que quiere 7 dibuja 7 y una que quiere 8 a
+11 dibuja 12; con solo {12}, **todas** dibujan 12, hasta cinco niveles más fino de lo pedido: celdas subpíxel, el
+fallo de «hueco» de un conjunto con salto, ahora en todo el nodo. Mi razonamiento («quitar el tramo grueso solo da
+más detalle, nunca menos») miraba solo R3-Q21 y olvidaba que lo demasiado fino también se ve. Los dos tramos son el
+conjunto menos malo con la residencia disponible hasta que llegan los niveles que faltan. `active_gaps` vuelve a
+ser un recuento (7 frames en la órbita 1, 0 en el resto; el nodo 77 no tiene nada en pantalla tras #87).
 
-Simulaciones reales tras `af75572`: `unexcused_drops`, `zone_coarsenings` y `lost_samples` a 0 en las cuatro;
-frames hasta asentarse iguales a la tarea 9 (dolly 29, órbitas 53 y 37); 0 muestras dibujables más gruesas
-(`LAGSPLIT in_clip`).
+Simulaciones reales tras la reversión: las de `step3_sims` de la tarea 10c (contadores a 0; frames hasta asentarse
+iguales a la tarea 9: dolly 29, órbitas 53 y 37; 0 muestras dibujables más gruesas).
 
 ## El tramo único por nodo como fuente de la emisión: comparación y experimento
 
@@ -65,6 +69,7 @@ Reglas que el diseño no tenía y aparecieron al conectar:
 
 ## Límites
 
+- Los huecos transitorios del conjunto activo siguen (contados, no corregidos).
 - La maquinaria por octante sigue: pasos de un nivel por frame, semillas de entrada, `step_waits`, el juez
   `PerOctant` (solo en tests) y los campos `wanted`, `drawn`, `stage`, `step`. Junto a ellos, `node_run` y los campos
   por nodo se calculan cada frame; en producción solo los lee la presencia (`claims`: coberturas y nodos ocultos en `fallback.rs` y `plan.rs`), con su equivalencia comprobada en cada frame; el resto solo lo leen los tests.
