@@ -21,12 +21,12 @@ use super::{
     },
 };
 use crate::{
-    DEFAULT_PAGE_BUDGET_BYTES, DatasetUnit, LodBuiltScene, LodDataset, LodDatasetError,
-    LodViewStats, PageInsert, WasmAsyncFormatReader, WasmPageGraft,
+    DEFAULT_PAGE_BUDGET_BYTES, LodBuiltScene, LodDataset, LodDatasetError, LodViewStats,
+    PageInsert, WasmAsyncFormatReader, WasmPageGraft,
     browser_io::{BrowserBlobReader, BrowserReadStats},
     cells_glue::ReadPhase,
     lod_driver::{LodStep, LodStepResult, SceneSink, assemble_async_block, update_lod_view_paged},
-    lod_metadata::LodDatasetDescriptor,
+    lod_metadata::{LodDatasetDescriptor, dataset_unit},
     lod_session::LodSession,
 };
 use viewer_core::NodeId;
@@ -34,24 +34,6 @@ use viewer_format::{
     FormatReader, FormatReaderLimits, OctreeReader, PageGraft, PageSource, probe_format,
 };
 use viewer_render_wgpu::{ColorMode, SurfaceRenderer, ViewProjection};
-
-/// The page-facing form of a CRS unit (`viewer_format` is not a dependency of the native build).
-fn dataset_unit(unit: &viewer_format::CrsUnit) -> DatasetUnit {
-    use viewer_format::CrsLinearUnit;
-    let (name, metres_per_unit) = match &unit.unit {
-        CrsLinearUnit::Metres => ("metre", Some(1.0)),
-        CrsLinearUnit::Linear {
-            name,
-            metres_per_unit,
-        } => (name.as_str(), Some(*metres_per_unit)),
-        CrsLinearUnit::Geographic => ("degree", None),
-    };
-    DatasetUnit {
-        name: name.to_owned(),
-        metres_per_unit,
-        assumed: unit.assumed,
-    }
-}
 
 /// Uploads each rebuilt scene to the viewer's own GPU renderer.
 struct RendererSink<'a, 'r> {

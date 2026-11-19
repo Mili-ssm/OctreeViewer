@@ -61,7 +61,8 @@ pub(crate) const TARGET_PIXELS_RANGE: std::ops::RangeInclusive<f64> = 0.5..=16.0
 pub(crate) const DEFAULT_CONTINUITY_FACTOR: f64 = 1.0;
 
 /// Default length minimum of the drawn cubes, in dataset units: 0.1 mm when the unit is metres.
-/// Hosts that know the CRS unit (`crsUnit` of the open result) send their own. Continuity (spacing x factor) wins when larger
+/// Hosts that know the CRS unit (`crsUnit` of the open result) send their own. Continuity
+/// (spacing x factor) wins when larger
 /// ([ADR 0054](../../../docs/adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md)).
 pub(crate) const DEFAULT_MIN_SIDE: f64 = 1e-4;
 

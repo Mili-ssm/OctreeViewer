@@ -23,11 +23,17 @@ pub use cells::{
 };
 
 /// What one dataset unit measures (ADR 0049, D6): `metres_per_unit` is `None` for a geographic CRS.
-#[derive(Debug, Clone, PartialEq)]
+/// Also the `crsUnit` shape of the open result and of the dataset descriptor.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DatasetUnit {
+    #[serde(rename = "unit")]
     pub name: String,
     pub metres_per_unit: Option<f64>,
     pub assumed: bool,
+    /// The CRS declared a unit that could not be interpreted (metres are assumed).
+    #[serde(default)]
+    pub unrecognised: bool,
 }
 
 /// Decoded blocks and resident spatial metadata for one open dataset.
@@ -549,6 +555,7 @@ impl LodDataset {
             name: "metre".into(),
             metres_per_unit: Some(1.0),
             assumed: true,
+            unrecognised: false,
         })
     }
 

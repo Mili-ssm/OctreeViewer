@@ -20,7 +20,9 @@ export function crsUnitPolicy(crsUnit) {
         return { metresPerUnit: 1, lengthDisabled: true, note: "Coordinates are in degrees (geographic CRS): no length in metres applies." };
     }
     const metresPerUnit = Number.isFinite(crsUnit.metresPerUnit) && crsUnit.metresPerUnit > 0 ? crsUnit.metresPerUnit : 1;
-    const note = crsUnit.assumed ? "Metres assumed: the CRS declares no unit." : `Dataset unit: ${crsUnit.unit} (${metresPerUnit} m).`;
+    let note = `Dataset unit: ${crsUnit.unit} (${metresPerUnit} m).`;
+    if (crsUnit.unrecognised) note = "Unknown CRS unit; metres assumed.";
+    else if (crsUnit.assumed) note = "Metres assumed: the CRS declares no unit.";
     return { metresPerUnit, lengthDisabled: false, note };
 }
 

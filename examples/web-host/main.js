@@ -849,7 +849,7 @@ function recreateViewer({ reopen = false } = {}) {
     belvedereButton.disabled = true;
     voxelPixels.disabled = true;
     latestLodStats = null;
-    unitPolicy = crsUnitPolicy(null);
+    resetCrsUnit();
     datasetName = "Synthetic sample";
     cameraDelta = emptyCameraDelta();
     const replaced = replaceCanvasElement(canvas, { transfer: false });
@@ -945,12 +945,24 @@ function syncCellControls() {
     continuityFactor.disabled = !ready;
 }
 
-function applyCrsUnit(opened) {
-    unitPolicy = crsUnitPolicy(opened?.crsUnit ?? null);
+function setCrsUnit(crsUnit) {
+    unitPolicy = crsUnitPolicy(crsUnit);
     const lengthOption = minLengthMode.querySelector('option[value="length"]');
     lengthOption.disabled = unitPolicy.lengthDisabled;
     if (unitPolicy.lengthDisabled && minLengthMode.value === "length") minLengthMode.value = "spacing";
     crsNote.textContent = unitPolicy.note;
+}
+
+// No dataset: the policy, the note and the Length option go back to their initial state.
+function resetCrsUnit() {
+    setCrsUnit(null);
+}
+
+function applyCrsUnit(opened) {
+    setCrsUnit(opened?.crsUnit ?? null);
+    // The panel value is read in the new unit: the previous dataset's side must not survive.
+    const side = lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value, unitPolicy.metresPerUnit);
+    lastValid.side = Number.isNaN(side) ? 0 : side;
     syncMinLengthMode();
     sendMinLength();
 }
@@ -984,7 +996,9 @@ function sendMinLength() {
     continuityFactor.setAttribute("aria-invalid", String(Number.isNaN(factor)));
     if (!Number.isNaN(side)) lastValid.side = side;
     if (!Number.isNaN(factor)) lastValid.factor = factor;
-    for (const [type, values] of minLengthCommands(minLengthMode.value, lastValid.side, lastValid.factor)) {
+    // A geographic CRS has no length in metres: only the spacing side applies.
+    const sentSide = unitPolicy.lengthDisabled ? 0 : lastValid.side;
+    for (const [type, values] of minLengthCommands(minLengthMode.value, sentSide, lastValid.factor)) {
         queueWorkerCommand(type, values);
     }
 }

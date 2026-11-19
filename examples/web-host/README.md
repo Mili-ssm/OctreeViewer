@@ -257,11 +257,13 @@ rejects. `setContinuity(enabled, factor)` turns on the cloud-spacing minimum (`f
 default 1). The larger of both wins per cell (ADR 0049, 0054). The demo panel "Minimum cube size" offers
 `Length` (value in mm, cm or m), `Cloud spacing` (factor, with the resulting side from `cellStats().continuityMinSide`)
 and `Off · pixels only`. The open result carries `crsUnit` (`{ unit, metresPerUnit, geographic, assumed }`,
-read from the top-level unit of the stored CRS, ADR 0049): the demo converts the length into dataset units with
-`metresPerUnit`, disables `Length` for a geographic CRS (degrees), and says when metres are assumed because the
-CRS declares no unit. The stats report `minLength`.
+read from the top-level unit of the stored CRS, ADR 0049; the non-paged descriptor carries it too): the demo
+converts the length into dataset units with `metresPerUnit`, disables `Length` for a geographic CRS (degrees), and
+says when metres are assumed because the CRS declares no unit (`unrecognised`: it declares one this reader cannot
+interpret). The stats report `minLength`.
 The cells path never draws cubes smaller than a default length minimum of `1e-4` dataset units (0.1 mm when
-the unit is metres; the demo sends its own value converted with `crsUnit`); continuity (cloud spacing x factor) wins when larger.
+the unit is metres; the demo sends its own value converted with `crsUnit`); continuity (cloud spacing x
+factor) wins when larger.
 `renderedVoxels` reports submitted/current HZB-visible instances; it does not guarantee each voxel
 contributes a final pixel. Metadata reports bounds and coordinate origin; a CRS is not inferred when
 the file does not provide one. The canvas is transferred to a worker and cannot be reused after

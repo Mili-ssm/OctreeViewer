@@ -42,6 +42,9 @@ test("the CRS unit policy disables length only for geographic CRS and notes assu
     const assumed = crsUnitPolicy({ unit: "metre", metresPerUnit: 1, geographic: false, assumed: true });
     assert.deepEqual([assumed.lengthDisabled, assumed.metresPerUnit], [false, 1]);
     assert.match(assumed.note, /Metres assumed/);
+    const unknown = crsUnitPolicy({ unit: "metre", metresPerUnit: 1, geographic: false, assumed: true, unrecognised: true });
+    assert.equal(unknown.note, "Unknown CRS unit; metres assumed.");
+    assert.equal(unknown.lengthDisabled, false);
     const foot = crsUnitPolicy({ unit: "foot", metresPerUnit: 0.3048, geographic: false, assumed: false });
     assert.deepEqual([foot.lengthDisabled, foot.metresPerUnit], [false, 0.3048]);
     assert.match(foot.note, /foot/);
