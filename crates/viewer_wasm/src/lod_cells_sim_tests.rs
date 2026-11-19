@@ -68,9 +68,11 @@ struct SimStats {
     /// Page evictions that happened while a cut was still unacknowledged.
     evictions_during_ack_lag: usize,
     /// What the GPU received over every drawn frame (chained) and for the last one
-    /// (`gpu_input_digest`); copied from the harness totals after each drawn frame.
+    /// (`gpu_input_digest`), and the active-set gaps of `check_active_gaps`; copied from the
+    /// harness totals after each drawn frame.
     gpu_digest: u64,
     gpu_digest_last: u64,
+    active_gaps: usize,
 }
 
 struct Sim {
@@ -308,6 +310,7 @@ impl Sim {
             .check_drawn_cut(number, &draw.report.plan, self.digest);
         self.stats.gpu_digest = self.h.totals.gpu_digest;
         self.stats.gpu_digest_last = self.h.totals.gpu_digest_last;
+        self.stats.active_gaps = self.h.totals.active_gaps;
         if let Some(requests) = self.h.driver.take_level_requests() {
             self.h.lag.requests = requests.len();
             self.level_requests = Some(requests);
@@ -460,6 +463,9 @@ fn check_stats(label: &str, sim: &Sim) {
         sim.h.lost_samples,
         sim.h.gate
     );
+    if let Some(gap) = &sim.h.totals.first_gap {
+        println!("{label}: first active gap: {gap}");
+    }
     assert_eq!(
         sim.h.unexcused_drops, 0,
         "a sample was drawn coarser than before with no stage lowering it"

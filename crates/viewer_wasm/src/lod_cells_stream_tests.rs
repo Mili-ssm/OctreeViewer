@@ -495,6 +495,10 @@ struct Totals {
     /// FNV-1a chain of `gpu_input_digest` over every drawn frame, and the digest of the last one.
     gpu_digest: u64,
     gpu_digest_last: u64,
+    /// Nodes of a frame whose active set skips a buildable depth that is not usable
+    /// (`check_active_gaps`), summed over frames, and the first such case.
+    active_gaps: usize,
+    first_gap: Option<String>,
 }
 
 /// `(node, wanted, drawn)` of an entry of the last plan.
@@ -502,6 +506,28 @@ type LastEntry = (NodeId, [Option<u8>; 8], [Option<u8>; 8]);
 
 /// A cut node of a frame with its active depths and its range.
 type NodeLevels = (NodeId, Vec<u8>, Option<(u8, u8)>);
+
+/// The depths a node's active set skips: between its coarsest and finest active depth (`run`, its
+/// D5 depth exempt), the buildable depths (`span`) that are not usable (not resident, or uploaded
+/// this frame). A usable depth missing from the run is `check_active_runs`' case, not this one.
+fn active_gaps_of(
+    run: &[u8],
+    d5: Option<u8>,
+    span: (u8, u8),
+    usable: impl Fn(u8) -> bool,
+) -> Vec<u8> {
+    let (Some(&first), Some(&last)) = (run.iter().min(), run.iter().max()) else {
+        return Vec::new();
+    };
+    (first..=last)
+        .filter(|depth| {
+            !run.contains(depth)
+                && Some(*depth) != d5
+                && (span.0..=span.1).contains(depth)
+                && !usable(*depth)
+        })
+        .collect()
+}
 
 struct Harness {
     dataset: LodDataset,
@@ -541,6 +567,8 @@ struct Harness {
     hole_frames: usize,
     /// First failed check, kept when `soft_checks` is set.
     first_failure: Option<String>,
+    /// Buildable span of the nodes seen by `check_active_gaps` (`buildable_span` is costly).
+    buildable_cache: HashMap<NodeId, (u8, u8)>,
     /// The bench counts holes, lost samples and long waits instead of failing the frame.
     soft_checks: bool,
     /// The plan of the last frame (cell oracle self-test: it is corrupted and checked again).
@@ -668,6 +696,7 @@ impl Harness {
             planner_of_drawn_cut: None,
             hole_frames: 0,
             first_failure: None,
+            buildable_cache: HashMap::new(),
             soft_checks: false,
             last_plan: None,
             last_stage: None,
@@ -726,6 +755,7 @@ impl Harness {
         };
         self.totals.gpu_digest = (self.totals.gpu_digest ^ gpu).wrapping_mul(0x0000_0100_0000_01b3);
         self.totals.gpu_digest_last = gpu;
+        self.check_active_gaps(number, plan);
         self.check_cell_cut(number, plan, digest);
     }
 
@@ -1029,6 +1059,80 @@ impl Harness {
         }
         for problem in problems {
             self.fail(problem);
+        }
+    }
+
+    /// ADR 0055: the active set of a node is one contiguous run. Between the coarsest and the
+    /// finest active depth of a node (its D5 depth exempt, as in `check_active_runs`), a depth
+    /// inside the node's buildable span that is not usable (not resident, or uploaded this frame)
+    /// is a gap: the per-cell rule would jump over it. Counted per node and frame in
+    /// `Totals::active_gaps`; the first case is kept in `first_gap`. Runs on every frame, also
+    /// the ones `check_cell_cut` skips as identical, because residency moves without the plan.
+    fn check_active_gaps(&mut self, number: usize, plan: &FramePlan) {
+        let (rule, pool) = (self.rule, self.driver.pool());
+        let grid = self.dataset.cell_grid();
+        let hierarchy = self.dataset.metadata.hierarchy();
+        let mut found = Vec::new();
+        let mut spans = Vec::new();
+        for entry in &plan.entries {
+            let Some(node) = hierarchy.node(entry.node) else {
+                continue;
+            };
+            let base = representative_depth(&grid, node.bounds()).saturating_sub(3);
+            let d5 = entry
+                .mask
+                .iter()
+                .any(|word| *word != 0)
+                .then(|| {
+                    (base + 3..=base + MAX_NODE_SPAN)
+                        .find(|depth| pool.is_resident(pool.key(entry.node, *depth)))
+                })
+                .flatten();
+            let run: Vec<u8> = plan
+                .active
+                .iter()
+                .filter(|level| level.key.node == entry.node && Some(level.key.depth) != d5)
+                .map(|level| level.key.depth)
+                .collect();
+            let (Some(&first), Some(&last)) = (run.iter().min(), run.iter().max()) else {
+                continue;
+            };
+            if last - first < 2 {
+                continue;
+            }
+            let Some(span) = self
+                .buildable_cache
+                .get(&entry.node)
+                .copied()
+                .or_else(|| buildable_span(self, entry.node))
+            else {
+                continue;
+            };
+            spans.push((entry.node, span));
+            let missing = active_gaps_of(&run, d5, span, |depth| {
+                pool.is_usable(pool.key(entry.node, depth))
+            });
+            if !missing.is_empty() {
+                let state = |depth: u8| {
+                    let key = pool.key(entry.node, depth);
+                    (depth, pool.is_resident(key), pool.is_usable(key))
+                };
+                found.push(format!(
+                    "frame {number}: node {:?} (rule {rule:?}) active {run:?} skips non-usable \
+                     buildable depths {missing:?} (depth, resident, usable: {:?}; buildable \
+                     {span:?}, D5 {d5:?}, range {:?}, drawn {:?}, wanted {:?})",
+                    entry.node,
+                    missing.iter().map(|d| state(*d)).collect::<Vec<_>>(),
+                    entry.range,
+                    entry.required_levels(),
+                    entry.wanted
+                ));
+            }
+        }
+        self.buildable_cache.extend(spans);
+        self.totals.active_gaps += found.len();
+        if self.totals.first_gap.is_none() {
+            self.totals.first_gap = found.into_iter().next();
         }
     }
 
@@ -1502,6 +1606,29 @@ fn a_missing_depth_of_a_run_is_reported(pick: impl Fn(&[u8]) -> u8) {
         h.check_cell_cut(0, &broken, digest);
     }))
     .expect_err("the oracle reports the missing depth");
+}
+
+/// A node whose active set is {11, 18} with 12..=17 buildable but not resident has a gap the
+/// oracle must report; a usable middle depth, an unbuildable one and the D5 depth are not gaps.
+#[test]
+fn the_oracle_reports_non_resident_gaps_in_a_nodes_active_set() {
+    let resident = [11_u8, 18];
+    let usable = |depth: u8| resident.contains(&depth);
+    assert_eq!(
+        active_gaps_of(&[11, 18], None, (9, 19), usable),
+        [12, 13, 14, 15, 16, 17]
+    );
+    assert_eq!(active_gaps_of(&[11, 18], None, (9, 19), |_| true), []);
+    assert_eq!(active_gaps_of(&[11, 18], None, (11, 12), usable), [12]);
+    assert_eq!(
+        active_gaps_of(&[11, 12, 13], Some(14), (9, 19), usable),
+        [] as [u8; 0]
+    );
+    assert_eq!(
+        active_gaps_of(&[11, 17], Some(14), (9, 19), usable),
+        [12, 13, 15, 16]
+    );
+    assert_eq!(active_gaps_of(&[], None, (9, 19), usable), []);
 }
 
 // Observed on the synthetic ladder (node 14, active depths 9..=19, depth 14 removed while 31 lattice
