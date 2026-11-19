@@ -711,3 +711,44 @@ test("a postMessage that throws rejects the request and frees its pending slot",
         Object.assign(globalThis, previous);
     }
 });
+
+test("frames keep coming while the cells driver is busy after the blocks are loaded", async () => {
+    const previous = {
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        Worker: globalThis.Worker,
+        ResizeObserver: globalThis.ResizeObserver,
+        window: globalThis.window,
+        requestAnimationFrame: globalThis.requestAnimationFrame,
+        cancelAnimationFrame: globalThis.cancelAnimationFrame,
+        CustomEvent: globalThis.CustomEvent,
+    };
+    let frameCallback = null;
+    globalThis.HTMLCanvasElement = FakeCanvas;
+    globalThis.Worker = FakeWorker;
+    globalThis.ResizeObserver = FakeResizeObserver;
+    globalThis.window = { Worker: FakeWorker, devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
+    globalThis.requestAnimationFrame = (callback) => { frameCallback = callback; return 1; };
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init.detail; } };
+    try {
+        const viewer = createViewer(new FakeCanvas());
+        await viewer.ready;
+        const worker = FakeWorker.instance;
+        // Every block is in and the stage is at the target: only the cells driver still works.
+        const settledBlocks = { pendingBlockIds: [], pendingPageAnchors: [], lodStagePixels: 4, targetVoxelPixels: 4 };
+        // Draws the scheduled frame, reports `lod`, answers the frame; true when another frame is scheduled.
+        const progressThenFrame = (lod) => {
+            const draw = frameCallback;
+            frameCallback = null;
+            draw?.();
+            worker.send({ type: "lodProgress", lod });
+            worker.send({ type: "frame" });
+            return frameCallback !== null;
+        };
+        assert.equal(progressThenFrame({ ...settledBlocks, cellsBusy: true }), true, "a busy cells driver needs frames");
+        assert.equal(progressThenFrame({ ...settledBlocks, cellsBusy: false }), false, "a settled one does not");
+        viewer.dispose();
+    } finally {
+        Object.assign(globalThis, previous);
+    }
+});

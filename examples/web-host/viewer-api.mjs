@@ -226,7 +226,9 @@ export function createViewer(hostCanvas, options = {}) {
             emit("stats", data);
             if (loading) ensureFrame();
         } else if (data.type === "lodProgress") {
-            loading = Boolean(data.lod && !data.lod.lodError && !data.lod.pageBudgetExhausted
+            // The cells driver draws nodes after every block is in: keep frames going until it settles
+            // (`cellsBusy`, as `lodStillLoading` in benchmark-metrics.mjs for the demo).
+            loading = Boolean(data.lod?.cellsBusy) || Boolean(data.lod && !data.lod.lodError && !data.lod.pageBudgetExhausted
                 && (data.lod.pendingBlockIds.length || data.lod.pendingPageAnchors?.length
                     || data.lod.lodStagePixels > data.lod.targetVoxelPixels));
             emit("progress", data);
