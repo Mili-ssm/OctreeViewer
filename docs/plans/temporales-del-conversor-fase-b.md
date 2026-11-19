@@ -195,4 +195,12 @@ para la medida.
 
 ## Línea base
 
-(La rellena la tarea 1.)
+Medido el 19-11-2026 con `scripts/measure_temp_disk.sh`, binario `release` del commit `dc98e5a`, opciones por
+defecto, en el equipo del propietario. Sistema de ficheros de la salida: `btrfs rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/home`.
+
+`peak_work_bytes` es el tamaño **aparente** (`du -sb`): en un sistema comprimido sobrestima el uso real.
+`peak_fs_used_delta_bytes` (uso del sistema de ficheros menos el previo a la ejecución) es un proxy **ruidoso**
+del uso real: otros procesos que escriben en `/home` lo alteran.
+
+- Belvedere: `peak_work_bytes=6466222890 peak_fs_used_delta_bytes=1198350336 wall_s=47.1 max_rss_kb=98132 sha_oct=da206a659ea0bfdfbfb3d8141592387cb2dde7133e6a5e44ed9a7a5db3c9f0c4 sha_octattrs=e2f587ab136906d8fc43f2f34c46be0f23a566f3954a8288056b95dae9802323`
+- Albuera: `peak_work_bytes=47866199052 peak_fs_used_delta_bytes=20444745728 wall_s=578.6 max_rss_kb=241988 sha_oct=5c15df5e9043003d53fc9e59f741e8420913cdd0088dbd39955f995e44fc8bb6 sha_octattrs=b76636f41c6f59abbfda4fc1c324d9ccfaee72f3073815bb733ca0c6d9b61076`
