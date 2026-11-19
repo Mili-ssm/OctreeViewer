@@ -1,13 +1,29 @@
 // Minimum cube size of the demo panel: the pure part (unit conversion and the commands each mode
-// sends). Metres are assumed because the CRS unit is not read yet (ADR 0049).
+// sends). The dataset unit comes from the stored CRS (`crsUnit` of the open result, ADR 0049 D6).
 const UNIT_METRES = { mm: 1e-3, cm: 1e-2, m: 1 };
 export const MIN_CELL_FACTOR = 0.25;
 
-// Value in `unit` -> dataset units; NaN when the value is not a finite positive number or the unit is unknown.
-export function lengthToDatasetUnits(value, unit) {
+// Value in `unit` -> dataset units (`metresPerUnit` metres each); NaN when the value is not a finite
+// positive number, the unit is unknown or `metresPerUnit` is not a finite positive number.
+export function lengthToDatasetUnits(value, unit, metresPerUnit = 1) {
     const scale = UNIT_METRES[unit];
     if (scale === undefined || !Number.isFinite(value) || value <= 0) return Number.NaN;
-    return value * scale;
+    if (!Number.isFinite(metresPerUnit) || metresPerUnit <= 0) return Number.NaN;
+    return value * scale / metresPerUnit;
+}
+
+// How the length option reads the CRS unit of the open dataset (`null` before one is open):
+// the metres per dataset unit, whether the length option is unusable (geographic CRS) and the note.
+export function crsUnitPolicy(crsUnit) {
+    if (!crsUnit) return { metresPerUnit: 1, lengthDisabled: false, note: "" };
+    if (crsUnit.geographic) {
+        return { metresPerUnit: 1, lengthDisabled: true, note: "Coordinates are in degrees (geographic CRS): no length in metres applies." };
+    }
+    const metresPerUnit = Number.isFinite(crsUnit.metresPerUnit) && crsUnit.metresPerUnit > 0 ? crsUnit.metresPerUnit : 1;
+    let note = `Dataset unit: ${crsUnit.unit} (${metresPerUnit} m).`;
+    if (crsUnit.unrecognised) note = "Unknown CRS unit; metres assumed.";
+    else if (crsUnit.assumed) note = "Metres assumed: the CRS declares no unit.";
+    return { metresPerUnit, lengthDisabled: false, note };
 }
 
 // Cloud-spacing factor; NaN below the demo's minimum or when not finite.

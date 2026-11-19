@@ -3,7 +3,7 @@ import {
     FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,
     renderPathStatsLines, summarizeFrameReplies,
 } from "./benchmark-metrics.mjs";
-import { lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";
+import { crsUnitPolicy, lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";
 import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
@@ -56,6 +56,7 @@ const minLengthUnit = document.getElementById("min-length-unit");
 const minLengthFields = document.getElementById("min-length-length-fields");
 const spacingFields = document.getElementById("min-length-spacing-fields");
 const spacingInfo = document.getElementById("min-length-spacing-info");
+const crsNote = document.getElementById("min-length-crs-note");
 const continuityFactor = document.getElementById("continuity-factor");
 const cameraMode = document.getElementById("camera-mode");
 const cameraModeHelp = document.getElementById("camera-mode-help");
@@ -608,7 +609,7 @@ function handleWorkerMessage(event) {
         if (pendingProject) shownProject = pendingProject;
         updateAttributeChoices(data.opened);
         latestLodStats = data.lod;
-        updateSpacingInfo();
+        applyCrsUnit(data.opened);
         updateProgressiveLoadState(data.lod);
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
@@ -848,6 +849,7 @@ function recreateViewer({ reopen = false } = {}) {
     belvedereButton.disabled = true;
     voxelPixels.disabled = true;
     latestLodStats = null;
+    resetCrsUnit();
     datasetName = "Synthetic sample";
     cameraDelta = emptyCameraDelta();
     const replaced = replaceCanvasElement(canvas, { transfer: false });
@@ -931,13 +933,38 @@ if (initialParams.has("cellActive")) {
     console.warn("ignoring ?cellActive=: the parameter was removed and the viewer always uses the contiguous active rule");
 }
 
-const lastValid = { side: lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value), factor: 1 };
+// CRS unit of the open dataset (`opened.crsUnit`); null until one is open.
+let unitPolicy = crsUnitPolicy(null);
+
+const lastValid = { side: lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value, unitPolicy.metresPerUnit), factor: 1 };
 
 function syncCellControls() {
     minLengthMode.disabled = !ready;
     minLengthValue.disabled = !ready;
     minLengthUnit.disabled = !ready;
     continuityFactor.disabled = !ready;
+}
+
+function setCrsUnit(crsUnit) {
+    unitPolicy = crsUnitPolicy(crsUnit);
+    const lengthOption = minLengthMode.querySelector('option[value="length"]');
+    lengthOption.disabled = unitPolicy.lengthDisabled;
+    if (unitPolicy.lengthDisabled && minLengthMode.value === "length") minLengthMode.value = "spacing";
+    crsNote.textContent = unitPolicy.note;
+}
+
+// No dataset: the policy, the note and the Length option go back to their initial state.
+function resetCrsUnit() {
+    setCrsUnit(null);
+}
+
+function applyCrsUnit(opened) {
+    setCrsUnit(opened?.crsUnit ?? null);
+    // The panel value is read in the new unit: the previous dataset's side must not survive.
+    const side = lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value, unitPolicy.metresPerUnit);
+    lastValid.side = Number.isNaN(side) ? 0 : side;
+    syncMinLengthMode();
+    sendMinLength();
 }
 
 function syncMinLengthMode() {
@@ -957,19 +984,21 @@ function updateSpacingInfo() {
         // In spacing mode the length still applies when it is the larger side (also for a cloud
         // without a reference spacing, which the stats do not tell apart).
         const lengthWins = minLengthMode.value === "spacing" && Math.abs(side - lastValid.side) <= 1e-9 * side;
-        spacingInfo.textContent = `Effective minimum side: ${side.toPrecision(3)} (dataset units, metres assumed).`
+        spacingInfo.textContent = `Effective minimum side: ${side.toPrecision(3)} (dataset units).`
             + (lengthWins ? " The length applies: the spacing side is smaller, or this cloud has no reference spacing." : "");
     }
 }
 
 function sendMinLength() {
-    const side = lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value);
+    const side = lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value, unitPolicy.metresPerUnit);
     const factor = parseSpacingFactor(Number(continuityFactor.value));
     minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(side)));
     continuityFactor.setAttribute("aria-invalid", String(Number.isNaN(factor)));
     if (!Number.isNaN(side)) lastValid.side = side;
     if (!Number.isNaN(factor)) lastValid.factor = factor;
-    for (const [type, values] of minLengthCommands(minLengthMode.value, lastValid.side, lastValid.factor)) {
+    // A geographic CRS has no length in metres: only the spacing side applies.
+    const sentSide = unitPolicy.lengthDisabled ? 0 : lastValid.side;
+    for (const [type, values] of minLengthCommands(minLengthMode.value, sentSide, lastValid.factor)) {
         queueWorkerCommand(type, values);
     }
 }
@@ -983,7 +1012,7 @@ for (const control of [minLengthMode, minLengthValue, minLengthUnit, continuityF
     control.addEventListener("change", onMinLengthChange);
 }
 minLengthValue.addEventListener("input", () => {
-    minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value))));
+    minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value, unitPolicy.metresPerUnit))));
 });
 syncMinLengthMode();
 for (const version of FORMAT_VERSIONS) {
