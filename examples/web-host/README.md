@@ -227,16 +227,28 @@ Import `createViewer` from `viewer-api.mjs` and pass it a canvas owned by the ho
 
 ```js
 import { createViewer } from "./viewer-api.mjs";
+import { sidecarUrl } from "./http-range-source.mjs";
 
 const viewer = createViewer(document.querySelector("canvas"), { mode: "observer" });
 await viewer.ready;
 await viewer.load(file, { voxelPixels: 1, attributes: optionalAttributesFile });
 console.log(await viewer.getMetadata());
 console.log(await viewer.getCamera());
+
+// A remote dataset over HTTP Range (same server requirements as `?url=` above). The sidecar is never
+// derived: pass it explicitly, or leave it out to open without attributes.
+const url = new URL("data/cloud.oct", location.href);
+await viewer.load({ url, remoteReads: 8 }, { attributes: { url: sidecarUrl(url) } });
 viewer.on("stats", (stats) => console.log(stats.lod?.renderedVoxels));
 viewer.on("pick", (hit) => console.log(hit?.position, hit?.voxelCenter));
 ```
 
+`load(source, options)` takes a `File`/`Blob` or a remote descriptor `{ url, maxGap?, remoteReads? }`
+(see "Open a file over HTTP Range"; any other field is a `TypeError`). `url` is a string or `URL`, resolved
+against the page and limited to `http:`/`https:` without embedded credentials; `attributes` is a `Blob`, a
+descriptor or absent. `sidecarUrl(url)` maps `a.oct?v=1` to `a.octattrs?v=1` (it drops a fragment and refuses
+a path ending in `/` or `.octattrs`). Network and Range errors reject `load`; a server that never answers
+takes about 63 s to fail (4 attempts of 15 s plus backoff), and `load` cannot be aborted yet.
 The API also provides `setMode("bird" | "observer")`, `setCamera(position, target)`, `fit()`,
 `pick(x, y)`, `getStats()`, `setMinLength(side)`, `setContinuity(enabled, factor)`, `on(type, callback)`, and `dispose()`.
 `pick(x, y)` uses CSS pixels relative to the canvas and resolves to `null` or `{ position, voxelCenter, voxelSize, distance,
