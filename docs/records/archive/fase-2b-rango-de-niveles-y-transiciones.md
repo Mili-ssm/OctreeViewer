@@ -1,6 +1,6 @@
 # Fase 2b: rango de niveles por nodo y transiciones de un nivel (#44) Implementation Plan
 
-Estado: cerrado · 19-11-2026 · sustituido: su rango por nodo lo ejecutó el [plan del ADR 0055](adr-0055-rango-por-nodo.md) ([registro de cierre](../benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)); fase 2b del [plan maestro](nivel-pedido-y-lod-por-celda.md); replanteada en [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md) (propuesta pendiente del propietario)
+Estado: cerrado · 19-11-2026 · sustituido: su rango por nodo lo ejecutó el [plan del ADR 0055](adr-0055-rango-por-nodo.md) ([registro de cierre](../benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)); fase 2b del [plan maestro](../../plans/nivel-pedido-y-lod-por-celda.md); replanteada en [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md) (aprobado por el propietario el 18-11-2026)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -15,7 +15,7 @@ point, so a node whose octants are all near has one active depth and the per-cel
 (plan 2a, E6).
 
 **Spec:** [ADR 0050](../../adr/0050-nivel-por-celda-segun-distancia.md), [ADR 0053](../../adr/0053-transiciones-de-un-nivel.md)
-(RF-31), D4 of the [master plan](nivel-pedido-y-lod-por-celda.md), R3-Q11/Q19/Q21 in [requirements](../../requirements.md),
+(RF-31), D4 of the [master plan](../../plans/nivel-pedido-y-lod-por-celda.md), R3-Q11/Q19/Q21 in [requirements](../../requirements.md),
 design E1–E8 of [phase 2a](fase-2a-lod-por-celda-en-gpu.md).
 
 ## Design decisions (agent, 16-11-2026; pre-mortem applied)

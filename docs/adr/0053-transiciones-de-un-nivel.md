@@ -1,6 +1,6 @@
 # 0053 Las transiciones de nivel avanzan de un nivel en un nivel, en el espacio y en el tiempo
 
-Estado: Aceptada (la cola bajo la separación, pendiente de revisión) · Fecha: 16-11-2026 · Decide: propietario · Precisa el [ADR 0050](0050-nivel-por-celda-segun-distancia.md), R3-Q21 y la residencia D4 del [plan](../records/archive/nivel-pedido-y-lod-por-celda.md)
+Estado: Aceptada (la cola bajo la separación, pendiente de revisión) · Fecha: 16-11-2026 · Decide: propietario · Precisa el [ADR 0050](0050-nivel-por-celda-segun-distancia.md), R3-Q21 y la residencia D4 del [plan](../plans/nivel-pedido-y-lod-por-celda.md)
 
 ## Contexto
 - El ADR 0050 pide bandas por distancia y transiciones graduales, y R3-Q21 que la imagen solo se refine dibujando

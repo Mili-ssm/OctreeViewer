@@ -1,30 +1,35 @@
 # R3, fase 2c: transiciones de nivel en modo celda — 19-11-2026
 
-**Estado: medido.** Cierra la comprobación de la fase 2c del
-[plan del nivel pedido y el LOD por celda](../archive/nivel-pedido-y-lod-por-celda.md).
+**Estado: medido; la decisión de cierre la toma el propietario** ([OQ-17](../../requirements.md#preguntas-abiertas),
+[#99](https://github.com/Mili-ssm/OctreeViewer/issues/99)). Es la comprobación de la fase 2c del
+[plan del nivel pedido y el LOD por celda](../../plans/nivel-pedido-y-lod-por-celda.md).
 
-**Conclusión:**
+**Conclusión:** en Belvedere (datos reales) la puerta del ADR 0053 se cumple en pantalla; en el octree sintético del
+arnés, no.
 
-- **Puerta espacial:** ningún par de muestras vecinas en pantalla, dibujadas por nodos distintos, difiere en más de
-  un nivel, en ninguna simulación.
-- **Puerta temporal, dentro de un nodo:** se cumple (0) en todas las simulaciones reales salvo la órbita de
-  semilla 7. Allí hay 280 saltos de más de un nivel. Es exactamente el coste previsto al quitar la ventana de un nivel
-  por frame (E-B1 del [replanteamiento](../archive/replanteamiento-lod-por-celda-18-11-2026.md): «280 saltos… antes
-  0»).
-- **Relevos entre nodos:** cuentan cientos o miles de saltos, como en la línea base, y no se juzgan aquí.
-- **Por qué basta:** según OQ-11 y RF-31 ([requisitos](../../requirements.md)), el fin es que no se vean saltos, y lo
-  juzga el propietario en la demo. La demo pública se comprobó el mismo día (abajo).
+| Datos | Pares vecinos en pantalla, dibujados por nodos distintos, con más de un nivel de diferencia | Saltos de más de un nivel dentro de un nodo entre dos frames |
+| --- | --- | --- |
+| Belvedere, 4 simulaciones reales | 0 (de 22 a 44 pares visibles) | 0, salvo 280 en la órbita de semilla 7 |
+| Belvedere, 3 casos del arnés de streaming | sin pares visibles | 0 a 343 |
+| Octree sintético, 18 simulaciones `sim_synthetic_*` | 48 a 855 en las 14 con pares visibles (0,9 % a 22,4 %; las peores, el dolly) | 62 a 1338 |
+
+Los 280 saltos de la órbita de semilla 7 son los mismos que el experimento E-B1 midió en esa órbita al quitar la
+ventana de un nivel por frame ([replanteamiento](../archive/replanteamiento-lod-por-celda-18-11-2026.md): «280 saltos…
+antes 0»). Las demás cifras no tienen línea base con la que compararse.
+
+Según OQ-11 y RF-31 ([requisitos](../../requirements.md)), el fin es que no se vean saltos, y lo juzga el propietario
+en la demo. El plan pide abrir una pregunta si la puerta no se cumple: es OQ-17.
 
 ## Condiciones
 
 | Dato | Valor |
 | --- | --- |
 | Revisión | `cd90b7f` (`main`, tras fusionar #95 y #97) |
-| Perfil y toolchain | `fast`; nightly fijado en `rust-toolchain.toml` |
+| Perfil y toolchain | `fast` (las simulaciones `real_sim` documentan `perf`; los contadores no dependen del perfil); nightly fijado en `rust-toolchain.toml` |
 | Equipo | AMD Ryzen AI 9 365, Radeon 880M |
-| Datasets | `target/render-data/belvedere-v7.oct` (simulaciones reales) y el octree sintético del arnés |
+| Datasets | `target/render-data/belvedere-v7.oct` (simulaciones reales y casos `belvedere *` del arnés) y el octree sintético del arnés |
 | Comandos | `R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast --offline --lib -- cells_stream_tests --nocapture --test-threads=1` (70 pasan, 17 ignorados) · `… -- --ignored real_sim --nocapture --test-threads=1` (3 pasan) |
-| Datos | [`data/fase-2c-19-11-2026/`](data/fase-2c-19-11-2026/): `real_sim.txt`, `stream_tests.txt` (líneas `ADR 0053 gate` y resultados) |
+| Datos | [`data/fase-2c-19-11-2026/`](data/fase-2c-19-11-2026/): `real_sim.txt`, `stream_tests.txt` (líneas `ADR 0053 gate`, resúmenes y resultados) |
 
 Las cifras solo valen para esta revisión, perfil, datasets y equipo.
 
@@ -39,6 +44,7 @@ muestras de cada nodo:
 | `cell_node_changed` | Lo mismo cuando el nodo que dibuja la muestra cambia entre los dos frames (relevo padre ↔ hijo) |
 | `cell_border_pairs` / `_over_one` | Pares de muestras vecinas dibujadas por nodos distintos, y los que difieren en más de un nivel |
 | `cell_border_visible_*` | Los mismos pares cuando las dos muestras están en pantalla (frustum y planos de recorte) |
+| `hops` | Saltos por tiempo de espera que cuenta el pool en cada frame |
 
 ## Resultado
 
@@ -57,9 +63,19 @@ La línea base es la del [registro del modo celda](R3_LINEA_BASE_CELDA_18-11-202
 `Window` (19-11-2026). La órbita de semilla 1 imprime además su hueco transitorio conocido (nodo 77, frame 36), que
 el [cierre del rango por nodo](R3_CIERRE_RANGO_POR_NODO_19-11-2026.md) acepta.
 
-### Arnés de streaming
+### Simulaciones sintéticas (`sim_synthetic_*`)
 
-Pares visibles: 0 en todos los casos.
+| Simulación | Semillas | `cell_within_node` | Pares visibles con más de un nivel (por semilla) | `hops` |
+| --- | --- | --- | --- | --- |
+| dolly | 1, 7, 42, 1234 | 1198–1338 | 560/4554, 855/5375, 756/3369, 737/6048 | 8 |
+| órbita | 1, 7, 42, 1234 | 363–738 | 77/3602, 89/3595, 48/2418, 188/3436 | 0 |
+| órbita con reinicio | 1, 7, 42, 1234 | 191–972 | 170/5454, 253/4616, 418/6613, 48/5505 | 0 |
+| dolly con reinicio | 1, 7 | 968–1335 | 432/4774, 566/4697 | 0, 16 |
+| páginas ajustadas | 1, 7, 42, 1234 | 62–418 | sin pares visibles | 0 |
+
+### Arnés de streaming (resúmenes por caso)
+
+Pares visibles: ninguno en estos casos.
 
 | Caso | `cell_within_node` | `cell_node_changed` | Pares de borde (>1 / total) |
 | --- | --- | --- | --- |
@@ -85,6 +101,7 @@ Demo publicada desde `cd90b7f` y abierta en Chromium 1248 sin interfaz, con WebG
 
 - Los contadores salen del gemelo de Rust, no de la GPU: la GPU usa el mismo predicado (`refines`, D2 del plan),
   pero no se leyó su salida por celda en el navegador.
-- `cell_node_changed` compara la profundidad que dibujan dos nodos distintos, y la línea base tampoco la juzga. Si se
-  ven saltos en el relevo entre nodos es lo que decide el propietario en la demo (RF-31).
+- `cell_node_changed` compara la profundidad que dibujan dos nodos distintos, y la línea base tampoco la juzga.
+- No se ha separado qué pares sintéticos son relevos padre ↔ hijo y cuáles nodos vecinos con rangos distintos: es la
+  opción 2 de OQ-17.
 - La cola bajo la separación sigue pendiente de revisión (ADR 0053).
