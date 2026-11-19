@@ -205,9 +205,13 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
   puede sustituir cuando el extremo fino de su tramo alcanza `min(máximo fino de before, wish)`; `before` es el
   tramo del antepasado al acercarse y los de los descendientes al alejarse. Coincide con `eval_refine_hold` en los
   51 casos, con las dos reglas de activos.
-  Dos límites que hereda la tarea 9: la función es por nodo, así que un octante corto junto a uno largo podría
-  discrepar (no visto en los casos mixtos probados); y al alejarse la semilla depende del nivel nominal de los
-  descendientes, que la puerta pura no ve (caracterizado solo para nominal = más fino − 1).
+- [x] (0f743bb) **El árbitro es el gemelo de la GPU, no la regla vieja.** La revisión vio que la equivalencia anterior
+  era en parte circular (el tramo de prueba salía de lo mismo que compara `eval_refine_hold`). Ahora cada caso
+  (35 al acercarse, 39 al alejarse, con las dos reglas de activos y dos anchuras de rango, y con el nodo ya retenido)
+  se juzga contra `cell_lod::drawn_depth_at`: liberar es seguro si ninguna celda de la huella dibuja más grueso que
+  antes. `run_covers` coincide con el gemelo en todos. `eval_refine_hold` retiene de más en 5 casos mixtos al
+  alejarse (`ZOOM_OUT_PARTS`): juzga por octante que se dibujaría el nivel 4 donde se quiere el 5, y la GPU dibuja
+  ahí el 6 o el 7, que están activos. Es decir, la tarea 9 libera antes en esos casos sin engrosar nada.
 
 ### Task 9: The residency gate replaces the per-node hold (R)
 
