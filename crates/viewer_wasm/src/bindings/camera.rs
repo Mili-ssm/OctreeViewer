@@ -138,6 +138,19 @@ impl WasmVoxelViewer {
         Ok(changed)
     }
 
+    /// Flies the camera relative to the view: `forward` on the horizontal plane, `right` along the
+    /// screen's right and `up` along dataset Z, all in units of the orbit distance.
+    #[wasm_bindgen(js_name = flyCamera)]
+    pub fn fly_camera(&mut self, forward: f64, right: f64, up: f64) -> Result<bool, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let changed = renderer.fly_camera(forward, right, up);
+        self.camera_changed(changed);
+        Ok(changed)
+    }
+
     /// Points the camera down along the dataset's positive Z up axis.
     #[wasm_bindgen(js_name = setBirdView)]
     pub fn set_bird_view(&mut self) -> Result<(), JsValue> {

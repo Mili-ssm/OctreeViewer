@@ -627,6 +627,13 @@ impl LodDataset {
         (stats.data_bounds != stats.root_bounds).then_some(stats.data_bounds)
     }
 
+    /// Z span of the tight data extent (absolute coordinates) for `CellDriver::set_elevation_range`;
+    /// unlike `cell_data_bounds` it is given when the extent is the root cube.
+    pub fn cell_elevation_range(&self) -> [f64; 2] {
+        let data = self.metadata.hierarchy().stats().data_bounds;
+        [data.min()[2], data.max()[2]]
+    }
+
     /// The dataset's `coordinate_origin`, for `DriverConfig::coordinate_origin`.
     pub fn coordinate_origin(&self) -> [f64; 3] {
         self.metadata.coordinate_frame().origin()

@@ -597,7 +597,18 @@ impl ViewerCells {
     /// The tight extent of the data, as `cellsInfo` gives it (`None`: the root cube is the extent).
     pub(crate) fn with_data_bounds(mut self, data: Option<viewer_core::SpatialBounds>) -> Self {
         self.driver.set_data_bounds(data);
+        // `None` says nothing about the Z span (the root cube is taller than the data): the
+        // elevation range then comes from `set_elevation_range` or the stored levels.
+        if let Some(bounds) = data {
+            self.driver
+                .set_elevation_range(Some([bounds.min()[2], bounds.max()[2]]));
+        }
         self
+    }
+
+    /// Fixes the elevation colour range (`CellDriver::set_elevation_range`).
+    pub(crate) fn set_elevation_range(&mut self, range: Option<[f64; 2]>) {
+        self.driver.set_elevation_range(range);
     }
 
     /// Turns the continuity of the cloud on or off. Nothing is rebuilt or sent again: the next
@@ -889,6 +900,7 @@ impl InProcessCells {
         let mut driver = CellDriver::new(driver);
         driver.set_min_side(Some(DEFAULT_MIN_SIDE));
         driver.set_data_bounds(dataset.cell_data_bounds());
+        driver.set_elevation_range(Some(dataset.cell_elevation_range()));
         Self {
             driver,
             stage_pixels: None,

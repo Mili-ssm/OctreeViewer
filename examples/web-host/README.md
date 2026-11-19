@@ -13,7 +13,11 @@ scripts/serve-demo.sh        # builds the wasm bindings, then serves the reposit
 
 Open <http://127.0.0.1:8000/examples/web-host/> (`PORT=9000 scripts/serve-demo.sh` changes the port;
 `--no-build` skips the build). The page opens the bundled sample (589,824 points) on load; the
-**Open built-in sample** button reopens it. To try your own cloud, use **Convert a local LAS/LAZ file**
+**Open built-in sample** button reopens it. **Open real cloud · Belvedere Glacier** loads a real
+photogrammetric RGB cloud (a 600 × 600 m crop, 1.32 M points, 21 MB; Ioli et al.,
+[CC BY 4.0](https://doi.org/10.5281/zenodo.19265915)). It is built outside git by
+`scripts/make-demo-belvedere.sh` into `target/demo-data/`, which `scripts/publish-demo.sh` copies to
+the site's `datasets/`; the button stays hidden where neither location answers. To try your own cloud, use **Convert a local LAS/LAZ file**
 in the side panel, press **Convert to .oct**, then open the result. Converted files default to the
 `v7` format.
 
@@ -210,7 +214,10 @@ The host reports time to the first coarse frame and target LOD frame, plus p50/p
 validation remain pending in the [project roadmap](../../docs/estado.md#prioridades-pendientes).
 The camera fits dataset bounds and supports observer and bird navigation. Observer mode uses a voxel
 click to set the orbit center, left drag to pan it, right drag to orbit, and the wheel to change radius. Bird mode uses
-left drag to pan, right drag to orbit, WASD/QE to move, and the wheel to change movement speed. The
+left drag to pan, right drag to orbit, and the wheel to change movement speed. In both modes, holding
+WASD flies forward, back and sideways relative to the view (in the horizontal plane), Q/E move down and
+up, and Shift is four times faster; the speed is 0.3 orbit radii per second times the movement speed,
+so it suits any cloud size. The
 camera uses Z as the vertical axis. It requires a browser/GPU with WebGPU and OffscreenCanvas support.
 The host recreates a transferred canvas by replacing it and starting a new worker.
 
@@ -350,7 +357,9 @@ the labeled file picker to choose another local dataset. The sample is a synthet
 (see [Build the WASM package](#build-the-wasm-package)) and does not depend on external or licensed
 point-cloud data.
 
-The demo exposes RGB, intensity, elevation, and classification color modes, plus one slider for the
+The demo exposes RGB, intensity, elevation, and classification color modes (elevation spans the
+data's Z extent and intensity the union of the levels loaded so far, so colours do not change with the
+view), plus one slider for the
 finest projected voxel detail to try (0.5–16 framebuffer pixels). `updateLod(targetVoxelPixels)` selects
 source detail progressively from 16 px toward the requested target, then aggregates it into one global
 adaptive dyadic grid. Cells subdivide 2×2×2 according to their twelve projected edges; storage-node

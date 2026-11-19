@@ -870,35 +870,103 @@ fn color_ranges_are_read_from_packed_levels_in_absolute_f64_heights() {
 }
 
 #[test]
-fn the_frame_hands_the_target_the_ranges_of_the_drawn_nodes_only() {
+fn the_frame_hands_the_target_ranges_that_do_not_depend_on_the_cut() {
     let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
     let cam = camera("zoom");
-    let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
-    let drawn: HashSet<NodeId> = report.plan.active.iter().map(|a| a.key.node).collect();
-    assert!(!drawn.is_empty());
-    let mut expected = CellColorRanges::default();
-    let drawn_levels: HashSet<(NodeId, u8)> = report
-        .plan
-        .active
-        .iter()
-        .map(|a| (a.key.node, a.key.depth))
-        .collect();
-    for (i, (id, node)) in fx.driver.nodes.iter_mut().enumerate() {
+    let first = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
+    assert!(!first.plan.active.is_empty());
+    // Per-level ranges are distinct, so a per-cut merge would differ between cuts.
+    for (i, node) in fx.driver.nodes.values_mut().enumerate() {
         for (depth, colors) in &mut node.colors {
             let k = i as f64 * 10.0 + f64::from(*depth) * 1000.0;
             *colors = CellColorRanges {
                 intensity: Some([k as f32, k as f32 + 5.0]),
                 z: Some([k, k + 1.0]),
             };
-            // Only the levels drawn merge: a deeper level that is stored but not drawn would
-            // widen the range the CPU path does not see (R3-Q32).
-            if drawn_levels.contains(&(*id, *depth)) {
-                expected = expected.merge(*colors);
-            }
         }
     }
+    let union = fx
+        .driver
+        .nodes
+        .values()
+        .flat_map(|node| node.colors.iter().map(|(_, ranges)| *ranges))
+        .fold(CellColorRanges::default(), CellColorRanges::merge);
+    fx.driver.stored_colors = union;
     fx.step(&ids(&CHILDREN), &cam, 4.0);
-    assert_eq!(fx.gpu.color_ranges, Some(expected));
+    let wide = fx.gpu.color_ranges;
+    assert_eq!(wide, Some(union));
+    // Another cut over the same stored data: the same ranges.
+    fx.run(40, &ids(&CHILDREN[..1]), &cam, 64.0);
+    assert_eq!(fx.gpu.color_ranges, wide);
+    // With the dataset extent, Z is the extent's whatever is drawn; intensity is untouched.
+    fx.driver.set_elevation_range(Some([-3.0, 250.5]));
+    fx.step(&ids(&CHILDREN[..1]), &cam, 64.0);
+    let fixed = fx.gpu.color_ranges.unwrap();
+    assert_eq!(fixed.z, Some([-3.0, 250.5]));
+    assert_eq!(fixed.intensity, union.intensity);
+    fx.step(&ids(&CHILDREN), &cam, 4.0);
+    assert_eq!(fx.gpu.color_ranges, Some(fixed));
+}
+
+#[test]
+fn stored_colour_ranges_only_grow_and_reset_with_the_generation() {
+    let grid = CellGrid {
+        root_min: [0.0, 0.0, 0.0],
+        root_side: 8.0,
+    };
+    let bounds = SpatialBounds::new(grid.root_min, grid.root_min.map(|v| v + 8.0)).unwrap();
+    let level_with = |id: u64, intensity: f64| {
+        let level = NodeCellLevel {
+            depth: 3,
+            cells: vec![NodeCell {
+                coord: [1, 1, 2],
+                rgb_sum: [1, 1, 1],
+                intensity_sum: intensity,
+                intensity_count: 1,
+                count: 1,
+                classification: -1,
+                z_min: 0.0,
+                z_max: 0.0,
+            }],
+            octant_offsets: None,
+        };
+        PackedNode {
+            id: NodeId::new(id),
+            bounds,
+            points: 1,
+            buildable: (3, 3),
+            levels: vec![pack_level(&grid, bounds, NodeId::new(id), &level)],
+        }
+    };
+    let mut cfg = config(128, 8, u64::MAX);
+    cfg.grid = grid;
+    let mut driver = CellDriver::new(cfg);
+    let intensity = |driver: &CellDriver| driver.stored_colors.intensity;
+    let g0 = cell_generation(1, 0);
+    driver
+        .add_packed_generation(g0, level_with(1, 40.0))
+        .unwrap();
+    driver
+        .add_packed_generation(g0, level_with(2, 900.0))
+        .unwrap();
+    assert_eq!(intensity(&driver), Some([40.0, 900.0]));
+    // Dropping the node that held the maximum does not narrow it.
+    let gone = driver.nodes.remove(&NodeId::new(2));
+    assert!(gone.is_some());
+    assert_eq!(intensity(&driver), Some([40.0, 900.0]));
+    // Nor does a pool reset (device lost): the cloud and so its colours are the same.
+    let _ = driver.reset();
+    assert_eq!(intensity(&driver), Some([40.0, 900.0]));
+    // A new colour generation discards the old ranges.
+    driver
+        .add_packed_generation(cell_generation(1, 1), level_with(3, 70.0))
+        .unwrap();
+    assert_eq!(intensity(&driver), Some([70.0, 70.0]));
+    // So does a new dataset.
+    driver
+        .add_packed_generation(cell_generation(2, 0), level_with(4, 5.0))
+        .unwrap();
+    assert_eq!(intensity(&driver), Some([5.0, 5.0]));
 }
 
 /// A fixture whose nodes arrive as messages of `generation`, like on the cells path.

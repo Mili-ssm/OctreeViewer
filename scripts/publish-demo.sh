@@ -34,6 +34,18 @@ rm -rf "$site"
 mkdir -p "$site/pkg"
 host=examples/web-host
 cp "$host"/index.html "$host"/sample.oct "$host"/sample.octattrs "$site"/
+# The real second cloud (Belvedere crop, CC BY 4.0) is built outside git by
+# scripts/make-demo-belvedere.sh; the page opens it over HTTP Range from datasets/.
+crop=target/demo-data/belvedere-crop
+if [ -f "$crop.oct" ] && [ -f "$crop.octattrs" ]; then
+  mkdir -p "$site/datasets"
+  cp "$crop.oct" "$crop.octattrs" "$site/datasets/"
+elif [ "$push" = "1" ]; then
+  echo "$crop.oct missing: run scripts/make-demo-belvedere.sh before publishing" >&2
+  exit 1
+else
+  echo "note: $crop.oct missing; the site is built without the Belvedere crop" >&2
+fi
 # The page and its workers; probes, spikes, tests and the RED-REF server stay out.
 for f in "$host"/*.js "$host"/*.mjs; do
   case "$(basename "$f")" in probe-*|spike-*|red-ref-server.mjs|pixel-metrics.mjs|collect-*) continue ;; esac

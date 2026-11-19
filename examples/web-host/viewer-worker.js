@@ -997,11 +997,19 @@ function onBuildMessage(worker, data) {
 
 // The builder emits cells while the device cannot draw them (no support on the render side): reopen
 // the dataset on the CPU path, which both sides then keep until the viewer is recreated.
+// The elevation colour range is the data's Z span, not the drawn cut's: the same cloud keeps its
+// colours from every view. Builders without `elevationRange` leave it to the stored levels.
+function setElevationRange(info) {
+    const range = info.elevationRange;
+    if (range && range.length === 2) viewer.setCellElevationRange(range[0], range[1]);
+}
+
 function beginCells(opened) {
     const info = opened.cellsInfo;
     const path = info ? viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing, info.dataMin, info.dataMax) : "off";
     if (path === "enabled") {
         cellsRemote = true;
+        setElevationRange(info);
         forwardCellMessages();
         return true;
     }
@@ -1365,6 +1373,7 @@ async function recreateViewer(pose) {
             const info = opened.cellsInfo;
             const path = viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing, info.dataMin, info.dataMax);
             if (path !== "enabled") throw new Error(`the new device cannot draw cells (${path})`);
+            setElevationRange(info);
             pendingCellCut = null;
             appliedCutEpoch = 0;
             forwardCellMessages();
@@ -1600,7 +1609,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
             }
             case "frame": {
                 const camera = data.camera;
-                if (Object.values(camera).some((value) => value !== 0)) advanceSceneGeneration();
+                if (Object.values(camera).some(Boolean)) advanceSceneGeneration();
                 if (camera.orbitX !== 0 || camera.orbitY !== 0) {
                     viewer.orbit(camera.orbitX, camera.orbitY);
                 }
@@ -1610,6 +1619,9 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 if (camera.zoom !== 0) viewer.zoom(camera.zoom);
                 if (camera.moveX !== 0 || camera.moveY !== 0 || camera.moveZ !== 0) {
                     viewer.moveCamera(camera.moveX, camera.moveY, camera.moveZ);
+                }
+                if (camera.flyForward || camera.flyRight || camera.flyUp) {
+                    viewer.flyCamera(camera.flyForward ?? 0, camera.flyRight ?? 0, camera.flyUp ?? 0);
                 }
                 syncBuildView();
                 const startedAt = performance.now();

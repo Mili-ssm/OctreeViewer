@@ -15,6 +15,7 @@ let canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
 const cancelButton = document.getElementById("cancel-load");
 const sampleButton = document.getElementById("open-sample");
+const belvedereButton = document.getElementById("open-belvedere");
 const webgpuNotice = document.getElementById("webgpu-notice");
 const fitButton = document.getElementById("fit-scene");
 const fileInput = document.getElementById("dataset-file");
@@ -99,6 +100,7 @@ let pointerMode = "orbit";
 let activeCameraMode = cameraMode.value;
 let movementSpeed = 1;
 let cameraDelta = emptyCameraDelta();
+const flight = createFlight();
 let latestLodStats = null;
 let datasetName = "Synthetic sample";
 let loadingFile = false;
@@ -294,8 +296,50 @@ function exportBenchmarkRun() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+// Held-key flight (WASD/QE). Amounts are in units of the camera's orbit distance, so the feel is
+// independent of the scene size. Same logic in main.js and viewer-api.mjs: the offline packager
+// inlines or copies each file on its own, so they cannot share a module.
+const FLIGHT_KEYS = { w: [1, 0, 0], s: [-1, 0, 0], d: [0, 1, 0], a: [0, -1, 0], e: [0, 0, 1], q: [0, 0, -1] };
+// Orbit radii per second at movement speed 1: a 1 s hold of W covers about a third of the view.
+const FLIGHT_BASE_SPEED = 0.3;
+const FLIGHT_SHIFT_FACTOR = 4;
+const FLIGHT_MAX_DT = 0.1;
+function createFlight() {
+    const held = new Set();
+    let shift = false;
+    let last = 0;
+    return {
+        active: () => held.size > 0,
+        /** Returns whether the key is a flight key the page should consume. */
+        press(event, now) {
+            // Any key refreshes Shift, so pressing it while W is held speeds up at once.
+            shift = Boolean(event.shiftKey);
+            const key = String(event.key).toLowerCase();
+            if (!(key in FLIGHT_KEYS) || event.ctrlKey || event.altKey || event.metaKey) return false;
+            if (held.size === 0) last = now;
+            held.add(key);
+            return true;
+        },
+        release(event) {
+            shift = Boolean(event.shiftKey);
+            held.delete(String(event.key).toLowerCase());
+        },
+        clear() { held.clear(); shift = false; },
+        /** Per-frame `{ flyForward, flyRight, flyUp }` for the time since the last step, or null. */
+        step(now, speed) {
+            if (held.size === 0) return null;
+            const dt = Math.min(FLIGHT_MAX_DT, Math.max(0, (now - last) / 1000));
+            last = now;
+            const amount = FLIGHT_BASE_SPEED * speed * dt * (shift ? FLIGHT_SHIFT_FACTOR : 1);
+            const total = [0, 0, 0];
+            for (const key of held) for (let axis = 0; axis < 3; axis += 1) total[axis] += FLIGHT_KEYS[key][axis] * amount;
+            return { flyForward: total[0], flyRight: total[1], flyUp: total[2] };
+        },
+    };
+}
+
 function emptyCameraDelta() {
-    return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 };
+    return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0, flyForward: 0, flyRight: 0, flyUp: 0 };
 }
 
 function queueWorkerCommand(type, values = {}) {
@@ -374,6 +418,8 @@ function requestFrame() {
     if (!ready || frameFailed) return;
     if (framePending) return;
     framePending = true;
+    const fly = flight.step(performance.now(), movementSpeed);
+    if (fly) Object.assign(cameraDelta, fly);
     const camera = cameraDelta;
     cameraDelta = emptyCameraDelta();
     if (benchmarkRun && Object.values(camera).some((value) => value !== 0)) {
@@ -382,6 +428,7 @@ function requestFrame() {
     frameRequestedAt = performance.now();
     worker.postMessage({ type: "frame", camera });
     if (continuousRendering) animationFrame = requestAnimationFrame(requestFrame);
+    if (flight.active()) wakeRendering();
 }
 
 function requestFrameOnce() {
@@ -517,6 +564,7 @@ function handleWorkerMessage(event) {
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
+        belvedereButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";
         if (viewportSize) {
             queueWorkerCommand("resize", {
@@ -565,6 +613,7 @@ function handleWorkerMessage(event) {
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
+        belvedereButton.disabled = false;
         voxelPixels.disabled = false;
         statusRoot.textContent = `${data.name}: showing coarse view · refining LOD`;
     } else if (data.type === "datasetOpened") {
@@ -681,6 +730,7 @@ function handleWorkerMessage(event) {
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
+        belvedereButton.disabled = false;
         statusRoot.textContent = `${data.operation} failed: ${data.message}`;
         if (data.operation === "frame" || data.operation === "init") {
             frameFailed = true;
@@ -795,6 +845,7 @@ function recreateViewer({ reopen = false } = {}) {
     fileInput.disabled = true;
     attributesFileInput.disabled = true;
     sampleButton.disabled = true;
+    belvedereButton.disabled = true;
     voxelPixels.disabled = true;
     latestLodStats = null;
     datasetName = "Synthetic sample";
@@ -1143,6 +1194,7 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
     fileInput.disabled = true;
     attributesFileInput.disabled = true;
     sampleButton.disabled = true;
+    belvedereButton.disabled = true;
     fileInput.value = "";
     attributesFileInput.value = "";
     loadingFile = true;
@@ -1190,6 +1242,7 @@ downloadBenchmarkButton.addEventListener("click", exportBenchmarkRun);
 sampleButton.addEventListener("click", async () => {
     if (!ready) return;
     sampleButton.disabled = true;
+    belvedereButton.disabled = true;
     fileInput.disabled = true;
     attributesFileInput.disabled = true;
     loadingFile = true;
@@ -1220,8 +1273,68 @@ sampleButton.addEventListener("click", async () => {
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
+        belvedereButton.disabled = false;
         if (error.name !== "AbortError") {
             statusRoot.textContent = `Sample download failed: ${error}`;
+        }
+    }
+});
+// The real second cloud: a Belvedere Glacier crop (CC BY 4.0) that the published site carries
+// under datasets/ and a development checkout builds into target/demo-data/
+// (scripts/make-demo-belvedere.sh). The button stays hidden where neither answers. Relative to
+// the page, not to the module URL, which the offline package cannot reference.
+const belvedereCandidates = [
+    new URL("./datasets/belvedere-crop.oct", document.baseURI),
+    new URL("../../target/demo-data/belvedere-crop.oct", document.baseURI),
+];
+let belvedereUrl = null;
+(async () => {
+    for (const url of belvedereCandidates) {
+        try {
+            const response = await fetch(url, { method: "HEAD" });
+            if (response.ok) {
+                belvedereUrl = url;
+                document.getElementById("belvedere-panel").hidden = false;
+                return;
+            }
+        } catch {
+            // file:// or offline: try the next one.
+        }
+    }
+})();
+belvedereButton.addEventListener("click", async () => {
+    if (!ready || !belvedereUrl) return;
+    sampleButton.disabled = true;
+    belvedereButton.disabled = true;
+    fileInput.disabled = true;
+    attributesFileInput.disabled = true;
+    loadingFile = true;
+    cancelButton.hidden = false;
+    statusRoot.textContent = "Downloading the Belvedere Glacier crop (21 MB)…";
+    const controller = new AbortController();
+    sampleFetchController = controller;
+    try {
+        const fetchFile = async (url, name) => {
+            const response = await fetch(url, { signal: controller.signal });
+            if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
+            return new File([await response.arrayBuffer()], name, { type: "application/octet-stream" });
+        };
+        const file = await fetchFile(belvedereUrl, "belvedere-crop.oct");
+        const attrs = await fetchFile(new URL(`${belvedereUrl.href}attrs`), "belvedere-crop.octattrs");
+        if (sampleFetchController !== controller) return;
+        sampleFetchController = null;
+        openProjectFile(file, "Belvedere Glacier crop", attrs);
+    } catch (error) {
+        if (sampleFetchController !== controller) return;
+        sampleFetchController = null;
+        loadingFile = false;
+        cancelButton.hidden = true;
+        fileInput.disabled = false;
+        attributesFileInput.disabled = false;
+        sampleButton.disabled = false;
+        belvedereButton.disabled = false;
+        if (error.name !== "AbortError") {
+            statusRoot.textContent = `Belvedere download failed: ${error}`;
         }
     }
 });
@@ -1235,8 +1348,8 @@ cameraMode.addEventListener("change", () => {
         canvas.focus({ preventScroll: true });
     }
     cameraModeHelp.textContent = activeCameraMode === "bird"
-        ? `Bird: drag pans, right drag rotates, WASD/QE moves · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`
-        : "Observer: click a voxel to set the center, left drag pans, right drag rotates, wheel changes radius.";
+        ? `Bird: drag pans, right drag rotates, WASD/QE flies (Shift = faster) · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`
+        : "Observer: click a voxel to set the center, left drag pans, right drag rotates, wheel changes radius, WASD/QE flies (Shift = faster).";
 });
 function bindCanvasInteractions() {
 canvas.addEventListener("pointerdown", (event) => {
@@ -1302,25 +1415,24 @@ canvas.addEventListener("wheel", (event) => {
     const wheelDelta = event.deltaY * deltaUnit;
     if (activeCameraMode === "bird") {
         movementSpeed = Math.max(0.001, Math.min(1_000_000, movementSpeed * Math.exp(-wheelDelta * 0.001)));
-        cameraModeHelp.textContent = `Bird: drag pans, right drag rotates, WASD/QE moves · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`;
+        cameraModeHelp.textContent = `Bird: drag pans, right drag rotates, WASD/QE flies (Shift = faster) · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`;
     } else {
         cameraDelta.zoom += wheelDelta * 0.001;
     }
     wakeRendering();
 }, { passive: false });
+function releaseFlightKeys() { flight.clear(); }
+canvas.addEventListener("keyup", (event) => flight.release(event));
+canvas.addEventListener("blur", releaseFlightKeys);
+window.addEventListener("blur", releaseFlightKeys);
+document.addEventListener("visibilitychange", releaseFlightKeys);
 canvas.addEventListener("keydown", (event) => {
     if (!ready) return;
     const step = event.shiftKey ? 0.025 : 0.04;
     if (event.key === "Home") {
         queueWorkerCommand("fit");
-    } else if (activeCameraMode === "bird" && ["w", "a", "s", "d", "q", "e"].includes(event.key.toLowerCase())) {
-        const distance = movementSpeed * 0.05;
-        if (event.key.toLowerCase() === "w") cameraDelta.moveY += distance;
-        if (event.key.toLowerCase() === "s") cameraDelta.moveY -= distance;
-        if (event.key.toLowerCase() === "a") cameraDelta.moveX -= distance;
-        if (event.key.toLowerCase() === "d") cameraDelta.moveX += distance;
-        if (event.key.toLowerCase() === "q") cameraDelta.moveZ -= distance;
-        if (event.key.toLowerCase() === "e") cameraDelta.moveZ += distance;
+    } else if (flight.press(event, performance.now())) {
+        // Motion is applied per animation frame while the key is held.
     } else if (event.key === "+" || event.key === "=") {
         cameraDelta.zoom -= 0.15;
     } else if (event.key === "-") {

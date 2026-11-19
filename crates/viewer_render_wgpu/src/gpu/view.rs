@@ -161,6 +161,15 @@ impl<'window> SurfaceRenderer<'window> {
         changed
     }
 
+    /// Flies the camera by amounts in units of the orbit distance (see `OrbitCamera::fly`).
+    pub fn fly_camera(&mut self, forward: f64, right: f64, up: f64) -> bool {
+        let changed = self.camera.fly(forward, right, up);
+        if changed {
+            self.hzb_reference_camera = None;
+        }
+        changed
+    }
+
     pub fn set_bird_view(&mut self) {
         self.camera.set_bird_view();
         self.hzb_reference_camera = None;
