@@ -24,7 +24,10 @@ para la medida.
   `scripts/check.sh` sigue en verde.
 - T4: RSS pico dentro del presupuesto estimado (512 MiB por defecto); ningún búfer nuevo crece con el número de
   spools vivos ni con el tamaño total de la nube salvo el índice disperso (≤ 16 B por cada 64 tramas).
-- T5: el ledger (`SpoolLedger`) cuenta bytes **físicos**; `SpoolStore::len()` sigue devolviendo bytes lógicos.
+- T5: el ledger (`SpoolLedger`) **añade** bytes físicos (escritos y pico vivo) sin cambiar los lógicos, que los tests
+  comparan con `MemSpoolStore` (`lib_tests.rs:1503-1516`, `:2150-2161`); `SpoolStore::len()` sigue siendo lógico.
+- T2 se mide en bytes **aparentes** de `.work` (lo que ocuparía en ext4 o NTFS). En el equipo del propietario `/home`
+  es btrfs con `compress=zstd:1`, así que se informa también `peak_fs_used_delta_bytes` como proxy del uso real.
 - T6: ante error o cancelación no se publica salida y `.work` se borra, como hoy.
 - T7: el conversor web (`HybridSpoolStore`) no cambia de comportamiento; `cargo tree` del núcleo para wasm32 sigue
   sin dependencias nativas (paso «core has no native-only deps» de `check.sh`).
@@ -138,6 +141,10 @@ para la medida.
 
 **Files:**
 - Modify: `crates/viewer_convert/src/file_spool_store.rs`
+- Modify: `crates/viewer_convert_core/src/pipeline/spool_store.rs` (`LedgerTotals`, `SpoolLedger`: campos físicos)
+- Modify: `crates/viewer_convert/src/lib_tests.rs:1503-1519`, `:2138-2161` (aserciones nuevas sobre los físicos; las
+  lógicas no cambian)
+- Test: un test de `join_segments` (núcleo) sobre `FileSpoolStore`, en `crates/viewer_convert/src/lib_tests.rs`
 
 **Interfaces:**
 - Consumes: `create(id, record_bytes)` (tarea 2); `encode_frame`, `decode_frame`, `FrameHeader`,
@@ -156,7 +163,11 @@ para la medida.
   - `framed_reads_honour_offsets_inside_and_across_frames` — offsets 0, 42 × 100, 42 × 8191, 42 × 8192 + 42 × 5 y
     el último registro, con longitudes que acaban a mitad de trama: cada lectura coincide con el trozo original.
   - `ledger_counts_physical_bytes` — con diagnóstico, tras escribir registros compresibles,
-    `ledger_totals().written` < bytes lógicos; tras `delete`, el vivo vuelve a 0.
+    `ledger_totals().physical_written` < `ledger_totals().written` (lógico, sin cambios); tras `delete`, los vivos
+    lógico y físico vuelven a 0.
+  - `joined_segments_read_back_identically` — `join_segments` de 3 segmentos de registros de 42 B (trozos de 64 KiB
+    no alineados) sobre `FileSpoolStore`: el spool unido se lee igual que la concatenación de los segmentos.
+  - `deleted_spools_release_their_frame_state` — tras `delete`, la entrada no conserva `carry` ni índice (capacidad 0).
   - `source_spool_stays_raw` — el fichero `source.spool` mide exactamente lo escrito.
   - `truncated_spool_reports_an_error` — truncar el fichero en disco a la mitad: leer la extensión completa da
     error o menos bytes, sin pánico.
@@ -167,7 +178,12 @@ para la medida.
 - [ ] **Step 2:** `cargo test -p viewer_convert --offline file_spool_store` → FAIL.
 - [ ] **Step 3:** implementar. `append`: antepone `carry`, parte en tramas de ≤ `MAX_FRAME_RECORDS` registros
   completos, guarda el resto en `carry`, abre el fichero en modo añadir como hoy y escribe todas las tramas en una
-  llamada; `close` escribe `carry` como trama en crudo si no está vacío. El ledger suma y resta bytes físicos.
+  llamada; `close` escribe `carry` como trama en crudo si no está vacío. El ledger suma y resta bytes físicos en
+  campos nuevos (`physical_written`, `physical_peak_live`) sin tocar los lógicos. **Concurrencia:** bajo el mutex
+  `open` solo se toma el `carry` y se valida el estado; la codificación y la escritura van fuera del mutex, y se
+  vuelve a bloquear para actualizar `physical_len`, índice y `carry` (el ciclo de vida garantiza un único escritor
+  por spool). `delete` libera `carry` e índice (`mem::take`). Para reutilizar memoria, `lz4_flex::block::compress_into`
+  con búferes reutilizados en lugar de asignar por trama.
 - [ ] **Step 4:** `cargo test --workspace --offline` → PASS (incluye las conversiones de
   `lib_tests.rs`).
 - [ ] **Step 5:** commit `git commit -m "feat(convert): native spools are stored as compressed frames (RQ-06)"`.
@@ -185,9 +201,15 @@ para la medida.
 - [ ] **Step 2:** `scripts/measure_temp_disk.sh` con el binario nuevo (`cargo build -p viewer_convert --release
   --offline`) en Belvedere, Albuera y Majadas
   (`data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz`). Esperado: SHA de
-  Belvedere y Albuera iguales a la línea base (T1); pico de Albuera ≈ 12–14 GB (≈ 2,7–3,3 × LAZ, estimado en el
-  diseño); anotar tiempo y RSS (T3, T4).
-- [ ] **Step 3:** si la pérdida de tiempo en Albuera supera +25 %, parar y llevar las cifras al propietario (T3).
+  Belvedere y Albuera iguales a la línea base (T1); pico aparente de Albuera ≈ 14–15 GB (≈ 3,4 × LAZ: hojas ÷ 3,3,
+  LOD ÷ ~3,1, medido en spools vivos de Albuera el 19-11-2026); anotar tiempo, RSS y `peak_fs_used_delta_bytes`
+  (T3, T4). Tiempos por fase con `--diagnostics` si el CLI lo admite, o desde las marcas de fase del log: partición de
+  la raíz y unión de segmentos, planificación, bloques; planificación con `--spatial-workers 1` y por defecto.
+- [ ] **Step 3:** parar y llevar las cifras al propietario si: la pérdida de tiempo en Albuera supera +25 % (T3); el
+  RSS supera la línea base + 100 MB; el uso real en btrfs (`peak_fs_used_delta_bytes`) baja menos de 1,5 ×. Si algún
+  SHA difiere de la línea base, parar y buscar el fallo en el lector (offset, `carry`) antes de medir nada más. Si la
+  unión de segmentos añade > 5 % del tiempo total o > 30 s, añadir una tarea 4b (unir copiando tramas sin
+  recomprimir) antes de cerrar B.
 - [ ] **Step 4:** escribir el registro fechado (línea base, fase B, equipo, perfil `release`, opciones por defecto) y
   actualizar los documentos listados; `python3 scripts/check_docs_links.py` y `python3 scripts/check_docs_index.py`
   → OK.

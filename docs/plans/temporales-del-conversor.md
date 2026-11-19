@@ -57,10 +57,10 @@ tipo de spool deducido del paso de registro (42 B hoja o hijo, 54 B LOD):
 | Id | Requisito |
 | --- | --- |
 | T1 | Con la misma entrada y opciones, `.oct` y `.octattrs` son **byte a byte iguales** a los de `dc98e5a` (SHA de Belvedere y Albuera) y la paridad web/CLI de `scripts/check.sh` sigue en verde ([RQ-08](../requirements.md#requisitos-de-calidad)). |
-| T2 | En Albuera con opciones por defecto, el pico de bytes físicos del directorio `.work` es **≤ 2 × LAZ (≤ 8 610 969 578 B)**. Se mide igual que la línea base (muestreo de 1 s) y con el contador del propio conversor (T5). |
+| T2 | En Albuera con opciones por defecto, el pico de bytes físicos del directorio `.work` es **≤ 2 × LAZ (≤ 8 610 969 578 B)**. Se mide igual que la línea base (muestreo de 1 s, tamaño **aparente**, lo que ocuparía en ext4 o NTFS) y con el contador del propio conversor (T5). En el equipo del propietario, `/home` es btrfs con `compress=zstd:1`: el uso real se informa aparte (delta de `df`), y la línea base real de Albuera fue ~20,4 GB frente a 47,9 GB aparentes. |
 | T3 | El tiempo total de Albuera se mide tras B y tras A frente a 9 min 22 s. No hay tope fijo: el propietario acepta perder más tiempo si la compresión compensa, porque se puede recuperar después con paralelismo (19-11-2026). Una pérdida > +25 % se le presenta con la ganancia de disco antes de seguir. RQ-07 sigue cumpliéndose. |
 | T4 | El RSS pico sigue dentro del presupuesto estimado del conversor (512 MiB por defecto); los búferes nuevos están acotados y contabilizados. |
-| T5 | El informe del conversor (`peak_live_spool_bytes` y eventos por nodo, `plan.rs:229-234`) cuenta **bytes físicos** en disco, no lógicos. |
+| T5 | El informe del conversor (`peak_live_spool_bytes`, `plan.rs:229-234`) **añade** los bytes físicos en disco (escritos y pico vivo) junto a los lógicos, que los tests comparan con el almacén en memoria (`lib_tests.rs:1503-1516`, `:2150-2161`); los eventos por nodo siguen siendo lógicos. |
 | T6 | Ante un error o una cancelación no se publica salida y el directorio `.work` se borra, como hoy. El tipo de error para cada caso no cambia, aunque pueda aparecer después de escribir bloques en el temporal de salida. |
 | T7 | El conversor web sigue produciendo los mismos bytes y sus tests siguen en verde; su almacén de spools (RAM + OPFS) no cambia en este plan. |
 
