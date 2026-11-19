@@ -1,6 +1,14 @@
 //! The frame planner: `frame` and `plan`.
 
-use super::*;
+use super::{
+    ActiveLevel, BTreeSet, Carry, Cell, CellCutError, CellCutNode, CellGrid, CellPool,
+    CellPoolEvent, Ctx, CutApply, DRIFT_FRACTION, Fallbacks, FastMap, FastSet, Footprint,
+    FramePlan, HoldEval, Level, LevelKey, LevelState, MaskSlot, MaskUpdate, Need, NodeDepths,
+    NodeId, POOL_PAGE_BYTES, PageUpload, Pass, PoolCounters, PoolNode, Pose, Rc, RealMemo, Round,
+    SOFT_PERCENT, STEP_WAIT_FRAMES, ViewProjection, WantedMemo, capped, capped_range,
+    cell_cut_ranged, covers_in, distance, distance_sq, drawn_digest, effective_depth,
+    in_cell_range, missing_levels, set_digest, uncovered_levels,
+};
 
 impl CellPool {
     /// Plans one frame for `cut`. `UnknownNode` and `NoStoredLevels` are the caller's errors; a
@@ -15,7 +23,7 @@ impl CellPool {
         target_px: f64,
     ) -> Result<FramePlan, CellCutError> {
         let mut nodes: FastMap<NodeId, PoolNode> =
-            FastMap::with_capacity_and_hasher(cut.len(), Default::default());
+            FastMap::with_capacity_and_hasher(cut.len(), std::hash::BuildHasherDefault::default());
         for id in cut {
             let data = node(*id).ok_or(CellCutError::UnknownNode(*id))?;
             if data.stored.is_empty() {
@@ -100,7 +108,10 @@ impl CellPool {
         unreachable!("a settled pass never asks for another")
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     pub(super) fn plan(
         &mut self,
         cut: &[NodeId],
@@ -240,7 +251,7 @@ impl CellPool {
             let kept = std::cell::RefCell::new(Vec::new());
             // The resident list each node was given (after hold, cap and `finer_drawn`): the one
             // `fill_node_runs` anchors on, so the node run and the cut cannot disagree.
-            let given: std::cell::RefCell<FastMap<NodeId, Vec<u8>>> = Default::default();
+            let given: std::cell::RefCell<FastMap<NodeId, Vec<u8>>> = std::cell::RefCell::default();
             let lookup = |id: NodeId| {
                 let data = nodes.get(&id)?;
                 let stored = capped(&data.stored, caps.get(&id));
@@ -820,7 +831,7 @@ impl CellPool {
                     .chain(d5)
                     .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth));
                 if active_bits != 0 {
-                    let top = node_depth + (63 - active_bits.leading_zeros()) as u8;
+                    let top = node_depth + active_bits.ilog2() as u8;
                     finest.insert(id, top);
                     spans.insert(id, (node_depth + active_bits.trailing_zeros() as u8, top));
                 }

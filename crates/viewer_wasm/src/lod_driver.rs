@@ -179,7 +179,10 @@ pub(crate) fn plan_cells_staged(
 /// `dirty` also stays true while the driver has work (`CellDriver::needs_frame`), which includes
 /// a permanent pool overflow and a failed frame: the caller stops on `pool_overflow > 0` or on
 /// errors that repeat.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 pub(crate) fn update_cells_staged<T: CellTarget>(
     dataset: &mut LodDataset,
     step: &CellStep<'_>,
@@ -222,7 +225,10 @@ const MAX_PAGE_ROUNDS: usize = 32;
 /// [`update_lod_view`] for a reader that serves blocks and hierarchy pages from the same stream:
 /// after each step, the pages the cut lacks are read and grafted and the step is repeated until
 /// none is missing. Hosts that deliver pages themselves pass `reader = None`.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 pub(crate) fn update_lod_view_paged<R>(
     dataset: &mut LodDataset,
     step: &LodStep<'_>,
@@ -368,7 +374,10 @@ pub(crate) fn resolve_color_selection(
 /// Turns one asynchronously delivered block into a cacheable `PointBlock`. With an attribute
 /// selected the column is painted into the colours; otherwise it travels with the block.
 /// `carried` is `Some` on the cells path only: its columns, and a painted one, travel with the block (R3-Q32).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 pub(crate) fn assemble_async_block(
     block_id: BlockId,
     geometry: PointBatch,
@@ -430,8 +439,8 @@ mod tests {
                 &mut stage,
                 target,
                 retry_coarse,
-                |_| Ok(target_ready),
-                |_, rung, stage_pixels| {
+                |()| Ok(target_ready),
+                |(), rung, stage_pixels| {
                     drawn.push(rung);
                     *stage_pixels = next_lod_stage(Some(rung), target, false, true).0;
                     Ok(())

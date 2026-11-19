@@ -5,13 +5,17 @@ use std::{mem::size_of, sync::mpsc};
 
 use crate::{InstanceRaw, budget::check_peak_bytes};
 
-impl<'window> SurfaceRenderer<'window> {
+impl SurfaceRenderer<'_> {
     pub(super) fn prepare_hzb_scene(&mut self, source_bytes: u64) {
         self.hzb_reference_camera = None;
         let allocated_without_hzb = self
             .allocated_cpu_bytes()
             .unwrap_or(self.gpu_budget.max_bytes)
-            .saturating_sub(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()));
+            .saturating_sub(
+                self.hzb
+                    .as_ref()
+                    .map_or(0, super::super::hzb::HzbResources::resource_bytes),
+            );
         let available = self
             .gpu_budget
             .max_bytes
@@ -125,7 +129,11 @@ impl<'window> SurfaceRenderer<'window> {
         let allocated_without_hzb = self
             .allocated_cpu_bytes()
             .unwrap_or(self.gpu_budget.max_bytes)
-            .saturating_sub(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()));
+            .saturating_sub(
+                self.hzb
+                    .as_ref()
+                    .map_or(0, super::super::hzb::HzbResources::resource_bytes),
+            );
         let available = self
             .gpu_budget
             .max_bytes

@@ -410,7 +410,7 @@ fn intensity_and_color_edge_cases() {
     let packed = pack(&level(12, cells));
     let intensities: Vec<u16> = packed.instances[..8]
         .iter()
-        .map(|i| i.intensity())
+        .map(super::cell_pages::CellInstance::intensity)
         .collect();
     // NaN, +-inf and a negative mean are missing; a huge finite mean clamps to 65534.
     assert_eq!(
@@ -814,7 +814,7 @@ fn rust_decode(instances: &[CellInstance], pages: &[PageEntry]) -> Vec<u32> {
         words[5] = d.octant;
         words[6] = u32::from(d.spans_octants);
         words[7] = u32::from(d.intensity);
-        words[8] = d.class as i32 as u32;
+        words[8] = i32::from(d.class) as u32;
         words[9] = u32::from(instance.is_empty());
         for a in 0..3 {
             words[10 + a] = d.lo[a].to_bits();
@@ -889,7 +889,7 @@ fn gpu_decode(
             layout: None,
             module: &module,
             entry_point: Some("main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -914,9 +914,9 @@ fn gpu_decode(
                 },
             ],
         });
-        let mut encoder = device.create_command_encoder(&Default::default());
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         {
-            let mut pass = encoder.begin_compute_pass(&Default::default());
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
             pass.dispatch_workgroups(instances.len().div_ceil(64) as u32, 1, 1);

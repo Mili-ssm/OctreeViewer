@@ -574,16 +574,16 @@ fn synthetic_cpu_bytes(views: &[ViewProjection]) -> u64 {
     h.driver.cpu_bytes()
 }
 
-fn synthetic_case(name: &str, views: Vec<ViewProjection>, seeds: &[u64], inject: Inject) {
-    let full = synthetic_cpu_bytes(&views);
+fn synthetic_case(name: &str, views: &[ViewProjection], seeds: &[u64], inject: Inject) {
+    let full = synthetic_cpu_bytes(views);
     // Small: a third of what the whole run keeps; idle nodes are forgotten and built again.
     let budget = full / 3;
     let (expected, expected_gpu) =
-        in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+        in_process_digest(synthetic_harness(1 << 20, 2.0), budget, views);
     let mut reports = 0;
     for seed in seeds {
         let mut sim = Sim::new(synthetic_harness(1 << 20, 2.0), budget, *seed);
-        let digest = sim.run(&views, inject, 200_000);
+        let digest = sim.run(views, inject, 200_000);
         check_stats(&format!("synthetic {name} seed {seed}"), &sim);
         assert_eq!(digest, expected, "{name} seed {seed}");
         assert_eq!(
@@ -612,12 +612,12 @@ const SEEDS: [u64; 4] = [1, 7, 42, 1234];
 
 #[test]
 fn sim_synthetic_orbit_reaches_the_in_process_digest() {
-    synthetic_case("orbit", synth_orbit(), &SEEDS, Inject::default());
+    synthetic_case("orbit", &synth_orbit(), &SEEDS, Inject::default());
 }
 
 #[test]
 fn sim_synthetic_dolly_reaches_the_in_process_digest() {
-    synthetic_case("dolly", synth_dolly(), &SEEDS, Inject::default());
+    synthetic_case("dolly", &synth_dolly(), &SEEDS, Inject::default());
 }
 
 #[test]
@@ -628,8 +628,8 @@ fn sim_synthetic_pool_reset_and_driver_replaced_mid_load_converge() {
         forget_zones_on_loss: true,
         ..Inject::default()
     };
-    synthetic_case("orbit+inject", synth_orbit(), &SEEDS, inject);
-    synthetic_case("dolly+inject", synth_dolly(), &SEEDS[..2], inject);
+    synthetic_case("orbit+inject", &synth_orbit(), &SEEDS, inject);
+    synthetic_case("dolly+inject", &synth_dolly(), &SEEDS[..2], inject);
 }
 
 #[test]

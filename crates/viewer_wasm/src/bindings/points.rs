@@ -1,3 +1,7 @@
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "wasm-bindgen exports receive JS handles and owned values by value"
+)]
 use wasm_bindgen::prelude::*;
 
 use super::{

@@ -206,7 +206,7 @@ pub(crate) fn ray_box_interval(
     far.is_finite().then_some((near, far))
 }
 
-impl<'window> SurfaceRenderer<'window> {
+impl SurfaceRenderer<'_> {
     /// Copies only ray-intersecting instance ranges into a bounded staging buffer.
     pub fn prepare_pick(&self, pixel: [f64; 2]) -> Result<Option<PickReadback>, String> {
         if let Some(pool) = &self.cell_pool {

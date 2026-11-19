@@ -780,7 +780,7 @@ fn replacement_cut_exclusions(
             }
             parent = hierarchy
                 .node(parent_id)
-                .and_then(|ancestor| ancestor.parent());
+                .and_then(viewer_core::SpatialNode::parent);
         }
     }
     result
@@ -791,12 +791,16 @@ fn has_selected_ancestor(
     node_id: NodeId,
     selected: &BTreeSet<NodeId>,
 ) -> bool {
-    let mut parent = hierarchy.node(node_id).and_then(|node| node.parent());
+    let mut parent = hierarchy
+        .node(node_id)
+        .and_then(viewer_core::SpatialNode::parent);
     while let Some(id) = parent {
         if selected.contains(&id) {
             return true;
         }
-        parent = hierarchy.node(id).and_then(|node| node.parent());
+        parent = hierarchy
+            .node(id)
+            .and_then(viewer_core::SpatialNode::parent);
     }
     false
 }
@@ -941,6 +945,10 @@ fn representative_regions(
     Some((shift, keys, length))
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "`CutAccumulation` is a bundle of borrows passed through; a reference would only add a layer"
+)]
 fn accumulate_block(
     block: &PointBlock,
     grid: &mut AdaptiveVoxelGrid,

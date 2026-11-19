@@ -173,7 +173,7 @@ impl HzbResources {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(
-                        &depth_texture.create_view(&Default::default()),
+                        &depth_texture.create_view(&wgpu::TextureViewDescriptor::default()),
                     ),
                 },
                 wgpu::BindGroupEntry {
@@ -424,7 +424,7 @@ impl HzbResources {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(
-                        &depth_texture.create_view(&Default::default()),
+                        &depth_texture.create_view(&wgpu::TextureViewDescriptor::default()),
                     ),
                 },
                 wgpu::BindGroupEntry {
@@ -452,7 +452,13 @@ impl HzbResources {
                 })
             })
             .collect();
-        self._pyramid_texture = pyramid_texture;
+        #[expect(
+            clippy::used_underscore_binding,
+            reason = "the texture is only held so its views stay valid; the underscore says it is never read"
+        )]
+        {
+            self._pyramid_texture = pyramid_texture;
+        }
         self.pyramid_view = pyramid_view;
         self.viewport = viewport;
         self.pyramid_size = pyramid_size;
@@ -553,14 +559,8 @@ impl HzbResources {
 
     pub(crate) fn requested_buffer_bytes(&self) -> u64 {
         self.params_buffer.size()
-            + self
-                .visible_indices
-                .as_ref()
-                .map_or(0, |buffer| buffer.size())
-            + self
-                .indirect_args
-                .as_ref()
-                .map_or(0, |buffer| buffer.size())
+            + self.visible_indices.as_ref().map_or(0, wgpu::Buffer::size)
+            + self.indirect_args.as_ref().map_or(0, wgpu::Buffer::size)
     }
 
     pub(crate) fn logical_texture_bytes(&self) -> u64 {
@@ -712,7 +712,7 @@ fn compute_pipeline(
         layout: Some(&layout),
         module: &shader,
         entry_point: Some(entry_point),
-        compilation_options: Default::default(),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
         cache: None,
     })
 }
@@ -738,7 +738,7 @@ fn create_indexed_pipeline(
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_indexed"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: 24,
                 step_mode: wgpu::VertexStepMode::Vertex,
@@ -754,14 +754,14 @@ fn create_indexed_pipeline(
             format: wgpu::TextureFormat::Depth32Float,
             depth_write_enabled: Some(true),
             depth_compare: Some(wgpu::CompareFunction::Less),
-            stencil: Default::default(),
-            bias: Default::default(),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
         }),
-        multisample: Default::default(),
+        multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: Some("fs_indexed"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format: color_format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -967,7 +967,7 @@ mod tests {
                     + size_of::<super::DrawIndexedIndirectArgs>()) as u64
             );
             assert_eq!(hzb.logical_texture_bytes(), pyramid_bytes);
-            let depth_view = depth_texture.create_view(&Default::default());
+            let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
             let mut clear_encoder =
                 device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
             {
@@ -1168,7 +1168,7 @@ mod tests {
                     vertex: wgpu::VertexState {
                         module: &occluder_shader,
                         entry_point: Some("vs"),
-                        compilation_options: Default::default(),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
                         buffers: &[],
                     },
                     primitive: wgpu::PrimitiveState::default(),
@@ -1176,15 +1176,15 @@ mod tests {
                         format: wgpu::TextureFormat::Depth32Float,
                         depth_write_enabled: Some(true),
                         depth_compare: Some(wgpu::CompareFunction::Always),
-                        stencil: Default::default(),
-                        bias: Default::default(),
+                        stencil: wgpu::StencilState::default(),
+                        bias: wgpu::DepthBiasState::default(),
                     }),
-                    multisample: Default::default(),
+                    multisample: wgpu::MultisampleState::default(),
                     fragment: None,
                     multiview_mask: None,
                     cache: None,
                 });
-            let depth_view = depth_texture.create_view(&Default::default());
+            let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
             let mut encoder =
                 device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
             {

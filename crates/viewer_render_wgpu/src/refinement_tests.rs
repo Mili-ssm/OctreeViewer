@@ -23,7 +23,7 @@ const TARGETS: [f64; 4] = [1.0, 2.0, 4.0, 8.0];
 
 #[derive(Clone, Copy)]
 enum Pick {
-    /// Coarsest stored level with depth >= D_n (RQ-09).
+    /// Coarsest stored level with depth >= `D_n` (RQ-09).
     Coarsest,
     Finest,
 }

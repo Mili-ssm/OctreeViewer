@@ -11,6 +11,10 @@ pub struct WasmBlockRequestScheduler {
     tickets: HashMap<u64, RequestTicket>,
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "wasm-bindgen exports receive JS handles and owned strings by value"
+)]
 #[wasm_bindgen]
 impl WasmBlockRequestScheduler {
     #[wasm_bindgen(constructor)]

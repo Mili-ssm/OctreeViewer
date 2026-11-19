@@ -1,6 +1,10 @@
 //! Only-refine hold and the D5 gate.
 
-use super::*;
+use super::{
+    CellCutEntry, CellCutNode, CellGrid, CellPool, Cover, CoverRule, FastMap, FastSet, Footprint,
+    HoldEval, LevelKey, MAX_MASK_LEVELS, NodeId, PoolNode, capped, capped_range, cell_cut_with,
+    cell_depth_range, covers_in, drawn_levels, representative_depth,
+};
 
 impl CellPool {
     /// D5 (E7): a node whose mask is set also has its D5 depth active, which covers the unmasked
@@ -169,7 +173,10 @@ impl CellPool {
 
     /// The R3-Q21 hold ("only refine"), see the module docs. `judge` says when a node that would
     /// enter the cut is short of what drew over its footprint before.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     fn refine_hold(
         &self,
         entries: &[CellCutEntry],
@@ -209,7 +216,7 @@ impl CellPool {
                 .applied_index
                 .below
                 .get(&(f.rep, f.lo))
-                .map(|list| {
+                .map_or_default(|list| {
                     list.iter()
                         .copied()
                         .filter(|(d, _)| {
@@ -220,8 +227,7 @@ impl CellPool {
                                     .is_some_and(|drawn| drawn.iter().any(Option::is_some))
                         })
                         .collect()
-                })
-                .unwrap_or_default();
+                });
             let has_above = f
                 .gaps()
                 .any(|k| self.applied_index.cells.contains_key(&f.ancestor(k)));

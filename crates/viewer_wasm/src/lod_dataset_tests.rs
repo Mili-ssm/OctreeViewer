@@ -706,7 +706,7 @@ fn source_leaf_depth_does_not_determine_voxel_size_or_limit_granularity() {
             parent.map(NodeId::new),
             level,
             SpatialBounds::new(min, max).unwrap(),
-            if blocks.is_empty() { 0 } else { 1 },
+            u64::from(!blocks.is_empty()),
             0.0,
             blocks.into_iter().map(BlockId::new).collect(),
         )
@@ -817,7 +817,7 @@ fn adaptive_cells_obey_pixel_target_grow_with_distance_and_never_overlap() {
             for b in &instances[i + 1..] {
                 let overlap = (0..3).all(|axis| {
                     (f64::from(a.center[axis]) - f64::from(b.center[axis])).abs()
-                        < (f64::from(a.size) + f64::from(b.size)) * 0.5 - 1e-8
+                        < f64::midpoint(f64::from(a.size), f64::from(b.size)) - 1e-8
                 });
                 assert!(!overlap, "adaptive cells must not overlap");
             }
@@ -851,7 +851,7 @@ fn fine_local_cells_survive_a_large_geographic_origin() {
         BlockId::new(10),
         PointBatch::new(vec![
             Point::new([0.5; 3], ColorRgb::new(1, 2, 3)),
-            Point::new([0.500002, 0.5, 0.5], ColorRgb::new(1, 2, 3)),
+            Point::new([0.500_002, 0.5, 0.5], ColorRgb::new(1, 2, 3)),
         ]),
         vec![],
     ));
@@ -1141,8 +1141,8 @@ fn sim_update(
     }
     log.push(format!(
         "stage={stage} cut={} pending={} uncovered={} {decision}",
-        ids(plan.node_ids(), |n| n.get()),
-        ids(plan.pending_blocks(), |b| b.get()),
+        ids(plan.node_ids(), viewer_core::NodeId::get),
+        ids(plan.pending_blocks(), viewer_core::BlockId::get),
         plan.uncovered_nodes().len(),
     ));
     if async_loads && let Some(id) = plan.pending_blocks().first() {
@@ -1655,7 +1655,12 @@ fn uncovered_multiblock_node_precedes_covered_refinement_in_both_load_modes() {
         viewport
     ));
     assert!(camera.set_pose([350.0, 10.0, 10.0], [50.0, 10.0, 10.0]));
-    let view = viewer_render_wgpu::ViewProjection::new(camera, viewport, 1.0, Default::default());
+    let view = viewer_render_wgpu::ViewProjection::new(
+        camera,
+        viewport,
+        1.0,
+        viewer_render_wgpu::VoxelBuildLimits::default(),
+    );
     let make_dataset = || {
         let mut dataset = LodDataset::new([0.0; 3], hierarchy.clone(), usize::MAX).unwrap();
         dataset.insert_block(block(11)).unwrap();
@@ -2363,8 +2368,8 @@ mod binding_parity {
                 viewport,
                 scale,
                 target,
-                |_, _| Ok(None),
-                |_, _| Err(String::new()),
+                |(), _| Ok(None),
+                |(), _| Err(String::new()),
             )
             .err()
         };

@@ -46,6 +46,8 @@ en escritorio y móvil, WASD en los dos modos y Belvedere pasan; la prueba del c
 fallo en la compilación anterior, así que la evidencia del arreglo es el test del driver
 `the_frame_hands_the_target_ranges_that_do_not_depend_on_the_cut`.
 
-- [ ] **5. #89, lints pedantes.** Comprobar: `scripts/check.sh` 23/23.
+- [x] **5. #89, lints pedantes.** Comprobar: `scripts/check.sh` 23/23. Hecho en la rama `chore/89-pedantic-lints`
+  (`3bb9980` mecánico, `f20765b` de criterio): ~706 avisos → 0; las excepciones son locales y con motivo (las
+  exportaciones de wasm-bindgen reciben los objetos JS por valor).
 - [ ] **6. Cierre.** Comprobar: `scripts/check.sh` y el navegador en la punta; PR; fusión y publicación de la
   demo solo con el visto bueno del propietario.

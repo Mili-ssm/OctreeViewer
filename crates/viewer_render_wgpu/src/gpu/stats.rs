@@ -26,7 +26,7 @@ impl GpuResourceStats {
     }
 }
 
-impl<'window> SurfaceRenderer<'window> {
+impl SurfaceRenderer<'_> {
     pub(super) fn allocated_gpu_bytes(&self) -> Result<u64, GpuRendererError> {
         let scene_capacity = self
             .scene_buffer
@@ -42,7 +42,11 @@ impl<'window> SurfaceRenderer<'window> {
         scene_and_blocks
             .checked_add(self.cell_pool_bytes())
             .and_then(|bytes| {
-                bytes.checked_add(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()))
+                bytes.checked_add(
+                    self.hzb
+                        .as_ref()
+                        .map_or(0, super::super::hzb::HzbResources::resource_bytes),
+                )
             })
             .and_then(|bytes| bytes.checked_add(self.hzb_count_readback.as_ref().map_or(0, |_| 4)))
             .ok_or(GpuRendererError::InvalidSceneSize)
@@ -57,7 +61,9 @@ impl<'window> SurfaceRenderer<'window> {
     /// Percentiles of the GPU time per frame over the last samples; `None` when the device has no
     /// `timestamp-query` or nothing was sampled yet.
     pub fn gpu_frame_stats(&self) -> Option<crate::GpuFrameStats> {
-        self.frame_timer.as_ref().and_then(|timer| timer.stats())
+        self.frame_timer
+            .as_ref()
+            .and_then(super::super::frame_timer::FrameTimer::stats)
     }
 
     /// Turns the per-frame GPU timing on or off (off by default; no cost while off). A no-op
@@ -91,18 +97,18 @@ impl<'window> SurfaceRenderer<'window> {
             hzb_buffer_bytes: self
                 .hzb
                 .as_ref()
-                .map_or(0, |hzb| hzb.requested_buffer_bytes())
+                .map_or(0, super::super::hzb::HzbResources::requested_buffer_bytes)
                 + self
                     .hzb_count_readback
                     .as_ref()
-                    .map_or(0, |buffer| buffer.size()),
+                    .map_or(0, wgpu::Buffer::size),
             depth_texture_bytes: u64::from(self.depth_texture.width())
                 * u64::from(self.depth_texture.height())
                 * 4,
             hzb_texture_bytes: self
                 .hzb
                 .as_ref()
-                .map_or(0, |hzb| hzb.logical_texture_bytes()),
+                .map_or(0, super::super::hzb::HzbResources::logical_texture_bytes),
             cell_pool_bytes: self.cell_pool_bytes(),
         }
     }

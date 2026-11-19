@@ -150,6 +150,10 @@ pub(super) fn points_from_typed_arrays(
     Ok(points)
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function path, which hands the error over by value"
+)]
 pub(super) fn viewer_error_to_js(error: ViewerError) -> JsValue {
     JsValue::from_str(&error.to_string())
 }

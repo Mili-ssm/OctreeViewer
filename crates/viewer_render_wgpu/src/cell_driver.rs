@@ -137,7 +137,7 @@ impl CellColorRanges {
                 if page.flags & PAGE_HAS_INTENSITY != 0 {
                     let words = cells
                         .iter()
-                        .map(|cell| cell.intensity())
+                        .map(super::cell_pages::CellInstance::intensity)
                         .filter(|word| *word != MISSING_INTENSITY);
                     let (lo, hi) = words.fold((u16::MAX, 0), |(lo, hi), w| (lo.min(w), hi.max(w)));
                     if lo <= hi {
@@ -360,6 +360,10 @@ struct StoredNode {
     generation: Option<u64>,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the flags are independent latches; a state enum would not model them"
+)]
 pub struct CellDriver {
     config: DriverConfig,
     pool: CellPool,
@@ -479,6 +483,10 @@ pub fn pack_node(
 }
 
 /// [`pack_node`] after the caller checked the grid contract.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "`NodeInput` is a bundle of borrows destructured by value; a reference would only add a layer"
+)]
 fn pack_checked(
     grid: &CellGrid,
     coordinate_origin: [f64; 3],
@@ -914,7 +922,7 @@ impl CellDriver {
         stored.bytes = bytes;
         stored.pool.buildable = buildable;
         stored.levels = levels;
-        stored.colors = colors.clone();
+        stored.colors.clone_from(&colors);
         stored.generation = generation;
         self.advance_generation(generation);
         for (_, color) in &colors {
@@ -1361,7 +1369,7 @@ impl CellDriver {
         });
         let in_cut: HashSet<NodeId> = cut.iter().copied().collect();
         // Nodes of an older colour generation go first: they only stand in until recoloured.
-        let newest = self.newest_generation.map(color_of).unwrap_or(0);
+        let newest = self.newest_generation.map_or(0, color_of);
         let outdated = |node: &StoredNode| node.generation.is_some_and(|g| color_of(g) < newest);
         let mut candidates: Vec<(bool, f64, NodeId)> = self
             .nodes

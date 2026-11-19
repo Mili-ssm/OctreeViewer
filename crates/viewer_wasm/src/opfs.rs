@@ -53,6 +53,10 @@ pub(crate) struct OpfsWriter {
 }
 
 impl OpfsWriter {
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the constructor keeps the fallible shape of the other OPFS handle constructors"
+    )]
     pub(crate) fn new(handle: JsValue) -> Result<Self, JsValue> {
         Ok(Self {
             handle: handle.unchecked_into(),

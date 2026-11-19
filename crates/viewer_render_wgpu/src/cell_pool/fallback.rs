@@ -1,6 +1,9 @@
 //! Local fallback ancestors, the cover rule and the zones that lost their level.
 
-use super::*;
+use super::{
+    CellCutEntry, CellGrid, CellPool, FallbackMemo, FastMap, FastSet, MAX_MASK_LEVELS, NodeId,
+    PoolNode, SpatialBounds, node_range, representative_depth, set_digest,
+};
 
 /// What stands in for the cut nodes that have no level (R3-Q19, R3-Q20).
 #[derive(Clone, Default)]

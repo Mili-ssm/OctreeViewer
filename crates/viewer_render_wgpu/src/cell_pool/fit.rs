@@ -1,6 +1,10 @@
 //! The fit of the wanted levels into the pool and the caps it sets.
 
-use super::*;
+use super::{
+    BTreeSet, CellCutError, CellCutNode, CellGrid, CellPool, Ctx, FastMap, FastSet, HIGH_PERCENT,
+    LOW_PERCENT, LevelKey, NodeId, PoolNode, cell_depth_range, distance_sq, in_cell_range,
+    served_depth,
+};
 
 /// `wanted` limited to the finest buildable depth at or below `limit` (cells of that depth or
 /// coarser have a side of at least the continuity minimum); the coarsest buildable depth when all
@@ -37,7 +41,6 @@ impl CellPool {
     /// R3-Q11. Returns the levels the wanted entries need after the fit (the stored ones that
     /// serve them), the wanted depths that are not stored (to request), and whether even the coarsest levels overflow the usable
     /// capacity.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn fit(
         &mut self,
         cut: &[NodeId],

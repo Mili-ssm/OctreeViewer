@@ -72,10 +72,16 @@ fn render_target(
 ) -> Target {
     let target = target(h, size);
     let (color_view, depth_view) = (
-        target.color.create_view(&Default::default()),
-        target.depth.create_view(&Default::default()),
+        target
+            .color
+            .create_view(&wgpu::TextureViewDescriptor::default()),
+        target
+            .depth
+            .create_view(&wgpu::TextureViewDescriptor::default()),
     );
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     pool.encode_cells(
         &mut encoder,
         &color_view,
@@ -122,7 +128,7 @@ fn read_shot(h: &Harness, target: &Target, pool: &CellRenderer) -> Shot {
             layout: None,
             module: &module,
             entry_point: Some("main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
     let depth_view = target.depth.create_view(&wgpu::TextureViewDescriptor {
@@ -143,7 +149,9 @@ fn read_shot(h: &Harness, target: &Target, pool: &CellRenderer) -> Shot {
             },
         ],
     });
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &target.color,
@@ -166,7 +174,7 @@ fn read_shot(h: &Harness, target: &Target, pool: &CellRenderer) -> Shot {
         },
     );
     {
-        let mut pass = encoder.begin_compute_pass(&Default::default());
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
@@ -458,12 +466,16 @@ fn hiz_texels_are_the_maximum_of_their_pixels_on_every_adapter() {
             let shot = read_shot(h, &target, &pool);
             let hiz = HiZ::new(&h.device, &builder, size);
             assert_eq!(hiz.mip_count(), mip_count(size));
-            let mut encoder = h.device.create_command_encoder(&Default::default());
+            let mut encoder = h
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
             hiz.encode_build(
                 &h.device,
                 &builder,
                 &mut encoder,
-                &target.depth.create_view(&Default::default()),
+                &target
+                    .depth
+                    .create_view(&wgpu::TextureViewDescriptor::default()),
             );
             h.queue.submit([encoder.finish()]);
             for level in 0..hiz.mip_count() {
@@ -510,7 +522,9 @@ fn read_hiz_level(h: &Harness, hiz: &HiZ, level: u32, size: [u32; 2]) -> Vec<f32
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: hiz.texture(),
@@ -1011,7 +1025,7 @@ fn depth_error_stays_within_the_derived_bound_at_worst_case_poses() {
                 layout: None,
                 module: &module,
                 entry_point: Some("main"),
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 cache: None,
             });
         let mut rng = Rng(0xfeed);
@@ -1102,9 +1116,11 @@ fn depth_error_stays_within_the_derived_bound_at_worst_case_poses() {
                     },
                 ],
             );
-            let mut encoder = h.device.create_command_encoder(&Default::default());
+            let mut encoder = h
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
             {
-                let mut pass = encoder.begin_compute_pass(&Default::default());
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
                 pass.set_pipeline(&pipeline);
                 pass.set_bind_group(0, &group0, &[]);
                 pass.set_bind_group(1, &group1, &[]);

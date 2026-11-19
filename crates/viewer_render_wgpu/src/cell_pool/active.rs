@@ -1,9 +1,13 @@
 //! Active depths of a cut node in cell mode.
 
-use super::*;
+use super::{CellCutEntry, CellGrid, CellPool, SpatialBounds, cell_depth_range, in_cell_range};
 
 impl CellPool {
     /// The stored depths of a node that can draw: those inside the node's span (E2).
+    #[expect(
+        clippy::unused_self,
+        reason = "a `CellPool` method kept beside `coarsest_in_span`; its callers hold the pool"
+    )]
     pub(super) fn drawable_stored(
         &self,
         stored: &[u8],
@@ -53,6 +57,10 @@ impl CellPool {
 
     /// The coarsest buildable depth inside the node's span, which cell mode requests (and pins)
     /// when no stored level of the node can draw.
+    #[expect(
+        clippy::unused_self,
+        reason = "a `CellPool` method kept beside `drawable_stored`; its callers hold the pool"
+    )]
     pub(super) fn coarsest_in_span(
         &self,
         buildable: (u8, u8),

@@ -140,8 +140,8 @@ impl GlueSim {
                 true,
                 false,
                 Some(&mut ()),
-                &mut |_: &mut (), id| blocks(id),
-                &mut |_: &mut (), anchor| pages(anchor),
+                &mut |(): &mut (), id| blocks(id),
+                &mut |(): &mut (), anchor| pages(anchor),
             )
             .unwrap_or_else(|error| panic!("plan: {error}"));
         for node in out.nodes {
@@ -301,16 +301,16 @@ impl StrictTarget {
 
 const GLUE_SEEDS: [u64; 3] = [1, 7, 42];
 
-fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
-    let full = synthetic_cpu_bytes(&views);
+fn glue_synthetic_case(name: &str, views: &[ViewProjection], inject: Inject) {
+    let full = synthetic_cpu_bytes(views);
     let budget = full / 3;
-    let (expected, _) = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let (expected, _) = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, views);
     let mut reports = 0;
     for (i, seed) in GLUE_SEEDS.iter().enumerate() {
         // A cap of one byte applies one node per frame; the other seeds apply bursts.
         let cap = if i == 0 { 1 } else { 256 << 10 };
         let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, *seed, cap);
-        let digest = sim.run(&views, inject, 200_000);
+        let digest = sim.run(views, inject, 200_000);
         assert_eq!(digest, expected, "{name} seed {seed}");
         assert!(sim.stats.node_messages > 0);
         reports += sim.stats.missing_reports;
@@ -324,12 +324,12 @@ fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
 
 #[test]
 fn glue_synthetic_orbit_reaches_the_in_process_digest() {
-    glue_synthetic_case("orbit", synth_orbit(), Inject::default());
+    glue_synthetic_case("orbit", &synth_orbit(), Inject::default());
 }
 
 #[test]
 fn glue_synthetic_dolly_reaches_the_in_process_digest() {
-    glue_synthetic_case("dolly", synth_dolly(), Inject::default());
+    glue_synthetic_case("dolly", &synth_dolly(), Inject::default());
 }
 
 #[test]
@@ -340,7 +340,7 @@ fn glue_synthetic_pool_reset_and_driver_replaced_mid_load_converge() {
         forget_zones_on_loss: true,
         ..Inject::default()
     };
-    glue_synthetic_case("orbit+inject", synth_orbit(), inject);
+    glue_synthetic_case("orbit+inject", &synth_orbit(), inject);
 }
 
 #[test]
@@ -401,8 +401,8 @@ fn a_burst_of_node_cells_is_applied_over_several_frames_in_order() {
                 true,
                 false,
                 Some(&mut ()),
-                &mut |_: &mut (), id| blocks(id),
-                &mut |_: &mut (), anchor| pages(anchor),
+                &mut |(): &mut (), id| blocks(id),
+                &mut |(): &mut (), anchor| pages(anchor),
             )
             .unwrap();
         for node in &out.nodes {
@@ -475,8 +475,8 @@ fn the_builder_emits_no_scene_while_cells_are_present() {
                 [800, 600],
                 scale,
                 2.0,
-                |_: &mut (), _| Ok(None),
-                |_: &mut (), _| Err("no pages".to_owned()),
+                |(): &mut (), _| Ok(None),
+                |(): &mut (), _| Err("no pages".to_owned()),
             )
             .unwrap();
         assert!(matches!(step, BuilderStep::Cells(_)));
@@ -508,8 +508,8 @@ fn the_in_process_glue_reaches_the_in_process_digest() {
                     &mut target,
                     Some(&mut ()),
                     false,
-                    &mut |_: &mut (), id| blocks(id),
-                    &mut |_: &mut (), anchor| pages(anchor),
+                    &mut |(): &mut (), id| blocks(id),
+                    &mut |(): &mut (), anchor| pages(anchor),
                 )
                 .unwrap();
             let stats = cells.stats(&h.dataset, &target);
@@ -664,8 +664,8 @@ impl Pair {
                 true,
                 false,
                 Some(&mut ()),
-                &mut |_: &mut (), id| blocks(id),
-                &mut |_: &mut (), anchor| pages(anchor),
+                &mut |(): &mut (), id| blocks(id),
+                &mut |(): &mut (), anchor| pages(anchor),
             )
             .unwrap()
     }
@@ -1563,8 +1563,8 @@ fn a_new_viewer_applies_the_default_length_minimum() {
             &mut target,
             Some(&mut ()),
             false,
-            &mut |_: &mut (), id| blocks(id),
-            &mut |_: &mut (), anchor| pages(anchor),
+            &mut |(): &mut (), id| blocks(id),
+            &mut |(): &mut (), anchor| pages(anchor),
         )
         .unwrap();
     assert_eq!(
@@ -1691,8 +1691,8 @@ fn the_length_minimum_survives_continuity_changes_and_a_new_in_process_update() 
             &mut target,
             Some(&mut ()),
             false,
-            &mut |_: &mut (), id| blocks(id),
-            &mut |_: &mut (), anchor| pages(anchor),
+            &mut |(): &mut (), id| blocks(id),
+            &mut |(): &mut (), anchor| pages(anchor),
         )
         .unwrap();
     let stats = cells.stats(&h.dataset, &target);

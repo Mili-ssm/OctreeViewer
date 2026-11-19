@@ -31,7 +31,7 @@ fn crafted_page(origin: [f32; 3], octants: u32) -> PageEntry {
         1.0_f32.to_bits(),
         0,
         octants,
-        20 | 20 << 16,
+        0x14 | 0x14 << 16,
         20,
         0,
         0,
@@ -434,7 +434,7 @@ fn sample_pixels(scene: &Scene, camera: &OrbitCamera) -> (Vec<[f64; 2]>, usize) 
                 if length < 1.0 {
                     continue;
                 }
-                let mid = [(pa[0] + pb[0]) * 0.5, (pa[1] + pb[1]) * 0.5];
+                let mid = [f64::midpoint(pa[0], pb[0]), f64::midpoint(pa[1], pb[1])];
                 for side in [-0.1, 0.1] {
                     pixels.push([mid[0] - dy / length * side, mid[1] + dx / length * side]);
                 }
@@ -850,7 +850,7 @@ fn ray_box_interval_agrees_with_dense_sampling() {
                 assert!(
                     far - near <= step,
                     "case {case}: {near}..{far} has no sample"
-                )
+                );
             }
             (Some((near, far)), Some((first, last))) => {
                 hits += 1;
@@ -975,8 +975,8 @@ fn pick_in_cell_mode_hits_the_drawn_cell() {
             for iy in 0..12 {
                 for ix in 0..16 {
                     let pixel = [
-                        (ix as f64 + 0.5) / 16.0 * f64::from(WIDTH),
-                        (iy as f64 + 0.5) / 12.0 * f64::from(HEIGHT),
+                        (f64::from(ix) + 0.5) / 16.0 * f64::from(WIDTH),
+                        (f64::from(iy) + 0.5) / 12.0 * f64::from(HEIGHT),
                     ];
                     let Some(ray) = camera_ray(&camera, pixel) else {
                         continue;
@@ -1208,7 +1208,8 @@ fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
             let lod_view = pool.lod_view().expect("cell mode sets a view");
 
             // The active depths per mask slot, as emitted.
-            let mut emitted: std::collections::HashMap<u32, u64> = Default::default();
+            let mut emitted: std::collections::HashMap<u32, u64> =
+                std::collections::HashMap::default();
             for active in &report.plan.active {
                 let node_depth = pool.node_record(active.mask_slot)[19];
                 *emitted.entry(active.mask_slot).or_default() |=
@@ -1226,8 +1227,8 @@ fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
             for iy in 0..10 {
                 for ix in 0..14 {
                     let pixel = [
-                        (ix as f64 + 0.5) / 14.0 * f64::from(WIDTH),
-                        (iy as f64 + 0.5) / 10.0 * f64::from(HEIGHT),
+                        (f64::from(ix) + 0.5) / 14.0 * f64::from(WIDTH),
+                        (f64::from(iy) + 0.5) / 10.0 * f64::from(HEIGHT),
                     ];
                     let Some(ray) = camera_ray(&camera, pixel) else {
                         continue;

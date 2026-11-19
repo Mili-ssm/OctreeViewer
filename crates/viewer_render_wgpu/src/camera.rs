@@ -821,7 +821,7 @@ mod tests {
             assert!(ndc.x.abs() < 1e-5 && ndc.y.abs() < 1e-5);
             assert!((ndc.z - expected_depth).abs() < 1e-5);
         }
-        let center = eye + forward * ((near + far) * 0.5);
+        let center = eye + forward * f64::midpoint(near, far);
         assert!(project(center + up).y > 0.0);
         assert!(project(center + right).x > 0.0);
     }
@@ -1184,7 +1184,7 @@ mod tests {
         viewport: [u32; 2],
     ) -> f64 {
         let center = DVec3::from_array(std::array::from_fn(|axis| {
-            (bounds.min()[axis] + bounds.max()[axis]) * 0.5
+            f64::midpoint(bounds.min()[axis], bounds.max()[axis])
         }));
         let half_diagonal = DVec3::from_array(std::array::from_fn(|axis| {
             (bounds.max()[axis] - bounds.min()[axis]) * 0.5

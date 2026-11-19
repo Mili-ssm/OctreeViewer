@@ -435,6 +435,10 @@ impl PageFrameStamp {
 
 /// The pool, its page and mask tables and the pipelines that draw it. Built from a device only, so
 /// a headless harness and `SurfaceRenderer` share the code.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the flags are independent latches of GPU resource state, not one state machine"
+)]
 pub(crate) struct CellRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -502,6 +506,8 @@ impl CellRenderer {
         color_format: wgpu::TextureFormat,
         capacity: u32,
     ) -> Self {
+        use wgpu::BufferUsages as U;
+        use wgpu::ShaderStages as S;
         assert!(
             (1..=POOL_PAGES).contains(&capacity),
             "pool capacity must be 1..={POOL_PAGES} pages"
@@ -515,7 +521,6 @@ impl CellRenderer {
                 mapped_at_creation: false,
             })
         };
-        use wgpu::BufferUsages as U;
         let instances = buffer(
             "cell-instances",
             pages * PAGE_BYTES,
@@ -595,7 +600,6 @@ impl CellRenderer {
             has_dynamic_offset: false,
             min_binding_size: None,
         };
-        use wgpu::ShaderStages as S;
         let common_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("cell-common-layout"),
             entries: &[
@@ -725,7 +729,7 @@ impl CellRenderer {
                     layout: Some(layout),
                     module,
                     entry_point: Some(entry_point),
-                    compilation_options: Default::default(),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                     cache: None,
                 })
             };
@@ -747,7 +751,7 @@ impl CellRenderer {
             vertex: wgpu::VertexState {
                 module: &draw_module,
                 entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[],
             },
             primitive: wgpu::PrimitiveState {
@@ -759,14 +763,14 @@ impl CellRenderer {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: Some(true),
                 depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: Default::default(),
+            multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &draw_module,
                 entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: color_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -849,7 +853,7 @@ impl CellRenderer {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let mut encoder = device.create_command_encoder(&Default::default());
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         encoder.copy_buffer_to_buffer(&self.draw_args, COUNTER_OFFSET, &staging, 0, COUNTER_BYTES);
         queue.submit([encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();

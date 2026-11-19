@@ -277,10 +277,10 @@ pub(crate) fn pack_level_aligned(
             } else {
                 0
             }
-            | if cell.classification != -1 {
-                PAGE_HAS_CLASS
-            } else {
+            | if cell.classification == -1 {
                 0
+            } else {
+                PAGE_HAS_CLASS
             }
     });
     let mut packed = PackedLevel {
@@ -386,7 +386,10 @@ pub(crate) fn packs_efficiently(cells: &[NodeCell]) -> bool {
         <= MIN_PAGES_ALWAYS_OK.max(MAX_PAGE_FILL_RATIO * cells.len().div_ceil(PAGE_SLOTS))
 }
 
-#[allow(clippy::too_many_arguments)] // private helper of `pack_level`
+#[expect(
+    clippy::too_many_arguments,
+    reason = "private helper of `pack_level`; its inputs are independent"
+)]
 fn close_page(
     packed: &mut PackedLevel,
     level: &NodeCellLevel,

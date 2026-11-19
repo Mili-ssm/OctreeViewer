@@ -24,6 +24,10 @@
 //!   `ViewerCells::take_messages` documents). `levelRequests` is the whole set of levels the
 //!   driver wants (`BigUint64Array` ids with a parallel `Uint8Array` of depths); it is present
 //!   only when the set changed, and an empty set replaces the previous one.
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "wasm-bindgen exports receive JS handles and owned values by value"
+)]
 
 use js_sys::{Array, BigUint64Array, Object, Reflect, Uint8Array};
 use viewer_core::NodeId;
@@ -576,7 +580,10 @@ impl WasmVoxelViewer {
         if !self.cells_requested {
             return;
         }
-        let dataset = self.lod_session.as_ref().map(|session| session.dataset());
+        let dataset = self
+            .lod_session
+            .as_ref()
+            .map(super::super::lod_session::LodSession::dataset);
         let device_ok = self
             .gpu_renderer
             .as_ref()

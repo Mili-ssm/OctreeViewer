@@ -13,7 +13,7 @@ use crate::{
     cell_render::{CellColor, CellFrame},
 };
 
-impl<'window> SurfaceRenderer<'window> {
+impl SurfaceRenderer<'_> {
     /// Presents a frame with the current camera.
     pub fn render(&mut self) -> Result<FrameStatus, GpuRendererError> {
         self.update_hzb_visible_count();
@@ -103,8 +103,12 @@ impl<'window> SurfaceRenderer<'window> {
                     }),
             }),
         );
-        let view = frame.texture.create_view(&Default::default());
-        let depth_view = self.depth_texture.create_view(&Default::default());
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let depth_view = self
+            .depth_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {

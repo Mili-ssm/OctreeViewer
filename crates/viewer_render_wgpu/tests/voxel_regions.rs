@@ -84,7 +84,7 @@ fn assert_disjoint(scene: &RenderScene) {
             assert!(
                 (0..3).any(|axis| {
                     let distance = (f64::from(a.center[axis]) - f64::from(b.center[axis])).abs();
-                    distance >= (f64::from(a.size) + f64::from(b.size)) * 0.5
+                    distance >= f64::midpoint(f64::from(a.size), f64::from(b.size))
                 }),
                 "overlapping cells {a:?} and {b:?}"
             );

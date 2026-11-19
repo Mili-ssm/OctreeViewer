@@ -1,3 +1,7 @@
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "wasm-bindgen exports receive JS handles and owned values by value"
+)]
 use std::sync::{Arc, Mutex};
 
 use viewer_core::BlockId;
@@ -307,7 +311,8 @@ impl WasmSceneBuilder {
         let update = match update.map_err(|message| JsValue::from_str(&message))? {
             BuilderStep::Cells(output) => {
                 // Cells mode never emits a scene: the render worker would drop its pool.
-                self.pending_async_blocks = output.async_priority_order.clone();
+                self.pending_async_blocks
+                    .clone_from(&output.async_priority_order);
                 let lod = self.cells_lod_stats(&output.stats)?;
                 // The same meaning as the CPU path: the ladder rung the plan ran at and the final target.
                 js_sys::Reflect::set(
@@ -343,31 +348,28 @@ impl WasmSceneBuilder {
         set("epoch", &JsValue::from_f64(epoch as f64))?;
         set("needsRefinement", &JsValue::from_bool(needs_refinement))?;
         set("lod", &lod)?;
-        match scene {
-            Some(built) => {
-                let instances = built.voxels.scene.instances();
-                // `Uint8Array::from` copies into JS memory, so the buffer is not a view of the
-                // wasm heap and can be transferred to another worker.
-                let bytes = js_sys::Uint8Array::from(bytemuck::cast_slice::<_, u8>(instances));
-                let block_ids = built
-                    .block_ids
-                    .iter()
-                    .map(|id| JsValue::from_str(&id.get().to_string()))
-                    .collect::<js_sys::Array>();
-                set("sceneBuffer", &bytes.buffer())?;
-                set("instanceCount", &JsValue::from_f64(instances.len() as f64))?;
-                set("blockIds", &block_ids)?;
-                set(
-                    "digest",
-                    &JsValue::from_str(&format!("{:016x}", built.scene_digest())),
-                )?;
-            }
-            None => {
-                set("sceneBuffer", &JsValue::NULL)?;
-                set("instanceCount", &JsValue::from_f64(0.0))?;
-                set("blockIds", &js_sys::Array::new())?;
-                set("digest", &JsValue::NULL)?;
-            }
+        if let Some(built) = scene {
+            let instances = built.voxels.scene.instances();
+            // `Uint8Array::from` copies into JS memory, so the buffer is not a view of the
+            // wasm heap and can be transferred to another worker.
+            let bytes = js_sys::Uint8Array::from(bytemuck::cast_slice::<_, u8>(instances));
+            let block_ids = built
+                .block_ids
+                .iter()
+                .map(|id| JsValue::from_str(&id.get().to_string()))
+                .collect::<js_sys::Array>();
+            set("sceneBuffer", &bytes.buffer())?;
+            set("instanceCount", &JsValue::from_f64(instances.len() as f64))?;
+            set("blockIds", &block_ids)?;
+            set(
+                "digest",
+                &JsValue::from_str(&format!("{:016x}", built.scene_digest())),
+            )?;
+        } else {
+            set("sceneBuffer", &JsValue::NULL)?;
+            set("instanceCount", &JsValue::from_f64(0.0))?;
+            set("blockIds", &js_sys::Array::new())?;
+            set("digest", &JsValue::NULL)?;
         }
         Ok(result.into())
     }

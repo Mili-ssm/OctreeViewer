@@ -18,7 +18,7 @@ struct Tree {
 }
 
 fn width(t: AttributeDataType) -> u64 {
-    use AttributeDataType::*;
+    use AttributeDataType::{F32, F64, I8, I16, I32, I64, U8, U16, U32, U64};
     match t {
         U8 | I8 => 1,
         U16 | I16 => 2,
@@ -31,7 +31,7 @@ fn pct(sorted: &[u64], p: f64) -> u64 {
     sorted[(((sorted.len() - 1) as f64) * p).round() as usize]
 }
 
-/// page_of[n]: anchor index of the page holding n's record; the root's page is the root itself.
+/// `page_of`[n]: anchor index of the page holding n's record; the root's page is the root itself.
 fn page_of(tree: &Tree, k: u32) -> Vec<u32> {
     let mut page = vec![0_u32; tree.parent.len()];
     // nodes are stored parent-before-child
@@ -46,7 +46,7 @@ fn page_of(tree: &Tree, k: u32) -> Vec<u32> {
     page
 }
 
-fn page_stats(tree: &Tree, k: u32, label: &str, extra: serde_json::Value) -> (Vec<u32>, Vec<u64>) {
+fn page_stats(tree: &Tree, k: u32, label: &str, extra: &serde_json::Value) -> (Vec<u32>, Vec<u64>) {
     let page = page_of(tree, k);
     let mut bytes: HashMap<u32, (u64, u64)> = HashMap::new(); // anchor -> (nodes, bytes)
     for n in 0..tree.parent.len() {
@@ -165,10 +165,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             + nb * (8 + 8 + 1 + 8 + 24 + 13 * cols);
         if leaf {
             leaf_slim += slim;
-            leaf_n += 1
+            leaf_n += 1;
         } else {
             int_slim += slim;
-            int_n += 1
+            int_n += 1;
         }
         tree.parent.push(par);
         tree.depth.push(node.level() - a0);
@@ -245,7 +245,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     for k in [3_u32, 4, 5] {
-        let (page, sizes) = page_stats(&tree, k, &label, serde_json::json!({}));
+        let (page, sizes) = page_stats(&tree, k, &label, &serde_json::json!({}));
         let mut pdepth = vec![0_u32; tree.parent.len()];
         for n in 1..tree.parent.len() {
             if tree.depth[n].is_multiple_of(k) {
@@ -307,7 +307,7 @@ fn synthetic(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         ("synthetic_branch8_full", 1.0),
         ("synthetic_branch6", 0.75),
     ] {
-        let mut s = 0x9E3779B97F4A7C15_u64;
+        let mut s = 0x9E37_79B9_7F4A_7C15_u64;
         let mut rnd = move || {
             s ^= s << 13;
             s ^= s >> 7;
@@ -345,14 +345,14 @@ fn synthetic(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 internal
             };
         }
-        let mean = tree.children.iter().map(|c| *c as f64).sum::<f64>()
+        let mean = tree.children.iter().map(|c| f64::from(*c)).sum::<f64>()
             / tree.children.iter().filter(|c| **c > 0).count() as f64;
         for k in [3_u32, 4, 5] {
             page_stats(
                 &tree,
                 k,
                 name,
-                serde_json::json!({"nodes": tree.parent.len(), "max_depth": tree.depth.iter().max(),
+                &serde_json::json!({"nodes": tree.parent.len(), "max_depth": tree.depth.iter().max(),
                 "mean_children_of_internal": mean, "slim_leaf": leaf, "slim_internal": internal}),
             );
         }

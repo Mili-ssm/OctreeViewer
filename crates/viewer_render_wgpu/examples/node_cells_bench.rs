@@ -1,7 +1,7 @@
 //! Walks every node of a real dataset through `PointNodeCellSource` and reports the figures the
 //! R3 stop criteria depend on. Not part of `scripts/check.sh`.
 //!
-//! Usage: node_cells_bench INPUT.oct [MAX_ROWS_PRINTED=10]
+//! Usage: `node_cells_bench` INPUT.oct [`MAX_ROWS_PRINTED=10`]
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::File,
@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let nodes: Vec<_> = hierarchy.query(root).cloned().collect();
     if reader.format_version().uses_pages() {
-        let queried: BTreeSet<_> = nodes.iter().map(|node| node.id()).collect();
+        let queried: BTreeSet<_> = nodes.iter().map(viewer_core::SpatialNode::id).collect();
         let paged: BTreeSet<_> = leaf_flags.keys().copied().collect();
         if queried.len() != nodes.len() || queried != paged {
             return Err(format!("node traversal mismatch: queried {} entries / {} unique, paged {} unique; missing {}, unexpected {}", nodes.len(), queried.len(), paged.len(), paged.difference(&queried).count(), queried.difference(&paged).count()).into());

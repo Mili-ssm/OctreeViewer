@@ -63,12 +63,16 @@ pub struct DeviceLoss {
 fn device_loss(reason: wgpu::DeviceLostReason, message: String) -> DeviceLoss {
     let reason = match reason {
         wgpu::DeviceLostReason::Destroyed => "destroyed",
-        _ => "unknown",
+        wgpu::DeviceLostReason::Unknown => "unknown",
     };
     DeviceLoss { reason, message }
 }
 
 /// GPU renderer for a surface owned by the calling application.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the flags are independent latches of surface state, not one state machine"
+)]
 pub struct SurfaceRenderer<'window> {
     /// Filled by the device-lost callback; the host reads it through `device_loss()`.
     device_loss: Arc<Mutex<Option<DeviceLoss>>>,
@@ -119,7 +123,7 @@ pub struct SurfaceRenderer<'window> {
     coordinate_origin: [f64; 3],
 }
 
-impl<'window> SurfaceRenderer<'window> {
+impl SurfaceRenderer<'_> {
     pub fn surface_format(&self) -> wgpu::TextureFormat {
         self.surface_config.format
     }
@@ -226,7 +230,7 @@ mod pick_tests {
 
     #[test]
     fn pick_chunk_bounds_cover_cube_faces_and_keep_instance_ranges() {
-        let instances = (0..PICK_CHUNK_INSTANCES + 1)
+        let instances = (0..=PICK_CHUNK_INSTANCES)
             .map(|index| InstanceRaw {
                 center: [index as f32, 0.0, 2.0],
                 size: 2.0,
@@ -245,9 +249,9 @@ mod pick_tests {
             (chunks[1].first_instance, chunks[1].instance_count),
             (256, 1)
         );
-        assert!(chunks[0].bounds.min[0] < -1.0 && chunks[0].bounds.min[0] > -1.000001);
-        assert!(chunks[0].bounds.min[1] < -1.0 && chunks[0].bounds.min[1] > -1.000001);
-        assert!(chunks[0].bounds.min[2] < 1.0 && chunks[0].bounds.min[2] > 0.999999);
+        assert!(chunks[0].bounds.min[0] < -1.0 && chunks[0].bounds.min[0] > -1.000_001);
+        assert!(chunks[0].bounds.min[1] < -1.0 && chunks[0].bounds.min[1] > -1.000_001);
+        assert!(chunks[0].bounds.min[2] < 1.0 && chunks[0].bounds.min[2] > 0.999_999);
         assert!(chunks[0].bounds.max[0] > 256.0 && chunks[0].bounds.max[0] < 256.001);
     }
 

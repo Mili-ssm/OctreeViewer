@@ -1,7 +1,7 @@
 //! R3 Task 7c: native measurement of the production cell path (`CellPool` residency + `CellRenderer`
 //! with Hi-Z occlusion) on a real GPU. Throwaway like `coverage_spike`; not part of `check.sh`.
 //!
-//! Usage: cell_pool_bench [--out FILE.json] [--counters] CASE_DIR|ROOT_DIR...
+//! Usage: `cell_pool_bench` [--out FILE.json] [--counters] `CASE_DIR|ROOT_DIR`...
 //! `--counters` only converges
 //! the still pose, then draws once with the per-depth counters on and reports them with the instances
 //! drawn (plain pass), skipping the timing rounds and the moving run (R3 phase 2a record).

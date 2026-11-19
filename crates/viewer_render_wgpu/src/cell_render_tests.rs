@@ -263,7 +263,7 @@ fn finish(
             layout: None,
             module: &module,
             entry_point: Some("main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
     let depth_view = depth.create_view(&wgpu::TextureViewDescriptor {
@@ -285,7 +285,7 @@ fn finish(
         ],
     });
     {
-        let mut pass = encoder.begin_compute_pass(&Default::default());
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.dispatch_workgroups(WIDTH.div_ceil(8), HEIGHT.div_ceil(8), 1);
@@ -357,10 +357,12 @@ fn render_cpu_styled(
         });
     let (color, depth) = target_textures(h);
     let (color_view, depth_view) = (
-        color.create_view(&Default::default()),
-        depth.create_view(&Default::default()),
+        color.create_view(&wgpu::TextureViewDescriptor::default()),
+        depth.create_view(&wgpu::TextureViewDescriptor::default()),
     );
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("cpu-reference"),
@@ -416,10 +418,12 @@ fn render_cells_phases(
     let eye_frame = camera.eye_frame([WIDTH, HEIGHT]).unwrap();
     let (color, depth) = target_textures(h);
     let (color_view, depth_view) = (
-        color.create_view(&Default::default()),
-        depth.create_view(&Default::default()),
+        color.create_view(&wgpu::TextureViewDescriptor::default()),
+        depth.create_view(&wgpu::TextureViewDescriptor::default()),
     );
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     pool.encode_cells(
         &mut encoder,
         &color_view,
@@ -1058,6 +1062,8 @@ fn wgsl_struct_layout(name: &str) -> (Vec<(String, u32)>, u32) {
 
 #[test]
 fn frame_uniform_is_176_bytes_and_matches_the_wgsl_layout() {
+    use crate::cell_render::FrameUniform as F;
+    use core::mem::offset_of;
     assert_eq!(size_of::<crate::cell_render::FrameUniform>(), 176);
     let (members, span) = wgsl_struct_layout("CellFrame");
     assert_eq!(span, 176);
@@ -1087,8 +1093,6 @@ fn frame_uniform_is_176_bytes_and_matches_the_wgsl_layout() {
     ];
     let found: Vec<(&str, u32)> = members.iter().map(|(n, o)| (n.as_str(), *o)).collect();
     assert_eq!(found, expected);
-    use crate::cell_render::FrameUniform as F;
-    use core::mem::offset_of;
     let rust: [(&str, usize); 22] = [
         ("view_proj", offset_of!(F, view_projection)),
         ("num_pages", offset_of!(F, num_pages)),

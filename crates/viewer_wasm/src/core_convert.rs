@@ -2,7 +2,6 @@
 //! writer as the native CLI, with a Blob as input and two OPFS sync access handles as output.
 //! Spools live in the hybrid store (JS RAM segments plus OPFS spill zones). Everything runs in one synchronous call inside a dedicated worker; cancelling means the host
 //! terminates the worker and deletes the partial files.
-
 use std::io;
 
 use viewer_convert_core::{
@@ -113,6 +112,10 @@ pub struct WasmCoreConverter {
     spool_host: SpoolHost,
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "wasm-bindgen exports receive JS handles and owned strings by value"
+)]
 #[wasm_bindgen]
 impl WasmCoreConverter {
     /// `options` is a plain object (see `parse_options`) plus `spoolBudgetBytes`, the RAM the

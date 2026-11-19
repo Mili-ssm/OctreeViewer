@@ -4,7 +4,7 @@ use super::{SurfaceRenderer, error::GpuRendererError};
 
 use crate::{ColorMode, OrbitCamera, RenderScene, SceneBounds, VoxelBuildLimits};
 
-impl<'window> SurfaceRenderer<'window> {
+impl SurfaceRenderer<'_> {
     pub fn max_visible_instances(&self) -> usize {
         self.gpu_budget.max_visible_instances
     }

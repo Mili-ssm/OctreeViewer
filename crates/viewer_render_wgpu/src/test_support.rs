@@ -42,7 +42,7 @@ pub(crate) fn octant_nodes() -> HashMap<NodeId, PoolNode> {
     (0..8)
         .map(|index| {
             let min =
-                std::array::from_fn(|axis| ORIGIN[axis] + half * ((index >> axis) & 1) as f64);
+                std::array::from_fn(|axis| ORIGIN[axis] + half * f64::from((index >> axis) & 1));
             (
                 NodeId::new(index as u64 + 2),
                 PoolNode {
@@ -353,7 +353,7 @@ pub(crate) fn octants_of(
     (0..8)
         .map(|index| {
             let min = std::array::from_fn(|axis| {
-                parent.bounds.min()[axis] + half * ((index >> axis) & 1) as f64
+                parent.bounds.min()[axis] + half * f64::from((index >> axis) & 1)
             });
             (
                 NodeId::new(first_id + index as u64),

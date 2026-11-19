@@ -1,6 +1,10 @@
 //! What the cut wants and what is requested: wanted cut, level ranges and requests.
 
-use super::*;
+use super::{
+    BTreeSet, CellCutEntry, CellCutError, CellCutNode, CellGrid, CellPool, Ctx, FastMap, FastSet,
+    LevelKey, NodeId, PAGE_SLOTS, PoolNode, capped, capped_range, cell_cut_ranged,
+    cell_depth_range, in_cell_range, representative_depth, served_depth,
+};
 
 /// `ceil(min(points, 8^(depth - node_depth)) / 512)` pages, at least one.
 pub(super) fn estimate_pages(points: u64, depth: u8, node_depth: u8) -> usize {
@@ -16,6 +20,10 @@ pub(super) fn estimate_pages(points: u64, depth: u8, node_depth: u8) -> usize {
 impl CellPool {
     /// Wanted entries with resident = stored (minus the offenders and below the caps). A
     /// `DescendantTooFine` adds its descendant to `offenders` and runs again.
+    #[expect(
+        clippy::unused_self,
+        reason = "a `CellPool` method; its callers hold the pool and the search rules belong to it"
+    )]
     pub(super) fn wanted_cut(
         &self,
         cut: &[NodeId],

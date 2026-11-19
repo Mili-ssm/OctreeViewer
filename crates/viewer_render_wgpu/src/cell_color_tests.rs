@@ -211,11 +211,7 @@ fn shader_modes_match_the_cpu_path_on_every_adapter() {
     for mode in [ColorMode::Rgb, ColorMode::Intensity] {
         let mut case = Case::new(mode);
         case.class = 5;
-        cases.push((
-            "with class",
-            case,
-            if mode == ColorMode::Rgb { 0 } else { 1 },
-        ));
+        cases.push(("with class", case, u8::from(mode != ColorMode::Rgb)));
     }
     for_each_adapter(CellLimitMode::Auto, |h| {
         if !h.runs_test_pool {

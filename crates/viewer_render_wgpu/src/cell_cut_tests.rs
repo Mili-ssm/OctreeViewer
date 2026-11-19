@@ -131,7 +131,7 @@ fn oracle_octant(
     let mut lo = [0.0; 3];
     let mut hi = [0.0; 3];
     for a in 0..3 {
-        let mid = (bounds.min()[a] + bounds.max()[a]) / 2.0;
+        let mid = f64::midpoint(bounds.min()[a], bounds.max()[a]);
         if (octant >> (2 - a)) & 1 == 1 {
             (lo[a], hi[a]) = (mid, bounds.max()[a]);
         } else {
@@ -179,7 +179,10 @@ fn oracle_octant(
 
 /// Checks every non-masked octant of `entries` against the oracle (with the spanning-level
 /// promotion applied by hand). Returns `(octants checked, octants below the finest level)`.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 fn assert_octant_oracle(
     entries: &[CellCutEntry],
     nodes: &HashMap<NodeId, CellCutNode>,
@@ -235,7 +238,10 @@ fn assert_octant_oracle(
 }
 
 #[test]
-#[allow(clippy::type_complexity)]
+#[expect(
+    clippy::type_complexity,
+    reason = "a test rig returning a tuple of fixtures; a named type would be used once"
+)]
 fn octant_choice_matches_the_brute_force_oracle() {
     let grid = dataset_grid(ORIGIN);
     let replacement = fixture_nodes(&fixture(HierarchySemantics::Replacement));
@@ -1119,54 +1125,54 @@ fn visible_volume_equals_covered_volume() {
 }
 
 const GOLDEN: &[(&str, u64)] = &[
-    ("root/fit/2px", 0x7d1169d9327e7815),
-    ("root/fit/4px", 0x42f9363f7b47c3c8),
-    ("root/fit/8px", 0x5153783bc29513cb),
-    ("root/orbit/2px", 0x2fa845aa5f346e25),
-    ("root/orbit/4px", 0xc94fe0686b55ff68),
-    ("root/orbit/8px", 0xa8e7a617daf0527b),
-    ("root/zoom/2px", 0x874f97c38baa823a),
-    ("root/zoom/4px", 0xf0c6b585db2b31a5),
-    ("root/zoom/8px", 0x19329f184c5ad560),
-    ("root/pan/2px", 0x68ec0d2c4b5afa9f),
-    ("root/pan/4px", 0x8f0c75bc680f980a),
-    ("root/pan/8px", 0x7bbd7c33444d8725),
-    ("children/fit/2px", 0xa51da02388ee6c85),
-    ("children/fit/4px", 0xa51da02388ee6c85),
-    ("children/fit/8px", 0xa51da02388ee6c85),
-    ("children/orbit/2px", 0xa51da02388ee6c85),
-    ("children/orbit/4px", 0xa51da02388ee6c85),
-    ("children/orbit/8px", 0xa51da02388ee6c85),
-    ("children/zoom/2px", 0xa51da02388ee6c85),
-    ("children/zoom/4px", 0xa51da02388ee6c85),
-    ("children/zoom/8px", 0xa51da02388ee6c85),
-    ("children/pan/2px", 0xa51da02388ee6c85),
-    ("children/pan/4px", 0xa51da02388ee6c85),
-    ("children/pan/8px", 0xa51da02388ee6c85),
-    ("mixed/fit/2px", 0x3d645e2f3ea980ba),
-    ("mixed/fit/4px", 0xde418b595f37d282),
-    ("mixed/fit/8px", 0xdb555f7c706e7e1e),
-    ("mixed/orbit/2px", 0xa23a9cfb8cb4df9e),
-    ("mixed/orbit/4px", 0x5301c3f944a73fce),
-    ("mixed/orbit/8px", 0xb8531a79d519f47e),
-    ("mixed/zoom/2px", 0xcfb3dd69675f533e),
-    ("mixed/zoom/4px", 0xcfb3dd69675f533e),
-    ("mixed/zoom/8px", 0x3d645e2f3ea980ba),
-    ("mixed/pan/2px", 0x5ee017fede23060c),
-    ("mixed/pan/4px", 0xcda82b8f251e4148),
-    ("mixed/pan/8px", 0x9d1b8179261646b0),
-    ("wide_chain/fit/2px", 0x6ddc9d7207e4afc9),
-    ("wide_chain/fit/4px", 0xb47d3a451a1e318d),
-    ("wide_chain/fit/8px", 0x53542e0c8f481245),
-    ("wide_chain/orbit/2px", 0x403a506cb10ea159),
-    ("wide_chain/orbit/4px", 0xe894eeff470f1055),
-    ("wide_chain/orbit/8px", 0x89c1f98705838a65),
-    ("wide_chain/zoom/2px", 0x666bc1dea4c36f31),
-    ("wide_chain/zoom/4px", 0xd5ddb3e23053144d),
-    ("wide_chain/zoom/8px", 0xf779a7f9f1450615),
-    ("wide_chain/pan/2px", 0x016225300c8668c9),
-    ("wide_chain/pan/4px", 0xae20372b87dfb69d),
-    ("wide_chain/pan/8px", 0x932b0084c615954d),
+    ("root/fit/2px", 0x7d11_69d9_327e_7815),
+    ("root/fit/4px", 0x42f9_363f_7b47_c3c8),
+    ("root/fit/8px", 0x5153_783b_c295_13cb),
+    ("root/orbit/2px", 0x2fa8_45aa_5f34_6e25),
+    ("root/orbit/4px", 0xc94f_e068_6b55_ff68),
+    ("root/orbit/8px", 0xa8e7_a617_daf0_527b),
+    ("root/zoom/2px", 0x874f_97c3_8baa_823a),
+    ("root/zoom/4px", 0xf0c6_b585_db2b_31a5),
+    ("root/zoom/8px", 0x1932_9f18_4c5a_d560),
+    ("root/pan/2px", 0x68ec_0d2c_4b5a_fa9f),
+    ("root/pan/4px", 0x8f0c_75bc_680f_980a),
+    ("root/pan/8px", 0x7bbd_7c33_444d_8725),
+    ("children/fit/2px", 0xa51d_a023_88ee_6c85),
+    ("children/fit/4px", 0xa51d_a023_88ee_6c85),
+    ("children/fit/8px", 0xa51d_a023_88ee_6c85),
+    ("children/orbit/2px", 0xa51d_a023_88ee_6c85),
+    ("children/orbit/4px", 0xa51d_a023_88ee_6c85),
+    ("children/orbit/8px", 0xa51d_a023_88ee_6c85),
+    ("children/zoom/2px", 0xa51d_a023_88ee_6c85),
+    ("children/zoom/4px", 0xa51d_a023_88ee_6c85),
+    ("children/zoom/8px", 0xa51d_a023_88ee_6c85),
+    ("children/pan/2px", 0xa51d_a023_88ee_6c85),
+    ("children/pan/4px", 0xa51d_a023_88ee_6c85),
+    ("children/pan/8px", 0xa51d_a023_88ee_6c85),
+    ("mixed/fit/2px", 0x3d64_5e2f_3ea9_80ba),
+    ("mixed/fit/4px", 0xde41_8b59_5f37_d282),
+    ("mixed/fit/8px", 0xdb55_5f7c_706e_7e1e),
+    ("mixed/orbit/2px", 0xa23a_9cfb_8cb4_df9e),
+    ("mixed/orbit/4px", 0x5301_c3f9_44a7_3fce),
+    ("mixed/orbit/8px", 0xb853_1a79_d519_f47e),
+    ("mixed/zoom/2px", 0xcfb3_dd69_675f_533e),
+    ("mixed/zoom/4px", 0xcfb3_dd69_675f_533e),
+    ("mixed/zoom/8px", 0x3d64_5e2f_3ea9_80ba),
+    ("mixed/pan/2px", 0x5ee0_17fe_de23_060c),
+    ("mixed/pan/4px", 0xcda8_2b8f_251e_4148),
+    ("mixed/pan/8px", 0x9d1b_8179_2616_46b0),
+    ("wide_chain/fit/2px", 0x6ddc_9d72_07e4_afc9),
+    ("wide_chain/fit/4px", 0xb47d_3a45_1a1e_318d),
+    ("wide_chain/fit/8px", 0x5354_2e0c_8f48_1245),
+    ("wide_chain/orbit/2px", 0x403a_506c_b10e_a159),
+    ("wide_chain/orbit/4px", 0xe894_eeff_470f_1055),
+    ("wide_chain/orbit/8px", 0x89c1_f987_0583_8a65),
+    ("wide_chain/zoom/2px", 0x666b_c1de_a4c3_6f31),
+    ("wide_chain/zoom/4px", 0xd5dd_b3e2_3053_144d),
+    ("wide_chain/zoom/8px", 0xf779_a7f9_f145_0615),
+    ("wide_chain/pan/2px", 0x0162_2530_0c86_68c9),
+    ("wide_chain/pan/4px", 0xae20_372b_87df_b69d),
+    ("wide_chain/pan/8px", 0x932b_0084_c615_954d),
 ];
 
 #[test]
@@ -1210,10 +1216,13 @@ fn cell_cut_digest_golden() {
             .zip(GOLDEN)
             .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
     if !matches {
+        use std::fmt::Write as _;
         let table: String = actual
             .iter()
-            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
-            .collect();
+            .fold(String::new(), |mut table, (name, hash)| {
+                let _ = writeln!(table, "    (\"{name}\", {hash:#018x}),");
+                table
+            });
         panic!("digest table changed; actual:\n{table}");
     }
 }
@@ -1269,7 +1278,7 @@ fn run_cell_mode_from(
                     None,
                 )
                 .unwrap_or(data.buildable.0),
-                octants_in_front(&view, origin, data.bounds, [ProbeBox::Geometric; 8]),
+                octants_in_front(&view, origin, data.bounds, &[ProbeBox::Geometric; 8]),
             )
         }),
         prev,
@@ -1297,54 +1306,54 @@ fn cell_mode_digest(entries: &[CellCutEntry]) -> u64 {
 }
 
 const CELL_MODE_GOLDEN: &[(&str, u64)] = &[
-    ("root/fit/2px", 0xb7a6108de90de984),
-    ("root/fit/4px", 0xd2299d92d9d7c4f8),
-    ("root/fit/8px", 0x75547f15b3e6b04d),
-    ("root/orbit/2px", 0xafbbad41b3073b15),
-    ("root/orbit/4px", 0x68fbbe553bc0df38),
-    ("root/orbit/8px", 0x95373c17ce63458c),
-    ("root/zoom/2px", 0xac3f07980f6807b6),
-    ("root/zoom/4px", 0x601f4a2add672d4a),
-    ("root/zoom/8px", 0x34132421ab97fce2),
-    ("root/pan/2px", 0xc29416bf891a7071),
-    ("root/pan/4px", 0x685de424d4ecc74d),
-    ("root/pan/8px", 0x32c6e06d86751818),
-    ("children/fit/2px", 0x13bde445aeb00213),
-    ("children/fit/4px", 0x13bde445aeb00213),
-    ("children/fit/8px", 0x13bde445aeb00213),
-    ("children/orbit/2px", 0x13bde445aeb00213),
-    ("children/orbit/4px", 0x13bde445aeb00213),
-    ("children/orbit/8px", 0x13bde445aeb00213),
-    ("children/zoom/2px", 0x13bde445aeb00213),
-    ("children/zoom/4px", 0x13bde445aeb00213),
-    ("children/zoom/8px", 0x13bde445aeb00213),
-    ("children/pan/2px", 0x13bde445aeb00213),
-    ("children/pan/4px", 0x13bde445aeb00213),
-    ("children/pan/8px", 0x13bde445aeb00213),
-    ("mixed/fit/2px", 0x694d8cc7c5da4624),
-    ("mixed/fit/4px", 0x1f4de304ed6044aa),
-    ("mixed/fit/8px", 0xab84b87227b8b910),
-    ("mixed/orbit/2px", 0xfc02a455261eb685),
-    ("mixed/orbit/4px", 0x3210ab3c09ebb2c1),
-    ("mixed/orbit/8px", 0xa3e5ba3f2093d275),
-    ("mixed/zoom/2px", 0x8324526e8e5a7e4a),
-    ("mixed/zoom/4px", 0xe77a3a919ae1de0f),
-    ("mixed/zoom/8px", 0xeab80e4d1b711be2),
-    ("mixed/pan/2px", 0xc7742bad8a78b466),
-    ("mixed/pan/4px", 0x897ca9ee55c730a7),
-    ("mixed/pan/8px", 0x59bd7b46b6b800c8),
-    ("wide_chain/fit/2px", 0x0ea8f8bb1d4784b0),
-    ("wide_chain/fit/4px", 0x44ccb8b4c6c48b69),
-    ("wide_chain/fit/8px", 0x33d7fc184ec5f146),
-    ("wide_chain/orbit/2px", 0x1bd3f5495a1e53d2),
-    ("wide_chain/orbit/4px", 0xbd97125d9fc8eaa3),
-    ("wide_chain/orbit/8px", 0x826477681b53cdda),
-    ("wide_chain/zoom/2px", 0xae847aca4bfc48a0),
-    ("wide_chain/zoom/4px", 0xda8655a91500bd9d),
-    ("wide_chain/zoom/8px", 0x56237d61360ab14a),
-    ("wide_chain/pan/2px", 0x4a6f77f53469c8c1),
-    ("wide_chain/pan/4px", 0x2ad6c97ab3882a7b),
-    ("wide_chain/pan/8px", 0x2891f51d489f0cbe),
+    ("root/fit/2px", 0xb7a6_108d_e90d_e984),
+    ("root/fit/4px", 0xd229_9d92_d9d7_c4f8),
+    ("root/fit/8px", 0x7554_7f15_b3e6_b04d),
+    ("root/orbit/2px", 0xafbb_ad41_b307_3b15),
+    ("root/orbit/4px", 0x68fb_be55_3bc0_df38),
+    ("root/orbit/8px", 0x9537_3c17_ce63_458c),
+    ("root/zoom/2px", 0xac3f_0798_0f68_07b6),
+    ("root/zoom/4px", 0x601f_4a2a_dd67_2d4a),
+    ("root/zoom/8px", 0x3413_2421_ab97_fce2),
+    ("root/pan/2px", 0xc294_16bf_891a_7071),
+    ("root/pan/4px", 0x685d_e424_d4ec_c74d),
+    ("root/pan/8px", 0x32c6_e06d_8675_1818),
+    ("children/fit/2px", 0x13bd_e445_aeb0_0213),
+    ("children/fit/4px", 0x13bd_e445_aeb0_0213),
+    ("children/fit/8px", 0x13bd_e445_aeb0_0213),
+    ("children/orbit/2px", 0x13bd_e445_aeb0_0213),
+    ("children/orbit/4px", 0x13bd_e445_aeb0_0213),
+    ("children/orbit/8px", 0x13bd_e445_aeb0_0213),
+    ("children/zoom/2px", 0x13bd_e445_aeb0_0213),
+    ("children/zoom/4px", 0x13bd_e445_aeb0_0213),
+    ("children/zoom/8px", 0x13bd_e445_aeb0_0213),
+    ("children/pan/2px", 0x13bd_e445_aeb0_0213),
+    ("children/pan/4px", 0x13bd_e445_aeb0_0213),
+    ("children/pan/8px", 0x13bd_e445_aeb0_0213),
+    ("mixed/fit/2px", 0x694d_8cc7_c5da_4624),
+    ("mixed/fit/4px", 0x1f4d_e304_ed60_44aa),
+    ("mixed/fit/8px", 0xab84_b872_27b8_b910),
+    ("mixed/orbit/2px", 0xfc02_a455_261e_b685),
+    ("mixed/orbit/4px", 0x3210_ab3c_09eb_b2c1),
+    ("mixed/orbit/8px", 0xa3e5_ba3f_2093_d275),
+    ("mixed/zoom/2px", 0x8324_526e_8e5a_7e4a),
+    ("mixed/zoom/4px", 0xe77a_3a91_9ae1_de0f),
+    ("mixed/zoom/8px", 0xeab8_0e4d_1b71_1be2),
+    ("mixed/pan/2px", 0xc774_2bad_8a78_b466),
+    ("mixed/pan/4px", 0x897c_a9ee_55c7_30a7),
+    ("mixed/pan/8px", 0x59bd_7b46_b6b8_00c8),
+    ("wide_chain/fit/2px", 0x0ea8_f8bb_1d47_84b0),
+    ("wide_chain/fit/4px", 0x44cc_b8b4_c6c4_8b69),
+    ("wide_chain/fit/8px", 0x33d7_fc18_4ec5_f146),
+    ("wide_chain/orbit/2px", 0x1bd3_f549_5a1e_53d2),
+    ("wide_chain/orbit/4px", 0xbd97_125d_9fc8_eaa3),
+    ("wide_chain/orbit/8px", 0x8264_7768_1b53_cdda),
+    ("wide_chain/zoom/2px", 0xae84_7aca_4bfc_48a0),
+    ("wide_chain/zoom/4px", 0xda86_55a9_1500_bd9d),
+    ("wide_chain/zoom/8px", 0x5623_7d61_360a_b14a),
+    ("wide_chain/pan/2px", 0x4a6f_77f5_3469_c8c1),
+    ("wide_chain/pan/4px", 0x2ad6_c97a_b388_2a7b),
+    ("wide_chain/pan/8px", 0x2891_f51d_489f_0cbe),
 ];
 
 /// The golden fixtures of `cell_cut_digest_golden`, through the cell-mode path. Deleting octant
@@ -1388,10 +1397,13 @@ fn cell_cut_digest_golden_in_cell_mode() {
             .zip(CELL_MODE_GOLDEN)
             .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
     if !matches {
+        use std::fmt::Write as _;
         let table: String = actual
             .iter()
-            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
-            .collect();
+            .fold(String::new(), |mut table, (name, hash)| {
+                let _ = writeln!(table, "    (\"{name}\", {hash:#018x}),");
+                table
+            });
         panic!("cell-mode digest table changed; actual:\n{table}");
     }
 }
@@ -1421,63 +1433,66 @@ fn assert_cell_mode_table(actual: &[(String, u64)], golden: &[(&str, u64)]) {
             .zip(golden)
             .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
     if !matches {
+        use std::fmt::Write as _;
         let table: String = actual
             .iter()
-            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
-            .collect();
+            .fold(String::new(), |mut table, (name, hash)| {
+                let _ = writeln!(table, "    (\"{name}\", {hash:#018x}),");
+                table
+            });
         panic!("cell-mode digest table changed; actual:\n{table}");
     }
 }
 
 const CELL_PLAIN_GOLDEN: &[(&str, u64)] = &[
-    ("root/fit/2px", 0xaef9278de422fa18),
-    ("root/fit/4px", 0xc9795d92d4ea0be0),
-    ("root/fit/8px", 0x7e082615b8d74e41),
-    ("root/orbit/2px", 0xb85afe41b7e69ddd),
-    ("root/orbit/4px", 0x604b7e5536d32620),
-    ("root/orbit/8px", 0x8c838d17c9729a00),
-    ("root/zoom/2px", 0xa38496980a71a6d6),
-    ("root/zoom/4px", 0x68cf892ae254e4af),
-    ("root/zoom/8px", 0x2b7aaf21a6be7b9c),
-    ("root/pan/2px", 0xb9fef7bf8443b724),
-    ("root/pan/4px", 0x5fc56024d0132c8a),
-    ("root/pan/8px", 0x3b7df96d8b68ad99),
-    ("children/fit/2px", 0x037adad8de9fe4bb),
-    ("children/fit/4px", 0x037adad8de9fe4bb),
-    ("children/fit/8px", 0x037adad8de9fe4bb),
-    ("children/orbit/2px", 0x037adad8de9fe4bb),
-    ("children/orbit/4px", 0x037adad8de9fe4bb),
-    ("children/orbit/8px", 0x037adad8de9fe4bb),
-    ("children/zoom/2px", 0x037adad8de9fe4bb),
-    ("children/zoom/4px", 0x037adad8de9fe4bb),
-    ("children/zoom/8px", 0x037adad8de9fe4bb),
-    ("children/pan/2px", 0x037adad8de9fe4bb),
-    ("children/pan/4px", 0x037adad8de9fe4bb),
-    ("children/pan/8px", 0x037adad8de9fe4bb),
-    ("mixed/fit/2px", 0x4faa2ba082dd7c5e),
-    ("mixed/fit/4px", 0x61994f65d21e119c),
-    ("mixed/fit/8px", 0x1d4a879a36dccefa),
-    ("mixed/orbit/2px", 0x6ff2242df0e3ea77),
-    ("mixed/orbit/4px", 0xa850a06eea9f0a23),
-    ("mixed/orbit/8px", 0xa97a938e709d65eb),
-    ("mixed/zoom/2px", 0x6fbaf3008d0c0e58),
-    ("mixed/zoom/4px", 0x6fbaf3008d0c0e58),
-    ("mixed/zoom/8px", 0x4faa2ba082dd7c5e),
-    ("mixed/pan/2px", 0x30c7dedfc2986571),
-    ("mixed/pan/4px", 0x435ad8cbd0999bb2),
-    ("mixed/pan/8px", 0xd86263a68ac2fb37),
-    ("wide_chain/fit/2px", 0x8c8444837cfa64a2),
-    ("wide_chain/fit/4px", 0xe3bcd88762b1ce2f),
-    ("wide_chain/fit/8px", 0xca00b8b6aacb2e20),
-    ("wide_chain/orbit/2px", 0xbdfe2431a72fe990),
-    ("wide_chain/orbit/4px", 0x02fecc09d5d4a459),
-    ("wide_chain/orbit/8px", 0x8b0bf8214166cea4),
-    ("wide_chain/zoom/2px", 0x981196c8652708ae),
-    ("wide_chain/zoom/4px", 0x57ebc499b2d144f6),
-    ("wide_chain/zoom/8px", 0x7dd6d7bde743beb4),
-    ("wide_chain/pan/2px", 0x907628ca0a00650c),
-    ("wide_chain/pan/4px", 0x64dd4a0b49245970),
-    ("wide_chain/pan/8px", 0x31a8cc73280abf9e),
+    ("root/fit/2px", 0xaef9_278d_e422_fa18),
+    ("root/fit/4px", 0xc979_5d92_d4ea_0be0),
+    ("root/fit/8px", 0x7e08_2615_b8d7_4e41),
+    ("root/orbit/2px", 0xb85a_fe41_b7e6_9ddd),
+    ("root/orbit/4px", 0x604b_7e55_36d3_2620),
+    ("root/orbit/8px", 0x8c83_8d17_c972_9a00),
+    ("root/zoom/2px", 0xa384_9698_0a71_a6d6),
+    ("root/zoom/4px", 0x68cf_892a_e254_e4af),
+    ("root/zoom/8px", 0x2b7a_af21_a6be_7b9c),
+    ("root/pan/2px", 0xb9fe_f7bf_8443_b724),
+    ("root/pan/4px", 0x5fc5_6024_d013_2c8a),
+    ("root/pan/8px", 0x3b7d_f96d_8b68_ad99),
+    ("children/fit/2px", 0x037a_dad8_de9f_e4bb),
+    ("children/fit/4px", 0x037a_dad8_de9f_e4bb),
+    ("children/fit/8px", 0x037a_dad8_de9f_e4bb),
+    ("children/orbit/2px", 0x037a_dad8_de9f_e4bb),
+    ("children/orbit/4px", 0x037a_dad8_de9f_e4bb),
+    ("children/orbit/8px", 0x037a_dad8_de9f_e4bb),
+    ("children/zoom/2px", 0x037a_dad8_de9f_e4bb),
+    ("children/zoom/4px", 0x037a_dad8_de9f_e4bb),
+    ("children/zoom/8px", 0x037a_dad8_de9f_e4bb),
+    ("children/pan/2px", 0x037a_dad8_de9f_e4bb),
+    ("children/pan/4px", 0x037a_dad8_de9f_e4bb),
+    ("children/pan/8px", 0x037a_dad8_de9f_e4bb),
+    ("mixed/fit/2px", 0x4faa_2ba0_82dd_7c5e),
+    ("mixed/fit/4px", 0x6199_4f65_d21e_119c),
+    ("mixed/fit/8px", 0x1d4a_879a_36dc_cefa),
+    ("mixed/orbit/2px", 0x6ff2_242d_f0e3_ea77),
+    ("mixed/orbit/4px", 0xa850_a06e_ea9f_0a23),
+    ("mixed/orbit/8px", 0xa97a_938e_709d_65eb),
+    ("mixed/zoom/2px", 0x6fba_f300_8d0c_0e58),
+    ("mixed/zoom/4px", 0x6fba_f300_8d0c_0e58),
+    ("mixed/zoom/8px", 0x4faa_2ba0_82dd_7c5e),
+    ("mixed/pan/2px", 0x30c7_dedf_c298_6571),
+    ("mixed/pan/4px", 0x435a_d8cb_d099_9bb2),
+    ("mixed/pan/8px", 0xd862_63a6_8ac2_fb37),
+    ("wide_chain/fit/2px", 0x8c84_4483_7cfa_64a2),
+    ("wide_chain/fit/4px", 0xe3bc_d887_62b1_ce2f),
+    ("wide_chain/fit/8px", 0xca00_b8b6_aacb_2e20),
+    ("wide_chain/orbit/2px", 0xbdfe_2431_a72f_e990),
+    ("wide_chain/orbit/4px", 0x02fe_cc09_d5d4_a459),
+    ("wide_chain/orbit/8px", 0x8b0b_f821_4166_cea4),
+    ("wide_chain/zoom/2px", 0x9811_96c8_6527_08ae),
+    ("wide_chain/zoom/4px", 0x57eb_c499_b2d1_44f6),
+    ("wide_chain/zoom/8px", 0x7dd6_d7bd_e743_beb4),
+    ("wide_chain/pan/2px", 0x9076_28ca_0a00_650c),
+    ("wide_chain/pan/4px", 0x64dd_4a0b_4924_5970),
+    ("wide_chain/pan/8px", 0x31a8_cc73_280a_bf9e),
 ];
 
 /// The plain `cell_cut` computes through `cell_cut_with` (no range input, no previous state).
@@ -1518,82 +1533,136 @@ fn cell_cut_digest_golden_of_the_plain_cut_in_cell_mode() {
 }
 
 const CELL_STEPPING_GOLDEN: &[(&str, u64)] = &[
-    ("root/fit>orbit/8>2px/all_resident", 0xafbbad41b3073b15),
-    ("root/fit>orbit/8>2px/only_drawn", 0xafbbad41b3073b15),
-    ("root/fit>orbit/2>8px/all_resident", 0x95373c17ce63458c),
-    ("root/fit>orbit/2>8px/only_drawn", 0x95373c17ce63458c),
-    ("root/orbit>zoom/8>2px/all_resident", 0xac3f07980f6807b6),
-    ("root/orbit>zoom/8>2px/only_drawn", 0xac3f07980f6807b6),
-    ("root/orbit>zoom/2>8px/all_resident", 0x34132421ab97fce2),
-    ("root/orbit>zoom/2>8px/only_drawn", 0x34132421ab97fce2),
-    ("root/zoom>pan/8>2px/all_resident", 0xc29416bf891a7071),
-    ("root/zoom>pan/8>2px/only_drawn", 0xc29416bf891a7071),
-    ("root/zoom>pan/2>8px/all_resident", 0x32c6e06d86751818),
-    ("root/zoom>pan/2>8px/only_drawn", 0x32c6e06d86751818),
-    ("root/pan>fit/8>2px/all_resident", 0xb7a6108de90de984),
-    ("root/pan>fit/8>2px/only_drawn", 0xb7a6108de90de984),
-    ("root/pan>fit/2>8px/all_resident", 0x75547f15b3e6b04d),
-    ("root/pan>fit/2>8px/only_drawn", 0x75547f15b3e6b04d),
-    ("children/fit>orbit/8>2px/all_resident", 0x13bde445aeb00213),
-    ("children/fit>orbit/8>2px/only_drawn", 0x13bde445aeb00213),
-    ("children/fit>orbit/2>8px/all_resident", 0x13bde445aeb00213),
-    ("children/fit>orbit/2>8px/only_drawn", 0x13bde445aeb00213),
-    ("children/orbit>zoom/8>2px/all_resident", 0x13bde445aeb00213),
-    ("children/orbit>zoom/8>2px/only_drawn", 0x13bde445aeb00213),
-    ("children/orbit>zoom/2>8px/all_resident", 0x13bde445aeb00213),
-    ("children/orbit>zoom/2>8px/only_drawn", 0x13bde445aeb00213),
-    ("children/zoom>pan/8>2px/all_resident", 0x13bde445aeb00213),
-    ("children/zoom>pan/8>2px/only_drawn", 0x13bde445aeb00213),
-    ("children/zoom>pan/2>8px/all_resident", 0x13bde445aeb00213),
-    ("children/zoom>pan/2>8px/only_drawn", 0x13bde445aeb00213),
-    ("children/pan>fit/8>2px/all_resident", 0x13bde445aeb00213),
-    ("children/pan>fit/8>2px/only_drawn", 0x13bde445aeb00213),
-    ("children/pan>fit/2>8px/all_resident", 0x13bde445aeb00213),
-    ("children/pan>fit/2>8px/only_drawn", 0x13bde445aeb00213),
-    ("mixed/fit>orbit/8>2px/all_resident", 0xfc02a455261eb685),
-    ("mixed/fit>orbit/8>2px/only_drawn", 0xfc02a455261eb685),
-    ("mixed/fit>orbit/2>8px/all_resident", 0xa3e5ba3f2093d275),
-    ("mixed/fit>orbit/2>8px/only_drawn", 0xa3e5ba3f2093d275),
-    ("mixed/orbit>zoom/8>2px/all_resident", 0x8324526e8e5a7e4a),
-    ("mixed/orbit>zoom/8>2px/only_drawn", 0x8324526e8e5a7e4a),
-    ("mixed/orbit>zoom/2>8px/all_resident", 0xeab80e4d1b711be2),
-    ("mixed/orbit>zoom/2>8px/only_drawn", 0xeab80e4d1b711be2),
-    ("mixed/zoom>pan/8>2px/all_resident", 0xc7742bad8a78b466),
-    ("mixed/zoom>pan/8>2px/only_drawn", 0xc7742bad8a78b466),
-    ("mixed/zoom>pan/2>8px/all_resident", 0x59bd7b46b6b800c8),
-    ("mixed/zoom>pan/2>8px/only_drawn", 0x59bd7b46b6b800c8),
-    ("mixed/pan>fit/8>2px/all_resident", 0x694d8cc7c5da4624),
-    ("mixed/pan>fit/8>2px/only_drawn", 0x694d8cc7c5da4624),
-    ("mixed/pan>fit/2>8px/all_resident", 0xab84b87227b8b910),
-    ("mixed/pan>fit/2>8px/only_drawn", 0xab84b87227b8b910),
+    ("root/fit>orbit/8>2px/all_resident", 0xafbb_ad41_b307_3b15),
+    ("root/fit>orbit/8>2px/only_drawn", 0xafbb_ad41_b307_3b15),
+    ("root/fit>orbit/2>8px/all_resident", 0x9537_3c17_ce63_458c),
+    ("root/fit>orbit/2>8px/only_drawn", 0x9537_3c17_ce63_458c),
+    ("root/orbit>zoom/8>2px/all_resident", 0xac3f_0798_0f68_07b6),
+    ("root/orbit>zoom/8>2px/only_drawn", 0xac3f_0798_0f68_07b6),
+    ("root/orbit>zoom/2>8px/all_resident", 0x3413_2421_ab97_fce2),
+    ("root/orbit>zoom/2>8px/only_drawn", 0x3413_2421_ab97_fce2),
+    ("root/zoom>pan/8>2px/all_resident", 0xc294_16bf_891a_7071),
+    ("root/zoom>pan/8>2px/only_drawn", 0xc294_16bf_891a_7071),
+    ("root/zoom>pan/2>8px/all_resident", 0x32c6_e06d_8675_1818),
+    ("root/zoom>pan/2>8px/only_drawn", 0x32c6_e06d_8675_1818),
+    ("root/pan>fit/8>2px/all_resident", 0xb7a6_108d_e90d_e984),
+    ("root/pan>fit/8>2px/only_drawn", 0xb7a6_108d_e90d_e984),
+    ("root/pan>fit/2>8px/all_resident", 0x7554_7f15_b3e6_b04d),
+    ("root/pan>fit/2>8px/only_drawn", 0x7554_7f15_b3e6_b04d),
+    (
+        "children/fit>orbit/8>2px/all_resident",
+        0x13bd_e445_aeb0_0213,
+    ),
+    ("children/fit>orbit/8>2px/only_drawn", 0x13bd_e445_aeb0_0213),
+    (
+        "children/fit>orbit/2>8px/all_resident",
+        0x13bd_e445_aeb0_0213,
+    ),
+    ("children/fit>orbit/2>8px/only_drawn", 0x13bd_e445_aeb0_0213),
+    (
+        "children/orbit>zoom/8>2px/all_resident",
+        0x13bd_e445_aeb0_0213,
+    ),
+    (
+        "children/orbit>zoom/8>2px/only_drawn",
+        0x13bd_e445_aeb0_0213,
+    ),
+    (
+        "children/orbit>zoom/2>8px/all_resident",
+        0x13bd_e445_aeb0_0213,
+    ),
+    (
+        "children/orbit>zoom/2>8px/only_drawn",
+        0x13bd_e445_aeb0_0213,
+    ),
+    (
+        "children/zoom>pan/8>2px/all_resident",
+        0x13bd_e445_aeb0_0213,
+    ),
+    ("children/zoom>pan/8>2px/only_drawn", 0x13bd_e445_aeb0_0213),
+    (
+        "children/zoom>pan/2>8px/all_resident",
+        0x13bd_e445_aeb0_0213,
+    ),
+    ("children/zoom>pan/2>8px/only_drawn", 0x13bd_e445_aeb0_0213),
+    ("children/pan>fit/8>2px/all_resident", 0x13bd_e445_aeb0_0213),
+    ("children/pan>fit/8>2px/only_drawn", 0x13bd_e445_aeb0_0213),
+    ("children/pan>fit/2>8px/all_resident", 0x13bd_e445_aeb0_0213),
+    ("children/pan>fit/2>8px/only_drawn", 0x13bd_e445_aeb0_0213),
+    ("mixed/fit>orbit/8>2px/all_resident", 0xfc02_a455_261e_b685),
+    ("mixed/fit>orbit/8>2px/only_drawn", 0xfc02_a455_261e_b685),
+    ("mixed/fit>orbit/2>8px/all_resident", 0xa3e5_ba3f_2093_d275),
+    ("mixed/fit>orbit/2>8px/only_drawn", 0xa3e5_ba3f_2093_d275),
+    ("mixed/orbit>zoom/8>2px/all_resident", 0x8324_526e_8e5a_7e4a),
+    ("mixed/orbit>zoom/8>2px/only_drawn", 0x8324_526e_8e5a_7e4a),
+    ("mixed/orbit>zoom/2>8px/all_resident", 0xeab8_0e4d_1b71_1be2),
+    ("mixed/orbit>zoom/2>8px/only_drawn", 0xeab8_0e4d_1b71_1be2),
+    ("mixed/zoom>pan/8>2px/all_resident", 0xc774_2bad_8a78_b466),
+    ("mixed/zoom>pan/8>2px/only_drawn", 0xc774_2bad_8a78_b466),
+    ("mixed/zoom>pan/2>8px/all_resident", 0x59bd_7b46_b6b8_00c8),
+    ("mixed/zoom>pan/2>8px/only_drawn", 0x59bd_7b46_b6b8_00c8),
+    ("mixed/pan>fit/8>2px/all_resident", 0x694d_8cc7_c5da_4624),
+    ("mixed/pan>fit/8>2px/only_drawn", 0x694d_8cc7_c5da_4624),
+    ("mixed/pan>fit/2>8px/all_resident", 0xab84_b872_27b8_b910),
+    ("mixed/pan>fit/2>8px/only_drawn", 0xab84_b872_27b8_b910),
     (
         "wide_chain/fit>orbit/8>2px/all_resident",
-        0x8d3223155e8f482c,
+        0x8d32_2315_5e8f_482c,
     ),
-    ("wide_chain/fit>orbit/8>2px/only_drawn", 0x788076b222402e2e),
+    (
+        "wide_chain/fit>orbit/8>2px/only_drawn",
+        0x7880_76b2_2240_2e2e,
+    ),
     (
         "wide_chain/fit>orbit/2>8px/all_resident",
-        0x682f9061b683c852,
+        0x682f_9061_b683_c852,
     ),
-    ("wide_chain/fit>orbit/2>8px/only_drawn", 0x7cee8d33d4ffc355),
+    (
+        "wide_chain/fit>orbit/2>8px/only_drawn",
+        0x7cee_8d33_d4ff_c355,
+    ),
     (
         "wide_chain/orbit>zoom/8>2px/all_resident",
-        0xee2c298f8bcb4adb,
+        0xee2c_298f_8bcb_4adb,
     ),
-    ("wide_chain/orbit>zoom/8>2px/only_drawn", 0x620048accc8ff08d),
+    (
+        "wide_chain/orbit>zoom/8>2px/only_drawn",
+        0x6200_48ac_cc8f_f08d,
+    ),
     (
         "wide_chain/orbit>zoom/2>8px/all_resident",
-        0x1bac65e298f4eaa1,
+        0x1bac_65e2_98f4_eaa1,
     ),
-    ("wide_chain/orbit>zoom/2>8px/only_drawn", 0xac5b719e1b7ceab5),
-    ("wide_chain/zoom>pan/8>2px/all_resident", 0x05c921c96aa71456),
-    ("wide_chain/zoom>pan/8>2px/only_drawn", 0x5ac037099eb560e3),
-    ("wide_chain/zoom>pan/2>8px/all_resident", 0x2d8b2dd759a88572),
-    ("wide_chain/zoom>pan/2>8px/only_drawn", 0x182bac955a61f15b),
-    ("wide_chain/pan>fit/8>2px/all_resident", 0xe0c0be99c6cfcaed),
-    ("wide_chain/pan>fit/8>2px/only_drawn", 0x80af7c903eae8489),
-    ("wide_chain/pan>fit/2>8px/all_resident", 0x2f1e84445534ba62),
-    ("wide_chain/pan>fit/2>8px/only_drawn", 0xeaba2ebeffca6ae0),
+    (
+        "wide_chain/orbit>zoom/2>8px/only_drawn",
+        0xac5b_719e_1b7c_eab5,
+    ),
+    (
+        "wide_chain/zoom>pan/8>2px/all_resident",
+        0x05c9_21c9_6aa7_1456,
+    ),
+    (
+        "wide_chain/zoom>pan/8>2px/only_drawn",
+        0x5ac0_3709_9eb5_60e3,
+    ),
+    (
+        "wide_chain/zoom>pan/2>8px/all_resident",
+        0x2d8b_2dd7_59a8_8572,
+    ),
+    (
+        "wide_chain/zoom>pan/2>8px/only_drawn",
+        0x182b_ac95_5a61_f15b,
+    ),
+    (
+        "wide_chain/pan>fit/8>2px/all_resident",
+        0xe0c0_be99_c6cf_caed,
+    ),
+    ("wide_chain/pan>fit/8>2px/only_drawn", 0x80af_7c90_3eae_8489),
+    (
+        "wide_chain/pan>fit/2>8px/all_resident",
+        0x2f1e_8444_5534_ba62,
+    ),
+    ("wide_chain/pan>fit/2>8px/only_drawn", 0xeaba_2ebe_ffca_6ae0),
 ];
 
 /// Two frames in cell mode: frame 2 steps from what frame 1 drew, as the pool passes it, with
@@ -1925,7 +1994,7 @@ fn ranged_entry(
                     None,
                 )
                 .unwrap_or(data.buildable.0),
-                octants_in_front(view, [0.0; 3], bounds, probes),
+                octants_in_front(view, [0.0; 3], bounds, &probes),
             )
         }),
         None,
@@ -1968,7 +2037,7 @@ fn the_far_wanted_depth_is_never_finer_than_the_near_one() {
         let bounds = SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
         let far =
             view_range_lo(&view, &grid, [0.0; 3], Some(bounds), (3, 12), target, None).unwrap_or(3);
-        let front = octants_in_front(&view, [0.0; 3], bounds, [ProbeBox::Geometric; 8]);
+        let front = octants_in_front(&view, [0.0; 3], bounds, &[ProbeBox::Geometric; 8]);
         let near = (0..8)
             .filter(|o| front >> o & 1 == 1)
             .map(|o| octant_wanted_depth(&view, &grid, [0.0; 3], bounds, o, (3, 12), target))
@@ -1989,6 +2058,10 @@ fn along_x() -> ViewProjection {
     posed([-900.0, 0.0, 0.0], [0.0, 0.0, 0.0])
 }
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "callers pass the result where an optional box is expected"
+)]
 fn boxed(min: [f64; 3], max: [f64; 3]) -> Option<SpatialBounds> {
     Some(SpatialBounds::new(min, max).unwrap())
 }
@@ -2007,7 +2080,7 @@ fn a_region_behind_the_eye_has_no_view_range() {
 fn an_empty_region_has_no_view_range() {
     let (view, grid) = (along_x(), huge_grid());
     let bounds = SpatialBounds::new([0.0; 3], [100.0; 3]).unwrap();
-    assert_eq!(probe_region(bounds, [ProbeBox::Empty; 8]), None);
+    assert_eq!(probe_region(bounds, &[ProbeBox::Empty; 8]), None);
     assert_eq!(
         node_view_range(&view, &grid, [0.0; 3], None, (3, 12), 4.0, None),
         None
@@ -2150,11 +2223,11 @@ fn masked_lo(
     view: &ViewProjection,
     grid: &CellGrid,
     bounds: SpatialBounds,
-    probes: [ProbeBox; 8],
+    probes: &[ProbeBox; 8],
     target: f64,
 ) -> (Option<SpatialBounds>, u8) {
     let (masked, _) = masked_probes(view, grid, [0.0; 3], bounds, probes);
-    let region = probe_region(bounds, masked);
+    let region = probe_region(bounds, &masked);
     let lo = view_range_lo(view, grid, [0.0; 3], region, (3, 12), target, None).unwrap_or(3);
     (region, lo)
 }
@@ -2173,16 +2246,16 @@ fn a_node_with_every_data_octant_behind_has_the_coarsest_far_depth() {
     probes[0] = data([1500.0, 2000.0]);
     probes[1] = data([-2000.0, -1500.0]);
     let target = 1.0;
-    let unmasked = probe_region(bounds, probes);
+    let unmasked = probe_region(bounds, &probes);
     let far = view_range_lo(&view, &grid, [0.0; 3], unmasked, (3, 12), target, None);
     assert_eq!(
         far,
         Some(10),
         "setup: the union box passes the in-view test"
     );
-    let (_, (behind, _)) = masked_probes(&view, &grid, [0.0; 3], bounds, probes);
+    let (_, (behind, _)) = masked_probes(&view, &grid, [0.0; 3], bounds, &probes);
     assert_eq!(behind, 0xFF, "setup: every octant is behind or empty");
-    let (region, lo) = masked_lo(&view, &grid, bounds, probes, target);
+    let (region, lo) = masked_lo(&view, &grid, bounds, &probes, target);
     assert_eq!(region, None);
     let wishes: Vec<u8> = (0..8)
         .map(|o| {
@@ -2212,13 +2285,13 @@ fn the_only_octant_in_front_of_the_eye_plane_being_off_screen_gives_the_coarsest
     probes[6] =
         ProbeBox::Data(SpatialBounds::new([-890.0, 900.0, 1.0], [-880.0, 1000.0, 10.0]).unwrap());
     assert_ne!(
-        octants_in_front(&view, [0.0; 3], bounds, probes),
+        octants_in_front(&view, [0.0; 3], bounds, &probes),
         0,
         "setup: the octant is in front of the eye plane"
     );
-    let (masked, (behind, front)) = masked_probes(&view, &grid, [0.0; 3], bounds, probes);
+    let (masked, (behind, front)) = masked_probes(&view, &grid, [0.0; 3], bounds, &probes);
     assert_eq!((behind, front), (0xFF, 0), "setup: off-screen is behind");
-    assert_eq!(octants_in_front(&view, [0.0; 3], bounds, masked), 0);
+    assert_eq!(octants_in_front(&view, [0.0; 3], bounds, &masked), 0);
     let (target, buildable) = (1.0, (3, 12));
     let wishes = behind_wanted(
         std::array::from_fn(|o| {
@@ -2246,13 +2319,13 @@ fn the_only_octant_in_front_of_the_eye_plane_being_off_screen_gives_the_coarsest
                 &view,
                 &grid,
                 [0.0; 3],
-                probe_region(bounds, masked),
+                probe_region(bounds, &masked),
                 data.buildable,
                 target,
                 None,
             )
             .unwrap_or(data.buildable.0);
-            (lo, octants_in_front(&view, [0.0; 3], bounds, masked))
+            (lo, octants_in_front(&view, [0.0; 3], bounds, &masked))
         }),
         None,
     )
@@ -2280,13 +2353,13 @@ fn masking_the_behind_octants_leaves_the_eye_nodes_far_depth_unchanged() {
                 &view,
                 &grid,
                 [0.0; 3],
-                probe_region(bounds, probes),
+                probe_region(bounds, &probes),
                 (3, 12),
                 target,
                 None,
             )
             .unwrap_or(3);
-            let (_, lo) = masked_lo(&view, &grid, bounds, probes, target);
+            let (_, lo) = masked_lo(&view, &grid, bounds, &probes, target);
             assert_eq!(lo, all, "at {at:?} target {target}");
         }
     }

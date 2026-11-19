@@ -43,7 +43,7 @@ struct ReadPlanDescriptor {
 }
 
 /// JS result shape: `{kind, values, pointCount, components?, name?, dataType?}`.
-/// Positions are Float32Array xyz; geometry is Float32Array xyz + RGB bytes; colors are RGB bytes.
+/// Positions are `Float32Array` xyz; geometry is `Float32Array` xyz + RGB bytes; colors are RGB bytes.
 /// Attributes preserve their declared integer/float type in a JS typed array.
 #[wasm_bindgen]
 pub struct WasmAsyncFormatReader {
@@ -116,6 +116,7 @@ impl WasmAsyncReadBudget {
     }
 
     #[wasm_bindgen(js_name = clone)]
+    #[must_use]
     pub fn clone_budget(&self) -> WasmAsyncReadBudget {
         Self {
             inner: self.inner.clone(),
@@ -394,8 +395,7 @@ impl WasmAsyncFormatReader {
             )?;
             let parent = node
                 .parent()
-                .map(|id| JsValue::from_str(&id.get().to_string()))
-                .unwrap_or(JsValue::NULL);
+                .map_or(JsValue::NULL, |id| JsValue::from_str(&id.get().to_string()));
             set(&value, "parent", &parent)?;
             set(&value, "level", &JsValue::from_f64(f64::from(node.level())))?;
             set(&value, "min", &number_array(&node.bounds().min()))?;
@@ -447,8 +447,7 @@ impl WasmAsyncFormatReader {
                     .reader
                     .attribute_range(schema_index as u32, component)
                     .map_err(format_error)?
-                    .map(|[min, max]| number_array(&[min, max]))
-                    .unwrap_or(JsValue::NULL);
+                    .map_or(JsValue::NULL, |[min, max]| number_array(&[min, max]));
                 ranges.push(&range);
             }
             attribute_ranges.push(&ranges);
@@ -546,9 +545,8 @@ impl WasmAsyncFormatReader {
             }
         }
         let required = lod_request_peak_bytes(&plans)?;
-        let reservation = match self.budget.try_reserve(required).map_err(format_error)? {
-            Some(reservation) => reservation,
-            None => return Ok(None),
+        let Some(reservation) = self.budget.try_reserve(required).map_err(format_error)? else {
+            return Ok(None);
         };
         Ok(Some(WasmAsyncLodReadRequest {
             shared: Arc::clone(&self.shared),

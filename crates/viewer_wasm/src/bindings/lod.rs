@@ -1,3 +1,7 @@
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "wasm-bindgen exports receive JS handles and owned values by value"
+)]
 use std::sync::{Arc, Mutex};
 
 use viewer_core::{BlockId, DatasetSource, Point, PointBatch, PointBlock};
@@ -458,17 +462,14 @@ impl WasmVoxelViewer {
                 .map(|id| JsValue::from_str(&id.get().to_string()))
                 .collect();
         }
-        self.last_lod_stats
-            .as_ref()
-            .map(|stats| {
-                stats
-                    .0
-                    .pending_page_anchors
-                    .iter()
-                    .map(|id| JsValue::from_str(&id.get().to_string()))
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.last_lod_stats.as_ref().map_or_default(|stats| {
+            stats
+                .0
+                .pending_page_anchors
+                .iter()
+                .map(|id| JsValue::from_str(&id.get().to_string()))
+                .collect()
+        })
     }
 
     /// Grafts a page returned by `WasmAsyncFormatReader.loadPage`.
@@ -667,8 +668,7 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = nextAsyncLodBlock)]
     pub fn next_async_lod_block(&self) -> JsValue {
         self.pending_async_block
-            .map(|id| JsValue::from_str(&id.get().to_string()))
-            .unwrap_or(JsValue::NULL)
+            .map_or(JsValue::NULL, |id| JsValue::from_str(&id.get().to_string()))
     }
 
     /// Current missing blocks in the projected-error order chosen by the LOD plan.
@@ -716,6 +716,10 @@ impl WasmVoxelViewer {
 }
 
 impl WasmVoxelViewer {
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the refresh hook keeps the fallible shape its callers propagate with `?`"
+    )]
     pub(super) fn refresh_lod_if_dirty(&mut self) -> Result<(), JsValue> {
         if let Some(cells) = self.cells_local.as_mut() {
             let Some(target_voxel_pixels) = self.lod_config else {

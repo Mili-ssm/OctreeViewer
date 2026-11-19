@@ -35,7 +35,13 @@ impl<R> LodSession<R> {
 /// Applies when a second cloud is added to an open session (RF-01); opening replaces the session.
 /// RF-02: a cloud whose CRS identity differs from the open one is rejected, naming both.
 /// Clouds without an identity (formats before `v7.4-pre`) are not compared.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "no production caller yet; only the tests exercise the CRS check"
+    )
+)]
 pub(crate) fn ensure_same_crs(open: Option<&str>, incoming: Option<&str>) -> Result<(), String> {
     match (open, incoming) {
         (Some(open), Some(incoming)) if open != incoming => Err(format!(

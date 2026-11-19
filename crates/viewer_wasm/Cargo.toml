@@ -32,3 +32,6 @@ wgpu.workspace = true
 
 [dev-dependencies]
 viewer_format = { path = "../viewer_format" }
+
+[lints]
+workspace = true

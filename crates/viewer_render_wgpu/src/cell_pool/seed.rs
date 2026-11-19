@@ -1,6 +1,9 @@
 //! Cell-mode-only entry seeds (removed with the cell mode).
 
-use super::*;
+use super::{
+    CellCutEntry, CellGrid, CellPool, FastMap, Footprint, NodeId, PoolNode, PrevState,
+    SpatialBounds, capped_range, cell_depth_range,
+};
 
 impl CellPool {
     /// `prev_state`, except for a node that drew nothing in the applied cut: in cell mode its

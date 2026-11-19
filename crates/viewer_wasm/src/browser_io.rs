@@ -59,7 +59,7 @@ impl BrowserBlobReader {
 
         let loaded_chunks = if report_progress {
             let chunk_count = (size as u64).div_ceil(FILE_CACHE_BYTES);
-            let word_count = usize::try_from(chunk_count.div_ceil(u64::BITS as u64))
+            let word_count = usize::try_from(chunk_count.div_ceil(u64::from(u64::BITS)))
                 .map_err(|_| JsValue::from_str("file progress index is too large"))?;
             let mut chunks = Vec::new();
             chunks
@@ -203,6 +203,10 @@ pub(crate) fn js_message(error: &JsValue) -> Option<String> {
     })
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function path, which hands the error over by value"
+)]
 pub(crate) fn js_error_to_io(error: JsValue) -> io::Error {
     io::Error::other(js_message(&error).unwrap_or_else(|| "browser file read failed".to_owned()))
 }

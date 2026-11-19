@@ -7,6 +7,7 @@ use super::cells::MAX_CELL_CUT_GAP;
 use super::cells_tests::{SIDE, driver_for, node_block, octree_dataset, octree_nodes};
 use super::*;
 use crate::lod_driver::{CellStep, update_cells_staged};
+use std::fmt::Write as _;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -1041,8 +1042,7 @@ impl Harness {
                 .dataset
                 .visible_plan
                 .as_ref()
-                .map(|plan| plan.node_ids().to_vec())
-                .unwrap_or_default(),
+                .map_or_default(|plan| plan.node_ids().to_vec()),
         };
         let planner: Vec<SpatialBounds> = planned
             .iter()
@@ -1522,7 +1522,10 @@ impl Harness {
             t.graft_refused,
             t.stage_drops,
             t.drawn_digest,
-            self.dataset.pages.as_ref().map_or(0, |p| p.pages()),
+            self.dataset
+                .pages
+                .as_ref()
+                .map_or(0, super::super::lod_pages::PageResidency::pages),
             self.zone_coarsenings,
             self.staged_coarsenings,
             self.lost_samples,
@@ -2011,7 +2014,7 @@ fn cell_mode_bands_follow_the_distance() {
         // The node the axis enters first, nearest the eye.
         let mut nearest_node: Option<NodeId> = None;
         for step in 0..=4_000 {
-            let along = distance * (step as f64 / 2_000.0);
+            let along = distance * (f64::from(step) / 2_000.0);
             let p: [f64; 3] = std::array::from_fn(|a| eye[a] - direction[a] / norm * along);
             let rel: [f64; 3] =
                 std::array::from_fn(|a| (p[a] - ctx.origin[a]) * ctx.scale - ctx.eye[a]);
@@ -2177,7 +2180,7 @@ impl Real {
             .map(|node| {
                 let b = node.bounds();
                 (
-                    std::array::from_fn(|a| (b.min()[a] + b.max()[a]) / 2.0),
+                    std::array::from_fn(|a| f64::midpoint(b.min()[a], b.max()[a])),
                     b.max()[0] - b.min()[0],
                 )
             })
@@ -2617,12 +2620,12 @@ fn sample_harness() -> (Harness, [f64; 3], f64) {
 /// there: the probe measures the data, not the node box.
 #[test]
 fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in_cell_mode() {
+    const MAX_DEPTH: u8 = 14;
     let (mut h, origin, scale) = sample_harness();
     let viewport = [870, 750];
     // Measured at this pose: probing the data wants depth 11-13 in these leaves (cells near the
     // px target), while probing the node box wants the finest depth, 19 (cells of ~0.003 px).
     // 14 is one level of margin over the former and far from the latter.
-    const MAX_DEPTH: u8 = 14;
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
     let mk = |eye: [f64; 3], target: [f64; 3]| {
         let root = h.dataset.metadata.hierarchy().stats().root_bounds;
@@ -2637,13 +2640,21 @@ fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in_cell_mode() {
         assert!(camera.set_pose(local(eye), local(target)));
         ViewProjection::new(camera, viewport, scale, VoxelBuildLimits::default())
     };
-    let target = [31.95849609375, 31.95849609375, 1.99951171875];
+    let target = [31.958_496_093_75, 31.958_496_093_75, 1.999_511_718_75];
     let v0 = mk(
-        [31.95849609375, 75.78127736426028, 77.90279540825159],
+        [
+            31.958_496_093_75,
+            75.781_277_364_260_28,
+            77.902_795_408_251_59,
+        ],
         target,
     );
     let v4 = mk(
-        [31.95849609375, 38.75951960734527, 6.118357964164779],
+        [
+            31.958_496_093_75,
+            38.759_519_607_345_27,
+            6.118_357_964_164_779,
+        ],
         target,
     );
     h.settle(&v0, 3, 5000);
@@ -2800,6 +2811,8 @@ fn at_p4_node_14_can_draw_the_level_its_border_needs() {
 
 /// Returns the histogram of the visible border pairs by level difference, and the range of node 14.
 fn p4_border_levels_under() -> (std::collections::BTreeMap<u8, usize>, Option<(u8, u8)>) {
+    type Group = (usize, [f64; 2], [f64; 2]);
+    const N: usize = 48;
     let (mut h, origin, scale) = sample_harness();
     let viewport = [870, 750];
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
@@ -2905,14 +2918,14 @@ fn p4_border_levels_under() -> (std::collections::BTreeMap<u8, usize>, Option<(u
     let data = h.dataset.metadata.hierarchy().stats().data_bounds;
     println!("data bounds {:?}..{:?}", data.min(), data.max());
     let mut bands: std::collections::BTreeMap<usize, std::collections::BTreeMap<u8, usize>> =
-        Default::default();
+        std::collections::BTreeMap::default();
     // `P4_DUMP=<dir>` writes every visible pair as `x y z depth_a depth_b node_a node_b` lines.
     let mut dump = String::new();
-    const N: usize = 48;
-    let mut histogram: std::collections::BTreeMap<u8, usize> = Default::default();
+    let mut histogram: std::collections::BTreeMap<u8, usize> =
+        std::collections::BTreeMap::default();
     // (node a, depth a, node b, depth b) -> (pairs, min xy, max xy)
-    type Group = (usize, [f64; 2], [f64; 2]);
-    let mut groups: std::collections::BTreeMap<(u64, u8, u64, u8), Group> = Default::default();
+    let mut groups: std::collections::BTreeMap<(u64, u8, u64, u8), Group> =
+        std::collections::BTreeMap::default();
     for node in nodes {
         for axis in 0..3 {
             let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
@@ -2955,8 +2968,9 @@ fn p4_border_levels_under() -> (std::collections::BTreeMap<u8, usize>, Option<(u
                             .or_default()
                             .entry(da.abs_diff(db))
                             .or_default() += 1;
-                        dump.push_str(&format!(
-                            "{:.1} {:.1} {:.3} {da} {db} {} {} {:.2} {:.2}\n",
+                        let _ = writeln!(
+                            dump,
+                            "{:.1} {:.1} {:.3} {da} {db} {} {} {:.2} {:.2}",
                             at[0],
                             at[1],
                             inside[2],
@@ -2964,7 +2978,7 @@ fn p4_border_levels_under() -> (std::collections::BTreeMap<u8, usize>, Option<(u
                             nodes[jb].id.get(),
                             cell_px(ja, da, ra),
                             cell_px(jb, db, rb)
-                        ));
+                        );
                         let entry = groups
                             .entry((nodes[ja].id.get(), da, nodes[jb].id.get(), db))
                             .or_insert((0, at, at));
@@ -3021,7 +3035,7 @@ fn demo_pose_camera(fit: OrbitCamera, pose: &str) -> OrbitCamera {
     let mut camera = fit;
     let drag = |camera: &mut OrbitCamera, px: f64| assert!(camera.orbit(0.0, -px / 750.0));
     let wheel = |camera: &mut OrbitCamera, steps: usize, k: f64| {
-        (0..steps).for_each(|_| assert!(camera.zoom(WHEEL_STEP * k)))
+        (0..steps).for_each(|_| assert!(camera.zoom(WHEEL_STEP * k)));
     };
     match pose {
         "P1" => {
@@ -3079,11 +3093,11 @@ fn settled_sample_pose(pose: &str) -> (Harness, ViewProjection) {
 /// cut goldens of `cell_cut_tests.rs` are pure cuts without a pool, so they emit no active bits:
 /// these poses stand in for them.
 const GPU_INPUT_GOLDEN: &[(&str, u64)] = &[
-    ("P1", 0x2f2f4f1ab372490e),
-    ("P2", 0xe0f88c8d0cc168e4),
-    ("P3", 0xdc13ecd06a8491cc),
-    ("P4", 0xdfa4469dd7dfe145),
-    ("P5", 0xe105c88c8ae150cc),
+    ("P1", 0x2f2f_4f1a_b372_490e),
+    ("P2", 0xe0f8_8c8d_0cc1_68e4),
+    ("P3", 0xdc13_ecd0_6a84_91cc),
+    ("P4", 0xdfa4_469d_d7df_e145),
+    ("P5", 0xe105_c88c_8ae1_50cc),
 ];
 
 #[test]
@@ -3099,10 +3113,13 @@ fn the_gpu_input_at_the_sample_poses_is_pinned() {
             .zip(GPU_INPUT_GOLDEN)
             .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
     if !matches {
+        use std::fmt::Write as _;
         let table: String = actual
             .iter()
-            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
-            .collect();
+            .fold(String::new(), |mut table, (name, hash)| {
+                let _ = writeln!(table, "    (\"{name}\", {hash:#018x}),");
+                table
+            });
         panic!("GPU input table changed; actual:\n{table}");
     }
 }
@@ -3124,7 +3141,6 @@ fn lod_near_depth_scaled(camera: &OrbitCamera) -> f64 {
 
 /// The cell `OctantProbe::at` places at `anchor` (relative frame: dataset minus origin) inside the
 /// box `[bmin, bmax]` for the branch without `on_axis`: `(cell px, smallest child px, cell min)`.
-#[allow(clippy::too_many_arguments)]
 fn probe_cell(
     view: &ViewProjection,
     root_side: f64,
@@ -3201,7 +3217,7 @@ fn far_diagnosis(h: &Harness, view: &ViewProjection, ids: &[u64]) {
         let corner_depth: f64 = (0..3).map(|a| (corner[a] - eye_rel[a]) * forward[a]).sum();
         // The centre of the border between nodes 8 and 14 (y = 32) on the ground (z = 0).
         let border = [
-            (rmin[0] + rmax[0]) / 2.0,
+            f64::midpoint(rmin[0], rmax[0]),
             32.0 - ctx.origin[1],
             0.0 - ctx.origin[2],
         ];
@@ -3348,7 +3364,7 @@ fn twin_depths(
             0.0
         };
         for i in 0..3 {
-            if !done[i] && !(min_side_ok && smallest >= targets[i]) {
+            if !(done[i] || min_side_ok && smallest >= targets[i]) {
                 (out[i], done[i]) = (depth, true);
                 if i == 0 {
                     crosses = edge_px(view, lo, side as f32).is_infinite();
@@ -3794,7 +3810,7 @@ fn range_violations(poses: &[&str], lo_side: bool) -> Vec<String> {
     violations
 }
 
-fn assert_no_violations(violations: Vec<String>) {
+fn assert_no_violations(violations: &[String]) {
     assert!(
         violations.is_empty(),
         "{} violations:\n{}",
@@ -3808,13 +3824,13 @@ fn assert_no_violations(violations: Vec<String>) {
 #[test]
 #[ignore = "slow (about 3 minutes of twin sampling); P4 alone runs in the next test"]
 fn the_node_lo_is_not_finer_than_what_the_twin_wants_within_one_level() {
-    assert_no_violations(range_violations(&["P1", "P2", "P3", "P4", "P5"], true));
+    assert_no_violations(&range_violations(&["P1", "P2", "P3", "P4", "P5"], true));
 }
 
 /// The `lo` property at P4, where `node_far_depth` used to put node 14 three levels too fine.
 #[test]
 fn the_node_lo_at_p4_is_not_finer_than_what_the_twin_wants_within_one_level() {
-    assert_no_violations(range_violations(&["P4"], true));
+    assert_no_violations(&range_violations(&["P4"], true));
 }
 
 /// `hi` of the node range contains what the twin wants, within one level. Paused: near the eye the
@@ -3822,7 +3838,7 @@ fn the_node_lo_at_p4_is_not_finer_than_what_the_twin_wants_within_one_level() {
 #[test]
 #[ignore = "paused: `hi` is not changed until plan task 5 decides what bounds it near the eye"]
 fn the_node_hi_contains_what_the_twin_wants_within_one_level() {
-    assert_no_violations(range_violations(&["P1", "P2", "P3", "P4", "P5"], false));
+    assert_no_violations(&range_violations(&["P1", "P2", "P3", "P4", "P5"], false));
 }
 
 // ---- OQ-16: fine end of the node range bounded by the nearest occupied cell -----------------
@@ -3849,7 +3865,10 @@ struct DataBound {
 /// `ViewSpan::on_axis` (`cell_cut.rs`, private) restated: the first buildable depth whose
 /// smallest child, for a cell on the view axis with its nearest face at view depth `near`
 /// (dataset units, eye-relative frame), projects below `target_px`, capped.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 fn on_axis_depth(
     view: &ViewProjection,
     grid: &CellGrid,
@@ -4203,7 +4222,7 @@ fn octant_boxes(h: &Harness, j: usize) -> Vec<Box3> {
         .filter_map(|octant| {
             let (mut min, mut max) = ([0.0; 3], [0.0; 3]);
             for a in 0..3 {
-                let mid = (node.min[a] + node.max[a]) / 2.0;
+                let mid = f64::midpoint(node.min[a], node.max[a]);
                 let (g_min, g_max) = if octant >> (2 - a) & 1 == 1 {
                     (mid, node.max[a])
                 } else {
@@ -4347,7 +4366,10 @@ struct SourceStats {
 }
 
 impl SourceStats {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     fn add(
         &mut self,
         pose: &str,
@@ -4465,8 +4487,8 @@ fn print_stability_probe(
 /// nearest face of an occupied cell of the node's finest resident level inside the frustum)`.
 /// Compared per node with `twin_data_max` (the twin's maximum at the occupied cells: centres, and
 /// the point of each cell nearest the eye), today's `hi`, `hi_c`, and in estimated pages
-/// (`estimate_pages_like_the_pool`) of the run `lo..=X` for X in {today's hi, twin_data_max,
-/// hi_d, hi_c}, with `lo` today's `lo`. Also prints the pages the pool holds for the node.
+/// (`estimate_pages_like_the_pool`) of the run `lo..=X` for X in {today's hi, `twin_data_max`,
+/// `hi_d`, `hi_c`}, with `lo` today's `lo`. Also prints the pages the pool holds for the node.
 /// Run: `TWIN_POSES=P2,P4 cargo test --offline --profile fast -p viewer_wasm --lib data_bounded_hi -- --ignored --nocapture`.
 #[test]
 #[ignore = "diagnostic: prints a data-bounded fine end of the node range against the others"]
@@ -4557,7 +4579,7 @@ fn data_bounded_hi_vs_node_range() {
             );
             for (s, hi_s) in his.iter().enumerate() {
                 let pages = hi_s.map_or(0, |x| pages_of(row, lo.min(x)..=x));
-                line += &format!(" {} {} ({pages}p)", SOURCES[s], show(*hi_s));
+                let _ = write!(line, " {} {} ({pages}p)", SOURCES[s], show(*hi_s));
                 src_pages[s][0] += pages;
                 // The nodes next to the eye of the sample: the two that hold or touch it.
                 let near_eye = row.eye_inside || row.id == 14 || row.id == 17;
@@ -5050,7 +5072,7 @@ impl Harness {
             } else {
                 let mut active = node.lod.active;
                 for _ in 0..log.drop_top {
-                    active &= !(1_u64 << (63 - active.leading_zeros()));
+                    active &= !(1_u64 << active.ilog2());
                 }
                 NodeLod { active, ..node.lod }
             };
