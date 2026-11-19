@@ -15,6 +15,7 @@ let canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
 const cancelButton = document.getElementById("cancel-load");
 const sampleButton = document.getElementById("open-sample");
+const belvedereButton = document.getElementById("open-belvedere");
 const webgpuNotice = document.getElementById("webgpu-notice");
 const fitButton = document.getElementById("fit-scene");
 const fileInput = document.getElementById("dataset-file");
@@ -560,6 +561,7 @@ function handleWorkerMessage(event) {
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
+        belvedereButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";
         if (viewportSize) {
             queueWorkerCommand("resize", {
@@ -608,6 +610,7 @@ function handleWorkerMessage(event) {
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
+        belvedereButton.disabled = false;
         voxelPixels.disabled = false;
         statusRoot.textContent = `${data.name}: showing coarse view · refining LOD`;
     } else if (data.type === "datasetOpened") {
@@ -724,6 +727,7 @@ function handleWorkerMessage(event) {
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
+        belvedereButton.disabled = false;
         statusRoot.textContent = `${data.operation} failed: ${data.message}`;
         if (data.operation === "frame" || data.operation === "init") {
             frameFailed = true;
@@ -838,6 +842,7 @@ function recreateViewer({ reopen = false } = {}) {
     fileInput.disabled = true;
     attributesFileInput.disabled = true;
     sampleButton.disabled = true;
+    belvedereButton.disabled = true;
     voxelPixels.disabled = true;
     latestLodStats = null;
     datasetName = "Synthetic sample";
@@ -1186,6 +1191,7 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
     fileInput.disabled = true;
     attributesFileInput.disabled = true;
     sampleButton.disabled = true;
+    belvedereButton.disabled = true;
     fileInput.value = "";
     attributesFileInput.value = "";
     loadingFile = true;
@@ -1233,6 +1239,7 @@ downloadBenchmarkButton.addEventListener("click", exportBenchmarkRun);
 sampleButton.addEventListener("click", async () => {
     if (!ready) return;
     sampleButton.disabled = true;
+    belvedereButton.disabled = true;
     fileInput.disabled = true;
     attributesFileInput.disabled = true;
     loadingFile = true;
@@ -1263,8 +1270,67 @@ sampleButton.addEventListener("click", async () => {
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;
+        belvedereButton.disabled = false;
         if (error.name !== "AbortError") {
             statusRoot.textContent = `Sample download failed: ${error}`;
+        }
+    }
+});
+// The real second cloud: a Belvedere Glacier crop (CC BY 4.0) that the published site carries
+// under datasets/ and a development checkout builds into target/demo-data/
+// (scripts/make-demo-belvedere.sh). The button stays hidden where neither answers.
+const belvedereCandidates = [
+    new URL("./datasets/belvedere-crop.oct", import.meta.url),
+    new URL("../../target/demo-data/belvedere-crop.oct", import.meta.url),
+];
+let belvedereUrl = null;
+(async () => {
+    for (const url of belvedereCandidates) {
+        try {
+            const response = await fetch(url, { method: "HEAD" });
+            if (response.ok) {
+                belvedereUrl = url;
+                document.getElementById("belvedere-panel").hidden = false;
+                return;
+            }
+        } catch {
+            // file:// or offline: try the next one.
+        }
+    }
+})();
+belvedereButton.addEventListener("click", async () => {
+    if (!ready || !belvedereUrl) return;
+    sampleButton.disabled = true;
+    belvedereButton.disabled = true;
+    fileInput.disabled = true;
+    attributesFileInput.disabled = true;
+    loadingFile = true;
+    cancelButton.hidden = false;
+    statusRoot.textContent = "Downloading the Belvedere Glacier crop (21 MB)…";
+    const controller = new AbortController();
+    sampleFetchController = controller;
+    try {
+        const fetchFile = async (url, name) => {
+            const response = await fetch(url, { signal: controller.signal });
+            if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
+            return new File([await response.arrayBuffer()], name, { type: "application/octet-stream" });
+        };
+        const file = await fetchFile(belvedereUrl, "belvedere-crop.oct");
+        const attrs = await fetchFile(new URL(`${belvedereUrl.href}attrs`), "belvedere-crop.octattrs");
+        if (sampleFetchController !== controller) return;
+        sampleFetchController = null;
+        openProjectFile(file, "Belvedere Glacier crop", attrs);
+    } catch (error) {
+        if (sampleFetchController !== controller) return;
+        sampleFetchController = null;
+        loadingFile = false;
+        cancelButton.hidden = true;
+        fileInput.disabled = false;
+        attributesFileInput.disabled = false;
+        sampleButton.disabled = false;
+        belvedereButton.disabled = false;
+        if (error.name !== "AbortError") {
+            statusRoot.textContent = `Belvedere download failed: ${error}`;
         }
     }
 });

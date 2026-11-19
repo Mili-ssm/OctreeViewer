@@ -149,6 +149,10 @@
             outline: 2px solid #f87171;
         }
 
+        .panel a {
+            color: #7dd3fc;
+        }
+
         .panel small[hidden] {
             display: none;
         }
@@ -220,6 +224,13 @@
         <button id="fit-scene" type="button">Fit scene</button>
         <section class="panel" aria-label="Dataset options">
             <button id="open-sample" type="button" disabled>Open built-in sample · 589,824 points</button>
+            <div id="belvedere-panel" hidden>
+                <button id="open-belvedere" type="button" disabled>Open real cloud · Belvedere Glacier · 1.3 M points</button>
+                <small>Photogrammetric RGB cloud of a 600 × 600 m patch of the Belvedere Glacier (Macugnaga,
+                    Italy), 2009. Data: Ioli et al.,
+                    <a href="https://doi.org/10.5281/zenodo.19265915">Belvedere Glacier long-term monitoring Open Data</a>,
+                    <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>; cropped and converted for this demo.</small>
+            </div>
             <label for="dataset-file">Open project dataset</label>
             <input id="dataset-file" type="file" aria-describedby="dataset-help" disabled />
             <label for="attributes-file">Optional .octattrs sidecar</label>
