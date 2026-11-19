@@ -322,15 +322,16 @@ impl CellPool {
                     entries.is_empty() && waits_for_level && !self.applied.is_empty(),
                 )
             });
-            let (_, covered_nodes) = entries.as_deref().map_or((cut.len() as u32, 0), |entries| {
-                uncovered_levels(entries, nodes, grid)
-            });
+            let (_, covered_octants) =
+                entries.as_deref().map_or((cut.len() as u32, 0), |entries| {
+                    uncovered_levels(entries, nodes, grid)
+                });
             self.real_memo = Some(RealMemo {
                 generation,
                 residency_epoch: self.residency_epoch,
                 entries,
                 planned_missing,
-                covered_nodes,
+                covered_octants,
                 fallback: fallback.to_vec(),
                 excluded: found.excluded.clone(),
                 lost,
@@ -426,7 +427,7 @@ impl CellPool {
             let memo = self.real_memo.as_mut().expect("set above");
             let fresh = !memo.applied;
             memo.applied = true;
-            self.applied_covered = memo.covered_nodes;
+            self.applied_covered = memo.covered_octants;
             if fresh {
                 self.applied = memo.entries.clone().expect("applied cut exists");
                 self.applied_drawn = self
@@ -976,9 +977,13 @@ impl CellPool {
                 .count() as u32
         };
         let counters = PoolCounters {
-            stages: self.applied.iter().filter(|entry| entry.node_stage).count() as u32
+            stages: self
+                .applied
+                .iter()
+                .map(|entry| entry.stage.iter().filter(|s| **s).count() as u32)
+                .sum::<u32>()
                 + self.applied_covered
-                + too_fine_excluded.len() as u32,
+                + 8 * too_fine_excluded.len() as u32,
             nodes_without_level: if self.applied.is_empty() {
                 planned_missing
             } else {

@@ -1408,8 +1408,7 @@ fn a_region_that_waits_for_a_level_does_not_block_an_unrelated_one() {
     // Region A keeps its ancestor, region B has none left, and node 10 is counted as a stage.
     assert!(has_entry(&plan, 2) && !has_entry(&plan, 3));
     assert_eq!(plan.entries.len(), cut.len() + 1);
-    // `stages` counts nodes: node 10 is one.
-    assert!(plan.counters.stages >= 1, "{}", plan.counters.stages);
+    assert!(plan.counters.stages >= 8, "{}", plan.counters.stages);
     assert_eq!(plan.counters.nodes_without_level, 1);
 }
 
@@ -2017,8 +2016,7 @@ fn only_refine(in_cut: bool) {
             assert_eq!(plan.counters.stages, 0);
             assert_eq!(plan.counters.fallback_pages, 0);
         } else {
-            // `stages` counts nodes: each held node is one.
-            assert!(plan.counters.stages as usize >= held, "frame {frame}");
+            assert!(plan.counters.stages as usize >= 8 * held, "frame {frame}");
             let pages = rig.pages(rig.pool.key(NodeId::new(2), 6)) as u32;
             let covers = if in_cut { held > 0 } else { true };
             assert_eq!(plan.counters.fallback_pages, if covers { pages } else { 0 });
@@ -3530,8 +3528,7 @@ fn an_excluded_node_too_fine_for_its_ancestor_waits_without_being_requested() {
     // counters settle (T11's "target reached" and the driver's `busy` depend on them).
     assert_eq!(plan.counters.excluded_nodes, 0);
     assert_eq!(plan.counters.nodes_without_level, 0);
-    // `stages` counts nodes: node 20 is one.
-    assert!(plan.counters.stages >= 1);
+    assert!(plan.counters.stages >= 8);
     assert_eq!(plan.counters.hold_age_max, 0);
     for _ in 0..5 {
         let plan = rig.step(&ids(&[1, 20]), &cam, 64.0);

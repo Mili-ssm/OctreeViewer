@@ -30,7 +30,7 @@
 //! for that. The ancestor's mask hides only resident descendants, so it draws exactly where the
 //! node is missing. The wanted cut and the fit never see the fallback nodes (they steer requests);
 //! the real cut does, and its memo is keyed on the fallback set and the depths of those nodes.
-//! Covered nodes count as stages.
+//! The octants of covered nodes count as stages.
 //!
 //! Only refine (R3-Q21): a cut node `C` whose ancestor `A` drew its zone in the last applied cut
 //! stays *held* while `C` would not draw, in every octant, a level at or above `min(depth A drew
@@ -241,8 +241,7 @@ pub enum CellPoolEvent {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PoolCounters {
-    /// Nodes drawing a level coarser than wanted (R3-Q3): staged nodes, covered nodes and nodes too
-    /// fine to be requested.
+    /// Octants drawing a level coarser than wanted (R3-Q3).
     pub stages: u32,
     /// Cut nodes with a non-masked octant that has no resident level to draw.
     pub nodes_without_level: u32,
@@ -263,7 +262,7 @@ pub struct PoolCounters {
     pub wanted_reused: bool,
     /// The real cut of the previous frame was reused (same wanted cut, same residency).
     pub real_reused: bool,
-    /// Cut nodes held back by R3-Q21 (they count in `nodes_without_level` and in
+    /// Cut nodes held back by R3-Q21 (they count in `nodes_without_level` and their octants in
     /// `stages`).
     pub held_nodes: u32,
     /// Pages of the levels the applied cut draws for the fallback ancestors and for the ancestors
@@ -381,7 +380,7 @@ struct RealMemo {
     entries: Option<Vec<CellCutEntry>>,
     planned_missing: u32,
     /// Unmasked octants of the covered nodes without a level: they draw a coarser ancestor.
-    covered_nodes: u32,
+    covered_octants: u32,
     /// Fallback ancestors and descendants the real cut was computed with.
     fallback: Vec<NodeId>,
     /// Cut nodes left out of the real cut (R3-Q20).
@@ -656,7 +655,7 @@ pub struct CellPool {
     min_side: Option<f64>,
     /// Last frame that counted an overflow (a frame can plan more than once).
     overflow_frame: u64,
-    /// `RealMemo::covered_nodes` of the applied cut.
+    /// `RealMemo::covered_octants` of the applied cut.
     applied_covered: u32,
     applied_levels: FastSet<LevelKey>,
     applied_pins: FastSet<LevelKey>,
