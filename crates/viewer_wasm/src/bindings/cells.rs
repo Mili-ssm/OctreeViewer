@@ -404,6 +404,12 @@ impl WasmSceneBuilder {
             });
             set(&info, key, &value)?;
         }
+        // Always given, unlike dataMin/dataMax: the elevation colour range of `beginRemoteCells`.
+        set(
+            &info,
+            "elevationRange",
+            &js_sys::Float64Array::from(dataset.cell_elevation_range().as_slice()),
+        )?;
         Ok(info.into())
     }
 
@@ -654,7 +660,7 @@ impl WasmVoxelViewer {
 
     /// Render worker of a build-worker setup: creates the driver for the dataset described by
     /// the builder's `cellsInfo` (`origin`, `rootMin`, `rootSide`). Returns the `cellPath`. The
-    /// first `takeCellMessages` carries `driverReplaced`.
+    /// first `takeCellMessages` carries `driverReplaced`. Follow it with `setCellElevationRange`.
     #[wasm_bindgen(js_name = beginRemoteCells)]
     pub fn begin_remote_cells(
         &mut self,
@@ -738,6 +744,22 @@ impl WasmVoxelViewer {
         self.cells_remote = Some(cells);
         self.cell_path = PATH_ENABLED;
         Ok(PATH_ENABLED.to_owned())
+    }
+
+    /// Fixes the elevation colour range of the remote cells path to `[min, max]` (absolute
+    /// dataset Z, `cellsInfo.elevationRange`), so the colour does not depend on the view. Without
+    /// it the range follows the stored levels. No-op when the path is off.
+    #[wasm_bindgen(js_name = setCellElevationRange)]
+    pub fn set_cell_elevation_range(&mut self, min: f64, max: f64) -> Result<(), JsValue> {
+        if !(min.is_finite() && max.is_finite() && min <= max) {
+            return Err(JsValue::from_str(
+                "elevation range must be finite with min <= max",
+            ));
+        }
+        if let Some(cells) = &mut self.cells_remote {
+            cells.set_elevation_range(Some([min, max]));
+        }
+        Ok(())
     }
 
     /// Continuity of the open cloud (RF-05): with `enabled`, no cell is drawn smaller than

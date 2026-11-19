@@ -586,12 +586,6 @@ impl CellDriver {
         }
     }
 
-    /// Z span of the root cube (absolute frame): the data extent when `set_data_bounds` got `None`.
-    pub fn root_z_range(&self) -> [f64; 2] {
-        let grid = &self.config.grid;
-        [grid.root_min[2], grid.root_min[2] + grid.root_side]
-    }
-
     /// Records `generation` as the newest seen; a new dataset or colour generation discards the
     /// stored colour ranges, which belonged to the old one.
     fn advance_generation(&mut self, generation: Option<u64>) {
