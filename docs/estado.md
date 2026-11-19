@@ -55,14 +55,13 @@ pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) (lis
 
 ### Estado (19-11-2026)
 
-**Conclusión:** la pila de PR #81–#86 está fusionada en `main` (19-11-2026) y la demo se republicó en gh-pages desde `2096366`. El [modo octante se retiró](adr/0056-se-retira-el-modo-octante.md) (modo celda único; #59 y #67 cerradas) y el [plan del ADR 0055 en modo celda](records/archive/adr-0055-rango-por-nodo.md) se completó con salida reducida: rango por nodo, regla `Window` retirada, #87 arreglada ([cierre](records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)). Planes cerrados: [retirada del modo octante](records/archive/retirada-del-modo-octante.md) y [cómo retomar](records/archive/retomar-18-11-2026.md).
+**Conclusión:** la pila de PR #81–#86 está fusionada en `main` (19-11-2026) y la demo se republicó en gh-pages desde `cb17ee6`. El [modo octante se retiró](adr/0056-se-retira-el-modo-octante.md) (modo celda único; #59 y #67 cerradas) y el [plan del ADR 0055 en modo celda](records/archive/adr-0055-rango-por-nodo.md) se completó con salida reducida: rango por nodo, regla `Window` retirada, #87 arreglada ([cierre](records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)). Planes cerrados: [retirada del modo octante](records/archive/retirada-del-modo-octante.md) y [cómo retomar](records/archive/retomar-18-11-2026.md).
 
-En curso (19-11-2026): [arreglos de la demo](plans/demo-color-wasd-maquetacion.md) en la rama `feat/demo-color-wasd-layout`: el color por elevación e intensidad ya no depende de la vista, el WASD vuela respecto a la cámara, el visor ocupa la ventana y la demo abre un recorte real de Belvedere (CC BY 4.0).
+Hecho (19-11-2026): [arreglos de la demo](records/archive/demo-color-wasd-maquetacion.md), fusionados en #91 y #92 y publicados desde `cb17ee6`: el color por elevación e intensidad ya no depende de la vista, el WASD vuela respecto a la cámara, el visor ocupa la ventana, la demo abre un recorte real de Belvedere (CC BY 4.0) y los dos crates del visor heredan los lints pedantes (#89).
 
 Pendiente (el detalle vive en issues y PR; los huecos transitorios del conjunto activo que cuenta el oráculo se aceptan, ver el [cierre](records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)):
 
 - [PR #88](https://github.com/Mili-ssm/OctreeViewer/pull/88): experimento en borrador y aparcado (tramo único como fuente de la emisión y borrado de la maquinaria por octante).
-- [#89](https://github.com/Mili-ssm/OctreeViewer/issues/89): lints pedantes en `viewer_render_wgpu` y `viewer_wasm`; resuelta en la rama `chore/89-pedantic-lints`, pendiente de fusionar.
 - [#69](https://github.com/Mili-ssm/OctreeViewer/issues/69) (OQ-14): residencia de Majadas, abierta.
 
 Activo (D3c completado el 15-11-2026; PR #1 y #29 fusionadas en `main`); siguiente trabajo en [Cómo retomar](plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026).
