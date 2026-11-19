@@ -181,8 +181,15 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 7b: Requests come from the node range (R)
 
-- [ ] `needed_levels` y las peticiones salen de `[lo, hi]`, de grueso a fino (D7), sin el rango `range_only`
-  aparte. Comprobación: frames hasta completar en s1, s7 y s3 frente a la tarea 7a.
+- [x] (2fe583a, 3ba8d60) Los niveles que un nodo necesita y pide salen de un único rango `[lo, top]`
+  (`CellPool::node_range`), de grueso a fino (D7), sin la clasificación `range_only`. `top` es el mayor entre
+  `range.hi` y el deseo más fino de sus octantes: `range.hi` no cuenta los octantes detrás del ojo o que cruzan su
+  plano, cuyo deseo (ya limitado por la cota) se dibuja igual. **Se conserva la guarda de espaciado**: más allá del
+  nivel almacenado más fino solo se pide lo que un octante quiere exactamente. El primer intento la quitó (pedía
+  toda la escalera hasta `top` y un test necesitó un pool 64 veces mayor); la revisión lo detectó y se restauró.
+  Comprobación: simulaciones reales idénticas línea a línea a la tarea 7a; frames hasta asentarse iguales (dolly 29,
+  órbitas 53 y 37); 0 muestras dibujables más gruesas; Majadas a 4 px idéntica (16 059 páginas, mismo resumen del
+  corte); en la muestra, P2 2314 → 2170 y P3 2746 → 2602 páginas; `scripts/check.sh` 23 de 23.
 
 ### Tramo C: puerta de residencia, campos por nodo y borrado
 
