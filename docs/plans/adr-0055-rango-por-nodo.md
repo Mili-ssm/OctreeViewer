@@ -215,9 +215,19 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 ### Task 9: The residency gate replaces the per-node hold (R)
 
-- [ ] `eval_hold` y `add_d5_gate` usan `run_covers` en lugar de `eval_refine_hold` (R3-Q21). Los tramos ya existen
-  hoy en `cell_active_depths`, así que esta tarea no espera a la 10. Comprobación: el test de caracterización de la
-  tarea 8 y `zone_coarsenings` a 0 en la simulación de dolly.
+- [x] (70e2624, 5fb44dc) `eval_hold` decide la retención con `run_covers` sobre el tramo activo del nodo (el que
+  recibe la GPU); la histéresis, las salidas y los retornos tempranos no cambian. `eval_refine_hold` queda solo
+  para tests hasta la tarea 11. **`add_d5_gate` no cambia**: nunca usó la regla por octante (este plan lo daba por
+  hecho); un test nuevo la fija y falla si se quita.
+  Comprobación: la decisión de producción coincide con el gemelo de la GPU en los 74 casos de la tarea 8 (los 5
+  mixtos al alejarse ahora se liberan); con tope de memoria, el conjunto que el plan emite de verdad no engrosa
+  ninguna celda (más de 30 casos, las dos direcciones); pose fija 50 frames sin parpadeo del conjunto retenido;
+  simulaciones reales idénticas byte a byte con `zone_coarsenings` a 0; cortes de las simulaciones sintéticas sin
+  cambio; `scripts/check.sh` 23 de 23; navegador sin huecos ni zonas gruesas al alejarse (muestra y Belvedere, las
+  dos reglas).
+  Límites: los datos reales no llegan a los 5 casos mixtos, así que ese cambio solo lo cubren las tablas y el
+  gemelo; el navegador no ve transitorios de menos de unos 150 ms ni se probó alejarse con el pool a medio cargar;
+  un nodo cuyo nivel necesario no llega sigue retenido sin tiempo límite, igual que con la regla anterior.
 
 ### Task 10: Node-level range and anchor replace the per-octant fields (R)
 
