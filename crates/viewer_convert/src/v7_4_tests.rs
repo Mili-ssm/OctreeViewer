@@ -383,7 +383,11 @@ fn crs_is_reported_as_not_preserved_only_when_the_format_drops_it() {
     let wkt = || vec![vlr(2112, WKT.as_bytes().to_vec())];
     let epsg = Some(("EPSG".to_owned(), 32632));
     // Stored in the global frame: not reported.
-    for (version, name) in [(FormatVersion::V7_PRE4, "a"), (FormatVersion::V7, "b")] {
+    for (version, name) in [
+        (FormatVersion::V7_PRE4, "a"),
+        (FormatVersion::V7_PRE5, "a5"),
+        (FormatVersion::V7, "b"),
+    ] {
         let report = report_for(version, wkt(), name);
         assert!(!reported(&report), "{version:?}");
         assert_eq!(report.1, epsg, "{version:?} stores the CRS");
