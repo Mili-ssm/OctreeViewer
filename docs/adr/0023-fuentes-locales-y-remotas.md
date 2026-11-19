@@ -21,7 +21,7 @@ Estado: Aceptada · Fecha: 30-10-2026 · Sustituye a [0009](0009-transporte-web-
 - Los servidores necesitan CORS y soporte de Range.
 - Hay que agrupar peticiones para amortiguar la latencia.
 - Los bytes remotos son entrada no confiable: aplica la validación previa existente ([ADR 0012](0012-validacion-previa-de-cabeceras-las-laz.md)) y los límites del lector ([ADR 0007](0007-limites-por-defecto-del-lector.md)).
-- **Pendiente:** no hay lector remoto; ASM-02 (decenas de MB por vista) se comprueba en R5.
+- Lector remoto implementado (`http-range-source.mjs`, R5 y D1/D2) y expuesto en la API embebible por [D4](../records/archive/d4-fuente-url-en-la-api.md) (#11); ASM-02 (decenas de MB por vista) se comprueba en R5.
 
 ## Revisar si
 RQ-04 no es alcanzable con la jerarquía paginada en RED-REF.

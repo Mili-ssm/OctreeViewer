@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 
-import { HttpRangeError, HttpRangeSource, readConcurrency, resolveSource } from "../http-range-source.mjs";
+import { HttpRangeError, HttpRangeSource, readConcurrency, resolveSource, sidecarUrl } from "../http-range-source.mjs";
 import { parseRange, startServer } from "../red-ref-server.mjs";
 
 const SIZE = 3000;
@@ -170,4 +170,18 @@ test("resolveSource forwards maxGap from the descriptor", async () => {
   await Promise.all([bytesOf(source, 100, 200), bytesOf(source, 400, 500)]);
   assert.equal(server.log.length, 1);
   assert.equal(source.stats.gapBytes, 200);
+});
+
+test("sidecarUrl appends attrs to the path, keeps the query and drops the fragment", () => {
+  assert.equal(sidecarUrl("https://h.example/d/a.oct"), "https://h.example/d/a.octattrs");
+  assert.equal(sidecarUrl(new URL("https://h.example/d/a.oct?v=1&sig=x#top")), "https://h.example/d/a.octattrs?v=1&sig=x");
+  assert.equal(sidecarUrl("https://h.example/a%20b.oct#f"), "https://h.example/a%20b.octattrs");
+});
+
+test("sidecarUrl rejects a trailing slash and a path that already ends in .octattrs", () => {
+  assert.throws(() => sidecarUrl("https://h.example/d/"), TypeError);
+  assert.throws(() => sidecarUrl("https://h.example/d/?x=a.oct"), TypeError);
+  assert.throws(() => sidecarUrl("https://h.example/a.octattrs?v=1"), TypeError);
+  assert.throws(() => sidecarUrl("https://h.example/A.OCTATTRS"), TypeError);
+  assert.throws(() => sidecarUrl("not absolute"), TypeError);
 });

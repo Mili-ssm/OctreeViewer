@@ -253,3 +253,37 @@ With fresh bindings, run `tests/lod-regions.browser.mjs` as a module worker and 
 parent fallback with an independently detailed sibling, resize rebuilding and child replacement.
 The [regional LOD report](../../docs/explanation/REGIONAL_VOXEL_LOD.md) records the software adapter, native
 comparison and outstanding visual validation; a `presented` status alone is not screenshot proof.
+
+### Remote source through the embeddable API
+
+Checks `load({ url })` (HTTP Range, D4) with and without the build worker. The data server must
+answer Range and CORS; `red-ref-server.mjs` answers every file as `application/octet-stream`, so it
+serves only the dataset and a second static server serves the page, the modules and `pkg/`
+(the workers import `../../pkg/viewer_wasm.js`, so the app root is the repository root). Build the bindings
+first with `scripts/build-wasm-bindings.sh` when `pkg/` is missing or stale (a fresh worktree has none).
+
+```bash
+python3 -m http.server 8791 --bind 127.0.0.1 &                                     # app: repository root
+node examples/web-host/red-ref-server.mjs examples/web-host --port=8780 --rtt-ms=0 &  # data with Range
+# error case: node examples/web-host/red-ref-server.mjs examples/web-host --port=8781 --ignore-range
+```
+
+Open, in a WebGPU-capable browser (headless Chrome with Playwright works; the result is also in `window.probeResult`):
+
+```text
+http://127.0.0.1:8791/examples/web-host/probe-api-remote.html?data=http://127.0.0.1:8780/sample.oct&buildWorker=0&attributes=derived
+```
+
+Vary `buildWorker=0|1` and `attributes=derived|none`. The page awaits up to 60 s per wait and prints
+`{ name, bytes, hasAttributes, reachedTarget, metadata }`, or `{ error }` when `load` rejects.
+
+Expected:
+
+- `name` is `sample.oct`, `bytes` is the file size and `metadata` (node count, max level, semantics,
+  point count) is identical with and without the build worker; `bytes` is not `null` in either mode
+  (the build worker reports it as `fileBytes`).
+- `attributes=derived` gives `hasAttributes: true` (explicit `{ url: sidecarUrl(url) }`); `none` gives `false`.
+- `reachedTarget` is `true`.
+- Against the `--ignore-range` server (`data=http://127.0.0.1:8781/sample.oct`) the result is an `error`
+  about the server ignoring Range, with no hang. A server that never answers takes about 63 s to fail
+  (4 attempts of 15 s plus waits), longer than this probe's wait.

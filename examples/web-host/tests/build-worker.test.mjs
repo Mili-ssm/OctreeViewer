@@ -25,7 +25,7 @@ const opened = () => ({
 // ---- Build worker in a vm with a fake WASM binding ------------------------------------------
 
 async function runBuildWorker({
-    updates = [], graftFails = false, pageLoadFails = false, asyncBlocks = null, abortable = null,
+    updates = [], graftFails = false, pageLoadFails = false, asyncBlocks = null, abortable = null, file = {},
 } = {}) {
     const posted = [];
     const grafted = [];
@@ -137,10 +137,17 @@ async function runBuildWorker({
     });
     const send = (type, fields = {}) => receive({ data: { type, ...fields } });
     send("init", {});
-    send("open", { gen: 1, file: {}, cacheBytes: 1024, limits: [100, 200] });
+    send("open", { gen: 1, file, cacheBytes: 1024, limits: [100, 200] });
     await settle();
     return { posted, updateCalls, builders, grafted, budgets, pageLoads, planCalls, inserts, send, settle };
 }
+
+test("build worker reports the size of the resolved main source in `opened` (fileBytes)", async () => {
+    const sized = await runBuildWorker({ file: { size: 1234 } });
+    assert.equal(sized.posted.find(item => item.type === "opened").fileBytes, 1234);
+    const unsized = await runBuildWorker();
+    assert.equal(unsized.posted.find(item => item.type === "opened").fileBytes, null);
+});
 
 test("build worker opens the dataset and reports its metadata", async () => {
     const worker = await runBuildWorker();

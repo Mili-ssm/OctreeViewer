@@ -5,6 +5,53 @@ const DEFAULT_CACHE_BYTES = 256 * 1024 * 1024;
 const MAX_CACHE_BYTES = 1024 * 1024 * 1024;
 const MAX_PENDING_REQUESTS = 32;
 
+// Remote source `{ url, maxGap?, remoteReads? }` (HTTP Range, D4). Only these keys travel to the worker:
+// `resolveSource` spreads the descriptor over the `HttpRangeSource` options, so any other key would
+// become public API by accident. The URL is resolved here because a worker resolves against its own URL.
+const DESCRIPTOR_KEYS = new Set(["url", "maxGap", "remoteReads"]);
+function remoteDescriptor(value, label) {
+    if (value === null || typeof value !== "object") throw new TypeError(`${label} must be a Blob or a { url } descriptor`);
+    for (const key of Object.keys(value)) {
+        if (!DESCRIPTOR_KEYS.has(key)) throw new TypeError(`${label} descriptor has an unknown field: ${key}`);
+    }
+    // `URL` from this or another realm (an iframe's `URL` fails `instanceof`).
+    const isUrl = value.url instanceof URL || Object.prototype.toString.call(value.url) === "[object URL]";
+    if (typeof value.url !== "string" && !isUrl) {
+        throw new TypeError(`${label} url must be a string or a URL`);
+    }
+    const base = globalThis.document?.baseURI ?? globalThis.location?.href;
+    let url;
+    try {
+        url = new URL(isUrl ? value.url.href : value.url, base);
+    } catch {
+        throw new TypeError(`${label} url must be an absolute or page-relative http(s) URL`);
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new TypeError(`${label} url must use http: or https:`);
+    if (url.username || url.password) throw new TypeError(`${label} url must not embed credentials`);
+    const descriptor = { url: url.href };
+    if (value.maxGap !== undefined) {
+        if (!Number.isSafeInteger(value.maxGap) || value.maxGap < 0) throw new TypeError(`${label} maxGap must be an integer >= 0`);
+        descriptor.maxGap = value.maxGap;
+    }
+    if (value.remoteReads !== undefined) {
+        if (!Number.isSafeInteger(value.remoteReads) || value.remoteReads < 1) {
+            throw new TypeError(`${label} remoteReads must be an integer >= 1`);
+        }
+        descriptor.remoteReads = value.remoteReads;
+    }
+    return descriptor;
+}
+
+// Last path segment of a resolved URL, decoded when it is valid percent-encoding.
+function remoteName(href) {
+    const segment = new URL(href).pathname.split("/").pop();
+    try {
+        return decodeURIComponent(segment);
+    } catch {
+        return segment;
+    }
+}
+
 // Held-key flight (WASD/QE). Amounts are in units of the camera's orbit distance, so the feel is
 // independent of the scene size. Same logic in main.js and viewer-api.mjs: the offline packager
 // inlines or copies each file on its own, so they cannot share a module.
@@ -123,7 +170,12 @@ export function createViewer(hostCanvas, options = {}) {
         if (pending.size >= MAX_PENDING_REQUESTS) return reject(new Error("viewer request queue is full"));
         const requestId = nextRequestId++;
         pending.set(requestId, { resolve, reject });
-        worker.postMessage({ type: "api", operation, requestId, ...values });
+        try {
+            worker.postMessage({ type: "api", operation, requestId, ...values });
+        } catch (error) {
+            pending.delete(requestId);
+            reject(error);
+        }
     });
     const ensureFrame = () => {
         if (!disposed && !failed && ready && !raf && !framePending) raf = requestAnimationFrame(draw);
@@ -176,7 +228,9 @@ export function createViewer(hostCanvas, options = {}) {
             emit("stats", data);
             if (loading) ensureFrame();
         } else if (data.type === "lodProgress") {
-            loading = Boolean(data.lod && !data.lod.lodError && !data.lod.pageBudgetExhausted
+            // The cells driver draws nodes after every block is in: keep frames going until it settles
+            // (`cellsBusy`, as `lodStillLoading` in benchmark-metrics.mjs for the demo).
+            loading = Boolean(data.lod?.cellsBusy) || Boolean(data.lod && !data.lod.lodError && !data.lod.pageBudgetExhausted
                 && (data.lod.pendingBlockIds.length || data.lod.pendingPageAnchors?.length
                     || data.lod.lodStagePixels > data.lod.targetVoxelPixels));
             emit("progress", data);
@@ -359,9 +413,19 @@ export function createViewer(hostCanvas, options = {}) {
     const api = {
         ready: readyPromise,
         load(file, { voxelPixels = 4, cacheBytes = DEFAULT_CACHE_BYTES, attributes = undefined } = {}) {
-            if (!(file instanceof Blob)) return Promise.reject(new TypeError("load expects a File or Blob"));
-            if (attributes !== undefined && !(attributes instanceof Blob)) {
-                return Promise.reject(new TypeError("attributes must be a Blob"));
+            let source = file;
+            let sidecar = attributes;
+            let name;
+            try {
+                if (!(file instanceof Blob)) {
+                    if (file === null || typeof file !== "object") throw new TypeError("load expects a File, a Blob or a { url } descriptor");
+                    source = remoteDescriptor(file, "source");
+                    name = remoteName(source.url);
+                }
+                if (attributes === null) sidecar = undefined;
+                else if (attributes !== undefined && !(attributes instanceof Blob)) sidecar = remoteDescriptor(attributes, "attributes");
+            } catch (error) {
+                return Promise.reject(error);
             }
             if (loadInFlight) return Promise.reject(new Error("a dataset is already being opened"));
             if (!Number.isFinite(voxelPixels) || voxelPixels < 0.5 || voxelPixels > 16) {
@@ -372,7 +436,7 @@ export function createViewer(hostCanvas, options = {}) {
             }
             loadInFlight = true;
             loading = true;
-            return request("load", { file, attributes, targetVoxelPixels: voxelPixels, cacheBytes })
+            return request("load", { file: source, attributes: sidecar, name, targetVoxelPixels: voxelPixels, cacheBytes })
                 .catch((error) => {
                     loading = false;
                     throw error;

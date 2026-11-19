@@ -28,7 +28,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 
 | Documento | Contenido | Estado |
 | --- | --- | --- |
-| [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho y fusionado en `main`, sigue D4) |
+| [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (19-11-2026; D3c y D4 hechos) |
 | [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050, 0052 y 0053); fase 1 y 2a fusionadas; 2b en pausa. | en curso |
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
 | [Fase 2b: rango de niveles y transiciones](plans/fase-2b-rango-de-niveles-y-transiciones.md) | Plan de la fase 2b (#44): rango de niveles por nodo (de la celda más lejana a la más cercana), un nivel por frame (ADR 0053) y residencia D4. | en pausa |
@@ -181,6 +181,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Retirada del modo octante](records/archive/retirada-del-modo-octante.md) | Ejecuta el ADR 0056: línea base del modo celda, cambio de predeterminado, ensayo que clasifica los tests, oráculo de pasos de celda, borrado de la API y de las ramas `LodMode`; diez tareas, pre-mortem aplicado. | histórico |
 | [ADR 0055 en modo celda: rango por nodo y puerta de residencia](records/archive/adr-0055-rango-por-nodo.md) | División de `cell_pool.rs`, rango por nodo en lugar de sondas por octante y puerta de residencia en los bordes; doce tareas en tres tramos. Hechas las tareas 1 a 9, la retirada de `Window` y #87; el tramo único como fuente de la emisión y el borrado de la maquinaria por octante se aparcan (#88). | histórico |
 | [Demo: color estable, WASD, maquetación y segunda nube](records/archive/demo-color-wasd-maquetacion.md) | Rangos de color independientes de la vista, vuelo WASD respecto a la cámara, visor a pantalla completa, recorte real de Belvedere y lints pedantes (#89); fusionado en #91 y #92. | histórico |
+| [D4: fuente `{url}` en la API pública](records/archive/d4-fuente-url-en-la-api.md) | Contrato C1–C6 y resultado: `load` de la API abre datasets remotos por HTTP Range (TW8, #11); `sidecarUrl`. | histórico |
 | [Cómo retomar (18-11-2026)](records/archive/retomar-18-11-2026.md) | Ramas locales y su estado, cómo comprobarlas, las respuestas del propietario a Q1–Q5 y D1–D6 y el siguiente trabajo en orden. | histórico |
 | [R3: cubos por nodo en GPU](records/archive/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | histórico |
 | [R3: anchura de región, layout, máscaras y flags](records/archive/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | histórico |

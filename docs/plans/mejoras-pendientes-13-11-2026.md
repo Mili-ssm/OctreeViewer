@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a, D3b y D3c hechos; fusionada en `main` por la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1); siguiente: D4 ([#11](https://github.com/Mili-ssm/OctreeViewer/issues/11)); ver
+Estado: activo · 19-11-2026 (fases A, B y C cerradas; D1, D2, D3a, D3b, D3c y D4 hechos; fusionada en `main` por la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1); D4 cerrado el 19-11-2026 ([#11](https://github.com/Mili-ssm/OctreeViewer/issues/11)); ver
 [Cómo retomar](#cómo-retomar-15-11-2026))
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
@@ -44,7 +44,7 @@ que no es de esta línea de trabajo.
   [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md). Comprobación: la de D3c.
 - [x] PR de `feat/r3-v75` a `main` abierta (15-11-2026): [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1); la fusión la decide el propietario.
 - [x] Flujo de GitHub adoptado (15-11-2026): lo pendiente pasa a [issues](https://github.com/Mili-ssm/OctreeViewer/issues) ([reglas](../../CONTRIBUTING.md#issues-y-prs)); los experimentos son PRs en borrador (#2–#10).
-- [ ] D4: [#11](https://github.com/Mili-ssm/OctreeViewer/issues/11), dentro del [proyecto API pública](https://github.com/Mili-ssm/OctreeViewer/issues/27).
+- [x] D4 (19-11-2026): [#11](https://github.com/Mili-ssm/OctreeViewer/issues/11), dentro del [proyecto API pública](https://github.com/Mili-ssm/OctreeViewer/issues/27); [plan y resultado](../records/archive/d4-fuente-url-en-la-api.md).
 
 **Ramas conservadas como evidencia** (sin integrar): `explore/convert-speed`, `explore/convert-batch` (fase
 C), `explore/oq09-morton`, `explore/oq09-remote` (ejemplos `oq09_content_hash` y `oq09_block_sizes` y el
@@ -139,7 +139,7 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
   - [x] D3c (15-11-2026; [plan](../records/archive/d3c-congelado-v7-final.md), [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md); registros [RQ-07](../records/benchmarks/D3C_RQ07_V7_15-11-2026.md), [web Belvedere](../records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md) y [referencias](../records/benchmarks/D3C_V7_REFERENCES_15-11-2026.md)). Congelado (RQ-07 revisado por el ADR 0043): identidad final de V7 con el escritor híbrido por defecto (unos 30
     puntos: versiones, E/S paginada, CLI, especificación, índices, pruebas), regeneración de datasets y
     referencias. Comprobación: `check.sh` verde con la identidad final y referencias R1 regeneradas.
-- [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.
+- [x] D4. TW8 `{url}` en la API pública (19-11-2026, [plan y resultado](../records/archive/d4-fuente-url-en-la-api.md)).
 
 ## Limpieza
 
