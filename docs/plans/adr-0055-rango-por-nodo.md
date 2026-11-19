@@ -242,7 +242,10 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
 
 - [ ] **10a** (diseño rehecho el 19-11-2026 tras retirar `Window`): ver
   [«Diseño de la tarea 10»](#diseño-de-la-tarea-10-campos-por-nodo), con las enmiendas del segundo pre-mortem.
-  Antes de 10b: diagnosticar #87 (B7).
+  B7 hecho: #87 diagnosticado y arreglado (5c2f92d, más un retoque): el `lo` de un nodo cuyos octantes con datos
+  están todos detrás del ojo salía de la caja unión, que «pasaba» por una esquina que tampoco se ve; ahora `lo` y
+  la cota por datos miden solo octantes con datos a la vista (nodo 77: (12, 12) → (7, 7)). El hueco de ese nodo
+  sigue: un octante aún dibuja 12 mientras baja nivel a nivel y otro ya dibuja 7; lo quita el tramo único (10e).
 - [ ] **10b.** `node_run` (función pura) y los campos por nodo, calculados junto a los viejos sin lectores. Parada:
   en algún frame de una simulación real, los bits activos de `node_run` difieren de los de hoy fuera de los frames
   con hueco (`active_gaps`), que es justo lo que corrige.
