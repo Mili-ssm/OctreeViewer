@@ -182,5 +182,6 @@ test("sidecarUrl rejects a trailing slash and a path that already ends in .octat
   assert.throws(() => sidecarUrl("https://h.example/d/"), TypeError);
   assert.throws(() => sidecarUrl("https://h.example/d/?x=a.oct"), TypeError);
   assert.throws(() => sidecarUrl("https://h.example/a.octattrs?v=1"), TypeError);
+  assert.throws(() => sidecarUrl("https://h.example/A.OCTATTRS"), TypeError);
   assert.throws(() => sidecarUrl("not absolute"), TypeError);
 });

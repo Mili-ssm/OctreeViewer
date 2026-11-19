@@ -352,7 +352,7 @@ export async function resolveSource(spec, options = {}) {
 export function sidecarUrl(url) {
   const parsed = new URL(url instanceof URL ? url.href : url);
   if (parsed.pathname.endsWith("/")) throw new TypeError("cannot derive a sidecar URL from a path ending in /");
-  if (parsed.pathname.endsWith(".octattrs")) throw new TypeError("the URL already points to an .octattrs sidecar");
+  if (parsed.pathname.toLowerCase().endsWith(".octattrs")) throw new TypeError("the URL already points to an .octattrs sidecar");
   parsed.pathname += "attrs";
   parsed.hash = "";
   return parsed.href;

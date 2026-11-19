@@ -14,13 +14,15 @@ function remoteDescriptor(value, label) {
     for (const key of Object.keys(value)) {
         if (!DESCRIPTOR_KEYS.has(key)) throw new TypeError(`${label} descriptor has an unknown field: ${key}`);
     }
-    if (typeof value.url !== "string" && !(value.url instanceof URL)) {
+    // `URL` from this or another realm (an iframe's `URL` fails `instanceof`).
+    const isUrl = value.url instanceof URL || Object.prototype.toString.call(value.url) === "[object URL]";
+    if (typeof value.url !== "string" && !isUrl) {
         throw new TypeError(`${label} url must be a string or a URL`);
     }
     const base = globalThis.document?.baseURI ?? globalThis.location?.href;
     let url;
     try {
-        url = new URL(value.url instanceof URL ? value.url.href : value.url, base);
+        url = new URL(isUrl ? value.url.href : value.url, base);
     } catch {
         throw new TypeError(`${label} url must be an absolute or page-relative http(s) URL`);
     }
@@ -420,7 +422,8 @@ export function createViewer(hostCanvas, options = {}) {
                     source = remoteDescriptor(file, "source");
                     name = remoteName(source.url);
                 }
-                if (attributes !== undefined && !(attributes instanceof Blob)) sidecar = remoteDescriptor(attributes, "attributes");
+                if (attributes === null) sidecar = undefined;
+                else if (attributes !== undefined && !(attributes instanceof Blob)) sidecar = remoteDescriptor(attributes, "attributes");
             } catch (error) {
                 return Promise.reject(error);
             }

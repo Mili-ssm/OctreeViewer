@@ -550,7 +550,12 @@ function openUrlFromQuery() {
         const value = Number(params.get(name));
         if (params.get(name) !== null && Number.isFinite(value) && value >= 0) readOptions[name] = Math.trunc(value);
     }
-    const attributes = attrs === "none" ? undefined : { url: attrs ? absolute(attrs) : sidecarUrl(url), ...readOptions };
+    let sidecar = attrs ? absolute(attrs) : null;
+    if (!sidecar && attrs !== "none") {
+        // A URL with no file name (`.../dir/`) has no sidecar: open without one and let the open report the error.
+        try { sidecar = sidecarUrl(url); } catch { sidecar = null; }
+    }
+    const attributes = attrs === "none" || !sidecar ? undefined : { url: sidecar, ...readOptions };
     openProjectFile({ url, ...readOptions }, decodeURIComponent(new URL(url).pathname.split("/").pop()), attributes);
 }
 

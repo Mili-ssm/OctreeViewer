@@ -643,6 +643,13 @@ test("load accepts remote { url } descriptors and rejects malformed ones", async
         await viewer.load({ url: "https://data.example/bad%ZZ.oct" });
         assert.equal(loads().at(-1).name, "bad%ZZ.oct");
 
+        // `null` attributes mean "no sidecar"; a `URL` from another realm is a URL.
+        const { runInNewContext } = await import("node:vm");
+        const foreignUrl = runInNewContext("new URL('https://data.example/f.oct')", { URL });
+        await viewer.load({ url: foreignUrl }, { attributes: null });
+        assert.equal(loads().at(-1).file.url, "https://data.example/f.oct");
+        assert.equal(loads().at(-1).attributes, undefined);
+
         const blob = new Blob(["x"]);
         await viewer.load(blob);
         assert.equal(loads().at(-1).file, blob);
