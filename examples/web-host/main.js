@@ -300,6 +300,8 @@ function exportBenchmarkRun() {
 // independent of the scene size. Same logic in main.js and viewer-api.mjs: the offline packager
 // inlines or copies each file on its own, so they cannot share a module.
 const FLIGHT_KEYS = { w: [1, 0, 0], s: [-1, 0, 0], d: [0, 1, 0], a: [0, -1, 0], e: [0, 0, 1], q: [0, 0, -1] };
+// Orbit radii per second at movement speed 1: a 1 s hold of W covers about a third of the view.
+const FLIGHT_BASE_SPEED = 0.3;
 const FLIGHT_SHIFT_FACTOR = 4;
 const FLIGHT_MAX_DT = 0.1;
 function createFlight() {
@@ -327,7 +329,7 @@ function createFlight() {
             if (held.size === 0) return null;
             const dt = Math.min(FLIGHT_MAX_DT, Math.max(0, (now - last) / 1000));
             last = now;
-            const amount = speed * dt * (shift ? FLIGHT_SHIFT_FACTOR : 1);
+            const amount = FLIGHT_BASE_SPEED * speed * dt * (shift ? FLIGHT_SHIFT_FACTOR : 1);
             const total = [0, 0, 0];
             for (const key of held) for (let axis = 0; axis < 3; axis += 1) total[axis] += FLIGHT_KEYS[key][axis] * amount;
             return { flyForward: total[0], flyRight: total[1], flyUp: total[2] };
