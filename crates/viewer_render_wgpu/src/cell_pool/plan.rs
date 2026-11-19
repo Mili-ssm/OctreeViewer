@@ -120,6 +120,16 @@ impl CellPool {
             origin: coordinate_origin,
             depths,
             evaluations: Cell::new(0),
+            capped: {
+                #[cfg(test)]
+                {
+                    !self.uncapped_wish
+                }
+                #[cfg(not(test))]
+                {
+                    true
+                }
+            },
         };
         let eye: [f64; 3] = view
             .camera()
@@ -228,6 +238,9 @@ impl CellPool {
                 &joined
             };
             let kept = std::cell::RefCell::new(Vec::new());
+            // The resident list each node was given (after hold, cap and `finer_drawn`): the one
+            // `fill_node_runs` anchors on, so the node run and the cut cannot disagree.
+            let given: std::cell::RefCell<FastMap<NodeId, Vec<u8>>> = Default::default();
             let lookup = |id: NodeId| {
                 let data = nodes.get(&id)?;
                 let stored = capped(&data.stored, caps.get(&id));
@@ -253,10 +266,11 @@ impl CellPool {
                     node.resident = old;
                     kept.borrow_mut().push(id);
                 }
+                given.borrow_mut().insert(id, node.resident.clone());
                 Some(node)
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
-            let entries = match cell_cut_ranged(
+            let mut entries = match cell_cut_ranged(
                 real_cut,
                 &lookup,
                 grid,
@@ -276,6 +290,21 @@ impl CellPool {
                 Err(CellCutError::DescendantTooFine { .. }) => None,
                 Err(other) => return Err(other),
             };
+            let eval = entries.as_deref().map_or_else(
+                || HoldEval {
+                    hold: hold.clone(),
+                    settle: hold.clone(),
+                    ..HoldEval::default()
+                },
+                |entries| {
+                    self.eval_hold(entries, live_cut, nodes, grid, hold, &|id, o, data| {
+                        ctx.depth(id, o, data)
+                    })
+                },
+            );
+            if let Some(entries) = entries.as_mut() {
+                self.fill_node_runs(entries, &given.borrow(), &eval.before, nodes, grid);
+            }
             let planned_missing = entries.as_deref().map_or(cut.len() as u32, |entries| {
                 missing_levels(entries) + found.excluded.len() as u32
             });
@@ -297,18 +326,6 @@ impl CellPool {
                 entries.as_deref().map_or((cut.len() as u32, 0), |entries| {
                     uncovered_levels(entries, nodes, grid)
                 });
-            let eval = entries.as_deref().map_or_else(
-                || HoldEval {
-                    hold: hold.clone(),
-                    settle: hold.clone(),
-                    ..HoldEval::default()
-                },
-                |entries| {
-                    self.eval_hold(entries, live_cut, nodes, grid, hold, &|id, o, data| {
-                        ctx.depth(id, o, data)
-                    })
-                },
-            );
             self.real_memo = Some(RealMemo {
                 generation,
                 residency_epoch: self.residency_epoch,
@@ -418,14 +435,6 @@ impl CellPool {
                     .iter()
                     .map(|entry| (entry.node, entry.drawn))
                     .collect();
-                self.applied_window = self
-                    .applied
-                    .iter()
-                    .filter_map(|entry| {
-                        let (lo, hi) = self.applied_span.get(&entry.node)?;
-                        Some((entry.node, (lo.saturating_sub(1), hi.saturating_add(1))))
-                    })
-                    .collect();
                 self.applied_digest = drawn_digest(&self.applied);
                 self.applied_cover.clone_from(&memo.hold_ancestors);
                 self.index_applied(nodes, grid);
@@ -452,6 +461,7 @@ impl CellPool {
             }
         }
         self.step_waits = waits;
+        self.advance_node_waits();
         if expired {
             self.residency_epoch += 1;
         }
@@ -508,24 +518,6 @@ impl CellPool {
                         .filter(|((node, _), _)| nodes.contains_key(node))
                         .map(|((node, _), ((_, _, next), _))| self.key(*node, *next)),
                 )
-                .collect()
-        };
-        // Range depths no octant wants rank after the wanted ones and the step.
-        let range_only: FastSet<LevelKey> = if overflow {
-            FastSet::default()
-        } else {
-            self.real_memo
-                .as_ref()
-                .and_then(|memo| memo.entries.as_deref())
-                .into_iter()
-                .flatten()
-                .flat_map(|entry| {
-                    self.range_depths(entry, &nodes[&entry.node], &self.caps, grid)
-                        .1
-                        .into_iter()
-                        .filter(|d| !entry.wanted.iter().flatten().any(|w| w == d))
-                        .map(|d| self.key(entry.node, d))
-                })
                 .collect()
         };
         let stored_step = |key: &LevelKey| {
@@ -679,7 +671,6 @@ impl CellPool {
             (!d5.contains(a))
                 .cmp(&!d5.contains(b))
                 .then((!steps.contains(a)).cmp(&!steps.contains(b)))
-                .then(range_only.contains(a).cmp(&range_only.contains(b)))
                 .then(a.depth.cmp(&b.depth))
                 .then(distance(a).total_cmp(&distance(b)))
                 .then(a.node.cmp(&b.node))
@@ -800,6 +791,7 @@ impl CellPool {
             }
             let mut finest = FastMap::default();
             let mut spans = FastMap::default();
+            let mut runs = FastMap::default();
             let mut d5_depths = FastMap::default();
             for index in 0..self.applied.len() {
                 let (id, mask) = (self.applied[index].node, self.applied[index].mask);
@@ -816,10 +808,16 @@ impl CellPool {
                 if let Some(d5) = d5 {
                     d5_depths.insert(id, d5);
                 }
-                // Exactly the depths emitted below as `ActiveLevel`s of this node.
-                let active_bits = self
-                    .cell_active_depths(&self.applied[index], node_depth, d5)
-                    .into_iter()
+                // B3: the run without the depth D5 adds, and exactly the depths emitted below as
+                // `ActiveLevel`s of this node (the same plus D5, as `cell_active_depths` adds it).
+                let own = self.cell_active_depths(&self.applied[index], node_depth, None);
+                if let Some((lo, hi)) = own.first().zip(own.last()) {
+                    runs.insert(id, (*lo, *hi));
+                }
+                let active_bits = own
+                    .iter()
+                    .copied()
+                    .chain(d5)
                     .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth));
                 if active_bits != 0 {
                     let top = node_depth + (63 - active_bits.leading_zeros()) as u8;
@@ -862,6 +860,7 @@ impl CellPool {
             }
             self.applied_d5 = d5_depths;
             self.applied_finest = finest;
+            self.applied_run = runs;
             self.applied_span = spans;
         }
         let mut applied_levels = FastSet::default();
@@ -963,7 +962,7 @@ impl CellPool {
         let hidden_held = if apply == CutApply::Applied {
             self.applied
                 .iter()
-                .filter(|e| hold.contains(&e.node) && e.wanted.iter().all(Option::is_none))
+                .filter(|e| hold.contains(&e.node) && (0..8).all(|o| e.octant_hidden(o)))
                 .count() as u32
         } else {
             0

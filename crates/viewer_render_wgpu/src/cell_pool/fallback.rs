@@ -100,7 +100,9 @@ impl CoverRule {
 }
 
 /// Does `ancestor` (`gap` levels above `f`) draw, in the real cut `entries`, everywhere `f` lies?
-/// A hidden octant (`wanted` is None) is drawn by the resident nodes that hide it.
+/// A hidden octant (`wanted` is None) is drawn by the resident nodes that hide it. It reads
+/// `drawn`, not the node anchor: the hold's evaluation calls it on entries `fill_node_runs` has
+/// not reached yet (the run needs the hold's `before`).
 pub(super) fn covers_in(
     entries: &[CellCutEntry],
     position: &FastMap<NodeId, usize>,
@@ -239,7 +241,7 @@ pub(super) fn octant_covered(
     for (index, k) in below {
         let entry = &entries[*index];
         let d = Footprint::new(grid, nodes[&entry.node].bounds);
-        for o2 in (0..8).filter(|o2| entry.drawn[*o2].is_some()) {
+        for o2 in (0..8).filter(|o2| entry.claims(*o2)) {
             covers.push(boxed(*k, d.octant_range(o2)));
         }
     }
@@ -297,7 +299,7 @@ pub(super) fn octant_covered(
 pub(super) fn missing_levels(entries: &[CellCutEntry]) -> u32 {
     entries
         .iter()
-        .filter(|entry| (0..8).any(|o| entry.wanted[o].is_some() && entry.drawn[o].is_none()))
+        .filter(|entry| (0..8).any(|o| entry.wanted[o].is_some() && !entry.claims(o)))
         .count() as u32
 }
 
@@ -312,7 +314,7 @@ pub(super) fn uncovered_levels(
 ) -> (u32, u32) {
     let missing = |entry: &CellCutEntry| {
         (0..8)
-            .filter(|o| entry.wanted[*o].is_some() && entry.drawn[*o].is_none())
+            .filter(|o| entry.wanted[*o].is_some() && !entry.claims(*o))
             .count() as u32
     };
     if entries.iter().all(|entry| missing(entry) == 0) {
@@ -340,7 +342,7 @@ pub(super) fn uncovered_levels(
             // A hidden octant (`wanted` is None) is drawn by the resident nodes that hide it.
             feet[index]
                 .octants_in(k)
-                .all(|o| parent.drawn[o].is_some() || parent.wanted[o].is_none())
+                .all(|o| parent.claims(o) || parent.wanted[o].is_none())
         });
         if covered {
             octants += count;
@@ -456,7 +458,7 @@ impl CellPool {
                     let id = entry.node;
                     !rule.in_cut.contains(&id)
                         && !seen.contains(&id)
-                        && entry.drawn.iter().any(Option::is_some)
+                        && entry.node_anchor.is_some()
                         && self.has_resident_level(id, &self.applied_index.nodes[&id], grid)
                         && {
                             let f = Footprint::new(grid, self.applied_index.nodes[&id].bounds);
@@ -537,7 +539,7 @@ impl CellPool {
             .enumerate()
             .map(|(index, entry)| (entry.node, index))
             .collect();
-        let drew = |entry: &CellCutEntry, o: usize| entry.drawn[o].is_some();
+        let drew = |entry: &CellCutEntry, o: usize| entry.claims(o);
         // Octants a new entry of the same node does not draw any more.
         let mut pending: Vec<(&CellCutEntry, [bool; 8])> = Vec::new();
         for old in &self.applied {
@@ -545,7 +547,7 @@ impl CellPool {
                 drew(old, o)
                     && position.get(&old.node).is_none_or(|&index| {
                         let now = &entries[index];
-                        now.drawn[o].is_none() && now.wanted[o].is_some()
+                        !now.claims(o) && now.wanted[o].is_some()
                     })
             });
             if short.iter().any(|s| *s) {
@@ -595,7 +597,7 @@ impl CellPool {
             })
             .collect();
         for (index, entry) in entries.iter().enumerate() {
-            if !entry.drawn.iter().any(Option::is_some) {
+            if entry.node_anchor.is_none() {
                 continue;
             }
             let f = Footprint::new(grid, nodes[&entry.node].bounds);
@@ -628,7 +630,7 @@ impl CellPool {
                     by_cell.get(&f.ancestor(k)).is_some_and(|&index| {
                         let parent = &entries[index];
                         f.octants_of(k, o)
-                            .all(|a| parent.drawn[a].is_some() || parent.wanted[a].is_none())
+                            .all(|a| parent.claims(a) || parent.wanted[a].is_none())
                     })
                 })
             };

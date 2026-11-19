@@ -304,7 +304,7 @@ const GLUE_SEEDS: [u64; 3] = [1, 7, 42];
 fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
     let full = synthetic_cpu_bytes(&views);
     let budget = full / 3;
-    let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let (expected, _) = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
     let mut reports = 0;
     for (i, seed) in GLUE_SEEDS.iter().enumerate() {
         // A cap of one byte applies one node per frame; the other seeds apply bursts.
@@ -488,7 +488,7 @@ fn the_in_process_glue_reaches_the_in_process_digest() {
     let views = synth_orbit();
     // The whole at-rest set (octant mode kept 553 688 bytes here, cell mode keeps 603 272).
     let budget = synthetic_cpu_bytes(&views);
-    let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let (expected, _) = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
     let mut h = synthetic_harness(1 << 20, 2.0);
     let mut cells = InProcessCells::new(&h.dataset, h.config);
     let mut target = StrictTarget::default();
@@ -1280,7 +1280,7 @@ fn glue_real_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64], i
     }
     unlimited.settle(views.last().unwrap(), 3, 20_000);
     let budget = unlimited.driver.cpu_bytes() * budget_percent / 100;
-    let expected = in_process_digest(open().unwrap(), budget, &views);
+    let (expected, _) = in_process_digest(open().unwrap(), budget, &views);
     for seed in seeds {
         let mut sim = GlueSim::new(open().unwrap(), budget, *seed, 4 << 20);
         let digest = sim.run(&views, inject, 400_000);

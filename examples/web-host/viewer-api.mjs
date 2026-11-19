@@ -372,14 +372,6 @@ export function createViewer(hostCanvas, options = {}) {
             }
             return request("setPxMode", { mode: pxMode });
         },
-        // Experimental, temporary (OQ-11, issue #66): "window" (default) or "contiguous" active depths
-        // of a node in cell mode; resolves with the rule now in force. An unknown rule rejects.
-        setCellActiveRule(rule) {
-            if (rule !== "window" && rule !== "contiguous") {
-                return Promise.reject(new TypeError("cell active rule must be 'window' or 'contiguous'"));
-            }
-            return request("setCellActiveRule", { rule });
-        },
         // Length minimum of the drawn cubes in dataset units (ADR 0049/0054): `undefined` restores the
         // default (1e-4), 0 turns it off; a negative or non-finite side rejects. The larger of it and the
         // continuity side wins. Resolves with the side sent.

@@ -241,12 +241,9 @@ are in source dataset coordinates, with the file's coordinate origin and visual 
 `getCamera()` also returns the active mode, fixed Z-up vector, and bird movement speed.
 The cells path always selects the drawn level per cell; there is no mode to choose. `?cellLod=` in the page URL
 was removed: any value is ignored with a console warning.
-`setCellActiveRule("window" | "contiguous")` (experimental) picks which range depths a node activates in cell
-mode: `"window"` (default) widens one level per frame, `"contiguous"` activates the resident run of the range
-at once. An unknown rule rejects and keeps the current one; `?cellActive=window|contiguous` in the page URL sets it
-at start, and an invalid value is ignored with a console warning. It is a temporary option so the owner can compare
-the zoom; after the decision the losing rule is deleted (OQ-11, issue #66). The demo's "Active depths
-(experimental)" select changes it live.
+The active-depth rule (which range depths a node activates) is always the contiguous resident run; the
+`setCellActiveRule` API and the "Active depths" select were removed (OQ-11, issue #66), and `?cellActive=` in the
+page URL is ignored with a console warning.
 `setMinLength(side)` sets the length minimum of the drawn cubes in dataset units: `undefined` restores the
 default 1e-4 (0.1 mm if the unit is metres), `0` turns the length filter off, and a negative or non-finite side
 rejects. `setContinuity(enabled, factor)` turns on the cloud-spacing minimum (`factor` × the reference spacing,

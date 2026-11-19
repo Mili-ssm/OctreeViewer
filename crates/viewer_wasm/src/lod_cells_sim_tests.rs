@@ -67,6 +67,18 @@ struct SimStats {
     parent_violations: usize,
     /// Page evictions that happened while a cut was still unacknowledged.
     evictions_during_ack_lag: usize,
+    /// What the GPU received over every drawn frame (chained) and for the last one
+    /// (`gpu_input_digest`), and the active-set gaps of `check_active_gaps`; copied from the
+    /// harness totals after each drawn frame.
+    gpu_digest: u64,
+    gpu_digest_last: u64,
+    active_gaps: usize,
+    /// `RunDiff` of the harness: nodes compared, differences per class of `RUN_CLASSES`, and the
+    /// ones whose run top is below / above today's top.
+    run_compared: usize,
+    run_classes: [usize; 7],
+    run_coarser: usize,
+    run_finer: usize,
 }
 
 struct Sim {
@@ -301,8 +313,21 @@ impl Sim {
         }
         self.h
             .check_drawn_cut(number, &draw.report.plan, self.digest);
+        self.stats.gpu_digest = self.h.totals.gpu_digest;
+        self.stats.gpu_digest_last = self.h.totals.gpu_digest_last;
+        self.stats.active_gaps = self.h.totals.active_gaps;
+        let diff = &self.h.totals.run_diff;
+        self.stats.run_compared = diff.compared;
+        self.stats.run_classes = diff.classes;
+        self.stats.run_coarser = diff.coarser;
+        self.stats.run_finer = diff.finer;
         if let Some(requests) = self.h.driver.take_level_requests() {
+            self.h.lag.requests = requests.len();
             self.level_requests = Some(requests);
+        }
+        if self.h.lag.on {
+            self.h.lag.view_gen = self.view_gen;
+            self.h.record_lag(view);
         }
         self.applied = *epoch;
         self.plans.retain(|e, _| e >= epoch);
@@ -426,7 +451,8 @@ impl Sim {
 }
 
 /// The in-process run over the same views: a few frames per view, then settle on the last.
-fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) -> u64 {
+/// Returns the digest of the final cut and its `gpu_input_digest`.
+fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) -> (u64, u64) {
     h.driver = driver_for(&h.dataset, cpu_budget);
     for view in views {
         for _ in 0..3 {
@@ -434,7 +460,7 @@ fn in_process_digest(mut h: Harness, cpu_budget: u64, views: &[ViewProjection]) 
         }
     }
     h.settle(views.last().unwrap(), 3, 20_000);
-    h.totals.drawn_digest
+    (h.totals.drawn_digest, h.totals.gpu_digest_last)
 }
 
 fn check_stats(label: &str, sim: &Sim) {
@@ -447,6 +473,18 @@ fn check_stats(label: &str, sim: &Sim) {
         sim.h.lost_samples,
         sim.h.gate
     );
+    if let Some(gap) = &sim.h.totals.first_gap {
+        println!("{label}: first active gap: {gap}");
+    }
+    let diff = &sim.h.totals.run_diff;
+    for (name, example) in RUN_CLASSES.iter().zip(&diff.examples) {
+        if let Some(example) = example {
+            println!("{label}: first run difference, {name}: {example}");
+        }
+    }
+    if let Some(example) = &diff.first_coarser {
+        println!("{label}: first run difference with node_run coarser: {example}");
+    }
     assert_eq!(
         sim.h.unexcused_drops, 0,
         "a sample was drawn coarser than before with no stage lowering it"
@@ -540,13 +578,18 @@ fn synthetic_case(name: &str, views: Vec<ViewProjection>, seeds: &[u64], inject:
     let full = synthetic_cpu_bytes(&views);
     // Small: a third of what the whole run keeps; idle nodes are forgotten and built again.
     let budget = full / 3;
-    let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let (expected, expected_gpu) =
+        in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
     let mut reports = 0;
     for seed in seeds {
-        let mut sim = synth_sim(*seed, budget, 1 << 20, 2.0);
+        let mut sim = Sim::new(synthetic_harness(1 << 20, 2.0), budget, *seed);
         let digest = sim.run(&views, inject, 200_000);
         check_stats(&format!("synthetic {name} seed {seed}"), &sim);
         assert_eq!(digest, expected, "{name} seed {seed}");
+        assert_eq!(
+            sim.stats.gpu_digest_last, expected_gpu,
+            "GPU input of the final cut, {name} seed {seed}"
+        );
         assert!(sim.stats.node_messages > 0);
         if inject.driver_replaced_at.is_some() {
             // Every node the new driver lacked came back, whether the builder learned it from a
@@ -604,19 +647,23 @@ fn sim_synthetic_with_a_tight_page_budget_leaves_no_hole_while_acks_lag() {
         camera_jump_at: Some(a_moves),
         ..Inject::default()
     };
-    let expected = {
+    let (expected, expected_gpu) = {
         let mut h = synthetic_harness(150, 2.0);
         h.driver = driver_for(&h.dataset, u64::MAX);
         h.settle(&a, 3, 20_000);
         h.camera_moved();
         h.settle(&b, 3, 20_000);
-        h.totals.drawn_digest
+        (h.totals.drawn_digest, h.totals.gpu_digest_last)
     };
     for seed in SEEDS {
         let mut sim = synth_sim(seed, u64::MAX, 150, 2.0);
         let digest = sim.run(&views, inject, 200_000);
         check_stats(&format!("synthetic pages seed {seed}"), &sim);
         assert_eq!(digest, expected, "seed {seed}");
+        assert_eq!(
+            sim.stats.gpu_digest_last, expected_gpu,
+            "GPU input of the final cut, seed {seed}"
+        );
         assert!(sim.h.dataset.page_stats().2 > 0, "no page was evicted");
         assert!(
             sim.stats.evictions_during_ack_lag > 0,
@@ -1300,13 +1347,17 @@ fn real_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64], inject
         "belvedere {name}: unlimited run keeps {} bytes, budget {budget}",
         unlimited.driver.cpu_bytes()
     );
-    let expected = in_process_digest(open().unwrap().harness, budget, &views);
+    let (expected, expected_gpu) = in_process_digest(open().unwrap().harness, budget, &views);
     for seed in seeds {
         let mut sim = Sim::new(open().unwrap().harness, budget, *seed);
         let digest = sim.run(&views, inject, 400_000);
         check_stats(&format!("belvedere {name} seed {seed}"), &sim);
         println!("belvedere {name} seed {seed}: digest {digest} in-process {expected}");
         assert_eq!(digest, expected, "belvedere {name} seed {seed}");
+        assert_eq!(
+            sim.stats.gpu_digest_last, expected_gpu,
+            "GPU input of the final cut, belvedere {name} seed {seed}"
+        );
     }
 }
 
@@ -1320,6 +1371,45 @@ fn real_sim_belvedere_orbit_reaches_the_in_process_digest() {
 #[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_sim"]
 fn real_sim_belvedere_dolly_reaches_the_in_process_digest() {
     real_case("dolly", false, 90, &[3], Inject::default());
+}
+
+/// ADR 0055 plan, task 7a: the same runs as `real_case` with the zoom-in lag recorded per draw
+/// (`LAG` and `LAGSUM` lines, see `print_lag`). The measurement only reads, so the sims behave as
+/// in `real_case`; the in-process digest is not recomputed.
+fn real_lag_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64]) {
+    let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20);
+    let Some(real) = open() else { return };
+    let views = real_views(&real, orbit);
+    let mut unlimited = real.harness;
+    unlimited.driver = driver_for(&unlimited.dataset, u64::MAX);
+    for view in &views {
+        unlimited.frame(view);
+    }
+    unlimited.settle(views.last().unwrap(), 3, 20_000);
+    let budget = unlimited.driver.cpu_bytes() * budget_percent / 100;
+    for seed in seeds {
+        let mut sim = Sim::new(open().unwrap().harness, budget, *seed);
+        sim.h.lag.on = true;
+        sim.h.lag.per_node = 8192;
+        sim.run(&views, Inject::default(), 400_000);
+        check_stats(&format!("belvedere {name} seed {seed}"), &sim);
+        print_lag(&format!("belvedere {name} seed {seed}"), &sim.h.lag.frames);
+        if let Some((_, text)) = &sim.h.lag.worst_in_clip {
+            println!("IN_CLIP_SAMPLE belvedere {name} seed {seed}: {text}");
+        }
+    }
+}
+
+#[test]
+#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast -- --ignored real_lag"]
+fn real_lag_belvedere_orbit() {
+    real_lag_case("orbit", true, 50, &[1, 7]);
+}
+
+#[test]
+#[ignore = "minutes on real data: R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile fast -- --ignored real_lag"]
+fn real_lag_belvedere_dolly() {
+    real_lag_case("dolly", false, 90, &[3]);
 }
 
 #[test]

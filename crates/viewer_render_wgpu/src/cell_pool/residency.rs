@@ -60,12 +60,22 @@ impl CellPool {
         }
     }
 
-    /// Cell mode: the depths of `node`'s range (`entry.range`) that the pool wants besides the
+    /// Cell mode: the node range `[lo, top]` of an entry, coarse to fine. `lo` is the range's;
+    /// `top` is its `hi` or the finest wanted octant depth, whichever is finer: `hi` ignores the
+    /// octants behind or crossing the eye plane, whose (data-capped) wish is drawn all the same.
+    pub(super) fn node_range(entry: &CellCutEntry) -> Option<(u8, u8)> {
+        let (lo, hi) = entry.range?;
+        let finest = entry.wanted.iter().flatten().copied().max();
+        Some((lo, finest.map_or(hi, |wanted| hi.max(wanted))))
+    }
+
+    /// Cell mode: the depths of the node range (`node_range`) that the pool wants besides the
     /// octant ones: `(stored, missing)`. `stored` are the stored depths inside the range (fetched
     /// and protected); `missing` are the buildable depths not stored, requested on demand but
-    /// never deeper than the spacing depth, so the single-point tail is not built for the range.
-    /// The spacing depth is the finest stored depth of the node (the chain of the node ends at
-    /// the first fully separated level, or where it is too sparse to page), or its
+    /// never deeper than the spacing depth, so the single-point tail is not built for a range
+    /// nobody wants (`requested_levels` adds the depths an octant wants, whatever their depth).
+    /// The spacing depth is the finest stored depth of the node (the chain of the node
+    /// ends at the first fully separated level, or where it is too sparse to page), or its
     /// representative depth when nothing is stored.
     pub(super) fn range_depths(
         &self,
@@ -74,7 +84,7 @@ impl CellPool {
         caps: &FastMap<NodeId, u8>,
         grid: &CellGrid,
     ) -> (Vec<u8>, Vec<u8>) {
-        let Some((lo, hi)) = entry.range else {
+        let Some((lo, hi)) = Self::node_range(entry) else {
             return (Vec::new(), Vec::new());
         };
         let cap = caps.get(&entry.node);
@@ -98,7 +108,7 @@ impl CellPool {
         .collect::<Vec<u8>>();
         // Contiguous span (ADR 0053): every buildable depth between the coarsest and the finest
         // active one (drawn or resident) is wanted too, below the spacing depth as well.
-        // `buildable` already holds the 0.1 mm minimum side and the sparse-page refusals.
+        // `buildable` holds the sparse-page refusals; the minimum side only bounds the wishes.
         let node_depth = Self::node_depth(grid, node.bounds);
         let (span_lo, span_hi) = cell_depth_range(node_depth);
         // Active depths are the drawn ones and the resident ones inside the range (the pinned

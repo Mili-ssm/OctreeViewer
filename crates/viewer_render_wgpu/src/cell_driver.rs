@@ -577,15 +577,6 @@ impl CellDriver {
         }
     }
 
-    /// Cell mode: which range depths are active (`ActiveRule`, temporary comparison option).
-    /// Takes effect on the next frame ([`CellPool::set_active_rule`]).
-    pub fn set_active_rule(&mut self, rule: crate::ActiveRule) {
-        if self.pool.active_rule() != rule {
-            self.pool.set_active_rule(rule);
-            self.dirty = true;
-        }
-    }
-
     /// Bytes of packed levels kept.
     pub fn cpu_bytes(&self) -> u64 {
         self.cpu_bytes

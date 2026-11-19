@@ -56,7 +56,6 @@ const minLengthFields = document.getElementById("min-length-length-fields");
 const spacingFields = document.getElementById("min-length-spacing-fields");
 const spacingInfo = document.getElementById("min-length-spacing-info");
 const continuityFactor = document.getElementById("continuity-factor");
-const cellActiveSelect = document.getElementById("cell-active");
 const cameraMode = document.getElementById("camera-mode");
 const cameraModeHelp = document.getElementById("camera-mode-help");
 
@@ -526,10 +525,7 @@ function handleWorkerMessage(event) {
             });
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
-        // The active-depth rule is initialised from the URL (`?cellActive=`, OQ-11 issue #66) and then
-        // follows the select; a recreated worker gets it again.
         syncCellControls();
-        worker.postMessage({ type: "setCellActiveRule", rule: cellActiveSelect.value });
         sendMinLength();
         requestFrameOnce();
         if (reopenAfterRecreate) {
@@ -880,17 +876,13 @@ const initialParams = new URLSearchParams(location.search);
 if (initialParams.has("cellLod")) {
     console.warn("ignoring ?cellLod=: the parameter was removed and the viewer always uses per-cell level selection");
 }
-const initialCellActive = initialParams.get("cellActive");
-if (initialCellActive === "window" || initialCellActive === "contiguous") {
-    cellActiveSelect.value = initialCellActive;
-} else if (initialCellActive !== null) {
-    console.warn(`ignoring ?cellActive=${initialCellActive}: expected "window" or "contiguous"`);
+if (initialParams.has("cellActive")) {
+    console.warn("ignoring ?cellActive=: the parameter was removed and the viewer always uses the contiguous active rule");
 }
 
 const lastValid = { side: lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value), factor: 1 };
 
 function syncCellControls() {
-    cellActiveSelect.disabled = !ready;
     minLengthMode.disabled = !ready;
     minLengthValue.disabled = !ready;
     minLengthUnit.disabled = !ready;
@@ -941,10 +933,6 @@ for (const control of [minLengthMode, minLengthValue, minLengthUnit, continuityF
 }
 minLengthValue.addEventListener("input", () => {
     minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value))));
-});
-cellActiveSelect.addEventListener("change", () => {
-    resetBenchmarkWindow();
-    worker.postMessage({ type: "setCellActiveRule", rule: cellActiveSelect.value });
 });
 syncMinLengthMode();
 for (const version of FORMAT_VERSIONS) {

@@ -215,11 +215,6 @@ test("embeddable API converts CSS pick coordinates and disposes its worker resou
         assert.equal(pickMessage.cssHeight, 360);
         await viewer.setMode("bird");
         assert.ok(FakeWorker.instance.messages.some((message) => message.operation === "birdView"));
-        await viewer.setCellActiveRule("contiguous");
-        assert.ok(FakeWorker.instance.messages.some((message) => message.operation === "setCellActiveRule" && message.rule === "contiguous"));
-        const postedRule = FakeWorker.instance.messages.length;
-        await assert.rejects(viewer.setCellActiveRule("Window"), /'window' or 'contiguous'/);
-        assert.equal(FakeWorker.instance.messages.length, postedRule, "an unknown rule is not sent");
         await viewer.setMinLength(0.5);
         assert.ok(FakeWorker.instance.messages.some((message) => message.operation === "setMinLength" && message.side === 0.5));
         await viewer.setMinLength(0);

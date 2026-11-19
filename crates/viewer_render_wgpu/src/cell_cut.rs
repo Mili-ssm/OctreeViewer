@@ -68,19 +68,6 @@ impl Hasher for FxHasher {
 pub(crate) type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 pub(crate) type FastSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 
-/// Cell mode: which resident depths of a node's range are active besides the drawn ones.
-/// Temporary option so the owner can compare both rules while zooming (OQ-11, issue #66).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ActiveRule {
-    /// A window around the applied span that widens one level per applied frame at each end
-    /// (ADR 0053).
-    #[default]
-    Window,
-    /// All at once: the resident, non-fresh depths of the range that reach a usable drawn depth
-    /// without a residency gap.
-    Contiguous,
-}
-
 /// Depths `node_depth..=node_depth + MAX_NODE_SPAN` a node may activate in cell mode (E2).
 pub(crate) fn cell_depth_range(node_depth: u8) -> (u8, u8) {
     (
@@ -133,12 +120,34 @@ pub struct CellCutEntry {
     /// farthest along the view (ADR 0054 rule). `None` for a node with no
     /// visible octant and for one with no buildable depth inside its span.
     pub range: Option<(u8, u8)>,
+    /// Node-level fields of plan task 10 (`cell_pool/run.rs`), computed by the pool next to the
+    /// per-octant ones; presence readers use the anchor (`claims`): the anchor depth, its target, the single active
+    /// run, whether the node is staged and the depth that extends the run. `None`/`false` out of
+    /// the pool.
+    pub node_anchor: Option<u8>,
+    /// The finest depth the node can reach (`min(hi, finest stored or buildable depth, fit cap)`).
+    pub node_target: Option<u8>,
+    pub node_run: Option<(u8, u8)>,
+    pub node_stage: bool,
+    pub node_step: Option<u8>,
     /// Bit `x + 8y + 64z` of the node's 8^3 grid; 1 = hidden under a resident selected
     /// descendant.
     pub mask: [u64; 8],
 }
 
 impl CellCutEntry {
+    /// Does the node draw `octant`? The presence of `drawn[octant]`, read from the node level:
+    /// the octant is not fully masked and the node has an anchor (a resident level of the list the
+    /// cut used).
+    pub(crate) fn claims(&self, octant: usize) -> bool {
+        self.node_anchor.is_some() && !self.octant_hidden(octant)
+    }
+
+    /// Is the 4^3 block of `octant` fully hidden under resident selected descendants?
+    pub fn octant_hidden(&self, octant: usize) -> bool {
+        octant_fully_masked(&self.mask, octant)
+    }
+
     /// Distinct drawn depths, ascending: the levels that must be resident.
     pub fn required_levels(&self) -> Vec<u8> {
         let mut depths: Vec<u8> = self.drawn.iter().flatten().copied().collect();
@@ -299,8 +308,8 @@ pub(crate) fn octant_wanted_depth_in(
     }
 }
 
-/// Octants of the node with no data in view (bit `o`: wholly behind the eye or the LOD near
-/// distance, or empty),
+/// Octants of the node with no data in view (bit `o`: outside the view cone or behind the LOD
+/// near distance, so also a box off-screen sideways, or empty),
 /// and those with data in front (straddling or in front): a behind octant makes no demand of its
 /// own, so the pool gives it the finest wish of the in-front ones (`behind_wanted`) instead of a
 /// coarsest level that would need pages and coarsen the visible result.
@@ -326,6 +335,34 @@ pub(crate) fn behind_octants(
             Probe::Finest | Probe::Meets(_) => (behind, front | 1 << octant),
         }
     })
+}
+
+/// The probes of the octants with data in view: a `behind` octant (see `behind_octants`) becomes
+/// `Empty`, so `probe_region` and the data bound measure only what can be drawn. The `behind` set
+/// (not "not in front of the eye plane") is the mask because an octant that crosses the plane is
+/// visible: dropping it would collapse the eye node's far depth.
+pub(crate) fn mask_behind(probes: [ProbeBox; 8], behind: u8) -> [ProbeBox; 8] {
+    std::array::from_fn(|o| {
+        if behind >> o & 1 == 1 {
+            ProbeBox::Empty
+        } else {
+            probes[o]
+        }
+    })
+}
+
+/// The probes of a node masked at the given view, with the `(behind, front)` sets they came from:
+/// the one place the mask is computed, so the far depth and the data bound always use the octants
+/// in view at the pose they are evaluated at.
+pub(crate) fn masked_probes(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    bounds: SpatialBounds,
+    probes: [ProbeBox; 8],
+) -> ([ProbeBox; 8], (u8, u8)) {
+    let sets = behind_octants(view, grid, coordinate_origin, bounds, probes);
+    (mask_behind(probes, sets.0), sets)
 }
 
 /// A behind octant wants the finest wish among the in-front octants (none in front: its own).
@@ -496,9 +533,52 @@ pub fn node_view_range(
     target_px: f64,
     min_side: Option<f64>,
 ) -> Option<(u8, u8)> {
+    node_view_range_at(
+        view,
+        grid,
+        coordinate_origin,
+        region,
+        buildable,
+        target_px,
+        min_side,
+        None,
+    )
+}
+
+/// `node_view_range` with `hi_c` evaluated at `max(nearest depth, occupied)` instead of at the
+/// nearest depth alone, `occupied` being the view depth of the node's nearest occupied geometry
+/// (`nearest_occupied_depth`, same units as the view depth of the region). A farther `occupied`
+/// never gives a finer `hi`; `None` is `node_view_range`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn node_view_range_at(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    region: Option<SpatialBounds>,
+    buildable: (u8, u8),
+    target_px: f64,
+    min_side: Option<f64>,
+    occupied: Option<f64>,
+) -> Option<(u8, u8)> {
     let span = ViewSpan::new(view, grid, coordinate_origin, region, buildable, min_side)?;
     let lo = span.lo(target_px);
-    Some((lo, span.hi(target_px).max(lo)))
+    Some((lo, span.hi(target_px, occupied).max(lo)))
+}
+
+/// `hi_c` of `node_view_range_at` alone, not raised to `lo`: one search instead of two.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn view_range_hi_at(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    region: Option<SpatialBounds>,
+    buildable: (u8, u8),
+    target_px: f64,
+    min_side: Option<f64>,
+    occupied: Option<f64>,
+) -> Option<u8> {
+    ViewSpan::new(view, grid, coordinate_origin, region, buildable, min_side)
+        .map(|span| span.hi(target_px, occupied))
 }
 
 /// `lo_c` of `node_view_range` alone: one search instead of two, for callers that ignore `hi_c`.
@@ -587,8 +667,9 @@ impl<'a> ViewSpan<'a> {
     }
 
     /// Not yet raised to `lo`.
-    fn hi(&self, target_px: f64) -> u8 {
-        self.on_axis(self.nearest, target_px / self.stretch)
+    fn hi(&self, target_px: f64, occupied: Option<f64>) -> u8 {
+        let nearest = occupied.map_or(self.nearest, |depth| self.nearest.max(depth));
+        self.on_axis(nearest, target_px / self.stretch)
     }
 }
 
@@ -630,7 +711,7 @@ fn relative_bounds(bounds: SpatialBounds, origin: [f64; 3]) -> Option<SpatialBou
     .ok()
 }
 
-fn view_eye(view: &ViewProjection) -> [f64; 3] {
+pub(crate) fn view_eye(view: &ViewProjection) -> [f64; 3] {
     view.camera()
         .position()
         .map(|value| value / view.visual_scale())
@@ -653,8 +734,8 @@ enum Probe<'a> {
     Finest,
     /// The octant has no data: it asks for the coarsest depth.
     Coarsest,
-    /// The octant's data lies wholly behind the eye or the LOD near distance: nothing of it is
-    /// drawn, so it asks for the coarsest depth on its own (see `behind_octants`).
+    /// No point of the octant's data is both in view (the cone `nearest_visible_depth` tests, so a
+    /// box off-screen sideways counts) and past the LOD near distance: nothing of it is drawn, so it asks for the coarsest depth on its own (see `behind_octants`).
     Behind,
     Meets(OctantProbe<'a>),
 }
@@ -1035,6 +1116,11 @@ pub(crate) fn cell_cut_ranged(
             stage: [false; 8],
             step: [None; 8],
             range: None,
+            node_anchor: None,
+            node_target: None,
+            node_run: None,
+            node_stage: false,
+            node_step: None,
             mask: [0; 8],
         });
         let rep = representative_depth(grid, data.bounds);

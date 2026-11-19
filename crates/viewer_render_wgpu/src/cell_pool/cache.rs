@@ -35,17 +35,28 @@ pub(super) struct Ctx<'a> {
     pub(super) origin: [f64; 3],
     pub(super) depths: &'a FastMap<NodeId, NodeDepths>,
     pub(super) evaluations: Cell<u32>,
+    /// Caps the wish at the data bound (always, outside tests).
+    pub(super) capped: bool,
 }
 
 impl Ctx<'_> {
     /// `octant_wanted_depth` of the octant for `data.buildable`, from the cache of the full
     /// range: the coarsest depth that meets the target, else the finest, so a range cut short by
-    /// a cap gets the same depth capped at its finest.
+    /// a cap gets the same depth capped at its finest. It is also capped at the node's data bound
+    /// `max(lo, hi_d)` (ADR 0055 plan, task 7a): no depth finer than the occupied data in view
+    /// needs. Without a bound (`hi_d == None`) there is no cap. Applied here, not in the cached
+    /// `depths`, so the cache keeps the pure view answer and a bound that changes needs no
+    /// recomputation of the search, only a new plan (see `refresh_depths`).
     pub(super) fn depth(&self, id: NodeId, octant: usize, data: &CellCutNode) -> u8 {
-        self.depths[&id].depths[octant].min(data.buildable.1)
+        let entry = &self.depths[&id];
+        let wish = entry.depths[octant].min(data.buildable.1);
+        match entry.hi_d {
+            Some(bound) if self.capped => wish.min(bound.max(entry.far.0)),
+            _ => wish,
+        }
     }
 
-    /// `lo` of the node (`node_view_range`) and its octants in front of the eye, capped like `depth`.
+    /// `lo` of the node (`node_view_range`) and its octants in front of the eye, within the buildable span.
     pub(super) fn far(&self, id: NodeId, data: &CellCutNode) -> (u8, u8) {
         let (far, front) = self.depths[&id].far;
         (far.min(data.buildable.1), front)
@@ -55,7 +66,7 @@ impl Ctx<'_> {
 impl CellPool {
     /// Recomputes the cached octant depths of the cut nodes and the fallback nodes `extra` that
     /// need it. Returns how many were recomputed and, apart for the cut and for `extra`, whether
-    /// any depth, or the node data they came from, differs from before.
+    /// any depth, data bound, or the node data they came from, differs from before.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn refresh_depths(
         &mut self,
@@ -163,22 +174,22 @@ impl CellPool {
                     target_px,
                 ),
             });
-            let depths = behind_wanted(
-                depths,
-                behind_octants(
-                    view,
-                    grid,
-                    origin,
-                    data.bounds,
-                    std::array::from_fn(|octant| data.probe_box(octant)),
-                ),
+            let (probes, behind) = masked_probes(
+                view,
+                grid,
+                origin,
+                data.bounds,
+                std::array::from_fn(|octant| data.probe_box(octant)),
             );
+            let depths = behind_wanted(depths, behind);
             let depths = match finest_allowed {
                 Some(limit) => depths.map(|depth| continuity_depth(data.buildable, depth, limit)),
                 None => depths,
             };
+            // Octants with nothing in view are left out of the far depth and the data bound, like
+            // `behind_wanted` leaves them out of the wishes: the union box of a node whose octants
+            // are all behind can still pass the in-view test through a corner that is not in view.
             let far = {
-                let probes = std::array::from_fn(|octant| data.probe_box(octant));
                 // `lo` of the node's range: the on-axis bound of `node_view_range` (ADR 0055
                 // plan, task 4); a node wholly behind the eye or without data wants the coarsest
                 // depth. Its `hi_c` is not used yet (task 5), so only `lo` is searched. It is
@@ -195,7 +206,32 @@ impl CellPool {
                 .unwrap_or(data.buildable.0);
                 (far, octants_in_front(view, origin, data.bounds, probes))
             };
-            let differs = was.is_none_or(|cached| cached.depths != depths || cached.far != far);
+            // The data bound depends on the pose, the node and its resident levels only: at an
+            // unchanged pose and residency the cached one stands.
+            let hi_d = match was {
+                Some(cached) if cached.pose == pose && cached.epoch == self.residency_epoch => {
+                    cached.hi_d
+                }
+                _ => {
+                    #[cfg(test)]
+                    {
+                        self.bound_evaluations += 1;
+                    }
+                    Self::data_bound_of(
+                        &self.levels,
+                        self.config,
+                        id,
+                        data,
+                        probes,
+                        (view, grid, origin, target_px, self.min_side),
+                        far.0,
+                    )
+                }
+            };
+            // The data bound caps the wish, so a bound that differs is a different wish.
+            let differs = was.is_none_or(|cached| {
+                cached.depths != depths || cached.far != far || cached.hi_d != hi_d
+            });
             if extra_set.contains(&id) {
                 extra_changed |= differs;
             } else {
@@ -208,6 +244,8 @@ impl CellPool {
                     node: data.clone(),
                     depths,
                     far,
+                    hi_d,
+                    epoch: self.residency_epoch,
                     pose,
                     depth: effective_depth(pose, data.bounds, origin),
                     exact,
@@ -215,6 +253,120 @@ impl CellPool {
                 },
             );
         }
+        // The data bound follows the residency of the entries that were not redone above: a
+        // level that arrived or left changes it, not the pose. A different bound lifts or lowers
+        // the cap on the wishes, so it counts as a change like a new depth.
+        for id in cut.iter().chain(extra) {
+            let Some(cached) = self.depths.get_mut(id) else {
+                continue;
+            };
+            if cached.epoch == self.residency_epoch {
+                continue;
+            }
+            cached.epoch = self.residency_epoch;
+            let data = &nodes[id];
+            #[cfg(test)]
+            {
+                self.bound_evaluations += 1;
+            }
+            // The octants in view now, as in the first loop: a mask kept from an older pose could
+            // leave out one that has since come into view and lower the bound too far.
+            let (probes, _) = masked_probes(
+                view,
+                grid,
+                origin,
+                data.bounds,
+                std::array::from_fn(|octant| data.probe_box(octant)),
+            );
+            let hi_d = Self::data_bound_of(
+                &self.levels,
+                self.config,
+                *id,
+                data,
+                probes,
+                (view, grid, origin, target_px, self.min_side),
+                cached.far.0,
+            );
+            if hi_d != cached.hi_d {
+                cached.hi_d = hi_d;
+                if extra_set.contains(id) {
+                    extra_changed = true;
+                } else {
+                    changed = true;
+                }
+            }
+        }
         (refreshed, changed, extra_changed)
+    }
+
+    /// The data bound (`NodeDepths::hi_d`): the least over the node's resident levels `L` of
+    /// `max(b(L), L)`, `b(L)` being the bound the page boxes of `L` give (a level with no box in
+    /// view gives `L` itself), and not below `lo`. Every `b(L)` is valid (coarser boxes contain the
+    /// finer data) and a level never gives less than its own depth, so the cap never evicts the
+    /// level it came from; levels finer than the result cannot lower it. It depends on the set of
+    /// resident levels, not on the order they arrived in. `None`: no resident level gave one.
+    fn data_bound_of(
+        levels: &FastMap<LevelKey, Level>,
+        config: PoolConfig,
+        node: NodeId,
+        data: &PoolNode,
+        probes: [ProbeBox; 8],
+        (view, grid, origin, target_px, min_side): (
+            &ViewProjection,
+            &CellGrid,
+            [f64; 3],
+            f64,
+            Option<f64>,
+        ),
+        lo: u8,
+    ) -> Option<u8> {
+        let region = probe_region(data.bounds, probes);
+        let mut least: Option<u8> = None;
+        for depth in data.buildable.0..=data.buildable.1 {
+            if least.is_some_and(|least| depth >= least) {
+                break;
+            }
+            let key = LevelKey {
+                session: config.session,
+                node,
+                depth,
+                color_gen: config.color_gen,
+            };
+            let Some(level) = levels
+                .get(&key)
+                .filter(|level| level.is_resident())
+                .and_then(|level| level.data.as_deref())
+            else {
+                continue;
+            };
+            let Some(occupied) = nearest_occupied_depth(view, grid, origin, depth, &level.pages)
+            else {
+                // No box of this level meets the view, so no data of the node does: nothing
+                // finer than this level is needed. Skipping it instead would leave the bound to
+                // whichever coarser level happens to be resident.
+                least = Some(least.map_or(depth, |least| least.min(depth)));
+                continue;
+            };
+            let Some(hi) = view_range_hi_at(
+                view,
+                grid,
+                origin,
+                region,
+                data.buildable,
+                target_px,
+                min_side,
+                Some(occupied),
+            ) else {
+                continue;
+            };
+            least = Some(least.map_or(hi.max(depth), |least| least.min(hi.max(depth))));
+        }
+        least.map(|bound| bound.max(lo))
+    }
+
+    /// `NodeDepths::hi_d` of a node of the cut (see there for the meaning of `None`).
+    #[cfg(test)]
+    pub(crate) fn data_bound(&self, node: NodeId) -> Option<u8> {
+        self.depths.get(&node)?.hi_d
     }
 }

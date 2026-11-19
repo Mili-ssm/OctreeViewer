@@ -77,19 +77,18 @@ use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc, sync::Arc};
 
 use viewer_core::{NodeId, SpatialBounds};
 
-pub use crate::cell_cut::ActiveRule;
-
 use crate::camera::VERTICAL_FOV;
 use crate::node_cells::{node_range, representative_depth_for_spacing};
 
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
     cell_cut::{
-        FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_octants,
-        behind_wanted, cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels,
-        in_cell_range, octant_wanted_depth_in, octant_wanted_depth_near, octants_in_front,
-        probe_region, served_depth, view_range_lo,
+        FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_wanted,
+        cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels, in_cell_range,
+        masked_probes, octant_wanted_depth_in, octant_wanted_depth_near, octants_in_front,
+        probe_region, served_depth, view_range_hi_at, view_range_lo,
     },
+    cell_range::nearest_occupied_depth,
     representative_depth,
 };
 
@@ -101,6 +100,7 @@ mod hold;
 mod pages;
 mod plan;
 mod residency;
+mod run;
 mod seed;
 mod step;
 
@@ -319,6 +319,15 @@ struct NodeDepths {
     /// The node's far wanted depth and the octants in front of the eye
     /// (`node_view_range`, `octants_in_front`).
     far: (u8, u8),
+    /// Data bound of the node (ADR 0055 plan, tasks 5 and 7a): the least over its resident
+    /// levels of `hi` at the view depth of the nearest page box of the level, at least the level's
+    /// own depth (`CellPool::data_bound_of`). It caps the wish of the node's octants
+    /// (`Ctx::depth`). It depends on the pose and the resident set, not on the order of arrival.
+    /// `None`: no resident level, or the node is outside the view range; there is no cap, the
+    /// conservative side.
+    hi_d: Option<u8>,
+    /// The pool's `residency_epoch` `hi_d` was read at: it is looked at again when it moved.
+    epoch: u64,
     pose: Pose,
     /// Effective view depth of the node at that pose, in scaled units: the depth of its nearest
     /// point along the view direction, times the cosine of its off-axis angle (`depth^2 /
@@ -434,6 +443,9 @@ struct HoldEval {
     hold: FastSet<NodeId>,
     settle: FastSet<NodeId>,
     ancestors: FastSet<NodeId>,
+    /// `hold::before_finest` of each cut node with something that drew over its footprint (B5,
+    /// C2), the `prev` of its `node_run` when it did not draw.
+    before: FastMap<NodeId, u8>,
 }
 
 /// Order-free digest of a set of nodes.
@@ -456,6 +468,43 @@ fn drawn_digest(entries: &[CellCutEntry]) -> u64 {
             .for_each(&mut feed);
         for drawn in entry.drawn {
             feed(drawn.map_or(0, |depth| depth + 1));
+        }
+    }
+    hash
+}
+
+/// FNV-1a digest of what a plan hands the GPU per node, for the test rigs: for every entry in cut
+/// order, the node id, its `node_depth`, the active-depth bits the driver writes into its record
+/// (`ActiveLevel`s of the node inside `MAX_NODE_SPAN`, bit `i` = depth `node_depth + i`) and the
+/// mask words. It reads no per-octant field of the entries, so it survives their removal. The
+/// anchor of `NodeLod` is left out: it is not a pool value (the driver derives it from the
+/// origin and scale). Not used by production code.
+#[doc(hidden)]
+pub fn gpu_input_digest(
+    entries: &[CellCutEntry],
+    active: &[ActiveLevel],
+    node_depth: impl Fn(NodeId) -> u8,
+) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |bytes: &[u8]| {
+        for byte in bytes {
+            hash = (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    feed(&(entries.len() as u64).to_le_bytes());
+    for entry in entries {
+        let depth = node_depth(entry.node);
+        let bits = active
+            .iter()
+            .filter(|level| level.key.node == entry.node)
+            .map(|level| level.key.depth)
+            .filter(|d| *d >= depth && *d - depth <= crate::cell_lod::MAX_NODE_SPAN)
+            .fold(0_u64, |bits, d| bits | 1 << (d - depth));
+        feed(&entry.node.get().to_le_bytes());
+        feed(&[depth]);
+        feed(&bits.to_le_bytes());
+        for word in entry.mask {
+            feed(&word.to_le_bytes());
         }
     }
     hash
@@ -543,6 +592,13 @@ pub struct CellPool {
     /// Bumped when a level becomes resident or leaves residency.
     residency_epoch: u64,
     depths: FastMap<NodeId, NodeDepths>,
+    /// Test-only: data bounds computed from a resident level's page boxes.
+    #[cfg(test)]
+    bound_evaluations: u32,
+    /// Test-only: the wish is not capped at the data bound. The fake levels of the older tests
+    /// keep their pages at the grid corner, which is no evidence about where the data is.
+    #[cfg(test)]
+    uncapped_wish: bool,
     last_pose: Option<Pose>,
     depth_key: Option<ViewKey>,
     wanted_memo: Option<WantedMemo>,
@@ -570,6 +626,16 @@ pub struct CellPool {
     /// Cell mode: the `(min, max)` active depths of each node of the applied cut, as last
     /// written to the records.
     applied_span: FastMap<NodeId, (u8, u8)>,
+    /// Cell mode: first and last depth of each node's active set of the applied cut WITHOUT the
+    /// depth D5 adds (B3), as last written to the records. It may span a gap (today's set is not
+    /// always contiguous); only its fine end is read: the `prev` of `node_run` and, for `before`,
+    /// the finest depth that drew.
+    applied_run: FastMap<NodeId, (u8, u8)>,
+    /// Per node waiting for a level (`node_step`, either end, C1): `(level, frames, stamp)`, the
+    /// frames that level has not been usable and the `node_waits_stamp` of the last update. At
+    /// `STEP_WAIT_FRAMES` the `node_run` anchor may hop (B6).
+    node_waits: FastMap<NodeId, (u8, u32, u64)>,
+    node_waits_stamp: u64,
     /// Per `(node, octant)` stepping towards its wanted depth: `((drawn depth, wanted depth is
     /// finer, adjacent depth awaited), frames waited)`. Every planned frame counts, applied or
     /// retained; the key ignores the exact wanted depth, so a wanted depth flipping within the
@@ -577,9 +643,6 @@ pub struct CellPool {
     /// `STEP_WAIT_FRAMES` the octant hops to the resident level closest to its drawn depth
     /// (ADR 0053).
     step_waits: FastMap<(NodeId, usize), StepWait>,
-    /// Cell mode: per node of the applied cut that was already active in the previous cut, the
-    /// depths its range residents may take: that span widened by one level at each end.
-    applied_window: FastMap<NodeId, (u8, u8)>,
     /// Cell mode: the D5 depth each masked node had active at the last applied frame. Retained
     /// frames keep it (the caps may drop below it, but the GPU record still holds the mask).
     applied_d5: FastMap<NodeId, u8>,
@@ -601,7 +664,6 @@ pub struct CellPool {
     /// Levels whose upload completed in the current plan: a level is first drawn one frame after
     /// its last page is written, so cell mode does not activate them yet (the D5 depth included).
     fresh: FastSet<LevelKey>,
-    active_rule: ActiveRule,
     free_masks: BTreeSet<u32>,
     next_mask: u32,
     events: Vec<CellPoolEvent>,
@@ -631,6 +693,10 @@ impl CellPool {
             size_epoch: 0,
             residency_epoch: 0,
             depths: FastMap::default(),
+            #[cfg(test)]
+            bound_evaluations: 0,
+            #[cfg(test)]
+            uncapped_wish: false,
             last_pose: None,
             depth_key: None,
             wanted_memo: None,
@@ -651,8 +717,10 @@ impl CellPool {
             applied_drawn: FastMap::default(),
             applied_finest: FastMap::default(),
             applied_span: FastMap::default(),
+            applied_run: FastMap::default(),
+            node_waits: FastMap::default(),
+            node_waits_stamp: 0,
             step_waits: FastMap::default(),
-            applied_window: FastMap::default(),
             applied_d5: FastMap::default(),
             applied_digest: 0,
             applied_cover: FastSet::default(),
@@ -667,7 +735,6 @@ impl CellPool {
             pinned: FastSet::default(),
             mask_slots: FastMap::default(),
             fresh: FastSet::default(),
-            active_rule: ActiveRule::Window,
             free_masks: BTreeSet::new(),
             next_mask: 0,
             events: Vec::new(),
@@ -682,27 +749,6 @@ impl CellPool {
     /// non-finite side restores the literal mode.
     pub fn set_min_side(&mut self, min_side: Option<f64>) {
         self.min_side = min_side.filter(|side| side.is_finite() && *side > 0.0);
-    }
-
-    /// Chooses which range depths are active (`ActiveRule`). A change drops the memos of the
-    /// cuts planned under the old rule and marks every mask slot stale, so the next plan
-    /// re-derives the active depths and sends a fresh `MaskUpdate` for each node; no level is
-    /// rebuilt or re-uploaded.
-    pub fn set_active_rule(&mut self, rule: ActiveRule) {
-        if self.active_rule == rule {
-            return;
-        }
-        self.active_rule = rule;
-        self.wanted_memo = None;
-        self.real_memo = None;
-        self.depths.clear();
-        for slot in self.mask_slots.values_mut() {
-            slot.stale = true;
-        }
-    }
-
-    pub fn active_rule(&self) -> ActiveRule {
-        self.active_rule
     }
 
     /// Node depth of `bounds`: the depth whose levels span its octants.
@@ -725,6 +771,18 @@ impl CellPool {
 
     pub fn is_resident(&self, key: LevelKey) -> bool {
         self.levels.get(&key).is_some_and(Level::is_resident)
+    }
+
+    /// Resident and not uploaded this frame: the levels `cell_active_depths` may activate.
+    pub fn is_usable(&self, key: LevelKey) -> bool {
+        self.is_resident(key) && !self.fresh.contains(&key)
+    }
+
+    /// Fine/coarse ends of the run the node drew in the last applied cut, without its D5 depth
+    /// (B3). Read-only, for the simulation harness; not used by production code.
+    #[doc(hidden)]
+    pub fn applied_run_of(&self, id: NodeId) -> Option<(u8, u8)> {
+        self.applied_run.get(&id).copied()
     }
 
     /// Packed data of a requested, uploading or resident level, for the GPU glue.

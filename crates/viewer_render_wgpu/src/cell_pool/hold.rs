@@ -53,13 +53,15 @@ impl CellPool {
     }
 
     /// R3-Q21: the cut nodes of the real cut `entries` (computed with `hold` as the held set) that
-    /// would draw, in some octant, a level below `min(depth what drew there before, wanted
-    /// depth)`, judged as `cell_cut` would draw them with their resident levels. What drew there
-    /// before is the applied ancestor (`CoverRule`, the one of the fallback) and, on a zoom out,
-    /// the applied descendants of the node. A node with a covering ancestor or covering
-    /// descendants can be held; one that is already held keeps the hold only while they are in the
-    /// real cut. With descendants the wanted depths are those of the node alone: its octants that
-    /// they mask in `entries` would otherwise look finished.
+    /// would coarsen a zone they take over, plus the D5 gate (`add_d5_gate`). What drew over a
+    /// node's footprint before is the applied ancestor (`CoverRule`, the one of the fallback) and,
+    /// on a zoom out, the applied descendants of the node. The node is judged as a whole by
+    /// `run_covers`: it may take over iff the finest depth of its active run reaches
+    /// `min(finest active depth of what drew there before, finest depth it wants)`. A node with a
+    /// covering ancestor or covering descendants can be held; one that is already held keeps the
+    /// hold only while they are in the real cut. With descendants the wanted depths are those of
+    /// the node alone: its octants that they mask in `entries` would otherwise look finished.
+    /// The tests judge the rule against the GPU twin (`cell_lod::drawn_depth_at`).
     pub(super) fn eval_hold(
         &self,
         entries: &[CellCutEntry],
@@ -69,7 +71,7 @@ impl CellPool {
         hold: &FastSet<NodeId>,
         wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
     ) -> HoldEval {
-        let mut out = self.eval_refine_hold(entries, cut, nodes, grid, hold, wanted_depth);
+        let mut out = self.refine_hold(entries, cut, nodes, grid, hold, wanted_depth, Judge::Run);
         self.add_d5_gate(&mut out, entries, cut, nodes, grid);
         out
     }
@@ -142,7 +144,9 @@ impl CellPool {
             .collect()
     }
 
-    /// The R3-Q21 hold ("only refine"), see the module docs.
+    /// The per-octant rule (deleted by plan task 11), kept for the tests that compare it with
+    /// `run_covers`.
+    #[cfg(test)]
     pub(super) fn eval_refine_hold(
         &self,
         entries: &[CellCutEntry],
@@ -151,6 +155,30 @@ impl CellPool {
         grid: &CellGrid,
         hold: &FastSet<NodeId>,
         wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
+    ) -> HoldEval {
+        self.refine_hold(
+            entries,
+            cut,
+            nodes,
+            grid,
+            hold,
+            wanted_depth,
+            Judge::PerOctant,
+        )
+    }
+
+    /// The R3-Q21 hold ("only refine"), see the module docs. `judge` says when a node that would
+    /// enter the cut is short of what drew over its footprint before.
+    #[allow(clippy::too_many_arguments)]
+    fn refine_hold(
+        &self,
+        entries: &[CellCutEntry],
+        cut: &[NodeId],
+        nodes: &FastMap<NodeId, PoolNode>,
+        grid: &CellGrid,
+        hold: &FastSet<NodeId>,
+        wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
+        judge: Judge,
     ) -> HoldEval {
         let mut out = HoldEval::default();
         if self.applied_drawn.is_empty() {
@@ -227,22 +255,19 @@ impl CellPool {
                 continue;
             }
             let held = hold.contains(&id);
-            if held
-                && !above.is_some_and(|(a, gap)| covers_in(entries, &position, a, &f, gap))
-                && !below.iter().any(|(d, _)| position.contains_key(d))
-            {
-                continue;
-            }
             // Per octant of the node: the deepest level that drew over it before.
+            // `limit` counts the D5 depth (the hold's `before`, R3-Q21); `limit_run` does not (B3,
+            // the `prev` of `node_run`).
             let mut limit: [Option<u8>; 8] = [None; 8];
+            let mut limit_run: [Option<u8>; 8] = [None; 8];
             if let Some((ancestor, gap)) = above
                 && let Some(drawn) = self.applied_drawn.get(&ancestor)
             {
-                for (o, slot) in limit.iter_mut().enumerate() {
-                    *slot = f
+                for o in 0..8 {
+                    let ceilings = f
                         .octants_of(gap, o)
-                        .filter_map(|a| self.drawn_ceiling(ancestor, drawn[a]))
-                        .max();
+                        .filter_map(|a| self.before_ceiling(ancestor, drawn[a]));
+                    (limit[o], limit_run[o]) = max_ceilings(ceilings);
                 }
             }
             // The covering node may not have drawn over this zone before (it is new in the cut
@@ -257,12 +282,12 @@ impl CellPool {
                     else {
                         continue;
                     };
-                    for (o, slot) in limit.iter_mut().enumerate() {
-                        if slot.is_none() {
-                            *slot = f
+                    for o in 0..8 {
+                        if limit[o].is_none() {
+                            let ceilings = f
                                 .octants_of(k, o)
-                                .filter_map(|a| self.drawn_ceiling(far, drawn[a]))
-                                .max();
+                                .filter_map(|a| self.before_ceiling(far, drawn[a]));
+                            (limit[o], limit_run[o]) = max_ceilings(ceilings);
                         }
                     }
                 }
@@ -270,9 +295,10 @@ impl CellPool {
             for (d, k) in &below {
                 let df = Footprint::new(grid, self.applied_index.nodes[d].bounds);
                 for (o, drawn) in self.applied_drawn[d].iter().enumerate() {
-                    if let Some(depth) = self.drawn_ceiling(*d, *drawn) {
+                    if let Some((depth, run)) = self.before_ceiling(*d, *drawn) {
                         for a in df.octants_of(*k, o) {
                             limit[a] = limit[a].max(Some(depth));
+                            limit_run[a] = limit_run[a].max(Some(run));
                         }
                     }
                 }
@@ -297,6 +323,18 @@ impl CellPool {
                     .and_then(|solo| solo.first().map(|e| e.wanted))
                     .unwrap_or(entry.wanted)
             };
+            let before = before_finest(&limit, &wanted);
+            if let Some(before) = before_finest(&limit_run, &wanted) {
+                out.before.insert(id, before);
+            }
+            // `before` is kept for every node that has something under or over it (C2), also the
+            // ones the hold does not judge.
+            if held
+                && !above.is_some_and(|(a, gap)| covers_in(entries, &position, a, &f, gap))
+                && !below.iter().any(|(d, _)| position.contains_key(d))
+            {
+                continue;
+            }
             let (here, _, _) = drawn_levels(
                 &wanted,
                 &stored,
@@ -310,13 +348,47 @@ impl CellPool {
                 ),
                 f.rep.saturating_sub(MAX_MASK_LEVELS),
             );
-            let short = (0..8).any(|o| {
-                // The raw wanted depth, not the stored one (R3-Q21): a child storing only a
-                // level coarser than what its parent draws does not take over until that level
-                // is built on demand.
-                wanted[o]
-                    .is_some_and(|w| limit[o].is_some_and(|l| here[o].is_none_or(|d| d < l.min(w))))
-            });
+            let short = match judge {
+                Judge::Run => {
+                    // The active run of the node from its own resident levels under the cap, with
+                    // no `new_d5`, against the finest depth that drew over any octant it wants
+                    // before. `plan` may emit a different set once the node is released: under a
+                    // fit cap `finer_drawn` swaps the resident levels for finer ones above the cap
+                    // (tests: a capped node released by the gate), and `new_d5` adds a depth: the
+                    // gate ignores both, and the twin tests show the emitted set draws nothing
+                    // coarser. A node with nothing usable to draw yet is short.
+                    let wish = wanted.iter().flatten().max();
+                    match (before, wish) {
+                        (Some(before), Some(wish)) => {
+                            let run = CellCutEntry {
+                                drawn: here,
+                                ..entry.clone()
+                            };
+                            let depths = self.cell_active_depths(
+                                &run,
+                                f.rep.saturating_sub(MAX_MASK_LEVELS),
+                                None,
+                            );
+                            match depths.first().zip(depths.last()) {
+                                Some((lo, hi)) => {
+                                    !run_covers(Some((*lo, *hi)), &[(0, before)], *wish)
+                                }
+                                None => true,
+                            }
+                        }
+                        _ => false,
+                    }
+                }
+                #[cfg(test)]
+                Judge::PerOctant => (0..8).any(|o| {
+                    // The raw wanted depth, not the stored one (R3-Q21): a child storing only a
+                    // level coarser than what its parent draws does not take over until that
+                    // level is built on demand.
+                    wanted[o].is_some_and(|w| {
+                        limit[o].is_some_and(|l| here[o].is_none_or(|d| d < l.min(w)))
+                    })
+                }),
+            };
             if short {
                 out.hold.insert(id);
             }
@@ -328,4 +400,78 @@ impl CellPool {
         }
         out
     }
+}
+
+impl CellPool {
+    /// What the applied cut may have drawn over an octant of `id` where it drew `drawn`, as
+    /// `(finest, run)`: `finest` up to the finest active depth of the node INCLUDING its D5
+    /// depth, which the hold's `before` needs because the GPU draws per cell the coarsest active
+    /// depth that does not refine, so it can be the D5 depth (R3-Q21; it is `drawn_ceiling`);
+    /// `run` up to the fine end of the node's active run WITHOUT it (B3), the anchor of
+    /// `node_run`.
+    fn before_ceiling(&self, id: NodeId, drawn: Option<u8>) -> Option<(u8, u8)> {
+        drawn.map(|depth| {
+            let run = self
+                .applied_run
+                .get(&id)
+                .map_or(depth, |run| depth.max(run.1));
+            (self.drawn_ceiling(id, drawn).unwrap_or(depth), run)
+        })
+    }
+}
+
+/// The componentwise maximum of `before_ceiling`s, `(None, None)` when there are none.
+fn max_ceilings(ceilings: impl Iterator<Item = (u8, u8)>) -> (Option<u8>, Option<u8>) {
+    ceilings.fold((None, None), |(finest, run), (f, r)| {
+        (finest.max(Some(f)), run.max(Some(r)))
+    })
+}
+
+/// The finest depth that drew over any octant a node wants (B5): the `before` of the gate and the
+/// `prev` of `node_run` for a node that did not draw. `limit` is the depth that drew over each
+/// octant (`None`: nothing), `wanted` what each octant wants.
+pub(super) fn before_finest(limit: &[Option<u8>; 8], wanted: &[Option<u8>; 8]) -> Option<u8> {
+    limit
+        .iter()
+        .zip(wanted)
+        .filter(|(_, w)| w.is_some())
+        .filter_map(|(l, _)| *l)
+        .max()
+}
+
+/// The active run `[coarsest, finest]` of a node, as `CellPool::cell_active_depths` gives it.
+pub(super) type Run = (u8, u8);
+
+/// Residency gate over node-level runs (R3-Q21, plan tasks 8 and 9): whether a node
+/// whose run would be `run` may take over without coarsening what `before` drew over its
+/// footprint. `before` are the runs that drew there: the applied ancestor's on a zoom in, the
+/// applied descendants' on a zoom out (the node replaces them). `wish` is the finest depth the
+/// node wants.
+///
+/// States the GPU-rule condition: among a node's active depths a cell draws the coarsest one
+/// that does not refine (`cell_lod::draws`), so the node coarsens a zone only if its finest active
+/// depth `run.1` is below what the zone drew before (the finest of `before`: the finest ACTIVE
+/// depth, not the nominal one) capped by what the view wants (`wish`). It may take over iff
+/// `run.1 >= min(finest of before, wish)`. The two judges, this and the per-octant rule
+/// (`eval_refine_hold`, deleted by plan task 11), are not ordered; what guarantees the gate is
+/// the twin-judged tables of `cell_pool_tests` (see `ZOOM_OUT_PARTS`).
+///
+/// `before` empty (nothing drew there) releases the node. An empty run (`None`: nothing
+/// drawable resident) also returns `true`: the caller decides it, and holds the node, because
+/// it has nothing to draw and the covering cell must keep drawing the zone.
+pub(super) fn run_covers(run: Option<Run>, before: &[Run], wish: u8) -> bool {
+    let (Some((_, finest)), Some(drawn)) = (run, before.iter().map(|(_, hi)| *hi).max()) else {
+        return true;
+    };
+    finest >= drawn.min(wish)
+}
+
+/// What decides that a node entering the cut is short of what drew there before.
+#[derive(Clone, Copy)]
+enum Judge {
+    /// `run_covers` on the node's active run.
+    Run,
+    /// The per-octant seeded depths; task 11 deletes it.
+    #[cfg(test)]
+    PerOctant,
 }
