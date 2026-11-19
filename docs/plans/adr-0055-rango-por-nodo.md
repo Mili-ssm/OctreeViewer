@@ -237,7 +237,8 @@ respuesta de residencia de OQ-16; renuncia a borrar la maquinaria por octante (e
   Código en d108004 (crates) y f09344a (demo y binding); falta el navegador.
 
 - [ ] **10a** (diseño rehecho el 19-11-2026 tras retirar `Window`): ver
-  [«Diseño de la tarea 10»](#diseño-de-la-tarea-10-campos-por-nodo). Falta su pre-mortem.
+  [«Diseño de la tarea 10»](#diseño-de-la-tarea-10-campos-por-nodo), con las enmiendas del segundo pre-mortem.
+  Antes de 10b: diagnosticar #87 (B7).
 - [ ] **10b.** `node_run` (función pura) y los campos por nodo, calculados junto a los viejos sin lectores. Parada:
   en algún frame de una simulación real, los bits activos de `node_run` difieren de los de hoy fuera de los frames
   con hueco (`active_gaps`), que es justo lo que corrige.
@@ -293,6 +294,31 @@ llegan los niveles del hueco. Hoy se activan los dos y la GPU salta entre ellos.
 
 Qué desaparece en la tarea 11: `stepped_depth`, `drawn_levels`, `PrevState`, `STEP_WAIT_FRAMES`, `step_waits`,
 `step_hops`, `seed.rs`, el juez `PerOctant` y `finer_drawn` por octante (pasa a «niveles activos sobre el tope»).
+
+### Enmiendas del segundo pre-mortem (19-11-2026)
+
+El tramo único vale (al acercarse es más prudente que hoy), pero el texto de arriba fallaba en tres sitios. Estas
+enmiendas mandan sobre la tabla y las reglas anteriores.
+
+| # | Enmienda | Fallo que evita |
+| --- | --- | --- |
+| B1 | Tramo emitido = tramo usable que contiene el ancla, recortado a `[min(lo, run.lo), max(hi, ancla)]`: nunca vacío si hay ancla, como hoy `hi.max(dibujado)`. Test: `prev` 12, usables {5, 10, 11, 12}, `hi` 8 → {10, 11, 12} | Al alejarse rápido, tramo vacío (hueco) o salto de 12 a 5 |
+| B2 | Ancla: el usable más cercano a `prev` en el sentido del objetivo (`[prev, objetivo]`) y, si no hay, el más cercano en general, como `nearest_to_prev` hoy | Engrosar un nivel cuando `prev` se expulsa |
+| B3 | `prev` = extremo fino del tramo aplicado **sin** el nivel D5 (campo nuevo `applied_run`), no `applied_finest` | Anclar en el D5, que es un tramo aparte |
+| B4 | Se protege el tramo aplicado entero, no solo lo dibujado (`required_levels` en `plan.rs`). La emisión recalcula `node_run` desde el ancla guardada | Tramo expulsado entre el plan y la emisión; puerta y emisión distintas |
+| B5 | `before` sale de una sola función, usada por la puerta y por `prev`. Aserción en cada frame de simulación: extremo fino emitido ≥ el que supuso la puerta | Dos caminos de código para `before` |
+| B6 | **Nivel que no llega** (decisión del agente: se conserva lo de hoy): si `run.hi + 1` no es usable en `STEP_WAIT_FRAMES` frames y hay un tramo usable más fino hacia el objetivo, el ancla salta a él (como el salto por espera de hoy; con tramo único no deja hueco). Test sintético: el 8 no llega nunca, 10 a 14 residentes | `stage` y `busy` sin llegar nunca a 0; las simulaciones reales no ejercitan el salto (`hops` = 0) |
+| B7 | `stage` también es cierto mientras el deseo más grueso del nodo quede por debajo de `run.lo`. Antes de 10e se resuelve [#87](https://github.com/Mili-ssm/OctreeViewer/issues/87) (rango (12, 12) con deseo 7) | Un nodo en reposo dibujando 5 niveles más fino de lo que se quiere, sin contador que lo vea |
+| B8 | 10b compara por (nodo, frame) y clasifica cada diferencia: hueco, por encima de `hi`, nodo que entra, `prev` no usable. Parar ante una sin clasificar. Además, una ejecución en sombra (rama aparte) donde `node_run` manda, con sus `SimStats` | Criterio de parada que salta siempre al alejarse o se afloja |
+| B9 | Orden: primero los lectores que solo reducen (`stages`, `busy`, presencia, `hidden_held`), con el resumen de la GPU idéntico; luego **un** commit de comportamiento (peticiones, retención y emisión), con la aserción `active_gaps = 0` en él; 10e solo quita campos, resumen idéntico; la migración de tests, aparte | 10d en rojo antes de 10e; promesas de resumen idéntico imposibles |
+| B10 | La tarea 11 conserva un término de deseo por nodo para los octantes detrás del ojo o que cruzan su plano (o prueba que `range` es `Some` en todo nodo que dibuja) antes de borrar las sondas | Nodos junto al plano del ojo gruesos o vacíos |
+| B11 | `step` solo hacia arriba; los niveles hacia abajo llegan por `needed`; `busy` lee `stage` | `busy` cierto para siempre por `run.lo − 1` |
+
+Criterios de parada añadidos: un nodo con ancla que no emite nada, o cuyo extremo emitido baja de `min(prev, deseo)`;
+en pose fija tras asentarse, `stages > 0` o `needs_frame()` tras 2 × `STEP_WAIT_FRAMES`; el nodo 77 de la órbita 1 en
+reposo dibujando ≥ 2 niveles más fino que el deseo del gemelo (llevar #87 al propietario); dolly s3 > 1,5 × frames
+hasta asentarse; Majadas > 90 % de lo usable tras B4; saltos de varios niveles visibles en el navegador al alejarse
+rápido (el ADR 0055 dice que entonces vuelve la ventana: decisión del propietario).
 
 Riesgos propios:
 
