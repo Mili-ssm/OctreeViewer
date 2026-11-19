@@ -142,10 +142,9 @@ impl CellPool {
     /// frames after it last drew; a still-wanted level is requested again by the next frame.
     /// Other levels stay (`false`).
     pub fn evict(&mut self, key: LevelKey) -> bool {
-        let drawn = self
-            .applied
-            .iter()
-            .any(|entry| entry.node == key.node && entry.run_depths().contains(&key.depth));
+        let drawn = self.applied.iter().any(|entry| {
+            entry.node == key.node && entry.run_depths().any(|depth| depth == key.depth)
+        });
         if drawn || self.pinned.contains(&key) || !self.is_resident(key) {
             return false;
         }

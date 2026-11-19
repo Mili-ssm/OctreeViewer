@@ -149,8 +149,8 @@ impl CellCutEntry {
     }
 
     /// The depths of the node's single run, ascending (empty for a node without one).
-    pub(crate) fn run_depths(&self) -> std::ops::RangeInclusive<u8> {
-        self.node_run.map_or(1..=0, |(lo, hi)| lo..=hi)
+    pub(crate) fn run_depths(&self) -> impl Iterator<Item = u8> + Clone {
+        self.node_run.into_iter().flat_map(|(lo, hi)| lo..=hi)
     }
 
     /// Distinct drawn depths, ascending: the levels that must be resident.
