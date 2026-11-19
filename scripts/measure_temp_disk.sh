@@ -8,7 +8,7 @@
 # Samples (elapsed_s<TAB>work_bytes<TAB>fs_used_delta_bytes) go to OUTPUT_DIR/samples.tsv. The converter keeps its temps in
 # `<output>.<pid>.<n>.work` next to the output, so OUTPUT_DIR/*.work is sampled once per second.
 # The sampling loop ends with the converter process. Deletes .oct/.octattrs after hashing them.
-# MIN_FREE_KB (default 60 GB) aborts the run if free space on OUTPUT_DIR drops below it.
+# Also prints `fs=<type> <mount options>` of OUTPUT_DIR (from findmnt) before the result line.
 set -euo pipefail
 
 if [ "$#" -lt 3 ]; then
@@ -19,7 +19,6 @@ converter=$1 input=$2 outdir=$3
 shift 3
 if [ "${1:-}" = "--" ]; then shift; fi
 extra=("$@")
-min_free_kb=${MIN_FREE_KB:-62914560}
 
 mkdir -p "$outdir"
 rm -f "$outdir"/out.oct "$outdir"/out.octattrs "$outdir"/samples.tsv
@@ -35,7 +34,6 @@ pid=$!
 
 peak=0
 peak_delta=0
-aborted=0
 while kill -0 "$pid" 2>/dev/null; do
     bytes=0
     if compgen -G "$outdir/*.work" >/dev/null; then
@@ -48,21 +46,14 @@ while kill -0 "$pid" 2>/dev/null; do
     printf '%s\t%s\t%s\n' "$elapsed" "$bytes" "$delta" >>"$samples"
     if [ "$bytes" -gt "$peak" ]; then peak=$bytes; fi
     if [ "$delta" -gt "$peak_delta" ]; then peak_delta=$delta; fi
-    free_kb=$(df --output=avail -k "$outdir" | tail -1 | tr -d ' ')
-    if [ "$free_kb" -lt "$min_free_kb" ]; then
-        echo "free space ${free_kb} KB below ${min_free_kb} KB: aborting" >&2
-        kill "$pid" 2>/dev/null || true
-        aborted=1
-        break
-    fi
     sleep 1
 done
 
 status=0
 wait "$pid" || status=$?
 end=$(date +%s.%N)
-if [ "$aborted" -ne 0 ] || [ "$status" -ne 0 ]; then
-    echo "converter failed (status $status, aborted=$aborted)" >&2
+if [ "$status" -ne 0 ]; then
+    echo "converter failed (status $status)" >&2
     exit 1
 fi
 
@@ -74,4 +65,5 @@ if [ -f "$outdir/out.octattrs" ]; then
     sha_attrs=$(sha256sum "$outdir/out.octattrs" | cut -d' ' -f1)
 fi
 rm -f "$outdir"/out.oct "$outdir"/out.octattrs
+echo "fs=$(findmnt -no FSTYPE,OPTIONS --target "$outdir" || echo unknown)"
 echo "peak_work_bytes=$peak peak_fs_used_delta_bytes=$peak_delta wall_s=$wall max_rss_kb=$rss sha_oct=$sha_oct sha_octattrs=$sha_attrs"
