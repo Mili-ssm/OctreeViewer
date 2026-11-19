@@ -26,8 +26,8 @@ pub use controller::{
 };
 pub use lod_dataset::{
     CellDraw, CellPlanStats, CellUpdate, CellUpdateConfig, CellUpdateStats, CutRestProbe,
-    LodBuiltScene, LodCellUpdate, LodDataset, LodDatasetError, LodViewStats, LodViewUpdate,
-    LodWorkStats, PoolAck, add_cell_levels, add_cell_nodes, draw_cell_cut,
+    DatasetUnit, LodBuiltScene, LodCellUpdate, LodDataset, LodDatasetError, LodViewStats,
+    LodViewUpdate, LodWorkStats, PoolAck, add_cell_levels, add_cell_nodes, draw_cell_cut,
 };
 pub use lod_pages::{DEFAULT_PAGE_BUDGET_BYTES, PageInsert, PageRelease};
 

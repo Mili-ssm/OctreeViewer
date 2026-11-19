@@ -182,7 +182,7 @@ def main() -> None:
     )
     main_js = require_replace(
         main_js,
-        'import { lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";\n',
+        'import { crsUnitPolicy, lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";\n',
         "",
         "min length import",
     )

@@ -36,7 +36,7 @@ use wasm_bindgen::prelude::*;
 
 use super::{WasmVoxelViewer, builder::WasmSceneBuilder};
 use crate::{
-    CellPlanStats, CellUpdateConfig, PoolAck,
+    CellPlanStats, CellUpdateConfig, DatasetUnit, PoolAck,
     cells_glue::{
         BuilderCells, BuilderOutput, CellsStats, Continuity, TARGET_PIXELS_RANGE, ViewerCells,
         WASM_CPU_BUDGET_BYTES, driver_config,
@@ -366,6 +366,13 @@ impl WasmSceneBuilder {
     pub(super) fn add_open_fields(&self, result: &JsValue) -> Result<(), JsValue> {
         let object: &Object = result.unchecked_ref();
         set(object, "cellPath", &JsValue::from_str(self.cell_path))?;
+        if let Some(core) = self.core.as_ref() {
+            set(
+                object,
+                "crsUnit",
+                &crs_unit_js(&core.session().dataset().crs_unit())?,
+            )?;
+        }
         set(object, "cellsInfo", &self.cells_info()?)
     }
 
@@ -429,6 +436,27 @@ impl WasmSceneBuilder {
         }
         Ok(value)
     }
+}
+
+/// `{ unit, metresPerUnit, geographic, assumed }` of the open dataset's CRS (ADR 0049, D6);
+/// `metresPerUnit` is null for a geographic CRS.
+fn crs_unit_js(unit: &DatasetUnit) -> Result<JsValue, JsValue> {
+    let object = Object::new();
+    set(&object, "unit", &JsValue::from_str(&unit.name))?;
+    set(
+        &object,
+        "metresPerUnit",
+        &unit
+            .metres_per_unit
+            .map_or(JsValue::NULL, JsValue::from_f64),
+    )?;
+    set(
+        &object,
+        "geographic",
+        &JsValue::from_bool(unit.metres_per_unit.is_none()),
+    )?;
+    set(&object, "assumed", &JsValue::from_bool(unit.assumed))?;
+    Ok(object.into())
 }
 
 #[wasm_bindgen]

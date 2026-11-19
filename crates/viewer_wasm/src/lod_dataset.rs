@@ -22,6 +22,14 @@ pub use cells::{
     LodCellUpdate, PoolAck, add_cell_levels, add_cell_nodes, draw_cell_cut,
 };
 
+/// What one dataset unit measures (ADR 0049, D6): `metres_per_unit` is `None` for a geographic CRS.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DatasetUnit {
+    pub name: String,
+    pub metres_per_unit: Option<f64>,
+    pub assumed: bool,
+}
+
 /// Decoded blocks and resident spatial metadata for one open dataset.
 pub struct LodDataset {
     metadata: Arc<DatasetMetadata>,
@@ -50,6 +58,8 @@ pub struct LodDataset {
     state_epoch: u64,
     /// CRS identity (`EPSG:code`) of a `v7.4-pre` cloud; older formats carry none.
     crs: Option<String>,
+    /// Linear unit of that CRS (ADR 0049); `None` for datasets that carry no CRS record.
+    crs_unit: Option<DatasetUnit>,
     /// Reference spacing stored by the format (`v7.5-pre`); other formats compute it on demand.
     stored_reference_spacing: Option<f64>,
     /// Present when the hierarchy is paged (`v7.5-pre`): pages are grafted and evicted at run time.
@@ -328,6 +338,7 @@ impl LodDataset {
             plan_memo: None,
             state_epoch: 0,
             crs: None,
+            crs_unit: None,
             stored_reference_spacing: None,
             pages: None,
             page_budget_exhausted: false,
@@ -523,6 +534,22 @@ impl LodDataset {
 
     pub fn crs(&self) -> Option<&str> {
         self.crs.as_deref()
+    }
+
+    /// Records the linear unit of the stored CRS, for the page's length filter.
+    #[must_use]
+    pub fn with_crs_unit(mut self, unit: Option<DatasetUnit>) -> Self {
+        self.crs_unit = unit;
+        self
+    }
+
+    /// The CRS unit; metres, flagged assumed, when the dataset has no CRS record.
+    pub fn crs_unit(&self) -> DatasetUnit {
+        self.crs_unit.clone().unwrap_or_else(|| DatasetUnit {
+            name: "metre".into(),
+            metres_per_unit: Some(1.0),
+            assumed: true,
+        })
     }
 
     /// Uses the reference spacing the format stores for the whole cloud (`v7.5-pre`), whose

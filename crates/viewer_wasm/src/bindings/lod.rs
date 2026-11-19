@@ -21,8 +21,8 @@ use super::{
     },
 };
 use crate::{
-    DEFAULT_PAGE_BUDGET_BYTES, LodBuiltScene, LodDataset, LodDatasetError, LodViewStats,
-    PageInsert, WasmAsyncFormatReader, WasmPageGraft,
+    DEFAULT_PAGE_BUDGET_BYTES, DatasetUnit, LodBuiltScene, LodDataset, LodDatasetError,
+    LodViewStats, PageInsert, WasmAsyncFormatReader, WasmPageGraft,
     browser_io::{BrowserBlobReader, BrowserReadStats},
     cells_glue::ReadPhase,
     lod_driver::{LodStep, LodStepResult, SceneSink, assemble_async_block, update_lod_view_paged},
@@ -34,6 +34,24 @@ use viewer_format::{
     FormatReader, FormatReaderLimits, OctreeReader, PageGraft, PageSource, probe_format,
 };
 use viewer_render_wgpu::{ColorMode, SurfaceRenderer, ViewProjection};
+
+/// The page-facing form of a CRS unit (`viewer_format` is not a dependency of the native build).
+fn dataset_unit(unit: &viewer_format::CrsUnit) -> DatasetUnit {
+    use viewer_format::CrsLinearUnit;
+    let (name, metres_per_unit) = match &unit.unit {
+        CrsLinearUnit::Metres => ("metre", Some(1.0)),
+        CrsLinearUnit::Linear {
+            name,
+            metres_per_unit,
+        } => (name.as_str(), Some(*metres_per_unit)),
+        CrsLinearUnit::Geographic => ("degree", None),
+    };
+    DatasetUnit {
+        name: name.to_owned(),
+        metres_per_unit,
+        assumed: unit.assumed,
+    }
+}
 
 /// Uploads each rebuilt scene to the viewer's own GPU renderer.
 struct RendererSink<'a, 'r> {
@@ -136,6 +154,10 @@ pub(super) fn open_paged(
         .global_frame()
         .and_then(|_| format.format_metadata().crs())
         .map(str::to_owned);
+    let crs_unit = format
+        .format_metadata()
+        .global_frame()
+        .map(|frame| dataset_unit(&frame.crs().linear_unit()));
     let mut attribute_ranges = Vec::new();
     for (schema_index, attribute) in metadata.hierarchy().attributes().iter().enumerate() {
         let mut row = Vec::new();
@@ -154,6 +176,7 @@ pub(super) fn open_paged(
         cache_bytes as usize,
     )
     .with_crs(crs)
+    .with_crs_unit(crs_unit)
     .with_global_frame(format.format_version().uses_global_frame());
     let dataset = with_page_source(dataset, &source)?;
     let context = AsyncFormatContext {
@@ -259,12 +282,17 @@ pub(super) fn open_format(
         .global_frame()
         .and_then(|_| reader.format_metadata().crs())
         .map(str::to_owned);
+    let crs_unit = reader
+        .format_metadata()
+        .global_frame()
+        .map(|frame| dataset_unit(&frame.crs().linear_unit()));
     let dataset = LodDataset::from_shared_metadata_and_visual_scale(
         metadata,
         visual_scale,
         cache_bytes as usize,
     )
     .with_crs(crs)
+    .with_crs_unit(crs_unit)
     .with_global_frame(reader.format_version().uses_global_frame());
     let page_source = reader.page_source().cloned();
     let dataset = match &page_source {
