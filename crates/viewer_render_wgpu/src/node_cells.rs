@@ -74,6 +74,13 @@ pub fn representative_depth_for_spacing(grid: &CellGrid, spacing: f64) -> u8 {
     snapped.clamp(0.0, f64::from(MAX_CELL_DEPTH)) as u8
 }
 
+/// Whether cells of `side` are not below `min_side`, with the snap tolerance of
+/// [`representative_depth_for_spacing`], so a cap derived from `min_side` and this test agree
+/// near powers of two.
+pub fn side_meets_min(side: f64, min_side: f64) -> bool {
+    (side / min_side).log2() >= -DEPTH_SNAP_TOLERANCE
+}
+
 fn side_of(bounds: SpatialBounds) -> f64 {
     bounds.max_side()
 }

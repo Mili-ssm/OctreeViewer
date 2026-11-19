@@ -53,8 +53,9 @@ async function runBuildWorker({
             this.range = mode.startsWith("attribute:") ? [0, 2.5] : null;
         }
         attributeRange() { return this.range ?? null; }
+        setMinSide(side) { this.minSide = side; }
         update(camera, width, height, visualScale, targetPx) {
-            updateCalls.push({ camera, width, height, visualScale, targetPx });
+            updateCalls.push({ camera, width, height, visualScale, targetPx, minSide: this.minSide });
             const planned = updates[updateCalls.length - 1] ?? {};
             return {
                 epoch: updateCalls.length, sceneBuffer: planned.scene === false ? null : new ArrayBuffer(8),
@@ -282,6 +283,17 @@ test("build worker reports a rejected colour mode as an error and keeps the prev
     assert.equal(error.gen, 1);
     assert.match(error.message, /invalid attribute index/);
     assert.deepEqual(worker.posted.filter(item => item.type === "colorMode").map(item => item.mode), ["intensity"]);
+});
+
+test("with cells the view's minSide reaches the builder before update; without it the constraint is cleared", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: [] } });
+    worker.send("view", { gen: 1, epoch: 1, camera: [1], viewport: [4, 4], visualScale: 2, targetPx: 4, minSide: 0.5 });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    worker.send("view", { gen: 1, epoch: 2, camera: [2], viewport: [4, 4], visualScale: 2, targetPx: 4, minSide: null });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual([...new Set(worker.updateCalls.map(call => call.minSide))], [0.5, undefined]);
 });
 
 const COLUMNS = [{ name: "intensity" }, { name: "classification" }, { name: "vector" }];

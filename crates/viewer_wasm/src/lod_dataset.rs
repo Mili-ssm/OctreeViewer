@@ -59,6 +59,8 @@ pub struct LodDataset {
     arrival_evictions: Vec<BlockId>,
     /// Last selection and the inputs it depends on; reused while camera, viewport and stage match.
     selection_memo: Option<SelectionMemo>,
+    /// Smallest cell side the cut may draw (dataset units); `None` leaves the px target alone.
+    min_side: Option<f64>,
     /// Plan prepared by the residency preflight, reusable by the update that follows it.
     plan_memo: Option<PlanMemo>,
     /// Bumped on every cache or planner mutation; a plan is valid only for the epoch it saw.
@@ -83,6 +85,7 @@ struct SelectionMemo {
     camera: OrbitCamera,
     viewport: [u32; 2],
     error_pixels: f64,
+    min_side: Option<f64>,
     selection: Arc<LodSelection>,
 }
 
@@ -342,6 +345,7 @@ impl LodDataset {
             arrived_blocks: 0,
             arrival_evictions: Vec::new(),
             selection_memo: None,
+            min_side: None,
             plan_memo: None,
             state_epoch: 0,
             crs: None,
@@ -575,6 +579,16 @@ impl LodDataset {
             .or_else(|| self.metadata.hierarchy().reference_spacing())
     }
 
+    /// Sets the smallest cell side (dataset units) the node cut may reach; `None`, a non-positive
+    /// or non-finite side removes the constraint. A change takes effect on the next selection.
+    pub fn set_min_side(&mut self, min_side: Option<f64>) {
+        self.min_side = min_side.filter(|side| side.is_finite() && *side > 0.0);
+    }
+
+    pub fn min_side(&self) -> Option<f64> {
+        self.min_side
+    }
+
     /// Selects the target cut for a view, or returns the previous selection when camera,
     /// viewport and stage error are identical (the hierarchy is immutable).
     fn resolve_target(
@@ -589,6 +603,7 @@ impl LodDataset {
             && memo.camera == *camera
             && memo.viewport == viewport
             && memo.error_pixels == error_pixels
+            && memo.min_side == self.min_side
         {
             return Ok(Arc::clone(&memo.selection));
         }
@@ -596,6 +611,16 @@ impl LodDataset {
         let config = LodSelectionConfig::new(error_pixels, u64::MAX)?;
         self.refinement_work.selections += 1;
         let selection_started = WorkClock::start();
+        let min_side = self.min_side;
+        // RQ-09: a node refines into children only while their coarsest cells (side / 16) stay at
+        // or above the minimum; reporting no error stops the cut there. The pool cannot draw a
+        // node coarser than its own side / 8, so this is the only place the minimum can act.
+        let project = move |node: &SpatialNode| {
+            let below_min = min_side.is_some_and(|min| {
+                !viewer_render_wgpu::side_meets_min(node.bounds().max_side() / 16.0, min)
+            });
+            if below_min { 0.0 } else { project(node) }
+        };
         let selection = self
             .metadata
             .hierarchy()
@@ -607,6 +632,7 @@ impl LodDataset {
             camera: *camera,
             viewport,
             error_pixels,
+            min_side,
             selection: Arc::clone(&selection),
         });
         Ok(selection)

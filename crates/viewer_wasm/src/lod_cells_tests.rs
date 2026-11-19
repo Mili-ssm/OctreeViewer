@@ -1680,3 +1680,59 @@ fn an_exempt_cut_request_is_retried_while_blocked() {
     assert_eq!(shipped_depths(&second).len(), 1);
     assert!(!dataset.has_pending_level_requests(true));
 }
+
+/// Side of the coarsest cell a node can draw: the pool never goes coarser than side / 8.
+fn coarsest_cell_side(dataset: &LodDataset, id: NodeId) -> f64 {
+    dataset
+        .metadata
+        .hierarchy()
+        .node(id)
+        .unwrap()
+        .bounds()
+        .max_side()
+        / 8.0
+}
+
+/// RQ-09: with a minimum above what the px target gives, the cut stops where the children's
+/// coarsest cells would fall below it (the root excepted); without one it is unchanged.
+#[test]
+fn the_cut_does_not_refine_below_the_minimum_side() {
+    let mut dataset = cell_dataset();
+    load_all(&mut dataset);
+    let view = view_at(None);
+    // A tiny pixel target asks for the deepest cut: the level-2 children of node 2.
+    let (_, free) = dataset.select_target(&view, 1e-3).unwrap();
+    assert!(free.node_ids().contains(&NodeId::new(10)));
+    let free_ids = free.node_ids().to_vec();
+
+    // Level-1 nodes (side 32) would refine into cells of side 2; a minimum of 3 forbids it.
+    let min_side = 3.0;
+    dataset.set_min_side(Some(min_side));
+    let (_, limited) = dataset.select_target(&view, 1e-3).unwrap();
+    assert!(!limited.node_ids().contains(&NodeId::new(10)));
+    for id in limited.node_ids() {
+        assert!(
+            *id == NodeId::new(1) || coarsest_cell_side(&dataset, *id) >= min_side,
+            "node {id:?} draws cells below the minimum"
+        );
+    }
+
+    // No minimum: the same selection as before.
+    dataset.set_min_side(None);
+    let (_, again) = dataset.select_target(&view, 1e-3).unwrap();
+    assert_eq!(again.node_ids(), free_ids);
+}
+
+#[test]
+fn a_new_minimum_side_reselects_the_cut() {
+    let mut dataset = cell_dataset();
+    load_all(&mut dataset);
+    let view = view_at(None);
+    let (_, free) = dataset.select_target(&view, 1e-3).unwrap();
+    dataset.set_min_side(Some(3.0));
+    let (_, limited) = dataset.select_target(&view, 1e-3).unwrap();
+    assert!(!Arc::ptr_eq(&free, &limited));
+    // The same minimum reuses the memoised selection.
+    let (_, reused) = dataset.select_target(&view, 1e-3).unwrap();
+    assert!(Arc::ptr_eq(&limited, &reused));
+}

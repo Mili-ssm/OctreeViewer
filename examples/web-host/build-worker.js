@@ -7,7 +7,7 @@ import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./h
 // returns. Self-contained on purpose: package-local.py embeds it without module imports.
 //
 // render -> build: init{wasmBytes?}, open{gen,file,attributes,cacheBytes,limits,cells?}, colorMode{gen,mode},
-//                  view{gen,epoch,viewEpoch?,camera,viewport,visualScale,targetPx}, metrics{reset?}
+//                  view{gen,epoch,viewEpoch?,camera,viewport,visualScale,targetPx,minSide?}, metrics{reset?}
 // build -> render: opened{gen,opened}, colorMode{gen,mode,attributeRange} (the mode was accepted;
 //                  a rejected one answers with error{operation:"colorMode"} and changes nothing),
 //                  scene{gen,epoch,viewEpoch,buf,count,blockIds,lod,digest},
@@ -217,6 +217,8 @@ function runBuild() {
             applyCellInbox();
             if (view === lastCellsView && !builder.cellStats?.()?.cellsBusy) return;
             if (typeof view.viewEpoch === "number") builder.setViewEpoch(view.viewEpoch);
+            // Dataset units, `null` for none; the cut does not refine into cells below it (RQ-09).
+            builder.setMinSide(view.minSide ?? undefined);
         }
         result = builder.update(view.camera, view.viewport[0], view.viewport[1], view.visualScale, view.targetPx);
     } catch (error) {
