@@ -575,6 +575,10 @@ fn digest_tells_a_hidden_octant_from_depth_zero() {
         stage: [false; 8],
         step: [None; 8],
         range: None,
+        node_anchor: None,
+        node_run: None,
+        node_stage: false,
+        node_step: None,
         mask: [0; 8],
     };
     assert_ne!(

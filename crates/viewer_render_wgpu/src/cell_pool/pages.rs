@@ -191,6 +191,8 @@ impl CellPool {
         self.applied_drawn.clear();
         self.applied_finest.clear();
         self.applied_span.clear();
+        self.applied_run.clear();
+        self.node_waits.clear();
         self.step_waits.clear();
         self.applied_d5.clear();
         self.old_released.clear();

@@ -3539,6 +3539,10 @@ fn drawing(node: u64, octants: &[usize]) -> CellCutEntry {
         stage: [false; 8],
         step: [None; 8],
         range: None,
+        node_anchor: None,
+        node_run: None,
+        node_stage: false,
+        node_step: None,
         mask: [0; 8],
     }
 }
@@ -5587,6 +5591,10 @@ fn the_active_set_has_no_gap_between_a_drawn_depth_and_the_range() {
             stage: [false; 8],
             step: [None; 8],
             range: Some(range),
+            node_anchor: None,
+            node_run: None,
+            node_stage: false,
+            node_step: None,
             mask: [0; 8],
         };
         let node_depth = CellPool::node_depth(&grid(), rig.nodes[&NodeId::new(1)].bounds);

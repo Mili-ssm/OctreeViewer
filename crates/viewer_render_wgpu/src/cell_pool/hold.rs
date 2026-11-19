@@ -338,6 +338,10 @@ impl CellPool {
                 ),
                 f.rep.saturating_sub(MAX_MASK_LEVELS),
             );
+            let before = before_finest(&limit, &wanted);
+            if let Some(before) = before {
+                out.before.insert(id, before);
+            }
             let short = match judge {
                 Judge::Run => {
                     // The active run of the node from its own resident levels under the cap, with
@@ -347,12 +351,6 @@ impl CellPool {
                     // (tests: a capped node released by the gate), and `new_d5` adds a depth: the
                     // gate ignores both, and the twin tests show the emitted set draws nothing
                     // coarser. A node with nothing usable to draw yet is short.
-                    let before = limit
-                        .iter()
-                        .zip(&wanted)
-                        .filter(|(_, w)| w.is_some())
-                        .filter_map(|(l, _)| *l)
-                        .max();
                     let wish = wanted.iter().flatten().max();
                     match (before, wish) {
                         (Some(before), Some(wish)) => {
@@ -396,6 +394,18 @@ impl CellPool {
         }
         out
     }
+}
+
+/// The finest depth that drew over any octant a node wants (B5): the `before` of the gate and the
+/// `prev` of `node_run` for a node that did not draw. `limit` is the depth that drew over each
+/// octant (`None`: nothing), `wanted` what each octant wants.
+pub(super) fn before_finest(limit: &[Option<u8>; 8], wanted: &[Option<u8>; 8]) -> Option<u8> {
+    limit
+        .iter()
+        .zip(wanted)
+        .filter(|(_, w)| w.is_some())
+        .filter_map(|(l, _)| *l)
+        .max()
 }
 
 /// The active run `[coarsest, finest]` of a node, as `CellPool::cell_active_depths` gives it.

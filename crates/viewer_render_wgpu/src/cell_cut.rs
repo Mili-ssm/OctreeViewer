@@ -120,6 +120,13 @@ pub struct CellCutEntry {
     /// farthest along the view (ADR 0054 rule). `None` for a node with no
     /// visible octant and for one with no buildable depth inside its span.
     pub range: Option<(u8, u8)>,
+    /// Node-level fields of plan task 10 (`cell_pool/run.rs`), computed by the pool next to the
+    /// per-octant ones and read by nobody yet: the anchor depth, the single active run, whether
+    /// the node is staged and the depth that extends the run. `None`/`false` out of the pool.
+    pub node_anchor: Option<u8>,
+    pub node_run: Option<(u8, u8)>,
+    pub node_stage: bool,
+    pub node_step: Option<u8>,
     /// Bit `x + 8y + 64z` of the node's 8^3 grid; 1 = hidden under a resident selected
     /// descendant.
     pub mask: [u64; 8],
@@ -1094,6 +1101,10 @@ pub(crate) fn cell_cut_ranged(
             stage: [false; 8],
             step: [None; 8],
             range: None,
+            node_anchor: None,
+            node_run: None,
+            node_stage: false,
+            node_step: None,
             mask: [0; 8],
         });
         let rep = representative_depth(grid, data.bounds);

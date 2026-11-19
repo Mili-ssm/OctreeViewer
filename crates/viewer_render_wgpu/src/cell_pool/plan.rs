@@ -266,7 +266,7 @@ impl CellPool {
                 Some(node)
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
-            let entries = match cell_cut_ranged(
+            let mut entries = match cell_cut_ranged(
                 real_cut,
                 &lookup,
                 grid,
@@ -319,6 +319,9 @@ impl CellPool {
                     })
                 },
             );
+            if let Some(entries) = entries.as_mut() {
+                self.fill_node_runs(entries, &eval.before, nodes, grid);
+            }
             self.real_memo = Some(RealMemo {
                 generation,
                 residency_epoch: self.residency_epoch,
@@ -454,6 +457,7 @@ impl CellPool {
             }
         }
         self.step_waits = waits;
+        self.advance_node_waits();
         if expired {
             self.residency_epoch += 1;
         }
@@ -783,6 +787,7 @@ impl CellPool {
             }
             let mut finest = FastMap::default();
             let mut spans = FastMap::default();
+            let mut runs = FastMap::default();
             let mut d5_depths = FastMap::default();
             for index in 0..self.applied.len() {
                 let (id, mask) = (self.applied[index].node, self.applied[index].mask);
@@ -804,6 +809,13 @@ impl CellPool {
                     .cell_active_depths(&self.applied[index], node_depth, d5)
                     .into_iter()
                     .fold(0_u64, |bits, depth| bits | 1 << (depth - node_depth));
+                // B3: the run without the depth D5 adds.
+                {
+                    let own = self.cell_active_depths(&self.applied[index], node_depth, None);
+                    if let Some((lo, hi)) = own.first().zip(own.last()) {
+                        runs.insert(id, (*lo, *hi));
+                    }
+                }
                 if active_bits != 0 {
                     let top = node_depth + (63 - active_bits.leading_zeros()) as u8;
                     finest.insert(id, top);
@@ -845,6 +857,7 @@ impl CellPool {
             }
             self.applied_d5 = d5_depths;
             self.applied_finest = finest;
+            self.applied_run = runs;
             self.applied_span = spans;
         }
         let mut applied_levels = FastSet::default();

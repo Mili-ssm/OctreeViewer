@@ -100,6 +100,7 @@ mod hold;
 mod pages;
 mod plan;
 mod residency;
+mod run;
 mod seed;
 mod step;
 
@@ -442,6 +443,9 @@ struct HoldEval {
     hold: FastSet<NodeId>,
     settle: FastSet<NodeId>,
     ancestors: FastSet<NodeId>,
+    /// `hold::before_finest` of each node the hold judged (B5), the `prev` of its `node_run` when
+    /// it did not draw.
+    before: FastMap<NodeId, u8>,
 }
 
 /// Order-free digest of a set of nodes.
@@ -622,6 +626,12 @@ pub struct CellPool {
     /// Cell mode: the `(min, max)` active depths of each node of the applied cut, as last
     /// written to the records.
     applied_span: FastMap<NodeId, (u8, u8)>,
+    /// Cell mode: the active run `(min, max)` of each node of the applied cut WITHOUT the depth D5
+    /// adds (B3), as last written to the records: the `prev` of `node_run`.
+    applied_run: FastMap<NodeId, (u8, u8)>,
+    /// Per node whose run is staged by its fine end: `(run.hi, frames)` the level above `run.hi`
+    /// has not been usable. At `STEP_WAIT_FRAMES` the `node_run` anchor may hop (B6).
+    node_waits: FastMap<NodeId, (u8, u32)>,
     /// Per `(node, octant)` stepping towards its wanted depth: `((drawn depth, wanted depth is
     /// finer, adjacent depth awaited), frames waited)`. Every planned frame counts, applied or
     /// retained; the key ignores the exact wanted depth, so a wanted depth flipping within the
@@ -703,6 +713,8 @@ impl CellPool {
             applied_drawn: FastMap::default(),
             applied_finest: FastMap::default(),
             applied_span: FastMap::default(),
+            applied_run: FastMap::default(),
+            node_waits: FastMap::default(),
             step_waits: FastMap::default(),
             applied_d5: FastMap::default(),
             applied_digest: 0,
