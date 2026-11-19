@@ -69,11 +69,12 @@ impl CellPool {
         Some((lo, finest.map_or(hi, |wanted| hi.max(wanted))))
     }
 
-    /// Cell mode: every depth of the node range (`node_range`) is needed: `(fetched, missing)`.
-    /// `fetched` are the stored levels that serve a depth of the range (fetched and protected);
-    /// `missing` are the buildable depths not stored, requested on demand but never deeper than
-    /// the spacing depth unless an octant wants them, so the single-point tail is not built for
-    /// the range. The spacing depth is the finest stored depth of the node (the chain of the node
+    /// Cell mode: the depths of the node range (`node_range`) that the pool wants besides the
+    /// octant ones: `(stored, missing)`. `stored` are the stored depths inside the range (fetched
+    /// and protected); `missing` are the buildable depths not stored, requested on demand but
+    /// never deeper than the spacing depth, so the single-point tail is not built for a range
+    /// nobody wants (`requested_levels` adds the depths an octant wants, whatever their depth).
+    /// The spacing depth is the finest stored depth of the node (the chain of the node
     /// ends at the first fully separated level, or where it is too sparse to page), or its
     /// representative depth when nothing is stored.
     pub(super) fn range_depths(
@@ -86,7 +87,6 @@ impl CellPool {
         let Some((lo, hi)) = Self::node_range(entry) else {
             return (Vec::new(), Vec::new());
         };
-        let finest_wanted = entry.wanted.iter().flatten().copied().max().unwrap_or(0);
         let cap = caps.get(&entry.node);
         let stored = self.drawable_stored(&capped(&node.stored, cap), grid, node.bounds);
         let spacing = stored
@@ -94,18 +94,13 @@ impl CellPool {
             .copied()
             .unwrap_or_else(|| representative_depth(grid, node.bounds));
         let buildable = capped_range(node.buildable, cap);
-        let fetched: Vec<u8> = if stored.is_empty() {
-            Vec::new()
-        } else {
-            let mut fetched: Vec<u8> = (lo..=hi)
-                .map(|depth| served_depth(&stored, depth))
-                .collect();
-            fetched.dedup();
-            fetched
-        };
+        let in_range: Vec<u8> = stored
+            .iter()
+            .copied()
+            .filter(|depth| (lo..=hi).contains(depth))
+            .collect();
         let missing = in_cell_range(
-            &(lo.max(buildable.0)..=hi.min(buildable.1).min(spacing.max(finest_wanted)))
-                .collect::<Vec<u8>>(),
+            &(lo.max(buildable.0)..=hi.min(buildable.1).min(spacing)).collect::<Vec<u8>>(),
             Self::node_depth(grid, node.bounds),
         )
         .into_iter()
@@ -113,7 +108,7 @@ impl CellPool {
         .collect::<Vec<u8>>();
         // Contiguous span (ADR 0053): every buildable depth between the coarsest and the finest
         // active one (drawn or resident) is wanted too, below the spacing depth as well.
-        // `buildable` already holds the 0.1 mm minimum side and the sparse-page refusals.
+        // `buildable` holds the sparse-page refusals; the minimum side only bounds the wishes.
         let node_depth = Self::node_depth(grid, node.bounds);
         let (span_lo, span_hi) = cell_depth_range(node_depth);
         // Active depths are the drawn ones and the resident ones inside the range (the pinned
@@ -134,7 +129,7 @@ impl CellPool {
             }
             missing.sort_unstable();
         }
-        (fetched, missing)
+        (in_range, missing)
     }
 
     /// Distinct levels the entries need: the wanted ones plus the pinned coarsest of every node.
@@ -154,8 +149,13 @@ impl CellPool {
             if let Some(coarsest) = stored.first().copied() {
                 set.insert(self.key(entry.node, coarsest));
             }
-            // A depth of the node range is fetched as the stored one that serves it; when it is
-            // not stored itself it is also requested on demand (`range_requests`).
+            // A wanted depth is fetched as the stored one that serves it; when it is not stored
+            // itself it is also requested on demand (`requested_levels`).
+            if !stored.is_empty() {
+                for depth in entry.wanted.iter().flatten() {
+                    set.insert(self.key(entry.node, served_depth(&stored, *depth)));
+                }
+            }
             for depth in self.range_depths(entry, node, caps, grid).0 {
                 set.insert(self.key(entry.node, depth));
             }
@@ -210,6 +210,15 @@ impl CellPool {
             for depth in self.seed_depths(entry, node, caps, grid) {
                 if !stored.contains(&depth) {
                     set.insert(self.key(entry.node, depth));
+                }
+            }
+            for depth in entry.wanted.iter().flatten() {
+                if !stored.contains(depth) {
+                    debug_assert!(
+                        (buildable.0..=buildable.1).contains(depth),
+                        "a wanted depth is stored or buildable"
+                    );
+                    set.insert(self.key(entry.node, *depth));
                 }
             }
         }
