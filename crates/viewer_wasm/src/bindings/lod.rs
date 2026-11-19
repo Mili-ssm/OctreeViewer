@@ -1,3 +1,7 @@
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "wasm-bindgen exports receive JS handles and owned values by value"
+)]
 use std::sync::{Arc, Mutex};
 
 use viewer_core::{BlockId, DatasetSource, Point, PointBatch, PointBlock};
@@ -712,6 +716,10 @@ impl WasmVoxelViewer {
 }
 
 impl WasmVoxelViewer {
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the refresh hook keeps the fallible shape its callers propagate with `?`"
+    )]
     pub(super) fn refresh_lod_if_dirty(&mut self) -> Result<(), JsValue> {
         if let Some(cells) = self.cells_local.as_mut() {
             let Some(target_voxel_pixels) = self.lod_config else {

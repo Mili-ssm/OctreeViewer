@@ -506,6 +506,10 @@ fn build_level(
     }
 }
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the fallible signature is shared with `build_level`, whose callers propagate `NodeCellError`"
+)]
 fn build_level_keyed<K: Ord + Copy>(
     grid: &CellGrid,
     points: &[Points<'_>],

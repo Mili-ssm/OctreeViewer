@@ -120,6 +120,10 @@ impl ViewerController {
         self.replace_voxelized_points_owned(build_point_batch(positions, colors)?.into_points())
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "public API named for ownership: callers hand over their buffer"
+    )]
     pub fn replace_voxelized_points_owned(
         &mut self,
         points: Vec<Point>,
@@ -139,6 +143,10 @@ impl ViewerController {
         self.append_voxelized_points_owned(build_point_batch(positions, colors)?.into_points())
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "public API named for ownership: callers hand over their buffer"
+    )]
     pub fn append_voxelized_points_owned(&mut self, points: Vec<Point>) -> Result<(), ViewerError> {
         match &mut self.data {
             ViewerData::RawPoints(existing) => {
@@ -193,7 +201,11 @@ impl ViewerController {
 }
 
 // Keep this layout validation and iteration compatible with the workspace's Rust 1.85 floor.
-#[allow(clippy::manual_is_multiple_of, clippy::chunks_exact_to_as_chunks)]
+#[allow(
+    clippy::manual_is_multiple_of,
+    clippy::chunks_exact_to_as_chunks,
+    reason = "the workspace Rust 1.85 floor has neither is_multiple_of nor as_chunks"
+)]
 fn build_point_batch(positions: &[f32], colors: &[u8]) -> Result<PointBatch, ViewerError> {
     if positions.len() % 3 != 0 {
         return Err(ViewerError::InvalidPositionComponentCount(positions.len()));

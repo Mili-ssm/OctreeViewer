@@ -116,6 +116,7 @@ impl WasmAsyncReadBudget {
     }
 
     #[wasm_bindgen(js_name = clone)]
+    #[must_use]
     pub fn clone_budget(&self) -> WasmAsyncReadBudget {
         Self {
             inner: self.inner.clone(),

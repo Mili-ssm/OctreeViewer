@@ -389,8 +389,8 @@ fn flipped_bytes_never_panic_and_accepted_input_is_canonical() {
 
 #[test]
 fn encode_refuses_what_decode_would_refuse() {
-    let base = pack(2, &[(3, 5)]);
     type Break = fn(&mut PackedNode);
+    let base = pack(2, &[(3, 5)]);
     let cases: [(&str, Break); 8] = [
         ("first_cell", |n| n.levels[0].pages[0].first_cell = 1),
         ("flags", |n| n.levels[0].pages[0].flags = 0x1_0000),

@@ -301,16 +301,16 @@ impl StrictTarget {
 
 const GLUE_SEEDS: [u64; 3] = [1, 7, 42];
 
-fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
-    let full = synthetic_cpu_bytes(&views);
+fn glue_synthetic_case(name: &str, views: &[ViewProjection], inject: Inject) {
+    let full = synthetic_cpu_bytes(views);
     let budget = full / 3;
-    let (expected, _) = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let (expected, _) = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, views);
     let mut reports = 0;
     for (i, seed) in GLUE_SEEDS.iter().enumerate() {
         // A cap of one byte applies one node per frame; the other seeds apply bursts.
         let cap = if i == 0 { 1 } else { 256 << 10 };
         let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, *seed, cap);
-        let digest = sim.run(&views, inject, 200_000);
+        let digest = sim.run(views, inject, 200_000);
         assert_eq!(digest, expected, "{name} seed {seed}");
         assert!(sim.stats.node_messages > 0);
         reports += sim.stats.missing_reports;
@@ -324,12 +324,12 @@ fn glue_synthetic_case(name: &str, views: Vec<ViewProjection>, inject: Inject) {
 
 #[test]
 fn glue_synthetic_orbit_reaches_the_in_process_digest() {
-    glue_synthetic_case("orbit", synth_orbit(), Inject::default());
+    glue_synthetic_case("orbit", &synth_orbit(), Inject::default());
 }
 
 #[test]
 fn glue_synthetic_dolly_reaches_the_in_process_digest() {
-    glue_synthetic_case("dolly", synth_dolly(), Inject::default());
+    glue_synthetic_case("dolly", &synth_dolly(), Inject::default());
 }
 
 #[test]
@@ -340,7 +340,7 @@ fn glue_synthetic_pool_reset_and_driver_replaced_mid_load_converge() {
         forget_zones_on_loss: true,
         ..Inject::default()
     };
-    glue_synthetic_case("orbit+inject", synth_orbit(), inject);
+    glue_synthetic_case("orbit+inject", &synth_orbit(), inject);
 }
 
 #[test]

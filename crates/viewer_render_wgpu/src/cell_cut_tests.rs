@@ -179,7 +179,10 @@ fn oracle_octant(
 
 /// Checks every non-masked octant of `entries` against the oracle (with the spanning-level
 /// promotion applied by hand). Returns `(octants checked, octants below the finest level)`.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 fn assert_octant_oracle(
     entries: &[CellCutEntry],
     nodes: &HashMap<NodeId, CellCutNode>,
@@ -235,7 +238,10 @@ fn assert_octant_oracle(
 }
 
 #[test]
-#[allow(clippy::type_complexity)]
+#[expect(
+    clippy::type_complexity,
+    reason = "a test rig returning a tuple of fixtures; a named type would be used once"
+)]
 fn octant_choice_matches_the_brute_force_oracle() {
     let grid = dataset_grid(ORIGIN);
     let replacement = fixture_nodes(&fixture(HierarchySemantics::Replacement));
@@ -1210,10 +1216,13 @@ fn cell_cut_digest_golden() {
             .zip(GOLDEN)
             .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
     if !matches {
+        use std::fmt::Write as _;
         let table: String = actual
             .iter()
-            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
-            .collect();
+            .fold(String::new(), |mut table, (name, hash)| {
+                let _ = writeln!(table, "    (\"{name}\", {hash:#018x}),");
+                table
+            });
         panic!("digest table changed; actual:\n{table}");
     }
 }
@@ -1269,7 +1278,7 @@ fn run_cell_mode_from(
                     None,
                 )
                 .unwrap_or(data.buildable.0),
-                octants_in_front(&view, origin, data.bounds, [ProbeBox::Geometric; 8]),
+                octants_in_front(&view, origin, data.bounds, &[ProbeBox::Geometric; 8]),
             )
         }),
         prev,
@@ -1388,10 +1397,13 @@ fn cell_cut_digest_golden_in_cell_mode() {
             .zip(CELL_MODE_GOLDEN)
             .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
     if !matches {
+        use std::fmt::Write as _;
         let table: String = actual
             .iter()
-            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
-            .collect();
+            .fold(String::new(), |mut table, (name, hash)| {
+                let _ = writeln!(table, "    (\"{name}\", {hash:#018x}),");
+                table
+            });
         panic!("cell-mode digest table changed; actual:\n{table}");
     }
 }
@@ -1421,10 +1433,13 @@ fn assert_cell_mode_table(actual: &[(String, u64)], golden: &[(&str, u64)]) {
             .zip(golden)
             .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
     if !matches {
+        use std::fmt::Write as _;
         let table: String = actual
             .iter()
-            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
-            .collect();
+            .fold(String::new(), |mut table, (name, hash)| {
+                let _ = writeln!(table, "    (\"{name}\", {hash:#018x}),");
+                table
+            });
         panic!("cell-mode digest table changed; actual:\n{table}");
     }
 }
@@ -1979,7 +1994,7 @@ fn ranged_entry(
                     None,
                 )
                 .unwrap_or(data.buildable.0),
-                octants_in_front(view, [0.0; 3], bounds, probes),
+                octants_in_front(view, [0.0; 3], bounds, &probes),
             )
         }),
         None,
@@ -2022,7 +2037,7 @@ fn the_far_wanted_depth_is_never_finer_than_the_near_one() {
         let bounds = SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
         let far =
             view_range_lo(&view, &grid, [0.0; 3], Some(bounds), (3, 12), target, None).unwrap_or(3);
-        let front = octants_in_front(&view, [0.0; 3], bounds, [ProbeBox::Geometric; 8]);
+        let front = octants_in_front(&view, [0.0; 3], bounds, &[ProbeBox::Geometric; 8]);
         let near = (0..8)
             .filter(|o| front >> o & 1 == 1)
             .map(|o| octant_wanted_depth(&view, &grid, [0.0; 3], bounds, o, (3, 12), target))
@@ -2043,6 +2058,10 @@ fn along_x() -> ViewProjection {
     posed([-900.0, 0.0, 0.0], [0.0, 0.0, 0.0])
 }
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "callers pass the result where an optional box is expected"
+)]
 fn boxed(min: [f64; 3], max: [f64; 3]) -> Option<SpatialBounds> {
     Some(SpatialBounds::new(min, max).unwrap())
 }
@@ -2061,7 +2080,7 @@ fn a_region_behind_the_eye_has_no_view_range() {
 fn an_empty_region_has_no_view_range() {
     let (view, grid) = (along_x(), huge_grid());
     let bounds = SpatialBounds::new([0.0; 3], [100.0; 3]).unwrap();
-    assert_eq!(probe_region(bounds, [ProbeBox::Empty; 8]), None);
+    assert_eq!(probe_region(bounds, &[ProbeBox::Empty; 8]), None);
     assert_eq!(
         node_view_range(&view, &grid, [0.0; 3], None, (3, 12), 4.0, None),
         None
@@ -2204,11 +2223,11 @@ fn masked_lo(
     view: &ViewProjection,
     grid: &CellGrid,
     bounds: SpatialBounds,
-    probes: [ProbeBox; 8],
+    probes: &[ProbeBox; 8],
     target: f64,
 ) -> (Option<SpatialBounds>, u8) {
     let (masked, _) = masked_probes(view, grid, [0.0; 3], bounds, probes);
-    let region = probe_region(bounds, masked);
+    let region = probe_region(bounds, &masked);
     let lo = view_range_lo(view, grid, [0.0; 3], region, (3, 12), target, None).unwrap_or(3);
     (region, lo)
 }
@@ -2227,16 +2246,16 @@ fn a_node_with_every_data_octant_behind_has_the_coarsest_far_depth() {
     probes[0] = data([1500.0, 2000.0]);
     probes[1] = data([-2000.0, -1500.0]);
     let target = 1.0;
-    let unmasked = probe_region(bounds, probes);
+    let unmasked = probe_region(bounds, &probes);
     let far = view_range_lo(&view, &grid, [0.0; 3], unmasked, (3, 12), target, None);
     assert_eq!(
         far,
         Some(10),
         "setup: the union box passes the in-view test"
     );
-    let (_, (behind, _)) = masked_probes(&view, &grid, [0.0; 3], bounds, probes);
+    let (_, (behind, _)) = masked_probes(&view, &grid, [0.0; 3], bounds, &probes);
     assert_eq!(behind, 0xFF, "setup: every octant is behind or empty");
-    let (region, lo) = masked_lo(&view, &grid, bounds, probes, target);
+    let (region, lo) = masked_lo(&view, &grid, bounds, &probes, target);
     assert_eq!(region, None);
     let wishes: Vec<u8> = (0..8)
         .map(|o| {
@@ -2266,13 +2285,13 @@ fn the_only_octant_in_front_of_the_eye_plane_being_off_screen_gives_the_coarsest
     probes[6] =
         ProbeBox::Data(SpatialBounds::new([-890.0, 900.0, 1.0], [-880.0, 1000.0, 10.0]).unwrap());
     assert_ne!(
-        octants_in_front(&view, [0.0; 3], bounds, probes),
+        octants_in_front(&view, [0.0; 3], bounds, &probes),
         0,
         "setup: the octant is in front of the eye plane"
     );
-    let (masked, (behind, front)) = masked_probes(&view, &grid, [0.0; 3], bounds, probes);
+    let (masked, (behind, front)) = masked_probes(&view, &grid, [0.0; 3], bounds, &probes);
     assert_eq!((behind, front), (0xFF, 0), "setup: off-screen is behind");
-    assert_eq!(octants_in_front(&view, [0.0; 3], bounds, masked), 0);
+    assert_eq!(octants_in_front(&view, [0.0; 3], bounds, &masked), 0);
     let (target, buildable) = (1.0, (3, 12));
     let wishes = behind_wanted(
         std::array::from_fn(|o| {
@@ -2300,13 +2319,13 @@ fn the_only_octant_in_front_of_the_eye_plane_being_off_screen_gives_the_coarsest
                 &view,
                 &grid,
                 [0.0; 3],
-                probe_region(bounds, masked),
+                probe_region(bounds, &masked),
                 data.buildable,
                 target,
                 None,
             )
             .unwrap_or(data.buildable.0);
-            (lo, octants_in_front(&view, [0.0; 3], bounds, masked))
+            (lo, octants_in_front(&view, [0.0; 3], bounds, &masked))
         }),
         None,
     )
@@ -2334,13 +2353,13 @@ fn masking_the_behind_octants_leaves_the_eye_nodes_far_depth_unchanged() {
                 &view,
                 &grid,
                 [0.0; 3],
-                probe_region(bounds, probes),
+                probe_region(bounds, &probes),
                 (3, 12),
                 target,
                 None,
             )
             .unwrap_or(3);
-            let (_, lo) = masked_lo(&view, &grid, bounds, probes, target);
+            let (_, lo) = masked_lo(&view, &grid, bounds, &probes, target);
             assert_eq!(lo, all, "at {at:?} target {target}");
         }
     }

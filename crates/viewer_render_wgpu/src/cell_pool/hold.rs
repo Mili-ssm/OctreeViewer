@@ -173,7 +173,10 @@ impl CellPool {
 
     /// The R3-Q21 hold ("only refine"), see the module docs. `judge` says when a node that would
     /// enter the cut is short of what drew over its footprint before.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     fn refine_hold(
         &self,
         entries: &[CellCutEntry],

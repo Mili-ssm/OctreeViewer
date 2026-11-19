@@ -452,7 +452,13 @@ impl HzbResources {
                 })
             })
             .collect();
-        self._pyramid_texture = pyramid_texture;
+        #[expect(
+            clippy::used_underscore_binding,
+            reason = "the texture is only held so its views stay valid; the underscore says it is never read"
+        )]
+        {
+            self._pyramid_texture = pyramid_texture;
+        }
         self.pyramid_view = pyramid_view;
         self.viewport = viewport;
         self.pyramid_size = pyramid_size;

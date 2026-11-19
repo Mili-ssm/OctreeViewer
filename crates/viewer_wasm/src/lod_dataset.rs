@@ -508,12 +508,14 @@ impl LodDataset {
 
     /// Declares that the format has the global integer frame (`FormatVersion::uses_global_frame`),
     /// the precondition of the cell path together with replacement semantics.
+    #[must_use]
     pub fn with_global_frame(mut self, global_frame: bool) -> Self {
         self.global_frame = global_frame;
         self
     }
 
     /// Records the CRS identity checked when another cloud is opened (RF-02).
+    #[must_use]
     pub fn with_crs(mut self, crs: Option<String>) -> Self {
         self.crs = crs;
         self
@@ -525,6 +527,7 @@ impl LodDataset {
 
     /// Uses the reference spacing the format stores for the whole cloud (`v7.5-pre`), whose
     /// hierarchy is never resident in full.
+    #[must_use]
     pub fn with_reference_spacing(mut self, spacing: f64) -> Self {
         self.stored_reference_spacing = Some(spacing);
         self
@@ -1210,10 +1213,6 @@ fn prefix_extension_points(
     previous_context: Option<&SuccessfulBuildContext>,
     next_context: &SuccessfulBuildContext,
 ) -> Option<(u64, u64)> {
-    if previous_context != Some(next_context) {
-        return None;
-    }
-    // Match the builder's traversal, including shared references, not sorted unique block IDs.
     fn blocks<'a>(
         hierarchy: &'a SpatialHierarchy,
         cache: &'a DecodedBlockCache,
@@ -1229,6 +1228,10 @@ fn prefix_extension_points(
                     .map(|block| (*id, u64::try_from(block.points().len()).unwrap_or(u64::MAX)))
             })
     }
+    if previous_context != Some(next_context) {
+        return None;
+    }
+    // Match the builder's traversal, including shared references, not sorted unique block IDs.
     let mut next = blocks(hierarchy, cache, next_nodes);
     let mut previous = blocks(hierarchy, cache, previous_nodes?).peekable();
     previous.peek()?; // No retained work to save for an empty old scene.

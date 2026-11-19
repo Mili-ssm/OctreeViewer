@@ -360,6 +360,10 @@ struct StoredNode {
     generation: Option<u64>,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the flags are independent latches; a state enum would not model them"
+)]
 pub struct CellDriver {
     config: DriverConfig,
     pool: CellPool,
@@ -479,6 +483,10 @@ pub fn pack_node(
 }
 
 /// [`pack_node`] after the caller checked the grid contract.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "`NodeInput` is a bundle of borrows destructured by value; a reference would only add a layer"
+)]
 fn pack_checked(
     grid: &CellGrid,
     coordinate_origin: [f64; 3],

@@ -2620,12 +2620,12 @@ fn sample_harness() -> (Harness, [f64; 3], f64) {
 /// there: the probe measures the data, not the node box.
 #[test]
 fn the_close_pose_of_the_sample_never_draws_sub_pixel_cells_in_cell_mode() {
+    const MAX_DEPTH: u8 = 14;
     let (mut h, origin, scale) = sample_harness();
     let viewport = [870, 750];
     // Measured at this pose: probing the data wants depth 11-13 in these leaves (cells near the
     // px target), while probing the node box wants the finest depth, 19 (cells of ~0.003 px).
     // 14 is one level of margin over the former and far from the latter.
-    const MAX_DEPTH: u8 = 14;
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
     let mk = |eye: [f64; 3], target: [f64; 3]| {
         let root = h.dataset.metadata.hierarchy().stats().root_bounds;
@@ -2811,6 +2811,8 @@ fn at_p4_node_14_can_draw_the_level_its_border_needs() {
 
 /// Returns the histogram of the visible border pairs by level difference, and the range of node 14.
 fn p4_border_levels_under() -> (std::collections::BTreeMap<u8, usize>, Option<(u8, u8)>) {
+    type Group = (usize, [f64; 2], [f64; 2]);
+    const N: usize = 48;
     let (mut h, origin, scale) = sample_harness();
     let viewport = [870, 750];
     let local = |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| (p[a] - origin[a]) * scale) };
@@ -2919,11 +2921,9 @@ fn p4_border_levels_under() -> (std::collections::BTreeMap<u8, usize>, Option<(u
         std::collections::BTreeMap::default();
     // `P4_DUMP=<dir>` writes every visible pair as `x y z depth_a depth_b node_a node_b` lines.
     let mut dump = String::new();
-    const N: usize = 48;
     let mut histogram: std::collections::BTreeMap<u8, usize> =
         std::collections::BTreeMap::default();
     // (node a, depth a, node b, depth b) -> (pairs, min xy, max xy)
-    type Group = (usize, [f64; 2], [f64; 2]);
     let mut groups: std::collections::BTreeMap<(u64, u8, u64, u8), Group> =
         std::collections::BTreeMap::default();
     for node in nodes {
@@ -3113,10 +3113,13 @@ fn the_gpu_input_at_the_sample_poses_is_pinned() {
             .zip(GPU_INPUT_GOLDEN)
             .all(|(a, g)| a.0 == g.0 && a.1 == g.1);
     if !matches {
+        use std::fmt::Write as _;
         let table: String = actual
             .iter()
-            .map(|(name, hash)| format!("    (\"{name}\", {hash:#018x}),\n"))
-            .collect();
+            .fold(String::new(), |mut table, (name, hash)| {
+                let _ = writeln!(table, "    (\"{name}\", {hash:#018x}),");
+                table
+            });
         panic!("GPU input table changed; actual:\n{table}");
     }
 }
@@ -3138,7 +3141,6 @@ fn lod_near_depth_scaled(camera: &OrbitCamera) -> f64 {
 
 /// The cell `OctantProbe::at` places at `anchor` (relative frame: dataset minus origin) inside the
 /// box `[bmin, bmax]` for the branch without `on_axis`: `(cell px, smallest child px, cell min)`.
-#[allow(clippy::too_many_arguments)]
 fn probe_cell(
     view: &ViewProjection,
     root_side: f64,
@@ -3362,7 +3364,7 @@ fn twin_depths(
             0.0
         };
         for i in 0..3 {
-            if !done[i] && !(min_side_ok && smallest >= targets[i]) {
+            if !(done[i] || min_side_ok && smallest >= targets[i]) {
                 (out[i], done[i]) = (depth, true);
                 if i == 0 {
                     crosses = edge_px(view, lo, side as f32).is_infinite();
@@ -3808,7 +3810,7 @@ fn range_violations(poses: &[&str], lo_side: bool) -> Vec<String> {
     violations
 }
 
-fn assert_no_violations(violations: Vec<String>) {
+fn assert_no_violations(violations: &[String]) {
     assert!(
         violations.is_empty(),
         "{} violations:\n{}",
@@ -3822,13 +3824,13 @@ fn assert_no_violations(violations: Vec<String>) {
 #[test]
 #[ignore = "slow (about 3 minutes of twin sampling); P4 alone runs in the next test"]
 fn the_node_lo_is_not_finer_than_what_the_twin_wants_within_one_level() {
-    assert_no_violations(range_violations(&["P1", "P2", "P3", "P4", "P5"], true));
+    assert_no_violations(&range_violations(&["P1", "P2", "P3", "P4", "P5"], true));
 }
 
 /// The `lo` property at P4, where `node_far_depth` used to put node 14 three levels too fine.
 #[test]
 fn the_node_lo_at_p4_is_not_finer_than_what_the_twin_wants_within_one_level() {
-    assert_no_violations(range_violations(&["P4"], true));
+    assert_no_violations(&range_violations(&["P4"], true));
 }
 
 /// `hi` of the node range contains what the twin wants, within one level. Paused: near the eye the
@@ -3836,7 +3838,7 @@ fn the_node_lo_at_p4_is_not_finer_than_what_the_twin_wants_within_one_level() {
 #[test]
 #[ignore = "paused: `hi` is not changed until plan task 5 decides what bounds it near the eye"]
 fn the_node_hi_contains_what_the_twin_wants_within_one_level() {
-    assert_no_violations(range_violations(&["P1", "P2", "P3", "P4", "P5"], false));
+    assert_no_violations(&range_violations(&["P1", "P2", "P3", "P4", "P5"], false));
 }
 
 // ---- OQ-16: fine end of the node range bounded by the nearest occupied cell -----------------
@@ -3863,7 +3865,10 @@ struct DataBound {
 /// `ViewSpan::on_axis` (`cell_cut.rs`, private) restated: the first buildable depth whose
 /// smallest child, for a cell on the view axis with its nearest face at view depth `near`
 /// (dataset units, eye-relative frame), projects below `target_px`, capped.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 fn on_axis_depth(
     view: &ViewProjection,
     grid: &CellGrid,
@@ -4361,7 +4366,10 @@ struct SourceStats {
 }
 
 impl SourceStats {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     fn add(
         &mut self,
         pose: &str,

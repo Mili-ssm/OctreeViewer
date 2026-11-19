@@ -69,6 +69,10 @@ fn device_loss(reason: wgpu::DeviceLostReason, message: String) -> DeviceLoss {
 }
 
 /// GPU renderer for a surface owned by the calling application.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the flags are independent latches of surface state, not one state machine"
+)]
 pub struct SurfaceRenderer<'window> {
     /// Filled by the device-lost callback; the host reads it through `device_loss()`.
     device_loss: Arc<Mutex<Option<DeviceLoss>>>,

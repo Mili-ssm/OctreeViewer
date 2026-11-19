@@ -1062,6 +1062,8 @@ fn wgsl_struct_layout(name: &str) -> (Vec<(String, u32)>, u32) {
 
 #[test]
 fn frame_uniform_is_176_bytes_and_matches_the_wgsl_layout() {
+    use crate::cell_render::FrameUniform as F;
+    use core::mem::offset_of;
     assert_eq!(size_of::<crate::cell_render::FrameUniform>(), 176);
     let (members, span) = wgsl_struct_layout("CellFrame");
     assert_eq!(span, 176);
@@ -1091,8 +1093,6 @@ fn frame_uniform_is_176_bytes_and_matches_the_wgsl_layout() {
     ];
     let found: Vec<(&str, u32)> = members.iter().map(|(n, o)| (n.as_str(), *o)).collect();
     assert_eq!(found, expected);
-    use crate::cell_render::FrameUniform as F;
-    use core::mem::offset_of;
     let rust: [(&str, usize); 22] = [
         ("view_proj", offset_of!(F, view_projection)),
         ("num_pages", offset_of!(F, num_pages)),

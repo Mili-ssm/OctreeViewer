@@ -310,6 +310,10 @@ fn update_block(
     }
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the flags are independent latches of the cell path, not one state machine"
+)]
 pub(super) struct CellState {
     /// Nodes whose cells were sent to the driver.
     built: HashMap<NodeId, BuiltNode>,
@@ -723,6 +727,10 @@ impl LodDataset {
     /// left for the next update. Requests of nodes without cells are dropped, those of nodes
     /// being rebuilt or with uncached blocks stay, and a depth `node_cell_level` cannot build is
     /// remembered as unservable and dropped.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "`LevelRoom` is a bundle of borrows passed through; a reference would only add a layer"
+    )]
     fn serve_level_requests(
         &mut self,
         max: usize,
@@ -909,7 +917,10 @@ impl LodDataset {
     /// Whether the camera jumped: no node selected at `stage_px` has cells or an ancestor with
     /// cells. The px ladder restarts then (R3-Q22) and only then, besides the dataset opening.
     #[cfg(any(target_arch = "wasm32", test))]
-    #[cfg_attr(not(test), allow(dead_code))] // only the ladder in `lod_driver` calls it
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "only the ladder in `lod_driver` calls it")
+    )]
     pub(crate) fn camera_jumped(
         &mut self,
         view: &ViewProjection,
@@ -949,7 +960,13 @@ impl LodDataset {
     /// Whether the cut selected at `target_px` is complete with only built nodes resident: the
     /// ladder may start at the target stage.
     #[cfg(any(target_arch = "wasm32", test))]
-    #[cfg_attr(not(test), allow(dead_code))] // only the ladder in `lod_driver` calls it, and that is test-only for now
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only the ladder in `lod_driver` calls it, and that is test-only for now"
+        )
+    )]
     pub(crate) fn target_cells_are_ready(
         &mut self,
         view: &ViewProjection,
@@ -1508,7 +1525,7 @@ impl LodDataset {
             HashSet::new()
         };
         let read_ancestors = !top_blocks.is_empty()
-            && !(self.cells.read_ancestor_last && !selection_blocks.is_empty());
+            && (!self.cells.read_ancestor_last || selection_blocks.is_empty());
         let to_read = if self.cells.cpu_blocked || self.cells.gpu_blocked {
             Vec::new()
         } else if async_order_wanted {
@@ -1870,7 +1887,10 @@ impl LodDataset {
 
     /// One update of the cells path in one thread: [`plan_cell_update`](Self::plan_cell_update),
     /// the driver's side on `driver` and `target`, and the dataset's side again, back to back.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     pub fn update_cells<T: CellTarget>(
         &mut self,
         view: &ViewProjection,
@@ -1901,7 +1921,10 @@ impl LodDataset {
     /// The caller owns the ladder (`lod_driver::update_cells_staged` restarts it after a camera
     /// jump, R3-Q22). On an error the dataset keeps what was built and read so far, and the pool
     /// pins change only as `pool_drawn` documents.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     pub fn update_cells_at_stage<T: CellTarget>(
         &mut self,
         view: &ViewProjection,

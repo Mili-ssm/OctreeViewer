@@ -945,6 +945,10 @@ fn representative_regions(
     Some((shift, keys, length))
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "`CutAccumulation` is a bundle of borrows passed through; a reference would only add a layer"
+)]
 fn accumulate_block(
     block: &PointBlock,
     grid: &mut AdaptiveVoxelGrid,

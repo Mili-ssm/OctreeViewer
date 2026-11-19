@@ -326,10 +326,13 @@ fn check_golden(actual: &[(String, usize, u64)]) {
             .zip(GOLDEN)
             .all(|(a, g)| a.0 == g.0 && a.1 == g.1 && a.2 == g.2);
     if !matches {
+        use std::fmt::Write as _;
         let table: String = actual
             .iter()
-            .map(|(name, count, hash)| format!("    (\"{name}\", {count}, {hash:#018x}),\n"))
-            .collect();
+            .fold(String::new(), |mut table, (name, count, hash)| {
+                let _ = writeln!(table, "    (\"{name}\", {count}, {hash:#018x}),");
+                table
+            });
         panic!("digest table changed; actual:\n{table}");
     }
     assert!(

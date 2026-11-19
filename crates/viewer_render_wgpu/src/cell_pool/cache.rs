@@ -74,7 +74,10 @@ impl CellPool {
     /// Recomputes the cached octant depths of the cut nodes and the fallback nodes `extra` that
     /// need it. Returns how many were recomputed and, apart for the cut and for `extra`, whether
     /// any depth, data bound, or the node data they came from, differs from before.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     pub(super) fn refresh_depths(
         &mut self,
         cut: &[NodeId],
@@ -186,7 +189,7 @@ impl CellPool {
                 grid,
                 origin,
                 data.bounds,
-                std::array::from_fn(|octant| data.probe_box(octant)),
+                &std::array::from_fn(|octant| data.probe_box(octant)),
             );
             let depths = behind_wanted(depths, behind);
             let depths = match finest_allowed {
@@ -205,13 +208,13 @@ impl CellPool {
                     view,
                     grid,
                     origin,
-                    probe_region(data.bounds, probes),
+                    probe_region(data.bounds, &probes),
                     data.buildable,
                     target_px,
                     self.min_side,
                 )
                 .unwrap_or(data.buildable.0);
-                (far, octants_in_front(view, origin, data.bounds, probes))
+                (far, octants_in_front(view, origin, data.bounds, &probes))
             };
             // The data bound depends on the pose, the node and its resident levels only: at an
             // unchanged pose and residency the cached one stands.
@@ -229,7 +232,7 @@ impl CellPool {
                         self.config,
                         id,
                         data,
-                        probes,
+                        &probes,
                         (view, grid, origin, target_px, self.min_side),
                         far.0,
                     )
@@ -283,14 +286,14 @@ impl CellPool {
                 grid,
                 origin,
                 data.bounds,
-                std::array::from_fn(|octant| data.probe_box(octant)),
+                &std::array::from_fn(|octant| data.probe_box(octant)),
             );
             let hi_d = Self::data_bound_of(
                 &self.levels,
                 self.config,
                 *id,
                 data,
-                probes,
+                &probes,
                 (view, grid, origin, target_px, self.min_side),
                 cached.far.0,
             );
@@ -317,7 +320,7 @@ impl CellPool {
         config: PoolConfig,
         node: NodeId,
         data: &PoolNode,
-        probes: [ProbeBox; 8],
+        probes: &[ProbeBox; 8],
         (view, grid, origin, target_px, min_side): (
             &ViewProjection,
             &CellGrid,

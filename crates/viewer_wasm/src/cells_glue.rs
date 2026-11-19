@@ -1,4 +1,10 @@
-#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+#![cfg_attr(
+    not(target_arch = "wasm32"),
+    allow(
+        dead_code,
+        reason = "the wasm32 host is the only caller outside the tests"
+    )
+)]
 //! R3 Task 10b: the per-message logic of the cells path, in plain Rust so native tests drive it.
 //!
 //! The wasm-bindgen wrappers (`bindings/cells.rs`) only convert between this module's types and
@@ -357,7 +363,10 @@ impl BuilderCells {
     /// Step 1 for `view`. With a reader, the pages the cut lacks are read and grafted and the
     /// update repeats until none is missing (the nodes of every round are sent); hosts that
     /// deliver pages themselves pass `reader = None`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     pub(crate) fn plan<R>(
         &mut self,
         dataset: &mut LodDataset,
@@ -952,7 +961,10 @@ impl InProcessCells {
     }
 
     /// One update with the page rounds of `update_lod_view_paged`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     pub(crate) fn update<R, T: CellTarget>(
         &mut self,
         dataset: &mut LodDataset,
@@ -1032,7 +1044,10 @@ impl InProcessCells {
 
     /// [`update`](Self::update) on the blocks the cells use (`paint` is the attribute of the colour generation, R3-Q33), with
     /// the pending pages kept and the stats read after it. `read_hook` brackets every block read.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     pub(crate) fn update_view<R, E, T>(
         &mut self,
         paint: Option<CellPaint>,

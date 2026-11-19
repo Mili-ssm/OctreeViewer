@@ -279,7 +279,10 @@ pub fn octant_wanted_depth(
 }
 
 /// `octant_wanted_depth` probing `probe` (see `ProbeBox`).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 pub(crate) fn octant_wanted_depth_in(
     view: &ViewProjection,
     grid: &CellGrid,
@@ -318,7 +321,7 @@ pub(crate) fn behind_octants(
     grid: &CellGrid,
     coordinate_origin: [f64; 3],
     bounds: SpatialBounds,
-    probes: [ProbeBox; 8],
+    probes: &[ProbeBox; 8],
 ) -> (u8, u8) {
     (0..8).fold((0, 0), |(behind, front), octant| {
         match OctantProbe::classify(
@@ -341,7 +344,7 @@ pub(crate) fn behind_octants(
 /// `Empty`, so `probe_region` and the data bound measure only what can be drawn. The `behind` set
 /// (not "not in front of the eye plane") is the mask because an octant that crosses the plane is
 /// visible: dropping it would collapse the eye node's far depth.
-pub(crate) fn mask_behind(probes: [ProbeBox; 8], behind: u8) -> [ProbeBox; 8] {
+pub(crate) fn mask_behind(probes: &[ProbeBox; 8], behind: u8) -> [ProbeBox; 8] {
     std::array::from_fn(|o| {
         if behind >> o & 1 == 1 {
             ProbeBox::Empty
@@ -359,7 +362,7 @@ pub(crate) fn masked_probes(
     grid: &CellGrid,
     coordinate_origin: [f64; 3],
     bounds: SpatialBounds,
-    probes: [ProbeBox; 8],
+    probes: &[ProbeBox; 8],
 ) -> ([ProbeBox; 8], (u8, u8)) {
     let sets = behind_octants(view, grid, coordinate_origin, bounds, probes);
     (mask_behind(probes, sets.0), sets)
@@ -389,7 +392,10 @@ pub(crate) fn behind_wanted(depths: [u8; 8], (behind, front): (u8, u8)) -> [u8; 
 /// per coarser depth, and returns the same depth whenever that holds. The
 /// `the_hinted_search_equals_the_full_search` test (`cell_pool_tests.rs`) found no difference in
 /// 79 993 random poses. A `hint` outside the range falls back to the full search.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 pub(crate) fn octant_wanted_depth_near(
     view: &ViewProjection,
     grid: &CellGrid,
@@ -457,7 +463,7 @@ pub(crate) fn octants_in_front(
     view: &ViewProjection,
     coordinate_origin: [f64; 3],
     bounds: SpatialBounds,
-    probes: [ProbeBox; 8],
+    probes: &[ProbeBox; 8],
 ) -> u8 {
     let Some(relative) = relative_bounds(bounds, coordinate_origin) else {
         return 0;
@@ -492,7 +498,7 @@ pub(crate) fn octants_in_front(
 
 /// The region of a node whose depth range matters: the union box of its octants' probe boxes
 /// (the node box for geometric probes), `None` when no octant holds data.
-pub(crate) fn probe_region(bounds: SpatialBounds, probes: [ProbeBox; 8]) -> Option<SpatialBounds> {
+pub(crate) fn probe_region(bounds: SpatialBounds, probes: &[ProbeBox; 8]) -> Option<SpatialBounds> {
     let mut region: Option<([f64; 3], [f64; 3])> = None;
     for probe in probes {
         let (min, max) = match probe {
@@ -549,7 +555,10 @@ pub fn node_view_range(
 /// nearest depth alone, `occupied` being the view depth of the node's nearest occupied geometry
 /// (`nearest_occupied_depth`, same units as the view depth of the region). A farther `occupied`
 /// never gives a finer `hi`; `None` is `node_view_range`.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 pub(crate) fn node_view_range_at(
     view: &ViewProjection,
     grid: &CellGrid,
@@ -566,7 +575,10 @@ pub(crate) fn node_view_range_at(
 }
 
 /// `hi_c` of `node_view_range_at` alone, not raised to `lo`: one search instead of two.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+)]
 pub(crate) fn view_range_hi_at(
     view: &ViewProjection,
     grid: &CellGrid,

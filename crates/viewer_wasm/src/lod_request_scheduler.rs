@@ -1,3 +1,7 @@
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "wasm-bindgen exports receive JS handles and owned values by value"
+)]
 use std::collections::HashMap;
 
 use js_sys::{Array, Object, Reflect};

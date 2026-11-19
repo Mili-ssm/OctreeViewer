@@ -46,7 +46,7 @@ fn page_of(tree: &Tree, k: u32) -> Vec<u32> {
     page
 }
 
-fn page_stats(tree: &Tree, k: u32, label: &str, extra: serde_json::Value) -> (Vec<u32>, Vec<u64>) {
+fn page_stats(tree: &Tree, k: u32, label: &str, extra: &serde_json::Value) -> (Vec<u32>, Vec<u64>) {
     let page = page_of(tree, k);
     let mut bytes: HashMap<u32, (u64, u64)> = HashMap::new(); // anchor -> (nodes, bytes)
     for n in 0..tree.parent.len() {
@@ -245,7 +245,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     for k in [3_u32, 4, 5] {
-        let (page, sizes) = page_stats(&tree, k, &label, serde_json::json!({}));
+        let (page, sizes) = page_stats(&tree, k, &label, &serde_json::json!({}));
         let mut pdepth = vec![0_u32; tree.parent.len()];
         for n in 1..tree.parent.len() {
             if tree.depth[n].is_multiple_of(k) {
@@ -352,7 +352,7 @@ fn synthetic(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 &tree,
                 k,
                 name,
-                serde_json::json!({"nodes": tree.parent.len(), "max_depth": tree.depth.iter().max(),
+                &serde_json::json!({"nodes": tree.parent.len(), "max_depth": tree.depth.iter().max(),
                 "mean_children_of_internal": mean, "slim_leaf": leaf, "slim_internal": internal}),
             );
         }

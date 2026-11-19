@@ -108,7 +108,10 @@ impl CellPool {
         unreachable!("a settled pass never asks for another")
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     pub(super) fn plan(
         &mut self,
         cut: &[NodeId],

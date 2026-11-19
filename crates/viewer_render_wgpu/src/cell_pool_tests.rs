@@ -116,7 +116,7 @@ impl Rig {
                 target / 2.0,
             )
             .expect("frame");
-        self.check_stepping(&plan, before);
+        self.check_stepping(&plan, &before);
         self.gpu.apply(&plan, &self.pool);
         for key in &plan.fetch_requests {
             self.inflight.push((self.frame + self.delay, *key));
@@ -177,7 +177,7 @@ impl Rig {
     /// the node's span (`in_cell_range`, buildable clamped to `cell_depth_range`); nodes under a
     /// fit cap or held are not checked. Every planned frame, applied or retained, advances the
     /// waits of what is on screen.
-    fn check_stepping(&mut self, plan: &FramePlan, before: SteppingBefore) {
+    fn check_stepping(&mut self, plan: &FramePlan, before: &SteppingBefore) {
         let (mut hops, mut waits) = (0, HashMap::new());
         for entry in &plan.entries {
             let node = &self.nodes[&entry.node];
@@ -3652,7 +3652,10 @@ fn drawn_depth_at(
 /// Six children draw depth 7 (5 pages each with the pinned level 4). Returns the rig, the camera,
 /// the six ids (nearest last), their samples and what they drew. The capacity leaves the caps that
 /// a test inserts in place: the six at depth 7 sit between the 80 % and 90 % thresholds.
-#[allow(clippy::type_complexity)]
+#[expect(
+    clippy::type_complexity,
+    reason = "a test rig returning a tuple of fixtures; a named type would be used once"
+)]
 fn cap_drop_rig(
     capacity: u32,
     delay: u64,
@@ -5381,9 +5384,9 @@ fn bound_from_pages(rig: &Rig, id: NodeId, view: &ViewProjection) -> Option<u8> 
         &grid(),
         ORIGIN,
         node.bounds,
-        std::array::from_fn(|o| node.probe_box(o)),
+        &std::array::from_fn(|o| node.probe_box(o)),
     );
-    let region = probe_region(node.bounds, probes);
+    let region = probe_region(node.bounds, &probes);
     let lo = rig.pool.depths[&id].far.0;
     (node.buildable.0..=node.buildable.1)
         .filter_map(|depth| {
@@ -6023,7 +6026,7 @@ fn a_residency_change_measures_the_octants_in_view_at_the_current_pose() {
             &grid(),
             ORIGIN,
             node.bounds,
-            std::array::from_fn(|o| node.probe_box(o)),
+            &std::array::from_fn(|o| node.probe_box(o)),
         )
         .1
         .0

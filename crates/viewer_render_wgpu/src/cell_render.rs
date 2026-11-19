@@ -435,6 +435,10 @@ impl PageFrameStamp {
 
 /// The pool, its page and mask tables and the pipelines that draw it. Built from a device only, so
 /// a headless harness and `SurfaceRenderer` share the code.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the flags are independent latches of GPU resource state, not one state machine"
+)]
 pub(crate) struct CellRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -502,6 +506,8 @@ impl CellRenderer {
         color_format: wgpu::TextureFormat,
         capacity: u32,
     ) -> Self {
+        use wgpu::BufferUsages as U;
+        use wgpu::ShaderStages as S;
         assert!(
             (1..=POOL_PAGES).contains(&capacity),
             "pool capacity must be 1..={POOL_PAGES} pages"
@@ -515,7 +521,6 @@ impl CellRenderer {
                 mapped_at_creation: false,
             })
         };
-        use wgpu::BufferUsages as U;
         let instances = buffer(
             "cell-instances",
             pages * PAGE_BYTES,
@@ -595,7 +600,6 @@ impl CellRenderer {
             has_dynamic_offset: false,
             min_binding_size: None,
         };
-        use wgpu::ShaderStages as S;
         let common_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("cell-common-layout"),
             entries: &[

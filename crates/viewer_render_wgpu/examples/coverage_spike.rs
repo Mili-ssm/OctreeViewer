@@ -113,7 +113,7 @@ struct NodeData {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // `Only256` is not in `RUN_VARIANTS` by default
+#[allow(dead_code, reason = "`Only256` is not in `RUN_VARIANTS` by default")]
 enum Variant {
     Pyramid,
     Only256,
@@ -195,7 +195,11 @@ fn pick_depth(stored: &[u8], ok: impl Fn(u8) -> bool) -> u8 {
 }
 
 /// Does a level of `depth` meet `target` over `bounds` (local, unscaled frame)?
-#[allow(clippy::too_many_arguments)] // throwaway spike
+#[expect(clippy::too_many_arguments, reason = "throwaway spike")]
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "throwaway spike; the flags are independent switches of one experiment"
+)]
 fn level_ok(
     view: &ViewProjection,
     root_side: f64,
@@ -304,7 +308,10 @@ fn cell_ranges(level: &Level, octants: u8) -> Vec<Range<usize>> {
         // A spanning level is drawn once, whole.
         None => {
             if octants != 0 {
-                #[allow(clippy::single_range_in_vec_init)] // one range, not an expanded list
+                #[allow(
+                    clippy::single_range_in_vec_init,
+                    reason = "one range, not an expanded list"
+                )]
                 let whole = vec![0..level.rel.len()];
                 whole
             } else {

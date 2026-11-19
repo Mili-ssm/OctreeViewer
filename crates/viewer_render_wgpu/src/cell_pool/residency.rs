@@ -20,6 +20,10 @@ pub(super) fn estimate_pages(points: u64, depth: u8, node_depth: u8) -> usize {
 impl CellPool {
     /// Wanted entries with resident = stored (minus the offenders and below the caps). A
     /// `DescendantTooFine` adds its descendant to `offenders` and runs again.
+    #[expect(
+        clippy::unused_self,
+        reason = "a `CellPool` method; its callers hold the pool and the search rules belong to it"
+    )]
     pub(super) fn wanted_cut(
         &self,
         cut: &[NodeId],

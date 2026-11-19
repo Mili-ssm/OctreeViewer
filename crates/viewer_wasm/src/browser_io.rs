@@ -203,6 +203,10 @@ pub(crate) fn js_message(error: &JsValue) -> Option<String> {
     })
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function path, which hands the error over by value"
+)]
 pub(crate) fn js_error_to_io(error: JsValue) -> io::Error {
     io::Error::other(js_message(&error).unwrap_or_else(|| "browser file read failed".to_owned()))
 }

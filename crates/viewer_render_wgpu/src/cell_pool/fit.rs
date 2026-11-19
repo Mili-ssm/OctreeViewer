@@ -41,7 +41,6 @@ impl CellPool {
     /// R3-Q11. Returns the levels the wanted entries need after the fit (the stored ones that
     /// serve them), the wanted depths that are not stored (to request), and whether even the coarsest levels overflow the usable
     /// capacity.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn fit(
         &mut self,
         cut: &[NodeId],

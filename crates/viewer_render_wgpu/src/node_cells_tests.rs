@@ -182,6 +182,14 @@ fn node_cells_do_not_depend_on_point_order() {
 
 #[test]
 fn cell_sums_match_accumulate_block() {
+    #[derive(Default)]
+    struct Reference {
+        rgb: [u64; 3],
+        intensity: f64,
+        count: u32,
+        class: u8,
+        z: (f32, f32),
+    }
     let bounds = cube([16.0; 3], 16.0);
     let mut rng = Lcg(77);
     let points = random_points(&mut rng, [16.0; 3], 16.0, 2000);
@@ -193,14 +201,6 @@ fn cell_sums_match_accumulate_block() {
     let cell_side = SIDE / f64::from(1_u32 << level.depth);
 
     // Same sums, same point order: u64 colour, f64 intensity, classification of the first point.
-    #[derive(Default)]
-    struct Reference {
-        rgb: [u64; 3],
-        intensity: f64,
-        count: u32,
-        class: u8,
-        z: (f32, f32),
-    }
     let mut reference = BTreeMap::<[u64; 3], Reference>::new();
     for (index, point) in points.iter().enumerate() {
         let coord = point

@@ -51,8 +51,17 @@ pub(crate) struct BuilderUpdate {
 
 /// What one builder update produced: the cells path never carries a scene, so the render worker
 /// keeps its pool; the CPU path never carries cells.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-#[allow(clippy::large_enum_variant)] // a transient return value, built once per update
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    allow(
+        dead_code,
+        reason = "only the wasm32 host builds a scene from a builder step"
+    )
+)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "a transient return value, built once per update"
+)]
 pub(crate) enum BuilderStep {
     Cells(BuilderOutput),
     Scene(BuilderUpdate),
@@ -203,7 +212,10 @@ impl<R> SceneBuilderCore<R> {
 impl<R> SceneBuilderCore<R> {
     /// [`update`](Self::update) on the CPU path, or step 1 of the cells path while `cells` is
     /// present. Same arguments otherwise.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
+    )]
     pub(crate) fn update_with_cells(
         &mut self,
         cells: Option<&mut BuilderCells>,
