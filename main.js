@@ -1355,6 +1355,9 @@ function bindCanvasInteractions() {
 canvas.addEventListener("pointerdown", (event) => {
     if (!ready || (event.button !== 0 && event.button !== 2)) return;
     event.preventDefault();
+    // preventDefault also stops the browser from focusing the canvas: focus it so WASD works
+    // after a click in either camera mode.
+    canvas.focus({ preventScroll: true });
     activePointer = event.pointerId;
     pointerStart = [event.clientX, event.clientY];
     pointerMoved = false;
