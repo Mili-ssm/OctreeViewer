@@ -206,13 +206,15 @@ impl CellPool {
     }
 
     /// Fills the `node_*` fields of `entries` (the real cut, before it is applied). `prev` is what
-    /// was drawn over the node's footprint before (`node_prev`). The usable depths are those
-    /// `cell_active_depths` accepts over the node's cell span, less a detached D5 depth
+    /// was drawn over the node's footprint before (`node_prev`). `given` is the resident list
+    /// the cut used for each node (after hold, cap and `finer_drawn`; A4). The usable depths are
+    /// those of that list `cell_active_depths` accepts over the node's cell span, less a detached D5 depth
     /// (`without_detached_d5`). The target is `min(hi, finest drawable stored or
     /// buildable depth under the fit cap)`.
     pub(super) fn fill_node_runs(
         &self,
         entries: &mut [CellCutEntry],
+        given: &FastMap<NodeId, Vec<u8>>,
         before: &FastMap<NodeId, u8>,
         nodes: &FastMap<NodeId, PoolNode>,
         grid: &CellGrid,
@@ -225,7 +227,10 @@ impl CellPool {
             let node_depth = Self::node_depth(grid, node.bounds);
             let (span_lo, span_hi) = cell_depth_range(node_depth);
             let usable: Vec<u8> = (span_lo..=span_hi)
-                .filter(|depth| self.is_usable(self.key(id, *depth)))
+                .filter(|depth| {
+                    given.get(&id).is_some_and(|list| list.contains(depth))
+                        && self.is_usable(self.key(id, *depth))
+                })
                 .collect();
             let d5 = entry
                 .mask

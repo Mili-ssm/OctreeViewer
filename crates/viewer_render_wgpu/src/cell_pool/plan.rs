@@ -238,6 +238,9 @@ impl CellPool {
                 &joined
             };
             let kept = std::cell::RefCell::new(Vec::new());
+            // The resident list each node was given (after hold, cap and `finer_drawn`): the one
+            // `fill_node_runs` anchors on, so the node run and the cut cannot disagree.
+            let given: std::cell::RefCell<FastMap<NodeId, Vec<u8>>> = Default::default();
             let lookup = |id: NodeId| {
                 let data = nodes.get(&id)?;
                 let stored = capped(&data.stored, caps.get(&id));
@@ -263,6 +266,7 @@ impl CellPool {
                     node.resident = old;
                     kept.borrow_mut().push(id);
                 }
+                given.borrow_mut().insert(id, node.resident.clone());
                 Some(node)
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
@@ -320,7 +324,7 @@ impl CellPool {
                 },
             );
             if let Some(entries) = entries.as_mut() {
-                self.fill_node_runs(entries, &eval.before, nodes, grid);
+                self.fill_node_runs(entries, &given.borrow(), &eval.before, nodes, grid);
             }
             self.real_memo = Some(RealMemo {
                 generation,
