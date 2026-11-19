@@ -1,5 +1,6 @@
 //! Active depths of a cut node in cell mode.
 
+use super::run::{RunInput, node_run};
 use super::*;
 
 impl CellPool {
@@ -13,35 +14,42 @@ impl CellPool {
         in_cell_range(stored, Self::node_depth(grid, bounds))
     }
 
-    /// The depths of `entry` emitted as active levels: the drawn ones that are
-    /// resident and inside the node's span (a retained cut may hold depths of another span), plus the node's D5 depth when its mask is set (see `d5_active`).
+    /// The run `entry` emits: its planned `node_run` (plan task 10, B4). Every depth of it was
+    /// usable when the run was planned and the plan protects them from eviction, so it is the
+    /// planned run; if one is not usable any more the run is computed again from the stored
+    /// anchor over what is usable now (never a gap: the run stays contiguous).
+    pub(super) fn emitted_run(&self, entry: &CellCutEntry, node_depth: u8) -> Option<(u8, u8)> {
+        let run = entry.node_run?;
+        let usable = |depth: u8| self.is_usable(self.key(entry.node, depth));
+        if (run.0..=run.1).all(usable) {
+            return Some(run);
+        }
+        let (span_lo, span_hi) = cell_depth_range(node_depth);
+        let depths: Vec<u8> = (span_lo..=span_hi).filter(|depth| usable(*depth)).collect();
+        node_run(&RunInput {
+            prev: entry.node_anchor,
+            range: entry.range?,
+            target: entry.node_target?,
+            usable: &depths,
+            waited_step: None,
+            coarsest_wish: entry.wanted.iter().flatten().min().copied(),
+        })
+        .run
+    }
+
+    /// The depths of `entry` emitted as active levels: the depths of its node run (see
+    /// `emitted_run`; a held node has none), plus the node's D5 depth when its mask is set (see
+    /// `d5_active`).
     pub(super) fn cell_active_depths(
         &self,
         entry: &CellCutEntry,
         node_depth: u8,
         new_d5: Option<u8>,
     ) -> Vec<u8> {
-        let usable = |depth: u8| self.is_usable(self.key(entry.node, depth));
-        let mut wanted = entry.required_levels();
-        // The resident depths of the range that reach a drawn one without a residency gap
-        // (ADR 0055): a range depth beyond a gap would make the per-cell rule jump
-        // to it. A drawn depth that is not usable yet (fresh) anchors no run.
-        let drawn = wanted.clone();
-        if let (Some((lo, hi)), Some(first), Some(last)) =
-            (entry.range, drawn.first(), drawn.last())
-        {
-            let (lo, hi) = (lo.min(*first), hi.max(*last));
-            for anchor in drawn.iter().filter(|depth| usable(**depth)) {
-                wanted.extend((lo..*anchor).rev().take_while(|depth| usable(*depth)));
-                wanted.extend((anchor.saturating_add(1)..=hi).take_while(|depth| usable(*depth)));
-            }
-            wanted.sort_unstable();
-            wanted.dedup();
-        }
-        let mut depths: Vec<u8> = in_cell_range(&wanted, node_depth)
-            .into_iter()
-            .filter(|depth| usable(*depth))
-            .collect();
+        let run: Vec<u8> = self
+            .emitted_run(entry, node_depth)
+            .map_or_else(Vec::new, |(lo, hi)| (lo..=hi).collect());
+        let mut depths = in_cell_range(&run, node_depth);
         if let Some(d5) = new_d5
             && !depths.contains(&d5)
         {

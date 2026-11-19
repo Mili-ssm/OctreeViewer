@@ -290,6 +290,12 @@ impl CellPool {
                 Err(CellCutError::DescendantTooFine { .. }) => None,
                 Err(other) => return Err(other),
             };
+            // The hold's cover rule reads which nodes claim their octants (`covers_in`), before
+            // `before` exists: a provisional fill gives every node its anchor (the presence does
+            // not depend on `prev`); the real one below replaces it.
+            if let Some(entries) = entries.as_mut() {
+                self.fill_node_runs(entries, &given.borrow(), &FastMap::default(), nodes, grid);
+            }
             let eval = entries.as_deref().map_or_else(
                 || HoldEval {
                     hold: hold.clone(),
@@ -304,6 +310,21 @@ impl CellPool {
             );
             if let Some(entries) = entries.as_mut() {
                 self.fill_node_runs(entries, &given.borrow(), &eval.before, nodes, grid);
+                // A2, B5: a node the gate judged and released emits a run at least as fine as the
+                // one it judged.
+                for entry in entries.iter() {
+                    if let Some(judged) = eval.judged.get(&entry.node)
+                        && !hold.contains(&entry.node)
+                        && !eval.hold.contains(&entry.node)
+                    {
+                        debug_assert!(
+                            entry.node_run.is_some_and(|(_, top)| top >= *judged),
+                            "node {:?}: the gate judged a run to {judged}, the node run is {:?}",
+                            entry.node,
+                            entry.node_run,
+                        );
+                    }
+                }
             }
             let planned_missing = entries.as_deref().map_or(cut.len() as u32, |entries| {
                 missing_levels(entries) + found.excluded.len() as u32
@@ -439,8 +460,8 @@ impl CellPool {
                 self.index_applied(nodes, grid);
             }
         }
-        // The wait of each stepping octant of what is on screen: every frame counts. At the
-        // limit the cut is planned again, so the octants hop (`prev_state`).
+        // The wait of each stepping octant of what is on screen (the per-octant fields, deleted by
+        // task 11): every frame counts.
         let mut waits = FastMap::default();
         let mut expired = false;
         for entry in &self.applied {
@@ -460,12 +481,14 @@ impl CellPool {
             }
         }
         self.step_waits = waits;
-        self.advance_node_waits();
-        if expired {
+        // The wait of each node for its `node_step`; at the limit the cut is planned again so the
+        // anchor hops (B6). The per-octant wait (until task 11) expires the same way.
+        if self.advance_node_waits() || expired {
             self.residency_epoch += 1;
         }
         for entry in &self.applied {
-            for depth in entry.required_levels() {
+            // B4: the whole run of the node, not only what its octants draw.
+            for depth in entry.run_depths() {
                 protected.insert(self.key(entry.node, depth));
             }
         }
@@ -494,8 +517,8 @@ impl CellPool {
         // Overflow keeps only the previous cut: nothing of the new one is requested.
         let no_levels = FastSet::default();
         let want: &FastSet<LevelKey> = if overflow { &no_levels } else { &needed };
-        // ADR 0053: the adjacent depth each stepping octant waits for is requested right after
-        // D5, and kept from eviction while it loads.
+        // The level each node waits for (`node_step`, either end of its run) is requested right
+        // after D5, and kept from eviction while it loads.
         let steps: FastSet<LevelKey> = if overflow {
             FastSet::default()
         } else {
@@ -504,18 +527,12 @@ impl CellPool {
                 .and_then(|memo| memo.entries.as_deref())
                 .into_iter()
                 .flatten()
-                .flat_map(|entry| {
-                    entry
-                        .step
-                        .iter()
-                        .flatten()
-                        .map(|d| self.key(entry.node, *d))
-                })
+                .filter_map(|entry| Some(self.key(entry.node, entry.node_step?)))
                 .chain(
-                    self.step_waits
+                    self.node_waits
                         .iter()
-                        .filter(|((node, _), _)| nodes.contains_key(node))
-                        .map(|((node, _), ((_, _, next), _))| self.key(*node, *next)),
+                        .filter(|(node, _)| nodes.contains_key(node))
+                        .map(|(node, (step, _, _))| self.key(*node, *step)),
                 )
                 .collect()
         };
@@ -867,28 +884,16 @@ impl CellPool {
             let Some(MaskSlot { slot, .. }) = self.mask_slots.get(&entry.node) else {
                 continue;
             };
-            let cell_depths = {
-                // Retained frames keep the D5 depth the records were last written with.
-                let d5 = self.d5_active(entry, true);
+            // The node run first, then the D5 depth when it is not part of it.
+            let own = {
                 let node_depth = nodes
                     .get(&entry.node)
                     .or_else(|| self.applied_index.nodes.get(&entry.node))
                     .map(|node| Self::node_depth(grid, node.bounds));
-                node_depth.map_or_else(Vec::new, |d| self.cell_active_depths(entry, d, d5))
+                node_depth.map_or_else(Vec::new, |d| self.cell_active_depths(entry, d, None))
             };
-            // Active depths the node does not draw itself (its D5 depth) come last.
-            let extra = {
-                let drawn: Vec<u8> = entry.required_levels();
-                cell_depths
-                    .iter()
-                    .filter(|depth| !drawn.contains(depth))
-                    .map(|depth| (*depth, 0xff))
-                    .collect::<Vec<_>>()
-            };
-            for (depth, _) in entry.draws().into_iter().chain(extra) {
-                if !cell_depths.contains(&depth) {
-                    continue;
-                }
+            let d5 = self.d5_active(entry, true).filter(|d5| !own.contains(d5));
+            for depth in own.iter().copied().chain(d5) {
                 let key = self.key(entry.node, depth);
                 if !self.is_resident(key) {
                     continue;
@@ -918,12 +923,7 @@ impl CellPool {
             .applied
             .iter()
             .filter(|entry| cover.contains(&entry.node))
-            .flat_map(|entry| {
-                entry
-                    .required_levels()
-                    .into_iter()
-                    .map(|depth| self.key(entry.node, depth))
-            })
+            .flat_map(|entry| entry.run_depths().map(|depth| self.key(entry.node, depth)))
             .filter_map(|key| self.known_pages(key))
             .sum::<usize>() as u32;
         // Excluded nodes too fine for an ancestor of the cut are never requested (see
