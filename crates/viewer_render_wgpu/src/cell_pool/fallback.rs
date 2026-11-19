@@ -303,10 +303,9 @@ pub(super) fn missing_levels(entries: &[CellCutEntry]) -> u32 {
         .count() as u32
 }
 
-/// R3-Q19 on a real cut: `(nodes, octants)` of the entries that have an unmasked octant without a
-/// level and no ancestor in the cut that draws where the node lies (the nodes), and the unmasked
-/// octants without a level of the nodes that do have such an ancestor (the octants, which draw a
-/// coarser level: stages).
+/// R3-Q19 on a real cut: `(uncovered, covered)` nodes among the entries that have an unmasked octant
+/// without a level: those with no ancestor in the cut that draws where the node lies, and those
+/// with one (they draw a coarser level: stages, one per node).
 pub(super) fn uncovered_levels(
     entries: &[CellCutEntry],
     nodes: &FastMap<NodeId, PoolNode>,
@@ -328,10 +327,9 @@ pub(super) fn uncovered_levels(
     for (index, f) in feet.iter().enumerate() {
         by_cell.entry((f.rep, f.lo)).or_insert(index);
     }
-    let (mut uncovered, mut octants) = (0, 0);
+    let (mut uncovered, mut covered_nodes) = (0, 0);
     for (index, entry) in entries.iter().enumerate() {
-        let count = missing(entry);
-        if count == 0 {
+        if missing(entry) == 0 {
             continue;
         }
         let covered = feet[index].gaps().any(|k| {
@@ -345,12 +343,12 @@ pub(super) fn uncovered_levels(
                 .all(|o| parent.claims(o) || parent.wanted[o].is_none())
         });
         if covered {
-            octants += count;
+            covered_nodes += 1;
         } else {
             uncovered += 1;
         }
     }
-    (uncovered, octants)
+    (uncovered, covered_nodes)
 }
 
 impl CellPool {
