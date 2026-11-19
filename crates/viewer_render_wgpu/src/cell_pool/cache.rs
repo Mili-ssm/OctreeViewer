@@ -174,7 +174,7 @@ impl CellPool {
                     target_px,
                 ),
             });
-            let behind = behind_octants(
+            let (probes, behind) = masked_probes(
                 view,
                 grid,
                 origin,
@@ -189,10 +189,6 @@ impl CellPool {
             // Octants with nothing in view are left out of the far depth and the data bound, like
             // `behind_wanted` leaves them out of the wishes: the union box of a node whose octants
             // are all behind can still pass the in-view test through a corner that is not in view.
-            let probes = mask_behind(
-                std::array::from_fn(|octant| data.probe_box(octant)),
-                behind.0,
-            );
             let far = {
                 // `lo` of the node's range: the on-axis bound of `node_view_range` (ADR 0055
                 // plan, task 4); a node wholly behind the eye or without data wants the coarsest
@@ -248,7 +244,6 @@ impl CellPool {
                     node: data.clone(),
                     depths,
                     far,
-                    behind: behind.0,
                     hi_d,
                     epoch: self.residency_epoch,
                     pose,
@@ -274,10 +269,14 @@ impl CellPool {
             {
                 self.bound_evaluations += 1;
             }
-            // The same octants as when the entry was computed (`NodeDepths::behind`).
-            let probes = mask_behind(
+            // The octants in view now, as in the first loop: a mask kept from an older pose could
+            // leave out one that has since come into view and lower the bound too far.
+            let (probes, _) = masked_probes(
+                view,
+                grid,
+                origin,
+                data.bounds,
                 std::array::from_fn(|octant| data.probe_box(octant)),
-                cached.behind,
             );
             let hi_d = Self::data_bound_of(
                 &self.levels,

@@ -4126,7 +4126,6 @@ fn cell_mode_fit_cap_reasons_about_the_depths_the_node_can_use() {
             node: node.clone(),
             depths: [below; 8],
             far: (0, 0),
-            behind: 0,
             hi_d: None,
             epoch: 0,
             pose: Pose {
@@ -5338,7 +5337,14 @@ const BOUND_TARGET: f64 = 32.0;
 /// resident levels of `max(bound of the level, level depth)`, not below `lo`.
 fn bound_from_pages(rig: &Rig, id: NodeId, view: &ViewProjection) -> Option<u8> {
     let node = &rig.nodes[&id];
-    let region = probe_region(node.bounds, std::array::from_fn(|o| node.probe_box(o)));
+    let (probes, _) = masked_probes(
+        view,
+        &grid(),
+        ORIGIN,
+        node.bounds,
+        std::array::from_fn(|o| node.probe_box(o)),
+    );
+    let region = probe_region(node.bounds, probes);
     let lo = rig.pool.depths[&id].far.0;
     (node.buildable.0..=node.buildable.1)
         .filter_map(|depth| {
@@ -5929,4 +5935,90 @@ fn a_node_whose_wish_is_clamped_below_the_ancestor_is_released_and_a_missing_lev
             assert_eq!(probe.old_held, *held, "{case}");
         }
     }
+}
+
+/// A node with data in octant 1 straight ahead and in octant 2 just off-screen to the side, seen
+/// from `EYE` along +x, then from a pose turned by `YAW`: octant 2 enters the view at `YAW`.
+const EYE: [f64; 3] = [-1.0, 32.0, 32.0];
+/// Below the drift budget of the node (`ROTATION_SHARE / tan_corner` of the rotation).
+const YAW: f64 = 0.01;
+
+fn looking(yaw: f64) -> ViewProjection {
+    let mut camera = camera("zoom");
+    let at = [EYE[0] + 10.0 * yaw.cos(), EYE[1] + 10.0 * yaw.sin(), EYE[2]];
+    assert!(camera.set_pose(EYE, at));
+    view(&camera)
+}
+
+#[test]
+fn a_residency_change_measures_the_octants_in_view_at_the_current_pose() {
+    let (id, cut) = (NodeId::new(2), ids(&[2]));
+    let at = |lo: [f64; 3], hi: [f64; 3]| {
+        Some(
+            SpatialBounds::new(
+                std::array::from_fn(|a| ORIGIN[a] + lo[a]),
+                std::array::from_fn(|a| ORIGIN[a] + hi[a]),
+            )
+            .unwrap(),
+        )
+    };
+    let mut data = [None; 8];
+    data[1] = at([40.0, 28.0, 28.0], [60.0, 31.0, 31.0]);
+    // Its far depth sits within 0.15 of the view depth that decides "in view" at both poses.
+    data[2] = at([2.0, 50.0, 28.0], [13.9, 60.0, 32.0]);
+    let mut nodes = octant_nodes();
+    let node = nodes.get_mut(&id).unwrap();
+    node.bounds = cube(ORIGIN, SIDE);
+    node.octant_data_bounds = Some(data);
+    let mut rig = Rig::new(nodes, 256, 64, 0);
+    let (before, after) = (looking(0.0), looking(YAW));
+    let behind = |view: &ViewProjection| {
+        let node = &rig.nodes[&id];
+        masked_probes(
+            view,
+            &grid(),
+            ORIGIN,
+            node.bounds,
+            std::array::from_fn(|o| node.probe_box(o)),
+        )
+        .1
+        .0
+    };
+    assert_eq!(
+        behind(&before) >> 2 & 1,
+        1,
+        "setup: octant 2 is out of view"
+    );
+    assert_eq!(
+        behind(&after) >> 2 & 1,
+        0,
+        "setup: octant 2 comes into view"
+    );
+    for _ in 0..40 {
+        rig.step_view(&cut, &before, BOUND_TARGET);
+    }
+    // One cell right by the eye: the bound depends on the region only through what is in view.
+    put_pages_at(&mut rig, id, [3.0, 32.0, 33.0]);
+    // A level leaves: a residency change at the turned pose, which the node is not yet due for.
+    let key = *rig
+        .pool
+        .levels
+        .iter()
+        .filter(|(key, level)| key.node == id && level.data.is_some())
+        .map(|(key, _)| key)
+        .max_by_key(|key| key.depth)
+        .expect("a resident level");
+    let frame = rig.pool.frame;
+    rig.pool.evict_resident(key, frame);
+    let pose = rig.pool.depths[&id].pose;
+    rig.step_view(&cut, &after, BOUND_TARGET);
+    assert_eq!(
+        rig.pool.depths[&id].pose, pose,
+        "setup: the node was not redone"
+    );
+    assert_eq!(
+        rig.pool.data_bound(id),
+        bound_from_pages(&rig, id, &after),
+        "the bound of the pose it is evaluated at"
+    );
 }

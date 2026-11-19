@@ -286,8 +286,8 @@ pub(crate) fn octant_wanted_depth_in(
     }
 }
 
-/// Octants of the node with no data in view (bit `o`: wholly behind the eye or the LOD near
-/// distance, or empty),
+/// Octants of the node with no data in view (bit `o`: outside the view cone or behind the LOD
+/// near distance, so also a box off-screen sideways, or empty),
 /// and those with data in front (straddling or in front): a behind octant makes no demand of its
 /// own, so the pool gives it the finest wish of the in-front ones (`behind_wanted`) instead of a
 /// coarsest level that would need pages and coarsen the visible result.
@@ -327,6 +327,20 @@ pub(crate) fn mask_behind(probes: [ProbeBox; 8], behind: u8) -> [ProbeBox; 8] {
             probes[o]
         }
     })
+}
+
+/// The probes of a node masked at the given view, with the `(behind, front)` sets they came from:
+/// the one place the mask is computed, so the far depth and the data bound always use the octants
+/// in view at the pose they are evaluated at.
+pub(crate) fn masked_probes(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    bounds: SpatialBounds,
+    probes: [ProbeBox; 8],
+) -> ([ProbeBox; 8], (u8, u8)) {
+    let sets = behind_octants(view, grid, coordinate_origin, bounds, probes);
+    (mask_behind(probes, sets.0), sets)
 }
 
 /// A behind octant wants the finest wish among the in-front octants (none in front: its own).
@@ -698,8 +712,8 @@ enum Probe<'a> {
     Finest,
     /// The octant has no data: it asks for the coarsest depth.
     Coarsest,
-    /// The octant's data lies wholly behind the eye or the LOD near distance: nothing of it is
-    /// drawn, so it asks for the coarsest depth on its own (see `behind_octants`).
+    /// No point of the octant's data is both in view (the cone `nearest_visible_depth` tests, so a
+    /// box off-screen sideways counts) and past the LOD near distance: nothing of it is drawn, so it asks for the coarsest depth on its own (see `behind_octants`).
     Behind,
     Meets(OctantProbe<'a>),
 }

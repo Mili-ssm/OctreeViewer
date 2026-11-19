@@ -83,10 +83,10 @@ use crate::node_cells::{node_range, representative_depth_for_spacing};
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
     cell_cut::{
-        FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_octants,
-        behind_wanted, cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels,
-        in_cell_range, mask_behind, octant_wanted_depth_in, octant_wanted_depth_near,
-        octants_in_front, probe_region, served_depth, view_range_hi_at, view_range_lo,
+        FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_wanted,
+        cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels, in_cell_range,
+        masked_probes, octant_wanted_depth_in, octant_wanted_depth_near, octants_in_front,
+        probe_region, served_depth, view_range_hi_at, view_range_lo,
     },
     cell_range::nearest_occupied_depth,
     representative_depth,
@@ -318,9 +318,6 @@ struct NodeDepths {
     /// The node's far wanted depth and the octants in front of the eye
     /// (`node_view_range`, `octants_in_front`).
     far: (u8, u8),
-    /// Octants with nothing in view at that pose (`behind_octants`), left out of `far` and of the
-    /// data bound; the bound is recomputed on a residency change with the same octants.
-    behind: u8,
     /// Data bound of the node (ADR 0055 plan, tasks 5 and 7a): the least over its resident
     /// levels of `hi` at the view depth of the nearest page box of the level, at least the level's
     /// own depth (`CellPool::data_bound_of`). It caps the wish of the node's octants

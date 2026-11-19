@@ -2148,8 +2148,8 @@ fn masked_lo(
     probes: [ProbeBox; 8],
     target: f64,
 ) -> (Option<SpatialBounds>, u8) {
-    let (behind, _) = behind_octants(view, grid, [0.0; 3], bounds, probes);
-    let region = probe_region(bounds, mask_behind(probes, behind));
+    let (masked, _) = masked_probes(view, grid, [0.0; 3], bounds, probes);
+    let region = probe_region(bounds, masked);
     let lo = view_range_lo(view, grid, [0.0; 3], region, (3, 12), target, None).unwrap_or(3);
     (region, lo)
 }
@@ -2175,7 +2175,7 @@ fn a_node_with_every_data_octant_behind_has_the_coarsest_far_depth() {
         Some(10),
         "setup: the union box passes the in-view test"
     );
-    let (behind, _) = behind_octants(&view, &grid, [0.0; 3], bounds, probes);
+    let (_, (behind, _)) = masked_probes(&view, &grid, [0.0; 3], bounds, probes);
     assert_eq!(behind, 0xFF, "setup: every octant is behind or empty");
     let (region, lo) = masked_lo(&view, &grid, bounds, probes, target);
     assert_eq!(region, None);
@@ -2195,6 +2195,65 @@ fn a_node_with_every_data_octant_behind_has_the_coarsest_far_depth() {
         .collect();
     assert!(wishes.iter().all(|wish| *wish == 3), "{wishes:?}");
     assert_eq!(lo, 3, "far depth finer than every wish");
+}
+
+#[test]
+fn the_only_octant_in_front_of_the_eye_plane_being_off_screen_gives_the_coarsest_range() {
+    // Eye at x = -900 looking along +x. Octant 6 holds data 10..20 ahead of the eye plane but
+    // 900 to the side: in front of the plane, outside the view. The others are empty.
+    let (view, grid) = (along_x(), huge_grid());
+    let bounds = SpatialBounds::new([-1000.0; 3], [1000.0; 3]).unwrap();
+    let mut probes = [ProbeBox::Empty; 8];
+    probes[6] =
+        ProbeBox::Data(SpatialBounds::new([-890.0, 900.0, 1.0], [-880.0, 1000.0, 10.0]).unwrap());
+    assert_ne!(
+        octants_in_front(&view, [0.0; 3], bounds, probes),
+        0,
+        "setup: the octant is in front of the eye plane"
+    );
+    let (masked, (behind, front)) = masked_probes(&view, &grid, [0.0; 3], bounds, probes);
+    assert_eq!((behind, front), (0xFF, 0), "setup: off-screen is behind");
+    assert_eq!(octants_in_front(&view, [0.0; 3], bounds, masked), 0);
+    let (target, buildable) = (1.0, (3, 12));
+    let wishes = behind_wanted(
+        std::array::from_fn(|o| {
+            octant_wanted_depth_in(
+                &view, &grid, [0.0; 3], bounds, o, probes[o], buildable, target,
+            )
+        }),
+        (behind, front),
+    );
+    assert_eq!(wishes, [buildable.0; 8]);
+    let stored: Vec<u8> = (buildable.0..=buildable.1).collect();
+    let node = CellCutNode {
+        bounds,
+        buildable,
+        resident: stored.clone(),
+        stored,
+    };
+    let entry = cell_cut_ranged(
+        &ids(&[1]),
+        &|_| Some(node.clone()),
+        &grid,
+        &|_, octant, _| wishes[octant],
+        Some(&|_, data| {
+            let lo = view_range_lo(
+                &view,
+                &grid,
+                [0.0; 3],
+                probe_region(bounds, masked),
+                data.buildable,
+                target,
+                None,
+            )
+            .unwrap_or(data.buildable.0);
+            (lo, octants_in_front(&view, [0.0; 3], bounds, masked))
+        }),
+        None,
+    )
+    .unwrap()
+    .remove(0);
+    assert_eq!(entry.range, Some((buildable.0, buildable.0)));
 }
 
 #[test]
