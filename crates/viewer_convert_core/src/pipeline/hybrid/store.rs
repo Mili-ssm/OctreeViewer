@@ -691,6 +691,8 @@ impl<R, P> SpoolAccounting for HybridSpoolStore<R, P> {
         state.accounting.then_some(LedgerTotals {
             written: state.written,
             peak_live: state.peak_payload,
+            physical_written: state.written,
+            physical_peak_live: state.peak_payload,
         })
     }
 }

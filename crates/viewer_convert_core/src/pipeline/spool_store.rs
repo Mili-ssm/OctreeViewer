@@ -60,6 +60,9 @@ pub trait SpoolStore {
 pub struct LedgerTotals {
     pub written: u64,
     pub peak_live: u64,
+    /// Bytes as stored (after compression); equal to `written` for stores that do not compress.
+    pub physical_written: u64,
+    pub physical_peak_live: u64,
 }
 
 /// Diagnostics that live next to the bytes: the byte ledger and the ordering counter of
@@ -79,6 +82,10 @@ pub struct SpoolLedger {
     pub written: AtomicU64,
     pub live: AtomicU64,
     pub peak: AtomicU64,
+    /// Stored (compressed) counterparts of `written`, `live` and `peak`.
+    pub physical_written: AtomicU64,
+    pub physical_live: AtomicU64,
+    pub physical_peak: AtomicU64,
     /// Orders `NodeSpoolEvent` starts and ends across workers.
     pub event_seq: AtomicU64,
 }
@@ -89,6 +96,9 @@ impl SpoolLedger {
             written: AtomicU64::new(bytes),
             live: AtomicU64::new(bytes),
             peak: AtomicU64::new(bytes),
+            physical_written: AtomicU64::new(bytes),
+            physical_live: AtomicU64::new(bytes),
+            physical_peak: AtomicU64::new(bytes),
             ..Self::default()
         }
     }
@@ -111,10 +121,30 @@ impl SpoolLedger {
             });
     }
 
+    pub fn add_physical(&self, bytes: u64) {
+        self.physical_written.fetch_add(bytes, Ordering::Relaxed);
+        let live = self
+            .physical_live
+            .fetch_add(bytes, Ordering::Relaxed)
+            .saturating_add(bytes);
+        self.physical_peak.fetch_max(live, Ordering::Relaxed);
+    }
+
+    pub fn remove_physical(&self, bytes: u64) {
+        debug_assert!(self.physical_live.load(Ordering::Relaxed) >= bytes);
+        let _ = self
+            .physical_live
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |live| {
+                Some(live.saturating_sub(bytes))
+            });
+    }
+
     pub fn totals(&self) -> LedgerTotals {
         LedgerTotals {
             written: self.written.load(Ordering::Relaxed),
             peak_live: self.peak.load(Ordering::Relaxed),
+            physical_written: self.physical_written.load(Ordering::Relaxed),
+            physical_peak_live: self.physical_peak.load(Ordering::Relaxed),
         }
     }
 }
@@ -257,7 +287,11 @@ impl SpoolStore for MemSpoolStore {
         let mut state = lock(&self.state);
         let spool = entry_in(&mut state.spools, id, "close", Phase::Open, |s| s.phase)?;
         if spool.record_bytes == 0 || !spool.data.len().is_multiple_of(spool.record_bytes) {
-            return Err(lifecycle_error(id, "close", "length is not a whole number of records"));
+            return Err(lifecycle_error(
+                id,
+                "close",
+                "length is not a whole number of records",
+            ));
         }
         spool.phase = Phase::Closed;
         Ok(())
@@ -306,6 +340,8 @@ impl SpoolAccounting for MemSpoolStore {
         state.accounting.then_some(LedgerTotals {
             written: state.written,
             peak_live: state.peak_bytes,
+            physical_written: state.written,
+            physical_peak_live: state.peak_bytes,
         })
     }
 }
