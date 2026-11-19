@@ -66,6 +66,7 @@ pub use frame_timer::GpuFrameStats;
 pub use gpu::{
     BlockUploadStats, DeviceLoss, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer,
 };
+pub use node_cells::PH as NODE_CELL_PHASES;
 pub use node_cells::{
     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel,
     NodeCellSource, NodeCells, PointNodeCellSource, chain_keep_mask, node_cells_digest,

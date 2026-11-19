@@ -136,6 +136,9 @@ fn cells_bench() {
     // Peak RSS counts only the run, not the leaf search above.
     let _ = std::fs::write("/proc/self/clear_refs", "5");
 
+    for a in viewer_render_wgpu::NODE_CELL_PHASES.iter() {
+        a.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
     let started = Instant::now();
     let (mut build_ms, mut build_ms_nonzero, mut frame_ms) = (vec![], vec![], vec![]);
     let (mut nodes_built, mut peak_cpu, mut peak_cell_cpu) = (0usize, 0u64, 0u64);
@@ -204,6 +207,10 @@ fn cells_bench() {
             stop = format!("stop rule: cell CPU {peak_cell_cpu} B > 512 MiB");
             break;
         }
+    }
+    {
+        let p: Vec<f64> = viewer_render_wgpu::NODE_CELL_PHASES.iter().map(|a| a.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e6).collect();
+        eprintln!("PHASES_MS collect={:.1} sort={:.1} aggregate={:.1} distinct_set={:.1}", p[0], p[1], p[2], p[3]);
     }
     let wall = started.elapsed().as_secs_f64();
     let t = &h.totals;
