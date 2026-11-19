@@ -54,7 +54,7 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
 - [ ] **2c. Activar `cell` por defecto tras medir.** Adelantado en la demo (propietario, 16-11-2026: «fusiónala activando el modo de celdas así podré ver qué tal funciona en la demo»): la demo arranca en `cell` y `?cellLod=octant` compara; el predeterminado de la librería sigue en `octant` hasta cerrar las comprobaciones de esta fase. Comprobación según el ADR 0050: Playwright acercándose a la
   muestra (bandas), y ningún octante **ni nodo** cambia entero en un frame, medido con una diferencia de frames
   cuando entra un nodo hijo, y ninguna celda cambia más de un nivel entre frames ni difiere en más de uno de sus vecinas (ADR 0053); si la máscara por nodo no lo permite, abrir una pregunta antes de seguir.
-- [ ] **3. Selector de tamaño mínimo (ADR 0049).** D6 y D7. Comprobación: tests de la unidad del CRS (metro, pie,
+- [x] **3. Selector de tamaño mínimo (ADR 0049).** D6 y D7. Hecho: D7 en la demo el 18-11-2026; D6 el 19-11-2026 en la rama `feat/crs-linear-unit` (`viewer_format::crs_unit`, `crsUnit` en la apertura, la demo convierte la longitud y desactiva Length con un CRS geográfico; Belvedere declara metros; `check.sh` 23/23 en `5ab2a48`). Comprobación: tests de la unidad del CRS (metro, pie,
   grados, compuesto pie/metro, sin unidad); Playwright de los dos filtros combinados (longitud desactivada, en m/cm/mm y por espaciado) en escritorio y móvil, con teclado; sonda de
   continuidad actualizada.
 - [ ] **4. Cierre.** Quitar la opción `cellLod`, `docs/estado.md`, ADR 0031/0034 si cambian cifras, demo republicada,
