@@ -246,6 +246,8 @@ export function createViewer(hostCanvas, options = {}) {
     function pointerDown(event) {
         if (!ready || (event.button !== 0 && event.button !== 2)) return;
         event.preventDefault();
+        // preventDefault also stops the browser from focusing the canvas: focus it for the keys.
+        canvas.focus?.({ preventScroll: true });
         lastPointer = [event.clientX, event.clientY];
         pointerStart = lastPointer;
         pointerMoved = false;
