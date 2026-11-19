@@ -60,8 +60,6 @@ let depthShadingOn = true;
 let continuitySetting = null;
 // Length minimum in dataset units (`undefined` = the viewer's default); re-applied like `continuitySetting`.
 let minLengthSetting = null;
-// "contiguous" | "window" once the host chose one; re-applied to every viewer the worker creates.
-let cellActiveRuleSetting = null;
 let cellNodeBytes = 0;
 let builtOpened = null;
 let lastScene = null;
@@ -1337,13 +1335,6 @@ function applyMinLength(side) {
     return side;
 }
 
-function applyCellActiveRule(rule) {
-    viewer.setCellActiveRule(rule);
-    cellActiveRuleSetting = rule;
-    renderSettingChanged();
-    return rule;
-}
-
 // New adapter, device and surface on the same canvas, then the open dataset again without reading
 // the file anew: the build worker resends cells (driverReplaced) or the last scene is uploaded.
 async function recreateViewer(pose) {
@@ -1362,7 +1353,6 @@ async function recreateViewer(pose) {
     viewer.setDepthShading(depthShadingOn);
     if (continuitySetting) viewer.setContinuity(...continuitySetting);
     if (minLengthSetting) viewer.setMinLength(...minLengthSetting);
-    if (cellActiveRuleSetting) viewer.setCellActiveRule(cellActiveRuleSetting);
     viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
     advanceSceneGeneration();
     if (buildOptions && buildOpened && builtOpened) {
@@ -1491,9 +1481,6 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         setPxMode(data.mode);
                         value = pxStats();
                         break;
-                    case "setCellActiveRule":
-                        value = applyCellActiveRule(data.rule);
-                        break;
                     case "setMinLength":
                         value = applyMinLength(data.side ?? undefined);
                         break;
@@ -1579,13 +1566,6 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                     applyMinLength(data.side ?? undefined);
                 } catch (error) {
                     self.postMessage({ type: "warning", operation: "minLength", message: String(error) });
-                }
-                break;
-            case "setCellActiveRule":
-                try {
-                    applyCellActiveRule(data.rule);
-                } catch (error) {
-                    self.postMessage({ type: "warning", operation: "setCellActiveRule", message: String(error) });
                 }
                 break;
             case "metrics":

@@ -790,19 +790,6 @@ impl WasmVoxelViewer {
         Ok(())
     }
 
-    /// Deprecated no-op kept until the web host stops calling it: `"contiguous"` is the only
-    /// active-depth rule (the window rule was retired on 19-11-2026, OQ-11, issue #66). Any
-    /// other string is an error.
-    #[wasm_bindgen(js_name = setCellActiveRule)]
-    pub fn set_cell_active_rule(&mut self, rule: &str) -> Result<(), JsValue> {
-        match rule {
-            "contiguous" => Ok(()),
-            other => Err(JsValue::from_str(&format!(
-                "unknown cell active rule {other:?}: expected \"contiguous\""
-            ))),
-        }
-    }
-
     /// Bytes of `nodeCells` applied per frame (at least one node); takes effect on the next
     /// `beginRemoteCells`.
     #[wasm_bindgen(js_name = setCellNodeBytesPerFrame)]
