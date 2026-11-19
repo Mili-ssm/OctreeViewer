@@ -1280,10 +1280,11 @@ sampleButton.addEventListener("click", async () => {
 });
 // The real second cloud: a Belvedere Glacier crop (CC BY 4.0) that the published site carries
 // under datasets/ and a development checkout builds into target/demo-data/
-// (scripts/make-demo-belvedere.sh). The button stays hidden where neither answers.
+// (scripts/make-demo-belvedere.sh). The button stays hidden where neither answers. Relative to
+// the page, not to the module URL, which the offline package cannot reference.
 const belvedereCandidates = [
-    new URL("./datasets/belvedere-crop.oct", import.meta.url),
-    new URL("../../target/demo-data/belvedere-crop.oct", import.meta.url),
+    new URL("./datasets/belvedere-crop.oct", document.baseURI),
+    new URL("../../target/demo-data/belvedere-crop.oct", document.baseURI),
 ];
 let belvedereUrl = null;
 (async () => {
