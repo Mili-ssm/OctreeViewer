@@ -499,7 +499,8 @@ async function openDataset(data) {
     asyncAttributeIndices = new Map(descriptor.attributeSchema.map(
         (attribute, index) => [attribute.name, index],
     ));
-    self.postMessage({ type: "opened", gen: requestGeneration, opened });
+    // `fileBytes`: the size the main source reported on open (a remote source has no size until then).
+    self.postMessage({ type: "opened", gen: requestGeneration, opened, fileBytes: file.size ?? null });
 }
 
 async function handleMessage({ data }) {

@@ -598,3 +598,116 @@ test("held WASD/QE keys fly the camera each frame, scaled by dt, Shift and the s
         Object.assign(globalThis, previous);
     }
 });
+
+test("load accepts remote { url } descriptors and rejects malformed ones", async () => {
+    const previous = {
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        Worker: globalThis.Worker,
+        ResizeObserver: globalThis.ResizeObserver,
+        window: globalThis.window,
+        document: globalThis.document,
+        requestAnimationFrame: globalThis.requestAnimationFrame,
+        cancelAnimationFrame: globalThis.cancelAnimationFrame,
+        CustomEvent: globalThis.CustomEvent,
+    };
+    globalThis.HTMLCanvasElement = FakeCanvas;
+    globalThis.Worker = FakeWorker;
+    globalThis.ResizeObserver = FakeResizeObserver;
+    globalThis.window = { Worker: FakeWorker, devicePixelRatio: 2, addEventListener() {}, removeEventListener() {} };
+    globalThis.document = { baseURI: "https://page.example/app/index.html", addEventListener() {}, removeEventListener() {} };
+    globalThis.requestAnimationFrame = () => 1;
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init.detail; } };
+    try {
+        const viewer = createViewer(new FakeCanvas());
+        await viewer.ready;
+        const worker = FakeWorker.instance;
+        const loads = () => worker.messages.filter((message) => message.operation === "load");
+
+        await viewer.load({ url: "https://data.example/d/cloud.oct" });
+        assert.deepEqual(loads().at(-1).file, { url: "https://data.example/d/cloud.oct" });
+        assert.equal(loads().at(-1).name, "cloud.oct");
+        assert.equal(loads().at(-1).attributes, undefined);
+
+        await viewer.load(
+            { url: new URL("https://data.example/a%20b.oct?v=1"), maxGap: 0, remoteReads: 4 },
+            { attributes: { url: "../x/a%20b.octattrs", maxGap: 1024 } },
+        );
+        assert.deepEqual(loads().at(-1).file, { url: "https://data.example/a%20b.oct?v=1", maxGap: 0, remoteReads: 4 });
+        assert.equal(loads().at(-1).name, "a b.oct");
+        assert.deepEqual(loads().at(-1).attributes, { url: "https://page.example/x/a%20b.octattrs", maxGap: 1024 });
+
+        await viewer.load({ url: "data/c.oct" });
+        assert.equal(loads().at(-1).file.url, "https://page.example/app/data/c.oct");
+
+        await viewer.load({ url: "https://data.example/bad%ZZ.oct" });
+        assert.equal(loads().at(-1).name, "bad%ZZ.oct");
+
+        const blob = new Blob(["x"]);
+        await viewer.load(blob);
+        assert.equal(loads().at(-1).file, blob);
+        assert.equal(loads().at(-1).name, undefined);
+
+        const posted = worker.messages.length;
+        const bad = [
+            [{ url: "ftp://h.example/a.oct" }, /http: or https:/],
+            [{ url: "file:///a.oct" }, /http: or https:/],
+            [{ url: "https://user:pw@h.example/a.oct" }, /credentials/],
+            [{ url: "https://h.example/a.oct", timeoutMs: 5 }, /unknown field: timeoutMs/],
+            [{ url: "https://h.example/a.oct", remoteReads: 0 }, /remoteReads/],
+            [{ url: "https://h.example/a.oct", maxGap: -1 }, /maxGap/],
+            [{ url: "https://h.example/a.oct", maxGap: 1.5 }, /maxGap/],
+            [{ url: 42 }, /string or a URL/],
+            [{}, /string or a URL/],
+            ["https://h.example/a.oct", /File, a Blob or a/],
+            [null, /File, a Blob or a/],
+        ];
+        for (const [source, message] of bad) await assert.rejects(viewer.load(source), message);
+        await assert.rejects(
+            viewer.load(blob, { attributes: { url: "https://h.example/a.octattrs", readConcurrency: 1 } }), /attributes descriptor has an unknown field/,
+        );
+        await assert.rejects(viewer.load(blob, { attributes: { url: "ftp://h.example/a.octattrs" } }), /attributes url must use/);
+        await assert.rejects(viewer.load(blob, { attributes: "bad" }), /attributes must be a Blob/);
+        assert.equal(worker.messages.length, posted, "invalid sources are not sent");
+    } finally {
+        Object.assign(globalThis, previous);
+        if (previous.document === undefined) delete globalThis.document;
+    }
+});
+
+test("a postMessage that throws rejects the request and frees its pending slot", async () => {
+    const previous = {
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        Worker: globalThis.Worker,
+        ResizeObserver: globalThis.ResizeObserver,
+        window: globalThis.window,
+        requestAnimationFrame: globalThis.requestAnimationFrame,
+        cancelAnimationFrame: globalThis.cancelAnimationFrame,
+        CustomEvent: globalThis.CustomEvent,
+    };
+    globalThis.HTMLCanvasElement = FakeCanvas;
+    globalThis.Worker = FakeWorker;
+    globalThis.ResizeObserver = FakeResizeObserver;
+    globalThis.window = { Worker: FakeWorker, devicePixelRatio: 2, addEventListener() {}, removeEventListener() {} };
+    globalThis.requestAnimationFrame = () => 1;
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init.detail; } };
+    try {
+        const viewer = createViewer(new FakeCanvas());
+        await viewer.ready;
+        const worker = FakeWorker.instance;
+        const original = worker.postMessage;
+        worker.postMessage = (message) => {
+            if (message.type === "api") throw new DOMException("could not be cloned", "DataCloneError");
+            return original.call(worker, message);
+        };
+        // More failures than the 32-slot queue: a leaked slot would turn these into "queue is full".
+        for (let i = 0; i < 40; i++) await assert.rejects(viewer.getStats(), /could not be cloned/);
+        await assert.rejects(viewer.load(new Blob()), /could not be cloned/);
+        worker.postMessage = original;
+        await viewer.load(new Blob()); // loadInFlight was released too
+        assert.equal(await viewer.getStats(), true);
+    } finally {
+        Object.assign(globalThis, previous);
+    }
+});

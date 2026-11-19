@@ -170,6 +170,12 @@ def main() -> None:
     )
     main_js = require_replace(
         main_js,
+        'import { sidecarUrl } from "./http-range-source.mjs";\n',
+        "",
+        "range source import in the page",
+    )
+    main_js = require_replace(
+        main_js,
         'import { framebufferSize } from "./rendering-budget.mjs";\n',
         "",
         "rendering budget import",
@@ -264,6 +270,8 @@ def main() -> None:
         + canvas_replacement_js.replace("export function ", "function ")
         + "\n"
         + min_length_js.replace("export const ", "const ").replace("export function ", "function ")
+        + "\n"
+        + inline_range_source_js
         + "\n"
         + inline_spool_tiers_js
         + "\n"

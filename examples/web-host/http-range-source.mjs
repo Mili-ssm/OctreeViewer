@@ -345,6 +345,19 @@ export async function resolveSource(spec, options = {}) {
   return HttpRangeSource.open(spec.url, { ...options, ...spec });
 }
 
+/**
+ * The `.octattrs` sidecar URL of an `.oct` URL (absolute, string or `URL`): appends `attrs` to the path,
+ * keeps the query and drops the fragment. Throws `TypeError` for a path ending in `/` or in `.octattrs`.
+ */
+export function sidecarUrl(url) {
+  const parsed = new URL(url instanceof URL ? url.href : url);
+  if (parsed.pathname.endsWith("/")) throw new TypeError("cannot derive a sidecar URL from a path ending in /");
+  if (parsed.pathname.endsWith(".octattrs")) throw new TypeError("the URL already points to an .octattrs sidecar");
+  parsed.pathname += "attrs";
+  parsed.hash = "";
+  return parsed.href;
+}
+
 export const DEFAULT_LOCAL_READS = 4;
 export const DEFAULT_REMOTE_READS = 8; // measured in D2 (see README)
 const MAX_READS = 64;
