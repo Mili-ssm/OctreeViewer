@@ -74,10 +74,12 @@ struct Rig {
 impl Rig {
     /// A frame bracketed by `timer`; `heavy` adds a large compute dispatch inside it.
     fn frame(&self, timer: &mut FrameTimer, heavy: bool, collect: bool) {
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         let slot = timer.begin(&mut encoder);
         if heavy {
-            let mut pass = encoder.begin_compute_pass(&Default::default());
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.dispatch_workgroups(4096, 1, 1);
@@ -125,7 +127,7 @@ fn rig() -> Option<(Rig, FrameTimer)> {
         layout: None,
         module: &module,
         entry_point: Some("main"),
-        compilation_options: Default::default(),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
         cache: None,
     });
     let sink = device.create_buffer(&wgpu::BufferDescriptor {

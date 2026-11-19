@@ -2,7 +2,7 @@
 //! path, for real v7.5 datasets and without a GPU. Empty pixels need the Task 7 renderer and are
 //! out of scope. Throwaway: not part of `scripts/check.sh`.
 //!
-//! Usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR [--check-cell-pages]]
+//! Usage: `coverage_spike` INPUT.oct [`MAX_CUT_NODES=0`] [--export DIR [--check-cell-pages]]
 //!        [--export-pool DIR] [--cell-lod]
 //! (0 = no limit; larger cuts skip the case).
 //!
@@ -21,7 +21,7 @@
 //! `--export-pool DIR` (R3 Task 7c, read by `cell_pool_bench`) selects the same cases as `--export`
 //! and writes, per case, `DIR/<dataset>-<pose>-<target>px/{pool.json,levels.bin}`: everything
 //! `CellPool::frame` needs with a fake loader. Every `f64` of `pool.json` is stored as its IEEE
-//! bit pattern (`u64`), because serde_json without `float_roundtrip` can lose a ulp.
+//! bit pattern (`u64`), because `serde_json` without `float_roundtrip` can lose a ulp.
 //! `pool.json`: `format` ("r3-pool-v1"), `dataset`, `pose`, `target_px_bits`, `viewport` [w, h],
 //! `visual_scale_bits`, `coordinate_origin_bits` (zero: the grid is already local), `grid`
 //! {`root_min_bits`[3], `root_side_bits`}, `camera_bits` (`OrbitCamera::to_f64_array`), `cut`
@@ -244,7 +244,7 @@ fn level_ok(
 }
 
 fn octant_bounds(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
-    let mid: [f64; 3] = std::array::from_fn(|a| (bounds.min()[a] + bounds.max()[a]) / 2.0);
+    let mid: [f64; 3] = std::array::from_fn(|a| f64::midpoint(bounds.min()[a], bounds.max()[a]));
     let min = std::array::from_fn(|a| {
         if octant >> a & 1 == 0 {
             bounds.min()[a]
@@ -450,8 +450,7 @@ fn main() -> Result<()> {
     }
     let dataset_name = Path::new(&args[0])
         .file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|stem| stem.to_string_lossy().into_owned());
     let dataset_name = dataset_name
         .split('-')
         .next()
@@ -529,7 +528,8 @@ fn main() -> Result<()> {
         min: grid.root_min.map(|v| v * visual_scale),
         max: std::array::from_fn(|a| (root.max()[a] - origin[a]) * visual_scale),
     };
-    let centre: [f64; 3] = std::array::from_fn(|a| (root_local.min[a] + root_local.max[a]) / 2.0);
+    let centre: [f64; 3] =
+        std::array::from_fn(|a| f64::midpoint(root_local.min[a], root_local.max[a]));
     let mut fitted = OrbitCamera::default();
     if !fitted.fit(root_local, VIEWPORT) {
         return Err("cannot fit camera to dataset".into());
@@ -560,8 +560,9 @@ fn main() -> Result<()> {
         .max_by_key(|(_, points)| *points)
         .ok_or("dataset has no leaf")?;
     let leaf_local = to_local(leaf_node.bounds())?;
-    let leaf_eye: [f64; 3] =
-        std::array::from_fn(|a| (leaf_local.min()[a] + leaf_local.max()[a]) / 2.0 * visual_scale);
+    let leaf_eye: [f64; 3] = std::array::from_fn(|a| {
+        f64::midpoint(leaf_local.min()[a], leaf_local.max()[a]) * visual_scale
+    });
     let leaf_target = [
         leaf_eye[0] + root_side * visual_scale / 16.0,
         leaf_eye[1],
@@ -999,7 +1000,11 @@ fn main() -> Result<()> {
                             grid: &grid,
                             cache: &cache,
                             cut: &cut,
-                            points: &|id| hierarchy.node(id).map(|n| n.point_count()),
+                            points: &|id| {
+                                hierarchy
+                                    .node(id)
+                                    .map(viewer_core::SpatialNode::point_count)
+                            },
                         })?;
                     }
                     let (mut total, mut on_screen, mut stages) = (0_u64, 0_u64, 0_usize);
@@ -1087,8 +1092,9 @@ fn main() -> Result<()> {
                         let mut distinct = depths.to_vec();
                         distinct.sort_unstable();
                         distinct.dedup();
-                        let mid: [f64; 3] =
-                            std::array::from_fn(|a| (n.bounds.min()[a] + n.bounds.max()[a]) / 2.0);
+                        let mid: [f64; 3] = std::array::from_fn(|a| {
+                            f64::midpoint(n.bounds.min()[a], n.bounds.max()[a])
+                        });
                         let finest = n.levels.last().map_or(0, |l| l.depth);
                         for &depth in &distinct {
                             let level = n
@@ -1723,7 +1729,7 @@ fn cell_side(grid: &CellGrid, depth: u8) -> f64 {
     grid.root_side / (1_u64 << depth) as f64
 }
 
-/// Page min corner relative to the eye, in dataset units x visual_scale (f64, then cast).
+/// Page min corner relative to the eye, in dataset units x `visual_scale` (f64, then cast).
 fn page_origin_f32(ctx: &GroupCtx, origin: [u32; 3]) -> [f32; 3] {
     let side = cell_side(ctx.grid, ctx.level.depth);
     std::array::from_fn(|a| {
@@ -1937,7 +1943,7 @@ fn export_case(case: &ExportCase) -> Result<(u64, u64)> {
     let deepest = case
         .entries
         .iter()
-        .flat_map(|e| e.required_levels())
+        .flat_map(viewer_render_wgpu::CellCutEntry::required_levels)
         .max()
         .unwrap_or(0);
     let mut resident_cells = 0_u64;
@@ -2362,7 +2368,7 @@ const LOD_MODES: [(&str, bool); 2] = [("px", false), ("spacing", true)];
 const PAGE_BYTES: u64 = PAGE_SLOTS as u64 * 16 + 48;
 const MIB: f64 = 1024.0 * 1024.0;
 
-/// Vertical focal length in pixels (`projected_voxel_edge_pixels`, VERTICAL_FOV = 45 degrees).
+/// Vertical focal length in pixels (`projected_voxel_edge_pixels`, `VERTICAL_FOV` = 45 degrees).
 fn lod_focal() -> f64 {
     f64::from(VIEWPORT[1]) / (2.0 * (45.0_f64.to_radians() * 0.5).tan())
 }

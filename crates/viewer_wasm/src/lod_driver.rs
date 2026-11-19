@@ -430,8 +430,8 @@ mod tests {
                 &mut stage,
                 target,
                 retry_coarse,
-                |_| Ok(target_ready),
-                |_, rung, stage_pixels| {
+                |()| Ok(target_ready),
+                |(), rung, stage_pixels| {
                     drawn.push(rung);
                     *stage_pixels = next_lod_stage(Some(rung), target, false, true).0;
                     Ok(())

@@ -122,9 +122,9 @@ pub async fn render_offscreen(
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let color_view = color.create_view(&Default::default());
-    let depth_view = depth.create_view(&Default::default());
-    let mut encoder = device.create_command_encoder(&Default::default());
+    let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
+    let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("octree-offscreen-pass"),
@@ -205,7 +205,7 @@ pub async fn render_offscreen(
         config.clear_color.b,
     ]
     .map(|linear| {
-        let srgb = if linear <= 0.0031308 {
+        let srgb = if linear <= 0.003_130_8 {
             12.92 * linear
         } else {
             1.055 * linear.powf(1.0 / 2.4) - 0.055

@@ -476,7 +476,7 @@ fn leaf_chain_keeps_finer_detail_after_a_plateau() {
         Point::new([1.5, 0.0, 0.0], ColorRgb::new(4, 5, 6)),
     ];
     let cells = cells_of(&grid(), bounds, true, &plain_block(points));
-    assert!(cells.levels.last().unwrap().cells.len() == 2);
+    assert_eq!(cells.levels.last().unwrap().cells.len(), 2);
 }
 
 #[test]
@@ -735,14 +735,14 @@ fn adaptive_leaf_crosses_region_limit_and_rejects_clamped_collisions() {
 fn subregions_preserve_global_morton_order_and_aggregate_duplicates() {
     let unit = SIDE / 2.0_f64.powi(23);
     let coords = [
-        [2097152, 0, 0],
-        [0, 2097152, 0],
-        [0, 0, 2097152],
-        [2097151, 2097151, 2097151],
-        [2097152, 2097152, 2097152],
-        [4194304, 0, 0],
-        [0, 4194304, 0],
-        [0, 0, 4194304],
+        [2_097_152, 0, 0],
+        [0, 2_097_152, 0],
+        [0, 0, 2_097_152],
+        [2_097_151, 2_097_151, 2_097_151],
+        [2_097_152, 2_097_152, 2_097_152],
+        [4_194_304, 0, 0],
+        [0, 4_194_304, 0],
+        [0, 0, 4_194_304],
     ];
     let points: Vec<_> = coords
         .iter()
@@ -773,7 +773,7 @@ fn subregions_preserve_global_morton_order_and_aggregate_duplicates() {
     let duplicate = level
         .cells
         .iter()
-        .find(|cell| cell.coord == [2097152, 0, 0])
+        .find(|cell| cell.coord == [2_097_152, 0, 0])
         .unwrap();
     assert_eq!(
         (
@@ -910,7 +910,7 @@ fn octant_geometric(grid: &CellGrid, bounds: SpatialBounds, depth: u8, coord: [u
     let cell_side = grid.root_side / (1_u64 << depth) as f64;
     (0..3).fold(0, |acc, axis| {
         let centre = grid.root_min[axis] + (coord[axis] as f64 + 0.5) * cell_side;
-        let mid = (bounds.min()[axis] + bounds.max()[axis]) / 2.0;
+        let mid = f64::midpoint(bounds.min()[axis], bounds.max()[axis]);
         acc * 2 + usize::from(centre > mid)
     })
 }

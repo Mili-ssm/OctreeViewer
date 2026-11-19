@@ -17,3 +17,6 @@ pollster = "1.0"
 png = "0.18"
 serde_json.workspace = true
 viewer_format = { path = "../viewer_format" }
+
+[lints]
+workspace = true

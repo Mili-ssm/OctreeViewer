@@ -106,8 +106,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         samples.push(start.elapsed().as_secs_f64() * 1000.0);
         let hash = bytemuck::cast_slice::<_, u8>(scene.scene.instances())
             .iter()
-            .fold(0xcbf29ce484222325_u64, |h, b| {
-                (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+            .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+                (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
             });
         let result = (scene.scene.instance_count(), hash);
         if let Some(previous) = expected {

@@ -24,8 +24,8 @@ fn point_outside_frustum_is_culled_before_voxel_accumulation() {
         max_depth: 24,
         representative_regions: Vec::new(),
         projected_edge_cache_limit: 0,
-        projected_edges: Default::default(),
-        projected_edge_order: Default::default(),
+        projected_edges: std::collections::BTreeMap::default(),
+        projected_edge_order: std::collections::VecDeque::default(),
         projected_edge_peak_entries: 0,
         last_resolved_cell: None,
     };
@@ -44,8 +44,8 @@ fn visible_point_keeps_its_projected_cell() {
         max_depth: 24,
         representative_regions: Vec::new(),
         projected_edge_cache_limit: MAX_PROJECTED_EDGE_CACHE_ENTRIES,
-        projected_edges: Default::default(),
-        projected_edge_order: Default::default(),
+        projected_edges: std::collections::BTreeMap::default(),
+        projected_edge_order: std::collections::VecDeque::default(),
         projected_edge_peak_entries: 0,
         last_resolved_cell: None,
     };
@@ -73,8 +73,8 @@ fn terminal_hint_reuses_result_with_projection_cache_disabled() {
         max_depth: 24,
         representative_regions: Vec::new(),
         projected_edge_cache_limit: 0,
-        projected_edges: Default::default(),
-        projected_edge_order: Default::default(),
+        projected_edges: std::collections::BTreeMap::default(),
+        projected_edge_order: std::collections::VecDeque::default(),
         projected_edge_peak_entries: 0,
         last_resolved_cell: None,
     };
@@ -99,8 +99,8 @@ fn terminal_hint_matches_full_descent_at_boundaries_and_with_eviction() {
     let mut seed = 17_u64;
     for _ in 0..2_000 {
         points.push(std::array::from_fn(|_| {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            (seed >> 32) as f64 / u32::MAX as f64 * 4.0 - 2.0
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            (seed >> 32) as f64 / f64::from(u32::MAX) * 4.0 - 2.0
         }));
     }
     for cache_limit in [0, 1, 32] {

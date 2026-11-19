@@ -53,7 +53,7 @@
 //!    interpolation across the triangle) are not specified by WebGPU or Vulkan (Rasterization,
 //!    "Basic Polygon Rasterization"); [`RASTER_U`] is an assumption, twice the 2.00 u measured on
 //!    RADV and llvmpipe by `depth_error_stays_within_the_derived_bound_at_worst_case_poses`, which also
-//!    checks the bound on the GPU at far, grazing and eye-near poses. Depth32Float stores the
+//!    checks the bound on the GPU at far, grazing and eye-near poses. `Depth32Float` stores the
 //!    fragment depth unquantized, so the Hi-Z holds it exactly.
 //!
 //! At `rho = 1` the bound is about 48 u, growing about 25 u per unit of `rho`.
@@ -302,7 +302,7 @@ impl HiZBuilder {
                 layout: Some(&pipeline_layout),
                 module: &module,
                 entry_point: Some(entry_point),
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 cache: None,
             })
         };
@@ -396,7 +396,7 @@ impl HiZ {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::TextureView(
-                    &texture.create_view(&Default::default()),
+                    &texture.create_view(&wgpu::TextureViewDescriptor::default()),
                 ),
             }],
         });

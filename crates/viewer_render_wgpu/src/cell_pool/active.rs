@@ -1,6 +1,6 @@
 //! Active depths of a cut node in cell mode.
 
-use super::*;
+use super::{CellCutEntry, CellGrid, CellPool, SpatialBounds, cell_depth_range, in_cell_range};
 
 impl CellPool {
     /// The stored depths of a node that can draw: those inside the node's span (E2).

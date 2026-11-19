@@ -176,7 +176,7 @@ fn run(driver: &mut CellDriver, cut: &[u64]) -> Recording {
         let report = driver
             .frame(&mut target, &ids(cut), &view(&cam), 4.0)
             .expect("frame");
-        assert!(report.counters().pool_overflow == 0);
+        assert_eq!(report.counters().pool_overflow, 0);
     }
     target
 }
@@ -397,13 +397,13 @@ fn encode_refuses_what_decode_would_refuse() {
         ("no cells", |n| n.levels[0].pages[0].cells = 0),
         ("too many cells", |n| n.levels[0].pages[0].cells = 513),
         ("padding", |n| {
-            n.levels[0].instances[PAGE_SLOTS - 1].0[3] = 1
+            n.levels[0].instances[PAGE_SLOTS - 1].0[3] = 1;
         }),
         ("coordinate beyond box", |n| {
-            n.levels[0].instances[0].0[0] = 0x7fff
+            n.levels[0].instances[0].0[0] = 0x7fff;
         }),
         ("box outside the grid", |n| {
-            n.levels[0].pages[0].origin[0] = 8
+            n.levels[0].pages[0].origin[0] = 8;
         }),
         ("depth", |n| {
             n.levels[0].depth = 64;

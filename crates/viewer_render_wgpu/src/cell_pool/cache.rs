@@ -1,6 +1,13 @@
 //! Per-node depth cache: the context of a depth query and its refresh.
 
-use super::*;
+use super::{
+    Cell, CellCutNode, CellGrid, CellPool, DRIFT_FRACTION, EARLY_FRACTION, EARLY_SHARE, FastMap,
+    FastSet, Level, LevelKey, NodeDepths, NodeId, PoolConfig, PoolNode, Pose, ProbeBox,
+    ROTATION_SHARE, SpatialBounds, VERTICAL_FOV, ViewKey, ViewProjection, behind_wanted,
+    continuity_depth, masked_probes, nearest_occupied_depth, octant_wanted_depth_in,
+    octant_wanted_depth_near, octants_in_front, probe_region, representative_depth_for_spacing,
+    view_range_hi_at, view_range_lo,
+};
 
 pub(super) fn distance_sq(eye: [f64; 3], bounds: SpatialBounds, origin: [f64; 3]) -> f64 {
     (0..3)

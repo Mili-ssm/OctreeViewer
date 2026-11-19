@@ -18,7 +18,7 @@ struct Tree {
 }
 
 fn width(t: AttributeDataType) -> u64 {
-    use AttributeDataType::*;
+    use AttributeDataType::{F32, F64, I8, I16, I32, I64, U8, U16, U32, U64};
     match t {
         U8 | I8 => 1,
         U16 | I16 => 2,
@@ -31,7 +31,7 @@ fn pct(sorted: &[u64], p: f64) -> u64 {
     sorted[(((sorted.len() - 1) as f64) * p).round() as usize]
 }
 
-/// page_of[n]: anchor index of the page holding n's record; the root's page is the root itself.
+/// `page_of`[n]: anchor index of the page holding n's record; the root's page is the root itself.
 fn page_of(tree: &Tree, k: u32) -> Vec<u32> {
     let mut page = vec![0_u32; tree.parent.len()];
     // nodes are stored parent-before-child
@@ -165,10 +165,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             + nb * (8 + 8 + 1 + 8 + 24 + 13 * cols);
         if leaf {
             leaf_slim += slim;
-            leaf_n += 1
+            leaf_n += 1;
         } else {
             int_slim += slim;
-            int_n += 1
+            int_n += 1;
         }
         tree.parent.push(par);
         tree.depth.push(node.level() - a0);
@@ -307,7 +307,7 @@ fn synthetic(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         ("synthetic_branch8_full", 1.0),
         ("synthetic_branch6", 0.75),
     ] {
-        let mut s = 0x9E3779B97F4A7C15_u64;
+        let mut s = 0x9E37_79B9_7F4A_7C15_u64;
         let mut rnd = move || {
             s ^= s << 13;
             s ^= s >> 7;
@@ -345,7 +345,7 @@ fn synthetic(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 internal
             };
         }
-        let mean = tree.children.iter().map(|c| *c as f64).sum::<f64>()
+        let mean = tree.children.iter().map(|c| f64::from(*c)).sum::<f64>()
             / tree.children.iter().filter(|c| **c > 0).count() as f64;
         for k in [3_u32, 4, 5] {
             page_stats(

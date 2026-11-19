@@ -104,7 +104,14 @@ mod run;
 mod seed;
 mod step;
 
-use self::{cache::*, fallback::*, fit::*, residency::*};
+use self::{
+    cache::{Ctx, distance, distance_sq, effective_depth},
+    fallback::{
+        Below, Cover, CoverRule, Fallbacks, Footprint, covers_in, missing_levels, uncovered_levels,
+    },
+    fit::{capped, capped_range, continuity_depth},
+    residency::estimate_pages,
+};
 
 /// Bytes of one pool page.
 pub const POOL_PAGE_BYTES: u64 = (PAGE_SLOTS * 16) as u64;

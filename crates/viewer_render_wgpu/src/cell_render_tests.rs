@@ -263,7 +263,7 @@ fn finish(
             layout: None,
             module: &module,
             entry_point: Some("main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
     let depth_view = depth.create_view(&wgpu::TextureViewDescriptor {
@@ -285,7 +285,7 @@ fn finish(
         ],
     });
     {
-        let mut pass = encoder.begin_compute_pass(&Default::default());
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.dispatch_workgroups(WIDTH.div_ceil(8), HEIGHT.div_ceil(8), 1);
@@ -357,10 +357,12 @@ fn render_cpu_styled(
         });
     let (color, depth) = target_textures(h);
     let (color_view, depth_view) = (
-        color.create_view(&Default::default()),
-        depth.create_view(&Default::default()),
+        color.create_view(&wgpu::TextureViewDescriptor::default()),
+        depth.create_view(&wgpu::TextureViewDescriptor::default()),
     );
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("cpu-reference"),
@@ -416,10 +418,12 @@ fn render_cells_phases(
     let eye_frame = camera.eye_frame([WIDTH, HEIGHT]).unwrap();
     let (color, depth) = target_textures(h);
     let (color_view, depth_view) = (
-        color.create_view(&Default::default()),
-        depth.create_view(&Default::default()),
+        color.create_view(&wgpu::TextureViewDescriptor::default()),
+        depth.create_view(&wgpu::TextureViewDescriptor::default()),
     );
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     pool.encode_cells(
         &mut encoder,
         &color_view,

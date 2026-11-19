@@ -3,7 +3,10 @@
 //! `node_run` is pure: plain depths in, plain depths out. `CellPool::fill_node_runs` computes it
 //! for the planned cut into the `node_*` fields of `CellCutEntry`; nobody reads them yet.
 
-use super::*;
+use super::{
+    CellCutEntry, CellGrid, CellPool, FastMap, NodeId, PoolNode, STEP_WAIT_FRAMES, capped,
+    capped_range, cell_depth_range,
+};
 
 /// What `node_run` needs of a node.
 pub(super) struct RunInput<'a> {
@@ -296,7 +299,7 @@ impl CellPool {
 mod tests {
     use super::*;
 
-    fn input<'a>(prev: Option<u8>, range: (u8, u8), target: u8, usable: &'a [u8]) -> RunInput<'a> {
+    fn input(prev: Option<u8>, range: (u8, u8), target: u8, usable: &[u8]) -> RunInput<'_> {
         RunInput {
             prev,
             range,

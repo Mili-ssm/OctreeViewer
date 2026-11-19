@@ -1222,7 +1222,7 @@ fn prefix_extension_points(
         nodes
             .iter()
             .filter_map(|id| hierarchy.node(*id))
-            .flat_map(|node| node.blocks())
+            .flat_map(viewer_core::SpatialNode::blocks)
             .filter_map(|id| {
                 cache
                     .peek(*id)
@@ -1262,7 +1262,7 @@ fn pending_page_anchors(
 fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Option<u32> {
     node_ids
         .iter()
-        .filter_map(|id| hierarchy.node(*id).map(|node| node.level()))
+        .filter_map(|id| hierarchy.node(*id).map(viewer_core::SpatialNode::level))
         .max()
 }
 

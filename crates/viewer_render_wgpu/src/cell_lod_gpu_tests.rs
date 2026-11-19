@@ -13,6 +13,7 @@ use crate::cell_lod::{
     LodView, NodeLod, cell_lo, draws, edge_px, masked_any, node_record, refines,
 };
 use crate::representative_depth;
+use std::fmt::Write as _;
 
 /// A cell is skipped when `edge_px / target_px` of it or of an ancestor is this close to 1.
 pub(super) const THRESHOLD_BAND: f32 = 1.0e-4;
@@ -221,7 +222,9 @@ pub(super) fn read_drawn_slots(h: &Harness, pool: &CellRenderer, count_word: usi
         })
     };
     let count_out = staging(28);
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     encoder.copy_buffer_to_buffer(pool.draw_args_buffer(), 0, &count_out, 0, 28);
     h.queue.submit([encoder.finish()]);
     let words: Vec<u32> = bytemuck::pod_collect_to_vec(&read_buffer(h, &count_out));
@@ -230,7 +233,9 @@ pub(super) fn read_drawn_slots(h: &Harness, pool: &CellRenderer, count_word: usi
         return Vec::new();
     }
     let slots_out = staging(count * 4);
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     encoder.copy_buffer_to_buffer(pool.visible_buffer(), 0, &slots_out, 0, count * 4);
     h.queue.submit([encoder.finish()]);
     bytemuck::pod_collect_to_vec(&read_buffer(h, &slots_out))
@@ -690,12 +695,13 @@ impl FrameCheck<'_> {
                 .iter()
                 .find(|(l, _)| *l == level)
                 .map_or(0, |(_, n)| *n);
-            text += &format!(
-                "    depth {} rel {rel:?}: edge_px {edge} ({}x target), refines {}, masked_any {}, drawn {drawn}\n",
+            let _ = writeln!(
+                text,
+                "    depth {} rel {rel:?}: edge_px {edge} ({}x target), refines {}, masked_any {}, drawn {drawn}",
                 node.node_depth + offset,
                 edge / self.view.target_px,
                 refines(&self.view, cell_lo(lod, rel, side), side),
-                masked_any(lod, node.node_depth + offset, rel),
+                masked_any(lod, node.node_depth + offset, rel)
             );
         }
         text
@@ -708,7 +714,9 @@ impl FrameCheck<'_> {
 fn read_both_phases(h: &Harness, pool: &mut CellRenderer, camera: &OrbitCamera) -> Vec<Vec<u32>> {
     let (_, counts) = render_cells_phases(h, pool, camera, false);
     let second = read_drawn_slots(h, pool, 6);
-    let mut encoder = h.device.create_command_encoder(&Default::default());
+    let mut encoder = h
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     pool.encode_compaction(&mut encoder, 1);
     h.queue.submit([encoder.finish()]);
     let first = read_drawn_slots(h, pool, 1);
@@ -1118,7 +1126,9 @@ fn lod_counters_count_drawn_cells_per_depth() {
                     let (_, counts) = render_cells_phases(h, &mut pool, &camera, false);
                     let second = read_drawn_slots(h, &pool, 6);
                     let counters = pool.read_lod_counters(&h.device, &h.queue);
-                    let mut encoder = h.device.create_command_encoder(&Default::default());
+                    let mut encoder = h
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
                     pool.encode_compaction(&mut encoder, 1);
                     h.queue.submit([encoder.finish()]);
                     let first = read_drawn_slots(h, &pool, 1);

@@ -1,6 +1,10 @@
 //! The fit of the wanted levels into the pool and the caps it sets.
 
-use super::*;
+use super::{
+    BTreeSet, CellCutError, CellCutNode, CellGrid, CellPool, Ctx, FastMap, FastSet, HIGH_PERCENT,
+    LOW_PERCENT, LevelKey, NodeId, PoolNode, cell_depth_range, distance_sq, in_cell_range,
+    served_depth,
+};
 
 /// `wanted` limited to the finest buildable depth at or below `limit` (cells of that depth or
 /// coarser have a side of at least the continuity minimum); the coarsest buildable depth when all

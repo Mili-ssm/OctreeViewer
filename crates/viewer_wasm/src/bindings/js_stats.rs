@@ -85,7 +85,11 @@ impl WasmVoxelViewer {
     /// Cheap: the host polls it to start the recovery of R3-Q26.
     #[wasm_bindgen(js_name = deviceLost)]
     pub fn device_lost(&self) -> JsValue {
-        let Some(loss) = self.gpu_renderer.as_ref().and_then(|r| r.device_loss()) else {
+        let Some(loss) = self
+            .gpu_renderer
+            .as_ref()
+            .and_then(viewer_render_wgpu::SurfaceRenderer::device_loss)
+        else {
             return JsValue::NULL;
         };
         let object = js_sys::Object::new();

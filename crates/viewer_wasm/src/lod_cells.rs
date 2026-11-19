@@ -811,7 +811,7 @@ impl LodDataset {
             }
         }
         self.cells.level_requests = keep;
-        self.cells.level_cut = room.cut.clone();
+        self.cells.level_cut.clone_from(room.cut);
         self.cells.level_outside_open = room.admits_outside_cut(blocked);
         match failure {
             Some(error) if served.is_empty() => Err(error),
@@ -891,7 +891,9 @@ impl LodDataset {
     pub(super) fn ancestors_without_cells(&self, id: NodeId) -> Vec<NodeId> {
         let hierarchy = self.metadata.hierarchy();
         let mut out = Vec::new();
-        let mut parent = hierarchy.node(id).and_then(|node| node.parent());
+        let mut parent = hierarchy
+            .node(id)
+            .and_then(viewer_core::SpatialNode::parent);
         while let Some(up) = parent {
             let Some(node) = hierarchy.node(up) else {
                 break;
@@ -921,7 +923,9 @@ impl LodDataset {
                 if self.cells.has_cells(current) {
                     return true;
                 }
-                node = hierarchy.node(current).and_then(|n| n.parent());
+                node = hierarchy
+                    .node(current)
+                    .and_then(viewer_core::SpatialNode::parent);
             }
             false
         }))
@@ -1412,7 +1416,7 @@ impl LodDataset {
                 .collect();
             let bytes = |built: &BuiltNode| built.bytes;
             let pages = |built: &BuiltNode| built.coarsest_pages;
-            counted = needed.clone();
+            counted.clone_from(&needed);
             cpu_needed = self.cells.sum_over(&needed, bytes);
             gpu_needed = self.cells.sum_over(&needed, pages);
             let in_progress_cpu = self.cells.sum_over(&in_progress, bytes);
@@ -1814,12 +1818,16 @@ impl LodDataset {
         let hierarchy = self.metadata.hierarchy();
         let mut ancestors = HashSet::new();
         for candidate in candidates.iter().filter(|c| !self.cells.has_cells(c.id)) {
-            let mut parent = hierarchy.node(candidate.id).and_then(|node| node.parent());
+            let mut parent = hierarchy
+                .node(candidate.id)
+                .and_then(viewer_core::SpatialNode::parent);
             while let Some(up) = parent {
                 if self.cells.built.contains_key(&up) && !ancestors.insert(up) {
                     break;
                 }
-                parent = hierarchy.node(up).and_then(|node| node.parent());
+                parent = hierarchy
+                    .node(up)
+                    .and_then(viewer_core::SpatialNode::parent);
             }
         }
         let mut support = ancestors;

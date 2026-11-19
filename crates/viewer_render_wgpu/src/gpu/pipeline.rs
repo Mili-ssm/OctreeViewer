@@ -120,7 +120,7 @@ pub(crate) async fn create_pipeline_resources(
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[
                 Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<CubeVertex>() as u64,
@@ -139,14 +139,14 @@ pub(crate) async fn create_pipeline_resources(
             format: wgpu::TextureFormat::Depth32Float,
             depth_write_enabled: Some(true),
             depth_compare: Some(wgpu::CompareFunction::Less),
-            stencil: Default::default(),
-            bias: Default::default(),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
         }),
-        multisample: Default::default(),
+        multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format: pipeline_format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),

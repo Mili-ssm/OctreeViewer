@@ -29,7 +29,7 @@ use crate::{
 };
 
 /// Hasher for the small integer keys of the cut and the pool (Fx): these maps are probed per node
-/// per frame, where SipHash dominated the profile. Not DoS-resistant, which does not matter for
+/// per frame, where `SipHash` dominated the profile. Not DoS-resistant, which does not matter for
 /// keys the renderer itself produces.
 #[derive(Default, Clone, Copy)]
 pub(crate) struct FxHasher(u64);
@@ -229,7 +229,7 @@ impl std::error::Error for CellCutError {}
 
 /// Octant `octant` of `bounds` (both in any one frame), split at the mid-plane of each axis.
 pub(crate) fn octant_box(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
-    let mid: [f64; 3] = std::array::from_fn(|a| (bounds.min()[a] + bounds.max()[a]) / 2.0);
+    let mid: [f64; 3] = std::array::from_fn(|a| f64::midpoint(bounds.min()[a], bounds.max()[a]));
     let upper = |a: usize| octant >> (2 - a) & 1 == 1;
     let min = std::array::from_fn(|a| if upper(a) { mid[a] } else { bounds.min()[a] });
     let max = std::array::from_fn(|a| if upper(a) { bounds.max()[a] } else { mid[a] });
@@ -387,7 +387,7 @@ pub(crate) fn behind_wanted(depths: [u8; 8], (behind, front): (u8, u8)) -> [u8; 
 /// that once a depth stops refining every finer one does too (its children are half as large at
 /// about the same distance). It then costs 2 probes when the answer has not moved, instead of one
 /// per coarser depth, and returns the same depth whenever that holds. The
-/// `the_hinted_search_equals_the_full_search` test (cell_pool_tests.rs) found no difference in
+/// `the_hinted_search_equals_the_full_search` test (`cell_pool_tests.rs`) found no difference in
 /// 79 993 random poses. A `hint` outside the range falls back to the full search.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn octant_wanted_depth_near(

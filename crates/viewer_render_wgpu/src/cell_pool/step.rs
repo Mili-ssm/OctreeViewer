@@ -1,6 +1,6 @@
 //! Step state of a node and the step waits.
 
-use super::*;
+use super::{CellCutEntry, CellPool, NodeId, PrevState, STEP_WAIT_FRAMES};
 
 impl CellPool {
     /// What `id` drew in the last applied cut and which of its octants gave up stepping.

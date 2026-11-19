@@ -576,7 +576,10 @@ impl WasmVoxelViewer {
         if !self.cells_requested {
             return;
         }
-        let dataset = self.lod_session.as_ref().map(|session| session.dataset());
+        let dataset = self
+            .lod_session
+            .as_ref()
+            .map(super::super::lod_session::LodSession::dataset);
         let device_ok = self
             .gpu_renderer
             .as_ref()

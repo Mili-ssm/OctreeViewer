@@ -28,7 +28,7 @@ fn old_metric(
     viewport: [u32; 2],
 ) -> f64 {
     let center = DVec3::from_array(std::array::from_fn(|a| {
-        (bounds.min()[a] + bounds.max()[a]) * 0.5
+        f64::midpoint(bounds.min()[a], bounds.max()[a])
     }));
     let half_diagonal = DVec3::from_array(std::array::from_fn(|a| {
         (bounds.max()[a] - bounds.min()[a]) * 0.5

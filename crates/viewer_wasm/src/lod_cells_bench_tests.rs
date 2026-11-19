@@ -96,7 +96,8 @@ pub(super) fn spike_frame(path: &std::path::Path) -> Frame {
         .max_by_key(|n| n.point_count())
         .expect("a leaf");
     let b = leaf.bounds();
-    let leaf_eye = std::array::from_fn(|a| ((b.min()[a] + b.max()[a]) / 2.0 - origin[a]) * scale);
+    let leaf_eye =
+        std::array::from_fn(|a| (f64::midpoint(b.min()[a], b.max()[a]) - origin[a]) * scale);
     Frame {
         leaf_eye,
         fitted,
@@ -237,7 +238,11 @@ fn cells_bench() {
     let rss = peak_rss_kib();
     let resident_end = last.resident_pages;
     let first_failure = h.first_failure.clone().unwrap_or_default();
-    let pages_used = h.dataset.pages.as_ref().map_or(0, |p| p.pages());
+    let pages_used = h
+        .dataset
+        .pages
+        .as_ref()
+        .map_or(0, crate::lod_pages::PageResidency::pages);
     {
         // Camera and cut diagnostics (follow-up of the grazing check): printed, not asserted.
         let (near, far) = camera.clip_distances();
@@ -312,8 +317,8 @@ active_level_cells {cells} (sum over active levels, overlapping depths counted e
         fm[2],
         last.cpu_cell_bytes,
         viewer_render_wgpu::DEFAULT_POOL_PAGES,
-        f64::from(last.resident_pages) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1048576.0,
-        f64::from(t.resident_peak) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1048576.0,
+        f64::from(last.resident_pages) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1_048_576.0,
+        f64::from(t.resident_peak) * viewer_render_wgpu::POOL_PAGE_BYTES as f64 / 1_048_576.0,
         t.longest_retained,
         t.max_gap,
         t.gaps_over_one,

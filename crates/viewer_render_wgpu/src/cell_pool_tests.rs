@@ -4412,7 +4412,7 @@ fn the_d5_depth_joins_the_active_set_when_the_mask_is_set() {
         .iter()
         .find(|u| Some(u.slot) == rig.pool.mask_slots.get(&NodeId::new(1)).map(|s| s.slot))
         .expect("update");
-    assert_ne!(update.active & (1 << 4), 0, "{:?}", update);
+    assert_ne!(update.active & (1 << 4), 0, "{update:?}");
 }
 
 #[test]
@@ -5863,7 +5863,7 @@ fn cap_row(
                 (0..8).map(|o| (before.clone(), at.sub_centre(o)))
             })
             .collect();
-        let gate = probes.each_ref().map(|p| p.run());
+        let gate = probes.each_ref().map(Probe::run);
         found = Some(CapRow {
             released: Some(frame),
             wish,

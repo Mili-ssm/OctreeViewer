@@ -725,7 +725,7 @@ impl CellRenderer {
                     layout: Some(layout),
                     module,
                     entry_point: Some(entry_point),
-                    compilation_options: Default::default(),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                     cache: None,
                 })
             };
@@ -747,7 +747,7 @@ impl CellRenderer {
             vertex: wgpu::VertexState {
                 module: &draw_module,
                 entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[],
             },
             primitive: wgpu::PrimitiveState {
@@ -759,14 +759,14 @@ impl CellRenderer {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: Some(true),
                 depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: Default::default(),
+            multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &draw_module,
                 entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: color_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -849,7 +849,7 @@ impl CellRenderer {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let mut encoder = device.create_command_encoder(&Default::default());
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         encoder.copy_buffer_to_buffer(&self.draw_args, COUNTER_OFFSET, &staging, 0, COUNTER_BYTES);
         queue.submit([encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();

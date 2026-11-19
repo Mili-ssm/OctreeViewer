@@ -335,7 +335,7 @@ pub(crate) fn resolve_pool_pick(
             + plan.coordinate_origin[axis]
     });
     let voxel_center = std::array::from_fn(|axis| {
-        (f64::from(lo[axis]) + f64::from(hi[axis])) * 0.5 / scale
+        f64::midpoint(f64::from(lo[axis]), f64::from(hi[axis])) / scale
             + plan.eye[axis] / scale
             + plan.coordinate_origin[axis]
     });

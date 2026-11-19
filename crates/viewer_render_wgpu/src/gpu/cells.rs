@@ -102,7 +102,7 @@ impl CellTarget for SurfaceRenderer<'_> {
     }
 }
 
-impl<'window> SurfaceRenderer<'window> {
+impl SurfaceRenderer<'_> {
     pub(super) fn cell_pool_bytes(&self) -> u64 {
         self.cell_pool
             .as_ref()

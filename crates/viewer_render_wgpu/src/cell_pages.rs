@@ -277,10 +277,10 @@ pub(crate) fn pack_level_aligned(
             } else {
                 0
             }
-            | if cell.classification != -1 {
-                PAGE_HAS_CLASS
-            } else {
+            | if cell.classification == -1 {
                 0
+            } else {
+                PAGE_HAS_CLASS
             }
     });
     let mut packed = PackedLevel {

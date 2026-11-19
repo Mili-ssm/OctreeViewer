@@ -371,8 +371,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     sorted_seconds.sort_unstable_by(f64::total_cmp);
     let scene = expected.expect("RUNS is at least one");
     let median = if sorted_seconds.len().is_multiple_of(2) {
-        (sorted_seconds[sorted_seconds.len() / 2 - 1] + sorted_seconds[sorted_seconds.len() / 2])
-            * 0.5
+        f64::midpoint(
+            sorted_seconds[sorted_seconds.len() / 2 - 1],
+            sorted_seconds[sorted_seconds.len() / 2],
+        )
     } else {
         sorted_seconds[sorted_seconds.len() / 2]
     };

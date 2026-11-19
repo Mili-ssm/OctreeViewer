@@ -88,7 +88,7 @@ fn create_instance_buffer(
     })
 }
 
-impl<'window> SurfaceRenderer<'window> {
+impl SurfaceRenderer<'_> {
     /// Uploads one scene and returns the bytes written. Existing GPU storage is reused when it fits.
     pub fn upload_scene(&mut self, scene: &RenderScene) -> Result<u64, GpuRendererError> {
         let (bytes, count, bounds) = scene_upload_metadata(
