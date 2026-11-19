@@ -1,6 +1,6 @@
 # Fase 2b: rango de niveles por nodo y transiciones de un nivel (#44) Implementation Plan
 
-Estado: en pausa · 19-11-2026 · su rango por nodo lo ejecutó el [plan del ADR 0055](../records/archive/adr-0055-rango-por-nodo.md) ([registro de cierre](../records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)); fase 2b del [plan maestro](nivel-pedido-y-lod-por-celda.md); replanteada en [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md) (propuesta pendiente del propietario)
+Estado: cerrado · 19-11-2026 · sustituido: su rango por nodo lo ejecutó el [plan del ADR 0055](adr-0055-rango-por-nodo.md) ([registro de cierre](../benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)); fase 2b del [plan maestro](../../plans/nivel-pedido-y-lod-por-celda.md); replanteada en [replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md) (aprobado por el propietario el 18-11-2026)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -14,9 +14,9 @@ phase 2a activates only the closest resident to each octant's wanted depth, meas
 point, so a node whose octants are all near has one active depth and the per-cell rule has nothing to choose from
 (plan 2a, E6).
 
-**Spec:** [ADR 0050](../adr/0050-nivel-por-celda-segun-distancia.md), [ADR 0053](../adr/0053-transiciones-de-un-nivel.md)
-(RF-31), D4 of the [master plan](nivel-pedido-y-lod-por-celda.md), R3-Q11/Q19/Q21 in [requirements](../requirements.md),
-design E1–E8 of [phase 2a](../records/archive/fase-2a-lod-por-celda-en-gpu.md).
+**Spec:** [ADR 0050](../../adr/0050-nivel-por-celda-segun-distancia.md), [ADR 0053](../../adr/0053-transiciones-de-un-nivel.md)
+(RF-31), D4 of the [master plan](../../plans/nivel-pedido-y-lod-por-celda.md), R3-Q11/Q19/Q21 in [requirements](../../requirements.md),
+design E1–E8 of [phase 2a](fase-2a-lod-por-celda-en-gpu.md).
 
 ## Design decisions (agent, 16-11-2026; pre-mortem applied)
 
@@ -119,7 +119,7 @@ screenshots, the P4 and P2/P3 diagnoses and the browser script `run.js`).
 
 ---
 
-### Task 0: The px target is a minimum, and 0.1 mm length minimum by default ([ADR 0054](../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md))
+### Task 0: The px target is a minimum, and 0.1 mm length minimum by default ([ADR 0054](../../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md))
 
 - [x] (7daa1ac, d447b50, 4d1a391, 544bf5c) Refine rule in both modes: a cell refines only if its children would still project to at least the px target and measure at least the length minimum (cubes between N and 2N px; the octant probe and the twin + WGSL share it); default length minimum 0.1 mm in cloud units (metres until the CRS unit is read, phase 3), applied by the driver unless the API sets another; goldens updated with the reason; GPU partition test and sims green in both modes; browser screenshots at the owner's poses.
 
@@ -129,7 +129,7 @@ screenshots, the P4 and P2/P3 diagnoses and the browser script `run.js`).
 - [x] (4083d8c; browser: graded cubes in nodes with residents, a near node without them still drew its finest level) **1b** activate every already-resident depth inside the range (cell mode); browser screenshot of the owner's pose (kill criterion: no bands → stop).
 - [x] (462196a) **1c** fetch stored depths inside the range.
 - [x] (b17e61d; contiguous fill also below spacing ae5a254; browser measurements of queue and heap still pending) **1d** build missing depths on demand down to the spacing/separation depth only; the fit counts requested depths; measure the uncapped need, `levels.bin` coverage, request queue and build-worker heap in the browser.
-- [ ] (known case 18-11-2026: at P4 node 14 draws depth 11 at 3.2–4.0 px (target 4 px) because its range starts at 11 while its visible part needs 10 (`node_far_depth` probes an off-screen corner where planar perspective stretches the cells), [record](../records/benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md); belongs to the per-node range step of ADR 0055) Test: no drawn cell finer than its parent cell needed (`refines()` of the parent), exempting the buildable minimum, caps and the span floor; the sims' `finer_than_wanted` counter drops.
+- [ ] (known case 18-11-2026: at P4 node 14 draws depth 11 at 3.2–4.0 px (target 4 px) because its range starts at 11 while its visible part needs 10 (`node_far_depth` probes an off-screen corner where planar perspective stretches the cells), [record](../benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md); belongs to the per-node range step of ADR 0055) Test: no drawn cell finer than its parent cell needed (`refines()` of the parent), exempting the buildable minimum, caps and the span floor; the sims' `finer_than_wanted` counter drops.
 
 ### Task 2: Node hand-offs within one level (re-planned 16-11-2026 from measurements)
 
@@ -137,7 +137,7 @@ Measured (cell-mode sims on Belvedere V7, per-frame gate of Task 3a): 96 % of ju
 
 - [x] (dd37e9b) **2a (B)** leaves build cell levels from `rep = node_depth + 3` like internal nodes (their coarse levels aggregate many points; the spacing depth stays the start of the single-point tail), in both modes; goldens updated with the reason.
 - [x] (4e427e2) **2b (D)** a node entering the cut seeds its active window at its drawing ancestor's finest active depth + 1 (and a node leaving hands back one level per frame), then widens one level per frame.
-- [x] (gate 7556ddc, visible count 6da8f79; numbers in "Status at pause"; P4 straight border measured 18-11-2026: 0 visible pairs over one level, so no cross-node chain — [record](../records/benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md)) **2c** measure: the temporal gate's node-change jumps (baseline: dolly 13 066, orbit 17 300–19 500) and a new spatial gate — neighbouring lattice samples across a node border differ by ≤ 1 level; if the spatial gate still fails, plan the cross-node chain.
+- [x] (gate 7556ddc, visible count 6da8f79; numbers in "Status at pause"; P4 straight border measured 18-11-2026: 0 visible pairs over one level, so no cross-node chain — [record](../benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md)) **2c** measure: the temporal gate's node-change jumps (baseline: dolly 13 066, orbit 17 300–19 500) and a new spatial gate — neighbouring lattice samples across a node border differ by ≤ 1 level; if the spatial gate still fails, plan the cross-node chain.
 
 ### Task 3: One level per frame (ADR 0053, temporal) — 3a (stepping rule) moved ahead of Task 2 because the closest-resident jump blocks 1d
 
