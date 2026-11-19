@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 ctrlc.workspace = true
+lz4_flex = "0.14"
 las = { workspace = true, features = ["laz-parallel"] }
 # Same version as the lock via `las`; used only to decode the chunk table before `las` does.
 laz = "0.13"

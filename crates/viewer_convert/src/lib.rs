@@ -18,6 +18,11 @@ mod fs_util;
 mod las_source;
 mod pipeline;
 mod publish;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by the framed spool store in task 4")
+)]
+pub(crate) mod spool_frame;
 #[cfg(test)]
 mod test_options;
 mod verify;
