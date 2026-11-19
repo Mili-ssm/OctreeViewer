@@ -1,6 +1,6 @@
 # ADR 0055 en modo celda: rango por nodo y puerta de residencia
 
-Estado: en curso · 18-11-2026 · plan del agente a partir del mapa de arquitectura; pre-mortem aplicado el 18-11-2026; tramo A hecho (tareas 1 a 4), tramo B en pausa hasta decidir cómo se limita `hi`
+Estado: en curso · 18-11-2026 · plan del agente a partir del mapa de arquitectura; pre-mortem aplicado el 18-11-2026; tramo A hecho (tareas 1 a 4) y fusionado (#79); tramo B a replantear: `hi` se limita por datos (OQ-16 resuelta) y el modo octante se retira antes (#67)
 
 **Conclusión.** Doce tareas pequeñas en tres tramos, cada tramo entregable por separado: (A) dividir `cell_pool.rs`,
 medir y corregir el extremo grueso `lo` del rango; (B) rango por nodo completo y campos a nivel de nodo; (C) puerta
