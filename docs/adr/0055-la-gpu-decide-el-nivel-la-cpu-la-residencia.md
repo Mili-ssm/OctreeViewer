@@ -9,7 +9,7 @@ Estado: Aceptada · Fecha: 18-11-2026 · Decide: propietario (propuso el agente;
 - La CPU elige antes los niveles activos con una estimación por octante (sondas, octantes detrás del ojo, caja de
   datos, rango por nodo, pasos, ventana, semillas). Los huecos de las poses P4 y P2 de la fase 2b fueron conjuntos
   activos con saltos (`{11, 18}`), no fallos de E4
-  ([diagnóstico](../plans/replanteamiento-lod-por-celda-18-11-2026.md#por-qué-se-atascó)).
+  ([diagnóstico](../records/archive/replanteamiento-lod-por-celda-18-11-2026.md#por-qué-se-atascó)).
 - El propietario (18-11-2026) pide seguir la intención de los requisitos antes que su literalidad.
 
 ## Decisión
@@ -39,7 +39,7 @@ Estado: Aceptada · Fecha: 18-11-2026 · Decide: propietario (propuso el agente;
 - Los oráculos temporales pasan de (nodo, octante) a muestras de la rejilla; el gemelo y los tests de GPU no cambian.
 - Con movimientos rápidos de cámara un punto puede cambiar más de un nivel entre dos frames: 280 saltos dentro del
   nodo en una órbita simulada de Belvedere, frente a 0 con la ventana
-  ([experimento E-B1](../plans/replanteamiento-lod-por-celda-18-11-2026.md#experimentos)). Es el punto que el
+  ([experimento E-B1](../records/archive/replanteamiento-lod-por-celda-18-11-2026.md#experimentos)). Es el punto que el
   propietario debe aceptar o rechazar.
 - Más niveles activos por nodo cerca del ojo: E4 evalúa cada antepasado activo; hay que medir el paso de celdas.
 

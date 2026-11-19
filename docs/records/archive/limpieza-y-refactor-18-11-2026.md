@@ -8,7 +8,7 @@ de código es un movimiento mecánico comprobado con los tests de antes y de des
 
 **Rama.** `refactor/limpieza` parte de `explore/2b-contiguous-active` (fase 2b más el arreglo del conjunto
 activo) e integra `origin/main` (lints de Clippy, PR #58). No parte del experimento E-B1
-([replanteamiento](../../plans/replanteamiento-lod-por-celda-18-11-2026.md#experimentos)), para que rechazarlo no obligue a
+([replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md#experimentos)), para que rechazarlo no obligue a
 deshacer la limpieza. Nada se publica ni se fusiona sin el visto bueno del propietario.
 
 ## Restricciones

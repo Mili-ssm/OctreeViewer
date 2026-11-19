@@ -7,7 +7,7 @@ empieza un nivel más fino de lo que pide su parte visible: lo fija una esquina 
 pantalla, donde la perspectiva plana estira las celdas.
 
 Medida nativa, sin GPU: el gemelo en CPU de la regla de la GPU sobre la muestra integrada, en modo celda. Cierra
-la casilla 2c de la [fase 2b](../../plans/fase-2b-rango-de-niveles-y-transiciones.md) («P4 straight border
+la casilla 2c de la [fase 2b](../archive/fase-2b-rango-de-niveles-y-transiciones.md) («P4 straight border
 unmeasured»).
 
 ## Condiciones
@@ -62,7 +62,7 @@ Comprobado:
   cálculo de `entry.range`). Para el nodo 14 esa esquina es (16, 32, −0,1).
 - El salto de unos 7 px a unos 3,5 px coincide con la cara del nodo. Las celdas de 3,5 px son más finas que la
   separación de los puntos del suelo (unas 0,13 unidades, según el
-  [plan de la fase 2b](../../plans/fase-2b-rango-de-niveles-y-transiciones.md)) y se ven como puntos sueltos: por
+  [plan de la fase 2b](../archive/fase-2b-rango-de-niveles-y-transiciones.md)) y se ven como puntos sueltos: por
   eso parece una línea.
 
 Comprobado después con el diagnóstico `far_diagnosis` del mismo test (revisión `52e56e5`, rama
@@ -86,7 +86,7 @@ Comprobado después con el diagnóstico `far_diagnosis` del mismo test (revisió
 - **La cadena entre nodos (antiguo F4) no hace falta para P4**: no hay pares visibles con más de un nivel.
 - El defecto está en cómo se calcula el extremo grueso del rango de un nodo: se evalúa en un punto fuera de
   pantalla. Corresponde al paso 1 de «Fuera de
-  esta sesión» del [replanteamiento](../../plans/replanteamiento-lod-por-celda-18-11-2026.md#tareas) (rango por
+  esta sesión» del [replanteamiento](../archive/replanteamiento-lod-por-celda-18-11-2026.md#tareas) (rango por
   nodo, [ADR 0055](../../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md)), que sustituye ese cálculo; P4
   es su caso de prueba.
 - El nodo 14 dibuja por debajo del objetivo de px: es un caso de la casilla abierta de la tarea 1 de la fase 2b

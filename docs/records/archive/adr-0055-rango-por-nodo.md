@@ -17,7 +17,7 @@ octante que queda sin uso. Desde el 18-11-2026 no hay modo octante: ya no existe
 alimentado, y lo que antes solo se podía borrar «tras retirar el modo octante» entra en el tramo C.
 
 Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
-[replanteamiento](../../plans/replanteamiento-lod-por-celda-18-11-2026.md#tareas), que desarrollan el
+[replanteamiento](replanteamiento-lod-por-celda-18-11-2026.md#tareas), que desarrollan el
 [ADR 0055](../../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md). El paso 3 (medir Majadas) va aparte
 ([#69](https://github.com/Mili-ssm/OctreeViewer/issues/69)).
 
@@ -27,7 +27,7 @@ Ejecuta los pasos «Fuera de esta sesión» 1 y 2 del
 | --- | --- | --- |
 | D1 | Dividir `cell_pool.rs` antes de cambiar comportamiento | El paso 1 borra unas 230 de sus 4028 líneas; el resto compartido sigue hasta #67. La puerta «solo se mueve» funciona mejor sin cambios en vuelo, y un trabajador no edita con seguridad un fichero de 4000 líneas |
 | D2 | El rango `[lo, hi]` es una cota: contiene todo nivel que el gemelo de la GPU pide dentro de nodo ∩ datos ∩ vista | Es lo que exige el ADR 0055 (rango conservador). El `lo` actual no lo cumple en P4 ([registro](../benchmarks/R3_FASE2B_BORDE_P4_18-11-2026.md)) |
-| D3 | El oráculo de las simulaciones se independiza de `wanted`/`stage` antes de cambiar lo que significan | Si no, el cambio aflojaría el oráculo sin que nadie lo note (ya pasó: [replanteamiento, «Por qué se atascó»](../../plans/replanteamiento-lod-por-celda-18-11-2026.md#por-qué-se-atascó)) |
+| D3 | El oráculo de las simulaciones se independiza de `wanted`/`stage` antes de cambiar lo que significan | Si no, el cambio aflojaría el oráculo sin que nadie lo note (ya pasó: [replanteamiento, «Por qué se atascó»](replanteamiento-lod-por-celda-18-11-2026.md#por-qué-se-atascó)) |
 | D4 | Los campos por octante de `CellCutEntry` (`wanted`, `drawn`, `stage`, `step`) se **sustituyen** por rango y ancla por nodo; no se rellenan a nivel de nodo (replanteada el 18-11-2026) | Rellenarlos era para no tocar el código compartido con el modo octante, que ya no existe. Queda vigente lo que el pre-mortem encontró: cada lector hay que adaptarlo (`finer_drawn`, la ruta en solitario de `eval_refine_hold`, el tope de `fit`, `needed_levels`, `lost_zones`, el resumen del corte, el `busy` del driver) y la demo da por alcanzado el objetivo con `poolStages === 0` |
 | D5 | La regla de activos (`ActiveRule`) no se toca aquí | La elige el propietario ([#66](https://github.com/Mili-ssm/OctreeViewer/issues/66)); las tareas valen para las dos |
 | D6 | La puerta de residencia (tareas 9 y 10) va antes de borrar semillas y `drawn_ceiling` (tarea 11) | `eval_refine_hold` usa las dos: borrarlas antes deja un estado intermedio que congela al hijo o engrosa la imagen (pre-mortem) |

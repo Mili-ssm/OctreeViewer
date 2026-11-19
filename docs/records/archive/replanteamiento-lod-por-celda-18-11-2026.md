@@ -1,6 +1,6 @@
 # Replanteamiento del LOD por celda: la GPU decide el nivel, la CPU solo la residencia
 
-Estado: aprobado · 19-11-2026 · ejecutado en el [plan del ADR 0055](../records/archive/adr-0055-rango-por-nodo.md) (salida reducida, [registro de cierre](../records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)); dirección validada por el propietario ([respuestas](../records/archive/retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026)); continúa la [fase 2b](fase-2b-rango-de-niveles-y-transiciones.md)
+Estado: cerrado · 19-11-2026 · ejecutado en el [plan del ADR 0055](adr-0055-rango-por-nodo.md) (salida reducida, [registro de cierre](../benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)); dirección validada por el propietario ([respuestas](retomar-18-11-2026.md#respuestas-del-propietario-18-11-2026)); continúa la [fase 2b](fase-2b-rango-de-niveles-y-transiciones.md)
 
 **Conclusión.** La fase 2b se atascó porque la CPU decide por octante qué niveles activa cada nodo, y esa
 estimación falla en cada pose nueva (P4, P2). La regla por celda de la GPU (E4) ya dibuja lo que el propietario
@@ -10,7 +10,7 @@ locales dan el primer paso: el cuadrante negro de la pose P2 desaparece. Nada se
 propietario.
 
 Glosario: **E4** es la regla de dibujo por celda de la GPU y **D5** la puerta que cubre la zona libre de una celda
-gruesa con máscara ([plan de la fase 2a](../records/archive/fase-2a-lod-por-celda-en-gpu.md)); **F2** y **F4** son decisiones del
+gruesa con máscara ([plan de la fase 2a](fase-2a-lod-por-celda-en-gpu.md)); **F2** y **F4** son decisiones del
 [plan de la fase 2b](fase-2b-rango-de-niveles-y-transiciones.md); **P1–P5** son las poses de cámara de la muestra
 integrada que usa ese plan; **Q1–Q5** son las preguntas de este documento.
 
@@ -50,23 +50,23 @@ Citas del propietario tal como las transcriben los ADR; no hay fuente primaria q
 
 | # | Fin | Fuente |
 | --- | --- | --- |
-| I1 | La nube se dibuja con cubos 3D (vóxeles); nunca un cubo menor que el objetivo de px ni que el mínimo en longitud | RF-03 (cubos), RQ-09 y [ADR 0054](../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md) |
-| I2 | El tamaño de cada celda sigue su distancia al ojo: «debería ser un radio, no por cuadrante»; «un oleaje de LODs» | [ADR 0050](../adr/0050-nivel-por-celda-segun-distancia.md) |
-| I3 | Sin huecos, sin cubos dobles, sin saltos bruscos: la imagen cambia de forma gradual | [ADR 0053](../adr/0053-transiciones-de-un-nivel.md); RQ-02 para los huecos |
-| I4 | Memoria acotada; si no cabe, toda la nube baja de detalle por igual | [ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md), R3-Q11 |
-| I5 | Lo que se guarda no limita lo que se dibuja: los niveles que faltan se construyen | [ADR 0048](../adr/0048-el-render-dibuja-el-nivel-pedido.md) |
-| I6 | Prioridad: fidelidad > fluidez > escala > memoria > velocidad de conversión | [requisitos](../requirements.md#propósito-y-usuarios) |
+| I1 | La nube se dibuja con cubos 3D (vóxeles); nunca un cubo menor que el objetivo de px ni que el mínimo en longitud | RF-03 (cubos), RQ-09 y [ADR 0054](../../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md) |
+| I2 | El tamaño de cada celda sigue su distancia al ojo: «debería ser un radio, no por cuadrante»; «un oleaje de LODs» | [ADR 0050](../../adr/0050-nivel-por-celda-segun-distancia.md) |
+| I3 | Sin huecos, sin cubos dobles, sin saltos bruscos: la imagen cambia de forma gradual | [ADR 0053](../../adr/0053-transiciones-de-un-nivel.md); RQ-02 para los huecos |
+| I4 | Memoria acotada; si no cabe, toda la nube baja de detalle por igual | [ADR 0052](../../adr/0052-retencion-y-ajuste-al-pool-por-celda.md), R3-Q11 |
+| I5 | Lo que se guarda no limita lo que se dibuja: los niveles que faltan se construyen | [ADR 0048](../../adr/0048-el-render-dibuja-el-nivel-pedido.md) |
+| I6 | Prioridad: fidelidad > fluidez > escala > memoria > velocidad de conversión | [requisitos](../../requirements.md#propósito-y-usuarios) |
 
 ## Requisitos replanteados (decisiones del agente, a validar)
 
 Cada fila conserva el fin y cambia el medio. «Blando» significa medio revisable según el
-[catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-aceptado-19-11-2026).
+[catálogo](../../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-aceptado-19-11-2026).
 
 | # | Texto actual | Problema | Lectura propuesta |
 | --- | --- | --- | --- |
 | R1 | RF-31, ADR 0053: el nivel de cada punto cambia como mucho uno por frame | Exige historia por celda; hoy no se cumple en modo celda (se mide, no se afirma) y generó el estado de pasos | Fin: sin saltos visibles (I3). **Espacial:** conjunto activo sin huecos dentro del nodo (hoy se cumple alrededor de cada nivel dibujado; entre dos niveles dibujados puede quedar un hueco hasta que los intermedios son residentes). **Temporal:** los niveles entran al hacerse residentes, pedidos primero los adyacentes; con movimientos rápidos un punto puede cambiar más de un nivel entre dos frames (medido en E-B1). RF-31 pasaría a blando en su parte «por frame» si el propietario lo acepta (Q1) |
 | R2 | R3-Q21: mientras llega el nivel pedido se dibuja el residente más cercano | Con residentes `{11, 18}` activa el 18 y dibuja celdas de 0,2 px (cuadrante negro de P2) | En modo celda un nivel del rango no se activa si entre él y lo que ya se dibuja falta un nivel residente; los intermedios se piden. Gana RQ-09 (I1). Lo que ya se dibuja no se suelta: anclar el tramo en el nivel más grueso engrosaba la imagen (probado y descartado en E-B1) |
-| R3 | ADR 0034, ADR 0048 («cada octante»), F2 del plan 2b | La CPU estima por octante lo que la GPU calcula por celda | La CPU calcula por nodo un rango conservador `[lo, hi]` solo para pedir, retener y soltar niveles. [ADR 0055](../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) (propuesta) |
+| R3 | ADR 0034, ADR 0048 («cada octante»), F2 del plan 2b | La CPU estima por octante lo que la GPU calcula por celda | La CPU calcula por nodo un rango conservador `[lo, hi]` solo para pedir, retener y soltar niveles. [ADR 0055](../../adr/0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) (propuesta) |
 | R4 | Plan 2b: modo octante sin cambios byte a byte | Mantiene dos rutas (27 ramas `LodMode` en `cell_pool.rs`) y tiene sus propios huecos ([#59](https://github.com/Mili-ssm/OctreeViewer/issues/59)) | El modo octante queda congelado: no recibe arreglos y deja de condicionar el diseño del modo celda. Retirarlo es decisión del propietario (Q2) |
 | R5 | ADR 0053 (contiguo, ~531 MiB) frente a D4 y al pool de 512 MiB | 531 MiB es el peor caso estimado en la fase 0a con todos los niveles | Contiguo dentro del presupuesto; si no cabe, el ajuste sube el objetivo de px de toda la nube (I4), como ya dice R3-Q11. Sin cifra nueva hasta medirlo |
 | R6 | Puertas por frame y de bordes como criterio de parada | No discriminan | La comprobación que decide es el navegador en las poses P1–P5; las puertas de simulación se miden y se informa su cobertura visible |

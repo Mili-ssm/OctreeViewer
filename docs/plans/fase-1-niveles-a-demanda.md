@@ -18,7 +18,7 @@ in-process path wires the same calls without workers. Per-octant selection (ADR 
 (`examples/web-host`), `node --test`.
 
 **Spec:** [ADR 0048](../adr/0048-el-render-dibuja-el-nivel-pedido.md); master plan
-[nivel-pedido-y-lod-por-celda.md](nivel-pedido-y-lod-por-celda.md) (phase 1, decision D1); measurements in
+[nivel-pedido-y-lod-por-celda.md](../records/archive/nivel-pedido-y-lod-por-celda.md) (phase 1, decision D1); measurements in
 [R3_CELL_LOD_0A_15-11-2026](../records/benchmarks/R3_CELL_LOD_0A_15-11-2026.md).
 
 ## Global Constraints

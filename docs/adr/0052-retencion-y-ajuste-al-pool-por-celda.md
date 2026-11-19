@@ -4,7 +4,7 @@ Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Precisa R3-Q19, 
 
 ## Contexto
 - R3-Q19, R3-Q21 y R3-Q11 ([requisitos](../requirements.md)) están redactadas por nodo entero. El LOD por celda
-  (ADR 0050) necesita su versión por celda ([plan](../plans/nivel-pedido-y-lod-por-celda.md), fase 0b).
+  (ADR 0050) necesita su versión por celda ([plan](../records/archive/nivel-pedido-y-lod-por-celda.md), fase 0b).
 - El propietario (15-11-2026):
   - R3-Q19 por celda: sí.
   - R3-Q21: «si te acercas a un vóxel se siga viendo el mismo vóxel hasta que carguen los hijos; si tenemos la
