@@ -499,6 +499,34 @@ struct Totals {
     /// (`check_active_gaps`), summed over frames, and the first such case.
     active_gaps: usize,
     first_gap: Option<String>,
+    /// Where the single run of `node_run` differs from today's emitted set (`check_run_diff`).
+    run_diff: RunDiff,
+}
+
+/// Classes of a difference between today's active set of a node and its `node_run` run, in the
+/// order they are tried.
+const RUN_CLASSES: [&str; 6] = [
+    "gap",
+    "above_hi",
+    "entering",
+    "prev_unusable",
+    "fine_end",
+    "unclassified",
+];
+
+#[derive(Default, Debug)]
+struct RunDiff {
+    /// Nodes compared, and the ones that differ per class.
+    compared: usize,
+    classes: [usize; 6],
+    /// First example per class.
+    examples: [Option<String>; 6],
+    /// Differing nodes whose run top is below / above today's top.
+    coarser: usize,
+    finer: usize,
+    first_coarser: Option<String>,
+    /// Applied runs of the previous drawn frame, the `prev` of the next one.
+    prev: HashMap<NodeId, (u8, u8)>,
 }
 
 /// `(node, wanted, drawn)` of an entry of the last plan.
@@ -752,7 +780,105 @@ impl Harness {
         self.totals.gpu_digest = (self.totals.gpu_digest ^ gpu).wrapping_mul(0x0000_0100_0000_01b3);
         self.totals.gpu_digest_last = gpu;
         self.check_active_gaps(number, plan);
+        self.check_run_diff(number, plan);
         self.check_cell_cut(number, plan, digest);
+    }
+
+    /// Measurement, no assertion: for every node of the applied cut, compares the depths the GPU
+    /// gets today (the active levels, minus the D5 depth when it is not contiguous with the rest)
+    /// with the run of `node_run` (`CellCutEntry::node_run`), and classifies each difference.
+    fn check_run_diff(&mut self, number: usize, plan: &FramePlan) {
+        let pool = self.driver.pool();
+        let hierarchy = self.dataset.metadata.hierarchy();
+        let grid = self.dataset.cell_grid();
+        let mut diff = std::mem::take(&mut self.totals.run_diff);
+        for entry in &plan.entries {
+            let (Some((_, hi)), Some(run), Some(node)) =
+                (entry.range, entry.node_run, hierarchy.node(entry.node))
+            else {
+                continue;
+            };
+            let base = representative_depth(&grid, node.bounds()).saturating_sub(3);
+            let d5 = entry
+                .mask
+                .iter()
+                .any(|word| *word != 0)
+                .then(|| {
+                    (base + 3..=base + MAX_NODE_SPAN)
+                        .find(|depth| pool.is_resident(pool.key(entry.node, *depth)))
+                })
+                .flatten();
+            let mut today: Vec<u8> = plan
+                .active
+                .iter()
+                .filter(|level| level.key.node == entry.node)
+                .map(|level| level.key.depth)
+                .collect();
+            today.sort_unstable();
+            if let Some(d5) = d5
+                && !(today.contains(&(d5 + 1)) || d5 > 0 && today.contains(&(d5 - 1)))
+            {
+                today.retain(|depth| *depth != d5);
+            }
+            let (Some(&top), Some(&bottom)) = (today.last(), today.first()) else {
+                continue;
+            };
+            diff.compared += 1;
+            let wanted_set: Vec<u8> = (run.0..=run.1).collect();
+            if today == wanted_set {
+                continue;
+            }
+            let prev = diff.prev.get(&entry.node).copied();
+            let usable: Vec<u8> = (0..=40)
+                .filter(|depth| pool.is_usable(pool.key(entry.node, *depth)))
+                .collect();
+            let class = if today.windows(2).any(|pair| pair[1] != pair[0] + 1) {
+                0
+            } else if top > hi
+                && today.iter().filter(|depth| **depth > hi).count()
+                    != wanted_set.iter().filter(|depth| **depth > hi).count()
+            {
+                1
+            } else if prev.is_none() {
+                2
+            } else if prev.is_some_and(|(_, fine)| !usable.contains(&fine)) {
+                3
+            } else if bottom == run.0 && top != run.1 {
+                4
+            } else {
+                5
+            };
+            diff.classes[class] += 1;
+            if run.1 < top {
+                diff.coarser += 1;
+            } else if run.1 > top {
+                diff.finer += 1;
+            }
+            let example = || {
+                format!(
+                    "{} frame {number}: node {:?} today {today:?} node_run {run:?} range {:?} \
+                     anchor {:?} prev {prev:?} usable {usable:?} stage {} step {:?} D5 {d5:?}",
+                    RUN_CLASSES[class],
+                    entry.node,
+                    entry.range,
+                    entry.node_anchor,
+                    entry.node_stage,
+                    entry.node_step
+                )
+            };
+            if diff.examples[class].is_none() {
+                diff.examples[class] = Some(example());
+            }
+            if run.1 < top && diff.first_coarser.is_none() {
+                diff.first_coarser = Some(example());
+            }
+        }
+        diff.prev = plan
+            .entries
+            .iter()
+            .filter_map(|entry| Some((entry.node, pool.applied_run_of(entry.node)?)))
+            .collect();
+        self.totals.run_diff = diff;
     }
 
     /// Cell-mode oracle: a 7^3 lattice over the bounds of every node of the applied cut, asked of

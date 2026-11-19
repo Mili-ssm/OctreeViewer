@@ -73,6 +73,12 @@ struct SimStats {
     gpu_digest: u64,
     gpu_digest_last: u64,
     active_gaps: usize,
+    /// `RunDiff` of the harness: nodes compared, differences per class of `RUN_CLASSES`, and the
+    /// ones whose run top is below / above today's top.
+    run_compared: usize,
+    run_classes: [usize; 6],
+    run_coarser: usize,
+    run_finer: usize,
 }
 
 struct Sim {
@@ -310,6 +316,11 @@ impl Sim {
         self.stats.gpu_digest = self.h.totals.gpu_digest;
         self.stats.gpu_digest_last = self.h.totals.gpu_digest_last;
         self.stats.active_gaps = self.h.totals.active_gaps;
+        let diff = &self.h.totals.run_diff;
+        self.stats.run_compared = diff.compared;
+        self.stats.run_classes = diff.classes;
+        self.stats.run_coarser = diff.coarser;
+        self.stats.run_finer = diff.finer;
         if let Some(requests) = self.h.driver.take_level_requests() {
             self.h.lag.requests = requests.len();
             self.level_requests = Some(requests);
@@ -464,6 +475,15 @@ fn check_stats(label: &str, sim: &Sim) {
     );
     if let Some(gap) = &sim.h.totals.first_gap {
         println!("{label}: first active gap: {gap}");
+    }
+    let diff = &sim.h.totals.run_diff;
+    for (name, example) in RUN_CLASSES.iter().zip(&diff.examples) {
+        if let Some(example) = example {
+            println!("{label}: first run difference, {name}: {example}");
+        }
+    }
+    if let Some(example) = &diff.first_coarser {
+        println!("{label}: first run difference with node_run coarser: {example}");
     }
     assert_eq!(
         sim.h.unexcused_drops, 0,

@@ -773,6 +773,13 @@ impl CellPool {
         self.is_resident(key) && !self.fresh.contains(&key)
     }
 
+    /// Fine/coarse ends of the run the node drew in the last applied cut, without its D5 depth
+    /// (B3). Read-only, for the simulation harness; not used by production code.
+    #[doc(hidden)]
+    pub fn applied_run_of(&self, id: NodeId) -> Option<(u8, u8)> {
+        self.applied_run.get(&id).copied()
+    }
+
     /// Packed data of a requested, uploading or resident level, for the GPU glue.
     pub fn level(&self, key: LevelKey) -> Option<&PackedLevel> {
         self.levels.get(&key)?.data.as_deref()
