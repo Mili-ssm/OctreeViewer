@@ -12,7 +12,8 @@ pub(crate) const MAX_FRAME_RECORDS: usize = 8192;
 const RAW_FLAG: u32 = 1 << 31;
 
 thread_local! {
-    static PLANES: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    // (planes, compressed) scratch; lengths persist so steady state never re-zeroes.
+    static SCRATCH: RefCell<(Vec<u8>, Vec<u8>)> = const { RefCell::new((Vec::new(), Vec::new())) };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,42 +39,74 @@ fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.to_owned())
 }
 
+fn grow(buffer: &mut Vec<u8>, len: usize) {
+    if buffer.len() < len {
+        buffer.resize(len, 0);
+    }
+}
+
+/// Copies between record-interleaved and plane order; `src` and `dst` have the same length.
+fn transpose(src: &[u8], dst: &mut [u8], record_bytes: usize, to_planes: bool) {
+    let count = src.len() / record_bytes;
+    for record in 0..count {
+        for plane in 0..record_bytes {
+            let interleaved = record * record_bytes + plane;
+            let planar = plane * count + record;
+            if to_planes {
+                dst[planar] = src[interleaved];
+            } else {
+                dst[interleaved] = src[planar];
+            }
+        }
+    }
+}
+
 /// Appends header and payload to `out`. `records.len()` must be a multiple of `record_bytes` and at
 /// most `MAX_FRAME_RECORDS` records. Allocates only by growing `out` (plus a per-thread scratch).
 pub(crate) fn encode_frame(records: &[u8], record_bytes: usize, out: &mut Vec<u8>) {
     assert!(record_bytes > 0 && records.len().is_multiple_of(record_bytes));
     assert!(records.len() / record_bytes <= MAX_FRAME_RECORDS);
     let logical_len = u32::try_from(records.len()).expect("frame fits u32 by the record limit");
-    let start = out.len();
     let max = lz4_flex::block::get_maximum_output_size(records.len());
-    out.resize(start + FRAME_HEADER_BYTES + max, 0);
-    let compressed = PLANES.with_borrow_mut(|planes| {
-        planes.clear();
-        planes.resize(records.len(), 0);
-        let count = records.len() / record_bytes;
-        for (record, chunk) in records.chunks_exact(record_bytes).enumerate() {
-            for (plane, &byte) in chunk.iter().enumerate() {
-                planes[plane * count + record] = byte;
-            }
+    let header_at = out.len();
+    out.extend_from_slice(&[0; FRAME_HEADER_BYTES]);
+    let (stored, flag) = SCRATCH.with_borrow_mut(|(planes, compressed)| {
+        grow(planes, records.len());
+        grow(compressed, max);
+        let planes = &mut planes[..records.len()];
+        transpose(records, planes, record_bytes, true);
+        let written = lz4_flex::block::compress_into(planes, compressed)
+            .expect("output sized with get_maximum_output_size");
+        if written < records.len() {
+            out.extend_from_slice(&compressed[..written]);
+            (written, 0)
+        } else {
+            out.extend_from_slice(records);
+            (records.len(), RAW_FLAG)
         }
-        lz4_flex::block::compress_into(planes, &mut out[start + FRAME_HEADER_BYTES..])
-            .expect("output sized with get_maximum_output_size")
     });
-    let (stored, flag) = if compressed < records.len() {
-        out.truncate(start + FRAME_HEADER_BYTES + compressed);
-        (compressed, 0)
-    } else {
-        out.truncate(start + FRAME_HEADER_BYTES);
-        out.extend_from_slice(records);
-        (records.len(), RAW_FLAG)
-    };
     let stored = u32::try_from(stored).expect("stored length fits u32") | flag;
-    out[start..start + 4].copy_from_slice(&logical_len.to_le_bytes());
-    out[start + 4..start + FRAME_HEADER_BYTES].copy_from_slice(&stored.to_le_bytes());
+    out[header_at..header_at + 4].copy_from_slice(&logical_len.to_le_bytes());
+    out[header_at + 4..header_at + FRAME_HEADER_BYTES].copy_from_slice(&stored.to_le_bytes());
 }
 
-/// Replaces `out` with the original records. The header is untrusted: every length is validated.
+/// Replaces `out` with the original records; on error `out` is left empty. The header is
+/// untrusted: every length is validated.
 pub(crate) fn decode_frame(
+    header: FrameHeader,
+    payload: &[u8],
+    record_bytes: usize,
+    out: &mut Vec<u8>,
+) -> io::Result<()> {
+    out.clear();
+    let result = decode_into(header, payload, record_bytes, out);
+    if result.is_err() {
+        out.clear();
+    }
+    result
+}
+
+fn decode_into(
     header: FrameHeader,
     payload: &[u8],
     record_bytes: usize,
@@ -89,7 +122,6 @@ pub(crate) fn decode_frame(
     if header.stored_len as usize != payload.len() {
         return Err(invalid("spool frame payload length mismatch"));
     }
-    out.clear();
     if header.raw {
         if payload.len() != logical {
             return Err(invalid("raw spool frame length mismatch"));
@@ -97,21 +129,16 @@ pub(crate) fn decode_frame(
         out.extend_from_slice(payload);
         return Ok(());
     }
-    let count = logical / record_bytes;
-    out.resize(logical, 0);
-    PLANES.with_borrow_mut(|planes| {
-        planes.clear();
-        planes.resize(logical, 0);
+    SCRATCH.with_borrow_mut(|(planes, _)| {
+        grow(planes, logical);
+        let planes = &mut planes[..logical];
         let written = lz4_flex::block::decompress_into(payload, planes)
             .map_err(|_| invalid("corrupt compressed spool frame"))?;
         if written != logical {
             return Err(invalid("spool frame decompressed size mismatch"));
         }
-        for (record, chunk) in out.chunks_exact_mut(record_bytes).enumerate() {
-            for (plane, byte) in chunk.iter_mut().enumerate() {
-                *byte = planes[plane * count + record];
-            }
-        }
+        out.resize(logical, 0);
+        transpose(planes, out, record_bytes, false);
         Ok(())
     })
 }
@@ -160,16 +187,42 @@ mod tests {
                 encode_frame(&records, record_bytes, &mut frame);
                 let frame = &frame[1..];
                 assert_eq!(decode(frame, record_bytes).unwrap(), records);
-                if count > 1 {
-                    assert!(frame.len() < records.len(), "{record_bytes} x {count}");
+                let header = FrameHeader::parse(frame[..8].try_into().unwrap());
+                // Never larger than raw; raw frames are exactly header + records.
+                assert!(frame.len() <= FRAME_HEADER_BYTES + records.len());
+                if header.raw {
+                    assert_eq!(frame.len(), FRAME_HEADER_BYTES + records.len());
                 }
-                if count == 780 {
-                    println!(
-                        "ratio {record_bytes} B x {count}: {:.2}",
-                        records.len() as f64 / frame.len() as f64
+                if count > 1 {
+                    assert!(
+                        !header.raw && frame.len() < records.len(),
+                        "{record_bytes} x {count}"
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn compressed_payload_holds_byte_planes() {
+        for record_bytes in [42, 54] {
+            let records = structured(780, record_bytes);
+            let mut frame = Vec::new();
+            encode_frame(&records, record_bytes, &mut frame);
+            let mut expected = Vec::new();
+            for plane in 0..record_bytes {
+                expected.extend(
+                    records
+                        .chunks_exact(record_bytes)
+                        .map(|record| record[plane]),
+                );
+            }
+            let mut planes = vec![0; records.len()];
+            let written =
+                lz4_flex::block::decompress_into(&frame[FRAME_HEADER_BYTES..], &mut planes)
+                    .unwrap();
+            assert_eq!(written, records.len());
+            assert_eq!(planes, expected);
         }
     }
 
@@ -185,27 +238,76 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_payload_is_invalid_data() {
+    fn corrupt_frames_are_invalid_data_and_leave_out_empty() {
         let records = structured(780, 42);
         let mut frame = Vec::new();
         encode_frame(&records, 42, &mut frame);
-        let header = FrameHeader::parse(frame[..8].try_into().unwrap());
-        assert!(!header.raw);
-        let payload = &frame[FRAME_HEADER_BYTES..frame.len() - 5];
-        let mut out = Vec::new();
-        let truncated = FrameHeader {
-            stored_len: u32::try_from(payload.len()).unwrap(),
-            ..header
-        };
-        for bad in [header, truncated] {
-            let error = decode_frame(bad, payload, 42, &mut out).unwrap_err();
-            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        let good = FrameHeader::parse(frame[..8].try_into().unwrap());
+        assert!(!good.raw);
+        let payload = &frame[FRAME_HEADER_BYTES..];
+        let truncated = &payload[..payload.len() - 5];
+        let len = |bytes: &[u8]| u32::try_from(bytes.len()).unwrap();
+        let wrong_size_block = lz4_flex::block::compress(&records[..42 * 10]);
+        let max_len = u32::try_from(MAX_FRAME_RECORDS * 42 + 42).unwrap();
+        let cases: Vec<(&str, FrameHeader, &[u8], usize)> = vec![
+            ("zero record_bytes", good, payload, 0),
+            (
+                "too many records",
+                FrameHeader {
+                    logical_len: max_len,
+                    ..good
+                },
+                payload,
+                42,
+            ),
+            (
+                "not a multiple",
+                FrameHeader {
+                    logical_len: good.logical_len - 1,
+                    ..good
+                },
+                payload,
+                42,
+            ),
+            (
+                "raw length differs",
+                FrameHeader { raw: true, ..good },
+                payload,
+                42,
+            ),
+            (
+                "stored_len differs",
+                FrameHeader {
+                    stored_len: good.stored_len + 1,
+                    ..good
+                },
+                payload,
+                42,
+            ),
+            (
+                "truncated payload",
+                FrameHeader {
+                    stored_len: len(truncated),
+                    ..good
+                },
+                truncated,
+                42,
+            ),
+            (
+                "valid block of wrong size",
+                FrameHeader {
+                    stored_len: len(&wrong_size_block),
+                    ..good
+                },
+                &wrong_size_block,
+                42,
+            ),
+        ];
+        for (name, header, payload, record_bytes) in cases {
+            let mut out = vec![1, 2, 3];
+            let error = decode_frame(header, payload, record_bytes, &mut out).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData, "{name}");
+            assert!(out.is_empty(), "{name}");
         }
-        let misaligned = FrameHeader {
-            logical_len: header.logical_len - 1,
-            ..header
-        };
-        let error = decode_frame(misaligned, &frame[8..], 42, &mut out).unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
 }
