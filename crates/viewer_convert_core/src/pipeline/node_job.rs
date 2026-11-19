@@ -817,8 +817,8 @@ pub fn merge_root_ranges<S: SpoolStore>(
     })
 }
 
-/// Copies closed `segments` (in range order) into the new spool `target` in 64 KiB chunks and
-/// deletes each right after copying it. Returns the bytes copied. Never called with an empty
+/// Copies closed `segments` (in range order) into the new spool `target`, created with
+/// `record_bytes`, in 64 KiB chunks and deletes each right after copying it. Returns the bytes copied. Never called with an empty
 /// slice.
 pub fn join_segments<S: SpoolStore>(
     store: &S,
@@ -859,7 +859,8 @@ pub fn spool_source<P: PointSource, S: SpoolStore>(
     progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
 ) -> Result<u64, ConvertError> {
     let range = source.range();
-    store.create(id, SpoolLayout::source(info).record_bytes())?;
+    let record_bytes = SpoolLayout::source(info).record_bytes();
+    store.create(id, record_bytes)?;
     let mut writer = StoreWriter { store, id };
     let mut point_data = PointDataBuilder::new().for_header(source.header()).build();
     while source.next_index() < range.end {
@@ -877,7 +878,7 @@ pub fn spool_source<P: PointSource, S: SpoolStore>(
     }
     store.close(id)?;
     (range.end - range.start)
-        .checked_mul(SpoolLayout::source(info).record_bytes() as u64)
+        .checked_mul(record_bytes as u64)
         .ok_or(ConvertError::SizeOverflow)
 }
 

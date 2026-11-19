@@ -167,6 +167,9 @@ pub fn entry_in<'a, T>(
 struct MemSpool {
     phase: Phase,
     data: Vec<u8>,
+    /// Stride the caller declared at `create`; `close` checks the spool holds whole records, so a
+    /// caller that passes the wrong size fails the tests instead of silently mis-striding.
+    record_bytes: usize,
 }
 
 #[derive(Default)]
@@ -221,7 +224,7 @@ impl MemSpoolStore {
 impl SpoolStore for MemSpoolStore {
     type Reader = io::Cursor<Vec<u8>>;
 
-    fn create(&self, id: SpoolId, _record_bytes: usize) -> Result<(), ConvertError> {
+    fn create(&self, id: SpoolId, record_bytes: usize) -> Result<(), ConvertError> {
         let mut state = lock(&self.state);
         if state.spools.contains_key(&id) {
             return Err(lifecycle_error(id, "create", "id was already used"));
@@ -231,6 +234,7 @@ impl SpoolStore for MemSpoolStore {
             MemSpool {
                 phase: Phase::Open,
                 data: Vec::new(),
+                record_bytes,
             },
         );
         state.live_spools += 1;
@@ -251,7 +255,11 @@ impl SpoolStore for MemSpoolStore {
 
     fn close(&self, id: SpoolId) -> Result<(), ConvertError> {
         let mut state = lock(&self.state);
-        entry_in(&mut state.spools, id, "close", Phase::Open, |s| s.phase)?.phase = Phase::Closed;
+        let spool = entry_in(&mut state.spools, id, "close", Phase::Open, |s| s.phase)?;
+        if spool.record_bytes == 0 || !spool.data.len().is_multiple_of(spool.record_bytes) {
+            return Err(lifecycle_error(id, "close", "length is not a whole number of records"));
+        }
+        spool.phase = Phase::Closed;
         Ok(())
     }
 
