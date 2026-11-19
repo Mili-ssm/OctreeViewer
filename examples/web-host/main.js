@@ -56,7 +56,6 @@ const minLengthFields = document.getElementById("min-length-length-fields");
 const spacingFields = document.getElementById("min-length-spacing-fields");
 const spacingInfo = document.getElementById("min-length-spacing-info");
 const continuityFactor = document.getElementById("continuity-factor");
-const cellLodSelect = document.getElementById("cell-lod");
 const cellActiveSelect = document.getElementById("cell-active");
 const cameraMode = document.getElementById("camera-mode");
 const cameraModeHelp = document.getElementById("camera-mode-help");
@@ -527,10 +526,9 @@ function handleWorkerMessage(event) {
             });
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
-        // Per-cell selection and the contiguous rule are initialised from the URL (`?cellLod=`,
-        // `?cellActive=`, OQ-11 issue #66) and then follow the selects; a recreated worker gets them again.
+        // The active-depth rule is initialised from the URL (`?cellActive=`, OQ-11 issue #66) and then
+        // follows the select; a recreated worker gets it again.
         syncCellControls();
-        worker.postMessage({ type: "setCellLod", mode: cellLodSelect.value });
         worker.postMessage({ type: "setCellActiveRule", rule: cellActiveSelect.value });
         sendMinLength();
         requestFrameOnce();
@@ -879,11 +877,8 @@ depthShading.addEventListener("change", () => {
 // Minimum cube size (ADR 0049/0054). Invalid numbers are not sent: the last valid value stays and the
 // input is marked.
 const initialParams = new URLSearchParams(location.search);
-const initialCellLod = initialParams.get("cellLod");
-if (initialCellLod === "octant" || initialCellLod === "cell") {
-    cellLodSelect.value = initialCellLod;
-} else if (initialCellLod !== null) {
-    console.warn(`ignoring ?cellLod=${initialCellLod}: expected "octant" or "cell"`);
+if (initialParams.has("cellLod")) {
+    console.warn("ignoring ?cellLod=: the parameter was removed and the viewer always uses per-cell level selection");
 }
 const initialCellActive = initialParams.get("cellActive");
 if (initialCellActive === "window" || initialCellActive === "contiguous") {
@@ -895,8 +890,7 @@ if (initialCellActive === "window" || initialCellActive === "contiguous") {
 const lastValid = { side: lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value), factor: 1 };
 
 function syncCellControls() {
-    cellLodSelect.disabled = !ready;
-    cellActiveSelect.disabled = !ready || cellLodSelect.value === "octant";
+    cellActiveSelect.disabled = !ready;
     minLengthMode.disabled = !ready;
     minLengthValue.disabled = !ready;
     minLengthUnit.disabled = !ready;
@@ -947,11 +941,6 @@ for (const control of [minLengthMode, minLengthValue, minLengthUnit, continuityF
 }
 minLengthValue.addEventListener("input", () => {
     minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value))));
-});
-cellLodSelect.addEventListener("change", () => {
-    resetBenchmarkWindow();
-    syncCellControls();
-    worker.postMessage({ type: "setCellLod", mode: cellLodSelect.value });
 });
 cellActiveSelect.addEventListener("change", () => {
     resetBenchmarkWindow();

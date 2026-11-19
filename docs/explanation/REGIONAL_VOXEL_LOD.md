@@ -299,8 +299,8 @@ resultados en el [registro](../records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-
 
 ### Opción
 
-`cellLod` vale `octant` (por defecto) o `cell`. Se fija con `?cellLod=` en la URL al arrancar o con la API del visor
-(`setCellLod`); no hay control en la interfaz. Ver [`examples/web-host/README.md`](../../examples/web-host/README.md).
+Ya no hay opción de modo: la API `setCellLod` y el parámetro `?cellLod=` se retiraron (el parámetro se ignora con un
+aviso en consola) y el visor elige siempre por celda. Ver [`examples/web-host/README.md`](../../examples/web-host/README.md).
 
 `cellActive` (experimental) vale `window` (por defecto: la ventana de un nivel por fotograma del ADR 0053) o
 `contiguous` (la tirada residente contigua del rango, de golpe). Se fija con `?cellActive=` o con

@@ -84,7 +84,7 @@ impl GlueSim {
             rest: None,
             rng: Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1),
             stats: GlueStats::default(),
-            mode: LodMode::Octant,
+            mode: LodMode::Cell,
         }
     }
 
@@ -605,8 +605,9 @@ fn in_process_updates(
 fn switching_mode_rewrites_the_page_table() {
     let views = synth_orbit();
     let view = views.last().unwrap();
-    let mut h = synthetic_harness(1 << 20, 2.0);
+    let mut h = synthetic_harness(1 << 20, 2.0).in_mode(LodMode::Octant);
     let mut cells = InProcessCells::new(&h.dataset, h.config);
+    cells.set_lod_mode(LodMode::Octant);
     let mut target = StrictTarget::default();
     cells.mark_dirty();
     in_process_updates(&mut h, &mut cells, &mut target, view, 20_000);
@@ -637,7 +638,8 @@ fn switching_mode_rewrites_the_page_table() {
 fn switching_mode_rewrites_the_page_table_through_the_glue() {
     let views = synth_orbit();
     let view = views.last().unwrap();
-    let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), u64::MAX, 3, 1 << 20);
+    let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), u64::MAX, 3, 1 << 20)
+        .in_mode(LodMode::Octant);
     sim.run(&views, Inject::default(), 200_000);
     assert!(!sim.h.target.table.is_empty(), "octant mode drew nothing");
     assert!(

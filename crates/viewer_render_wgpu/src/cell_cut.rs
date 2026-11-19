@@ -72,11 +72,11 @@ pub(crate) type FastSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum LodMode {
     /// One level per octant; a spanning level (depth <= the node's) is drawn whole and alone.
-    #[default]
     Octant,
     /// Several levels per node may draw at once, chosen per cell by the GPU: the active set is
     /// the closest resident level of each octant, restricted to the depths a node record can
-    /// hold (`cell_depth_range`).
+    /// hold (`cell_depth_range`). The default.
+    #[default]
     Cell,
 }
 
@@ -1011,7 +1011,7 @@ pub fn cell_cut(
     coordinate_origin: [f64; 3],
     target_px: f64,
 ) -> Result<Vec<CellCutEntry>, CellCutError> {
-    cell_cut_with(cut, node, grid, LodMode::Octant, &|_, octant, data| {
+    cell_cut_with(cut, node, grid, LodMode::Cell, &|_, octant, data| {
         octant_wanted_depth(
             view,
             grid,
