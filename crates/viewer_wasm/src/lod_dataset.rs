@@ -30,6 +30,7 @@ pub struct DatasetUnit {
     #[serde(rename = "unit")]
     pub name: String,
     pub metres_per_unit: Option<f64>,
+    #[serde(default)]
     pub assumed: bool,
     /// The CRS declared a unit that could not be interpreted (metres are assumed).
     #[serde(default)]

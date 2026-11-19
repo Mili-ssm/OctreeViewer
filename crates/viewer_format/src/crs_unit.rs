@@ -57,8 +57,9 @@ impl CrsUnit {
     }
 
     fn linear(name: &str, metres_per_unit: f64) -> Self {
+        // A unit with an unusable factor was declared but cannot be read.
         if !(metres_per_unit.is_finite() && metres_per_unit > 0.0) {
-            return Self::assumed_metres();
+            return Self::unrecognised_metres();
         }
         if metres_per_unit == 1.0 {
             return Self::declared(CrsLinearUnit::Metres);
@@ -536,11 +537,16 @@ mod tests {
             "PROJCS[\"unterminated",
             "]]]]",
             "UNIT[\"x\",abc]",
+        ] {
+            assert_eq!(wkt(text), CrsUnit::assumed_metres(), "{text}");
+        }
+        // A declared unit with an unusable factor is unrecognised, not undeclared.
+        for text in [
             r#"PROJCS["P",UNIT["x",0]]"#,
             r#"PROJCS["P",UNIT["x",-3]]"#,
             r#"PROJCS["P",UNIT["x",NaN]]"#,
         ] {
-            assert_eq!(wkt(text), CrsUnit::assumed_metres(), "{text}");
+            assert_eq!(wkt(text), CrsUnit::unrecognised_metres(), "{text}");
         }
         let deep = format!("{}{}", "A[".repeat(10_000), "]".repeat(10_000));
         assert_eq!(wkt(&deep), CrsUnit::assumed_metres());
