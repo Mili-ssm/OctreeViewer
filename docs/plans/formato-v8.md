@@ -1,6 +1,6 @@
 # Formato V8: salida más pequeña y distancia mínima entre puntos
 
-Estado: aprobado · 20-11-2026 · diseño aprobado por el propietario; primera revisión en [v8.1-pre](formato-v8-pre1.md)
+Estado: aprobado · 20-11-2026 · diseño aprobado por el propietario; primera revisión [v8.1-pre](formato-v8-pre1.md) implementada y medida ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md): −34,8 % a −40,6 % de salida frente a v7)
 
 **Objetivo:** reducir el disco que ocupa la salida del conversor, que tras la fase B de temporales es lo que marca
 el disco necesario para convertir (Albuera: 15,75 GB = 3,7 × el LAZ), y guardar en el fichero una estimación de la

@@ -1,0 +1,45 @@
+0	InspectingInput
+0	PlanningMetadata
+0	PlanningSpatialIndex
+0	  16000/415465882 points (0 MiB written; 0%)
+2	  41568000/415465882 points (0 MiB written; 10%)
+5	  83104000/415465882 points (0 MiB written; 20%)
+8	  124640000/415465882 points (0 MiB written; 30%)
+11	  166240000/415465882 points (0 MiB written; 40%)
+13	  207776000/415465882 points (0 MiB written; 50%)
+16	  249312000/415465882 points (0 MiB written; 60%)
+19	  290848000/415465882 points (0 MiB written; 70%)
+22	  332384000/415465882 points (0 MiB written; 80%)
+24	  373920000/415465882 points (0 MiB written; 90%)
+28	  415465882/415465882 points (0 MiB written; 100%)
+49	BuildingSpatialHierarchy
+250	ReadingAndWritingBlocks
+250	  0/415465882 points (0 MiB written; 0%)
+257	  41563015/415465882 points (204 MiB written; 10%)
+265	  83096187/415465882 points (405 MiB written; 20%)
+273	  124670177/415465882 points (599 MiB written; 30%)
+279	  166203585/415465882 points (776 MiB written; 40%)
+287	  207745081/415465882 points (976 MiB written; 50%)
+296	  249282938/415465882 points (1177 MiB written; 60%)
+304	  290836074/415465882 points (1370 MiB written; 70%)
+311	  332374598/415465882 points (1577 MiB written; 80%)
+321	  373942498/415465882 points (1803 MiB written; 90%)
+328	  415465882/415465882 points (2016 MiB written; 100%)
+329	ValidatingOutput
+329	  0/415465882 points (7332 MiB written; 0%)
+332	  41551609/415465882 points (7332 MiB written; 10%)
+334	  83094010/415465882 points (7332 MiB written; 20%)
+336	  124642156/415465882 points (7332 MiB written; 30%)
+338	  166201296/415465882 points (7332 MiB written; 40%)
+339	  207775731/415465882 points (7332 MiB written; 50%)
+341	  249303644/415465882 points (7332 MiB written; 60%)
+343	  290846642/415465882 points (7332 MiB written; 70%)
+344	  332395359/415465882 points (7332 MiB written; 80%)
+346	  373922019/415465882 points (7332 MiB written; 90%)
+348	  415465882/415465882 points (7332 MiB written; 100%)
+348	PublishingOutput
+348	Complete
+348	Converted 415465882 points in 24091 blocks (7688544926 bytes; estimated controlled memory 130 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree-fase-a/target/v8-measure/v7/out.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree-fase-a/target/v8-measure/v7/out.octattrs
+348	Not preserved: scan direction and flight-line edge flags
+354	fs=btrfs rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/home
+354	peak_work_bytes=6492825173 peak_fs_used_delta_bytes=6946320384 wall_s=348.3 max_rss_kb=243452 sha_oct=a213eb2391cac51c37e2b2e213e30d8ab54141a5e0bf55ebcd6a0a031d480783 sha_octattrs=0cffd5279cf3bd578d30a90ce0c756d57cebe5238408e08fd06042463563a36c

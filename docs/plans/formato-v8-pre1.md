@@ -1,6 +1,6 @@
 # Formato V8, revisión v8.1-pre (plan de implementación)
 
-Estado: pendiente · 20-11-2026 · plan escrito; antes de ejecutarlo pasa el análisis de riesgos
+Estado: medido · 20-11-2026 · tareas 0 a 8 hechas; v8.1-pre frente a v7 con el mismo binario: Albuera −40,6 % (V2 cumplido), Majadas −40,5 %, Belvedere −34,8 %, sin subir el tiempo de conversión ni empeorar la carga en el navegador ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md)); la decisión sobre D3 y sobre pasar a una v8 final queda para el propietario
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -279,16 +279,16 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
 - Modify: `docs/plans/formato-v8.md` (`Estado:`), este plan (`Estado:` y casillas), `docs/estado.md`, `docs/README.md`,
   `docs/reference/format/FORMAT_V8_PRE1.md` (completar)
 
-- [ ] **Step 1:** con `scripts/measure_temp_disk.sh` y `--format-version v8.1-pre` frente a la salida v7 de la misma
+- [x] **Step 1:** con `scripts/measure_temp_disk.sh` y `--format-version v8.1-pre` frente a la salida v7 de la misma
   rama, en Belvedere, Albuera y Majadas: tamaño de `.oct` y `.octattrs`, tiempo, RSS, pico de temporales, y los
   cuantiles de cada nube junto al espaciado de referencia. Esperado (diseño): Albuera ≥ 35 % más pequeña (V2).
-- [ ] **Step 2:** lectura en el navegador: tiempo hasta el objetivo de px en Belvedere v7 frente a v8.1-pre (sondas
+- [x] **Step 2:** lectura en el navegador: tiempo hasta el objetivo de px en Belvedere v7 frente a v8.1-pre (sondas
   existentes de `examples/web-host/PROBES.md`), para comprobar que la recomposición del RGB no empeora la carga.
-- [ ] **Step 3:** parar y llevar al propietario si: V2 no se cumple, el tiempo de conversión sube > +25 % o la carga
+- [x] **Step 3:** parar y llevar al propietario si: V2 no se cumple, el tiempo de conversión sube > +25 % o la carga
   en el navegador empeora > 10 %.
-- [ ] **Step 4:** registro fechado con las series, la orden exacta y el equipo; completar FORMAT_V8_PRE1.md;
+- [x] **Step 4:** registro fechado con las series, la orden exacta y el equipo; completar FORMAT_V8_PRE1.md;
   actualizar documentos; `check_docs_links.py` y `check_docs_index.py` → OK.
-- [ ] **Step 5:** commit `docs: measure v8.1-pre against v7`.
+- [x] **Step 5:** commit `docs: measure v8.1-pre against v7`.
 
 ## Proyección
 

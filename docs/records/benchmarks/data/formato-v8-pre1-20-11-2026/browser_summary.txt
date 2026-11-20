@@ -1,0 +1,8 @@
+browser_run1_v7.json 108 968 1352 3.67 1769e27ba46c
+browser_run2_v8.json 116 943 1344 2.7 1769e27ba46c
+browser_run3_v8.json 100 677 1088 2.25 1769e27ba46c
+browser_run4_v7.json 103 897 1349 2.12 1769e27ba46c
+browser_run5_v7.json 88 918 1349 2.03 1769e27ba46c
+browser_run6_v8.json 108 919 1363 1.66 1769e27ba46c
+browser_run7_v8.json 94 654 1069 1.29 1769e27ba46c
+browser_run8_v7.json 90 918 1352 1.77 1769e27ba46c

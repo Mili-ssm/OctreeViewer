@@ -1,0 +1,45 @@
+0	InspectingInput
+0	PlanningMetadata
+0	PlanningSpatialIndex
+0	  57480/81682329 points (0 MiB written; 0%)
+1	  8174271/81682329 points (0 MiB written; 10%)
+1	  16366271/81682329 points (0 MiB written; 20%)
+2	  24558271/81682329 points (0 MiB written; 30%)
+2	  32686271/81682329 points (0 MiB written; 40%)
+3	  40878271/81682329 points (0 MiB written; 50%)
+4	  49070271/81682329 points (0 MiB written; 60%)
+4	  57198271/81682329 points (0 MiB written; 70%)
+5	  65390271/81682329 points (0 MiB written; 80%)
+6	  73518271/81682329 points (0 MiB written; 90%)
+7	  81682329/81682329 points (0 MiB written; 100%)
+11	BuildingSpatialHierarchy
+37	ReadingAndWritingBlocks
+37	  0/81682329 points (0 MiB written; 0%)
+38	  8172172/81682329 points (52 MiB written; 10%)
+39	  16366396/81682329 points (104 MiB written; 20%)
+40	  24511762/81682329 points (156 MiB written; 30%)
+42	  32674702/81682329 points (206 MiB written; 40%)
+43	  40856382/81682329 points (255 MiB written; 50%)
+44	  49053697/81682329 points (305 MiB written; 60%)
+45	  57236900/81682329 points (355 MiB written; 70%)
+46	  65363553/81682329 points (406 MiB written; 80%)
+48	  73519583/81682329 points (457 MiB written; 90%)
+49	  81682329/81682329 points (505 MiB written; 100%)
+49	ValidatingOutput
+49	  0/81682329 points (1354 MiB written; 0%)
+50	  8180740/81682329 points (1354 MiB written; 10%)
+50	  16371954/81682329 points (1354 MiB written; 20%)
+50	  24534144/81682329 points (1354 MiB written; 30%)
+51	  32676013/81682329 points (1354 MiB written; 40%)
+51	  40871350/81682329 points (1354 MiB written; 50%)
+51	  49021846/81682329 points (1354 MiB written; 60%)
+51	  57179173/81682329 points (1354 MiB written; 70%)
+52	  65408083/81682329 points (1354 MiB written; 80%)
+52	  73527382/81682329 points (1354 MiB written; 90%)
+52	  81682329/81682329 points (1354 MiB written; 100%)
+52	PublishingOutput
+52	Complete
+52	Converted 81682329 points in 3941 blocks (1420602171 bytes; estimated controlled memory 130 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree-fase-a/target/v8-measure/v7/out.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree-fase-a/target/v8-measure/v7/out.octattrs
+52	Not preserved: scan direction and flight-line edge flags, scanner channel
+53	fs=btrfs rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/home
+53	peak_work_bytes=1490685887 peak_fs_used_delta_bytes=807063552 wall_s=52.7 max_rss_kb=100896 sha_oct=da206a659ea0bfdfbfb3d8141592387cb2dde7133e6a5e44ed9a7a5db3c9f0c4 sha_octattrs=e2f587ab136906d8fc43f2f34c46be0f23a566f3954a8288056b95dae9802323
