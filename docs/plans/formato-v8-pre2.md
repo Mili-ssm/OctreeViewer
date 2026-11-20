@@ -165,4 +165,34 @@ actualizar el `Estado:` de este plan y de `formato-v8.md`, `docs/estado.md`.
 
 ## Codificador
 
-Lo rellena la tarea 0.
+Cifras de la tarea 0 (20-11-2026, equipo del propietario, node 22, clang 23.1.5 para wasm32). Puerta: **superada**.
+
+| Medida | Resultado |
+| --- | --- |
+| `zstd` 0.13.5 / `zstd-sys` 2.1.3 (C, features `experimental`, sin `default`) para `wasm32-unknown-unknown` | Compila sin errores con el toolchain local y `--offline` (clang apunta a wasm32; `zstd-sys` aporta sus shims de `malloc`/`memcpy`); el módulo no importa nada |
+| Bytes nativo frente a wasm (SHA-256 por payload, codificador completo con candidatos y nivel 3) | 5 389 de 5 389 iguales: ≤ 16 KB 853/853, ≤ 128 KB 3 440/3 440, ≤ 256 KB 796/796, > 256 KB 300/300 |
+| Decodificación en wasm, mediana de 7 | Etapas de entropía de los flujos reales: zstd 2 040–2 050 MB/s, LZ4 5 040–5 060 MB/s. Bloque completo (con planos y diccionario): zstd 630–680 MB/s, LZ4 550–560 MB/s; una primera pasada dio 454 MB/s para zstd (rango 628–964 ms, con ruido de la máquina) |
+| Réplica del codificador LZ4 frente a los bytes guardados | 0 diferencias en los 5 389 payloads |
+
+Muestra: 646 de 25 838 bloques de Albuera v8.1-pre (493 hojas, 153 LOD), 1/40 con semilla 20 261 120 (hash SplitMix64 del id
+de bloque), 5 389 payloads. Proyección por columna: bytes guardados de todo el fichero × (zstd / LZ4 de la muestra). Total de
+v8.1-pre: 9 362 079 659 B (`.oct` 4 562 037 055 + `.octattrs` 4 800 042 604).
+
+| Esquema | `.octattrs` proyectado | % del `.octattrs` | Total proyectado | % del total | Ahorro |
+| --- | --- | --- | --- | --- | --- |
+| `lz4` | 4 800 042 604 | 100 % | 9 362 079 659 | 100 % | 0 |
+| `cold` | 4 512 944 105 | 94,02 % | 9 074 981 160 | 96,93 % | −3,07 % |
+| `cold-rgb` | 4 273 628 217 | 89,03 % | 8 835 665 272 | 94,38 % | −5,62 % |
+| `all` | 3 919 094 854 | 81,65 % | 8 481 131 909 | 90,59 % | −9,41 % |
+
+Sensibilidad: con otras 5 semillas (623–709 bloques) el ahorro es 3,05–3,09 % (`cold`), 5,60–5,76 % (`cold-rgb`) y
+9,40–9,59 % (`all`). Relación zstd/LZ4 por columna: color de pantalla de LOD 0,886; intensidad 0,768; clase 0,763; rgb 0,841;
+tiempo GPS 0,756; ángulo de escaneo 0,576; `point_source_id` 0,484; el resto (< 25 MB cada una) ≈ 0,6–1,0. `las_flags`
+(extra bytes, ≈ 20 KB) cuenta como fría. Los zstd se codifican sin número mágico, sin checksum y sin tamaño de contenido en
+la cabecera de trama (el directorio ya guarda `raw_length`).
+
+Código desechable y registro completo fuera del repositorio: `target/v82-spike/` (código) e informe de la tarea 0 en
+`.superpowers/sdd/formato-v8-pre2/task-0-report.md`. Orden: `viewer_convert ALBUERA.laz target/v82-spike/out/albuera.oct
+--format-version v8.1-pre` (release, 11 min); `native out/albuera.oct out/albuera.octattrs data` (recorre las 3 233 páginas con
+`PagedReader`, muestrea y recodifica); `cargo build --release --target wasm32-unknown-unknown -p wasmcodec`;
+`node run.mjs wasmcodec.wasm samples.bin native_zstd.bin`.
