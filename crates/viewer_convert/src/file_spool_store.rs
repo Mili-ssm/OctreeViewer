@@ -23,10 +23,11 @@ use crate::spool_frame::{
     FRAME_HEADER_BYTES, FrameHeader, MAX_FRAME_RECORDS, decode_frame, encode_frame,
 };
 
-/// One sparse-index entry per this many frames. A per-frame table costs 16 bytes per frame, and a
-/// frame holds at most one append (32-64 KiB for child spools): ~0.025-0.05 % of the live logical
-/// bytes, 1-2 GB for ~4 TB of live spools at the ESC-1 scale. A header walk from the file start
-/// would make block reads quadratic on large leaf spools.
+/// One sparse-index entry (16 bytes) per this many frames; a frame holds at most one append
+/// (32-64 KiB for child spools), so the index costs well under 0.001 % of the live logical bytes.
+/// A per-frame table would cost 64 times more (1-2 GB for ~4 TB of live spools at the ESC-1
+/// scale), and a header walk from the file start would make block reads quadratic on large leaf
+/// spools; readers walk at most 63 headers from the nearest entry.
 const INDEX_STRIDE_FRAMES: u64 = 64;
 /// Encoded frames are written in batches of about this size.
 const WRITE_BATCH_BYTES: usize = 1 << 20;

@@ -6,7 +6,7 @@
 
 **Conclusión:** guardar los spools nativos como tramas comprimidas (planos de bytes por registro + LZ4) divide el pico
 aparente de temporales entre **3,2 (Albuera), 5,1 (Majadas) y 4,3 (Belvedere)** con salida **byte a byte idéntica**,
-a cambio de **+24 % / +20 % / +7 %** de tiempo total y sin cambio apreciable de RSS. Albuera queda en **3,5 × el LAZ**
+a cambio de **+24 % / +20 % / +7 %** de tiempo total y de +6 a +19 MB de RSS (< 9 %). Albuera queda en **3,5 × el LAZ**
 frente a 11,1 ×: RQ-06 (≤ 2 ×) todavía no se cumple y la fase A (escritura por subárbol) sigue siendo necesaria.
 
 ## Condiciones
@@ -14,10 +14,10 @@ frente a 11,1 ×: RQ-06 (≤ 2 ×) todavía no se cumple y la fase A (escritura 
 | Dato | Valor |
 | --- | --- |
 | Binarios | Base: `release` de `dc98e5a`. Fase B: `release` de `2833708` (rama `feat/temporales-fase-b`) |
-| Opciones | Por defecto (`v7`, 4 workers espaciales, 4 rangos de raíz); orden: `viewer_convert ENTRADA SALIDA.oct` |
+| Opciones | Por defecto (`v7`, 4 workers espaciales, 4 rangos de raíz): `scripts/measure_temp_disk.sh BINARIO ENTRADA DIR`, que ejecuta `BINARIO ENTRADA DIR/out.oct` sin más argumentos |
 | Medida | `scripts/measure_temp_disk.sh`: muestreo de 1 s de `du -sb` del directorio `.work` (tamaño **aparente**), `/usr/bin/time -v`, SHA-256 de `.oct` y `.octattrs` |
 | Equipo | Equipo del propietario; salida en `/home`: `btrfs rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,space_cache=v2` |
-| Orden | Una conversión cada vez, sin otra carga: base Albuera, B Albuera, base Majadas, B Majadas, B Belvedere (la base de Belvedere es la del 19-11-2026, en la «Línea base» del plan) |
+| Orden | Una conversión cada vez: base Albuera, B Albuera, base Majadas, B Majadas, B Belvedere (la base de Belvedere es la del 19-11-2026, en la «Línea base» del plan); después, base y B de Majadas con 1 worker |
 | Datos | [`data/temporales-cli-20-11-2026/`](data/temporales-cli-20-11-2026/): `<ejecución>.tsv` (`segundos`, bytes de `.work`, delta de `df`) y `<ejecución>.phases.txt` (segundo en que empieza cada fase y línea de resultado) |
 
 ## Resultados
@@ -40,13 +40,27 @@ frente a 11,1 ×: RQ-06 (≤ 2 ×) todavía no se cumple y la fase A (escritura 
 | Bloques (`ReadingAndWritingBlocks`) | 424–532 s | 564–666 s | 193–265 s | 248–321 s |
 | Validación | 532–561 s | 666–695 s | 265–282 s | 321–339 s |
 
+**Con un solo worker espacial** (`--spatial-workers 1`, Majadas; la misma salida, SHA iguales), para descartar que
+la compresión serialice a los workers en el mutex del almacén:
+
+| Ejecución | Pico aparente | Tiempo | División de nodos | Aceleración de 1 a 4 workers en la división |
+| --- | --- | --- | --- | --- |
+| base, 1 worker | 33 165 384 406 B | 584,7 s | 40–326 s (286 s) | 286 / 155 = 1,85 × |
+| B, 1 worker | 6 504 826 582 B | 854,1 s | 48–589 s (541 s) | 541 / 200 = **2,71 ×** |
+
 ## Lectura
 
+- **Dos líneas base de Albuera:** la del plan (19-11-2026: 47 866 199 052 B, 578,6 s) y la de este registro
+  (20-11-2026: 47 945 156 154 B, 562,0 s) son ejecuciones distintas del mismo binario con la misma salida (SHA
+  iguales); la diferencia es la variación entre ejecuciones. Las comparaciones usan la del mismo día.
 - **El coste de tiempo está en la división de nodos**, donde cada spool se descomprime al leerse y sus hijos y su LOD
-  se comprimen al escribirse. La partición de la raíz, que incluye unir los segmentos de los 4 rangos, solo añade
-  8–10 s: por debajo del umbral del plan (> 30 s o > 5 % del total), así que no hace falta unir copiando tramas.
-- **Umbrales del plan (tarea 5, paso 3):** tiempo de Albuera +23,8 % (límite +25 %, al borde); RSS +6 MB (límite
-  +100 MB); SHA iguales en las tres nubes.
+  se comprimen al escribirse. La fase de partición de la raíz, que incluye unir los segmentos de los 4 rangos, solo
+  tarda 8–10 s más (la unión no se midió por separado): por debajo del umbral del plan (> 30 s o > 5 % del total), así que no hace falta unir copiando tramas.
+- **Sin contención en el mutex:** la fase B escala mejor con workers que la base (2,71 × frente a 1,85 × en la
+  división de nodos de Majadas): la compresión, hecha fuera del mutex, es trabajo de CPU que se reparte. Con un solo
+  worker cuesta +89 % en esa fase (541 s frente a 286 s).
+- **Umbrales del plan (tarea 5, paso 3):** tiempo de Albuera +23,8 % (límite +25 %, al borde); RSS +6 MB en Albuera y +19 MB en Majadas
+  (límite +100 MB); SHA iguales en las tres nubes.
 - **Uso real en btrfs:** el delta de `df` no sirve como medida aquí. Con la compresión de btrfs y el descarte
   asíncrono marca 22 GB en la base de Albuera pero 0–6 MB en la base de Majadas y en las B de Albuera y Belvedere (3,9 GB en la B
   de Majadas), así que

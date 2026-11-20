@@ -37,8 +37,9 @@ pub struct SpoolExtent {
 /// Ids are never reused; any other order is an error.
 pub trait SpoolStore {
     type Reader: Read;
-    /// `record_bytes` is the size of one record of this spool. Only stores that lay records out
-    /// by byte plane need it; the others ignore it.
+    /// `record_bytes` is the size of one record of this spool: the native store transposes
+    /// records into byte planes with it, `MemSpoolStore` checks that a closed spool holds whole
+    /// records, and the web store ignores it.
     fn create(&self, id: SpoolId, record_bytes: usize) -> Result<(), ConvertError>;
     fn append(&self, id: SpoolId, bytes: &[u8]) -> Result<(), ConvertError>;
     fn close(&self, id: SpoolId) -> Result<(), ConvertError>;
@@ -197,8 +198,9 @@ pub fn entry_in<'a, T>(
 struct MemSpool {
     phase: Phase,
     data: Vec<u8>,
-    /// Stride the caller declared at `create`; `close` checks the spool holds whole records, so a
-    /// caller that passes the wrong size fails the tests instead of silently mis-striding.
+    /// Record size the caller declared at `create`; `close` checks the spool holds whole records,
+    /// so a caller that passes the wrong size fails the tests instead of silently ruining the
+    /// native store's byte-plane compression.
     record_bytes: usize,
 }
 
