@@ -11,8 +11,8 @@ use viewer_core::{
 
 use crate::geometry::{GeometryDecoder, GeometryEncoding};
 use crate::layout::{
-    FOOTER_SIZE, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout, attribute_payload_size,
-    block_payload_size,
+    FOOTER_SIZE, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout, StoredColumn,
+    attribute_payload_size, block_payload_size,
 };
 use crate::version::FileRole;
 use crate::{BlockCodec, FormatError, FormatMetadata, crc32::checksum_matches, decompress_block};
@@ -685,7 +685,8 @@ impl<R: Read + Seek> IndexedReader<R> {
                 )?;
                 ranges.push(range);
                 if selection == ReadSelection::Geometry && self.has_attributes() {
-                    let range = self.payload_range(&block, stored_payload(&block, id, 1)?, true)?;
+                    let (payload, _) = self.display_colour_payload(&block, id)?;
+                    let range = self.payload_range(&block, payload, true)?;
                     let colors = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
                     ranges.push(range);
                     crate::read_plan::combine_geometry(positions, colors)?
@@ -694,7 +695,9 @@ impl<R: Read + Seek> IndexedReader<R> {
                 }
             }
             ReadSelection::DisplayColors => {
-                let range = self.payload_range(&block, stored_payload(&block, id, 1)?, true)?;
+                // A derived colour reads its source column, so the estimate counts that payload.
+                let (payload, _) = self.display_colour_payload(&block, id)?;
+                let range = self.payload_range(&block, payload, true)?;
                 let memory = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
                 ranges.push(range);
                 memory
@@ -774,8 +777,12 @@ impl<R: Read + Seek> IndexedReader<R> {
                         .ok_or(FormatError::UnknownAttribute(schema_index))?;
                     Some(crate::layout::attribute_tuple_width(descriptor)?)
                 }
-                crate::ReadSelection::DisplayColors => Some(3),
-                crate::ReadSelection::Geometry if range_index == 1 => Some(3),
+                crate::ReadSelection::DisplayColors => {
+                    Some(self.display_colour_payload(&entry, id)?.1.width)
+                }
+                crate::ReadSelection::Geometry if range_index == 1 => {
+                    Some(self.display_colour_payload(&entry, id)?.1.width)
+                }
                 _ => None,
             };
             let raw = self.decode_stored_payload(id, range, stored, attribute_width)?;
@@ -797,19 +804,15 @@ impl<R: Read + Seek> IndexedReader<R> {
                 let mut points = self
                     .decode_geometry(&mut c, id, &entry, count)?
                     .into_points();
-                for (p, rgb) in points.iter_mut().zip(decoded[1].as_chunks::<3>().0) {
-                    p.color = ColorRgb::new(rgb[0], rgb[1], rgb[2]);
+                let colors = self.decode_display_colors(&decoded[1], &entry, id)?;
+                for (p, color) in points.iter_mut().zip(colors) {
+                    p.color = color;
                 }
                 O::Geometry(PointBatch::new(points))
             }
-            S::DisplayColors => O::DisplayColors(
-                decoded[0]
-                    .as_chunks::<3>()
-                    .0
-                    .iter()
-                    .map(|v| ColorRgb::new(v[0], v[1], v[2]))
-                    .collect(),
-            ),
+            S::DisplayColors => {
+                O::DisplayColors(self.decode_display_colors(&decoded[0], &entry, id)?)
+            }
             S::Attribute { schema_index } => {
                 let descriptor =
                     self.metadata.dataset().hierarchy().attributes()[schema_index as usize].clone();
@@ -1119,13 +1122,76 @@ impl<R: Read + Seek> IndexedReader<R> {
 
     pub fn read_display_colors(&mut self, id: BlockId) -> Result<Vec<ColorRgb>, FormatError> {
         let entry = self.entry(id)?;
-        let raw = self.read_payload(id, &entry, stored_payload(&entry, id, 1)?, Some(3))?;
-        Ok(raw
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .map(|rgb| ColorRgb::new(rgb[0], rgb[1], rgb[2]))
-            .collect())
+        let (payload, source) = self.display_colour_payload(&entry, id)?;
+        let raw = self.read_payload(id, &entry, payload, Some(source.width))?;
+        self.decode_display_colors(&raw, &entry, id)
+    }
+
+    /// The payload a block's display colour is read from: its own column 1, or for a derived colour
+    /// (`v8.N-pre` leaves) the 16-bit source column named by the header.
+    fn display_colour_payload<'a>(
+        &self,
+        block: &'a BlockDirectoryEntry,
+        id: BlockId,
+    ) -> Result<(&'a PayloadDirectoryEntry, DisplaySource), FormatError> {
+        let StoredColumn::Derived { from } = block
+            .payloads
+            .get(1)
+            .map_or(StoredColumn::Present, |payload| payload.stored)
+        else {
+            let source = DisplaySource {
+                width: 3,
+                derived_components: None,
+            };
+            return Ok((stored_payload(block, id, 1)?, source));
+        };
+        let descriptor = from
+            .checked_sub(2)
+            .and_then(|schema| self.metadata.dataset().hierarchy().attributes().get(schema))
+            .filter(|descriptor| {
+                descriptor.data_type() == AttributeDataType::U16
+                    && matches!(descriptor.component_count(), 1 | 3)
+            })
+            .ok_or(FormatError::MalformedIndex(
+                "display colour source is not a 16-bit column",
+            ))?;
+        let source = DisplaySource {
+            width: crate::layout::attribute_tuple_width(descriptor)?,
+            derived_components: Some(descriptor.component_count()),
+        };
+        Ok((stored_payload(block, id, from)?, source))
+    }
+
+    /// Display colours from the decoded bytes of [`Self::display_colour_payload`].
+    fn decode_display_colors(
+        &self,
+        raw: &[u8],
+        block: &BlockDirectoryEntry,
+        id: BlockId,
+    ) -> Result<Vec<ColorRgb>, FormatError> {
+        let (_, source) = self.display_colour_payload(block, id)?;
+        let Some(components) = source.derived_components else {
+            return Ok(raw
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|rgb| ColorRgb::new(rgb[0], rgb[1], rgb[2]))
+                .collect());
+        };
+        let count = usize::try_from(block.point_count)
+            .map_err(|_| FormatError::PointCountOutOfRange)?
+            .checked_mul(components as usize)
+            .ok_or(FormatError::PointCountOutOfRange)?;
+        let mut cursor = SliceCursor::new(raw);
+        let AttributeValues::U16(values) =
+            read_attribute_values(&mut cursor, AttributeDataType::U16, count)?
+        else {
+            unreachable!("read as u16");
+        };
+        if cursor.remaining() != 0 {
+            return Err(FormatError::MalformedBlock("trailing display colour bytes"));
+        }
+        Ok(derive_display_colors(&values, components))
     }
 
     /// Reads only XYZ; supplies neutral gray without accessing color or attribute payloads.
@@ -1332,6 +1398,41 @@ fn validate_supported_primary(
         return Err(FormatError::InvalidHeader);
     }
     Ok(layout)
+}
+
+/// How a block's display colour is read.
+struct DisplaySource {
+    /// Byte-plane width of the column read.
+    width: usize,
+    /// Components of the 16-bit source column (1 intensity, 3 RGB) when the colour is derived.
+    derived_components: Option<u32>,
+}
+
+/// The display colour of a leaf that does not store it: the high byte of each 16-bit channel, or of
+/// the single value for r = g = b. Shared with the writer's check, so both sides agree by construction.
+pub(crate) fn derive_display_colors(values: &[u16], components: u32) -> Vec<ColorRgb> {
+    if components == 3 {
+        values
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|rgb| {
+                ColorRgb::new(
+                    (rgb[0] >> 8) as u8,
+                    (rgb[1] >> 8) as u8,
+                    (rgb[2] >> 8) as u8,
+                )
+            })
+            .collect()
+    } else {
+        values
+            .iter()
+            .map(|value| {
+                let gray = (value >> 8) as u8;
+                ColorRgb::new(gray, gray, gray)
+            })
+            .collect()
+    }
 }
 
 pub(crate) fn contains_point(bounds: SpatialBounds, point: [f64; 3]) -> bool {

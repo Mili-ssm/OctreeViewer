@@ -26,8 +26,8 @@ use crate::prepare::BlockRecord;
 use crate::reader_limits::FormatReaderLimits;
 use crate::slice_cursor::SliceCursor;
 use crate::{
-    Crc32, FormatError, FormatMetadata, GlobalFrame, NodeAttributeRange, NodeCell,
-    PointDistanceQuantiles, crc32::checksum_matches,
+    Crc32, DisplayColourSource, FormatError, FormatMetadata, GlobalFrame, NodeAttributeRange,
+    NodeCell, PointDistanceQuantiles, crc32::checksum_matches,
 };
 
 /// How much of the file end a reader fetches first: footer, metadata block and root page.
@@ -57,6 +57,8 @@ pub struct PagedHeader {
     distance_quantiles: Option<PointDistanceQuantiles>,
     /// Present only when the layout omits columns from LOD blocks (`v8.N-pre`).
     lod_attribute_columns: Option<Vec<u32>>,
+    /// Present only when the layout derives the leaf display colour (`v8.N-pre`).
+    display_colour_source: Option<DisplayColourSource>,
     /// Range over every node of the file, per attribute and component; `None` when no node has a
     /// finite value. Stored here because a lazy reader never holds every page.
     attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
@@ -159,6 +161,18 @@ impl PagedHeader {
     /// revision stores every column in every block.
     pub fn lod_attribute_columns(&self) -> Option<&[u32]> {
         self.lod_attribute_columns.as_deref()
+    }
+
+    /// Where leaf blocks derive their display colour from; `None` when the revision stores it.
+    pub fn display_colour_source(&self) -> Option<DisplayColourSource> {
+        self.display_colour_source
+    }
+
+    pub(crate) fn column_rules(&self) -> crate::layout::ColumnRules<'_> {
+        crate::layout::ColumnRules {
+            lod_columns: self.lod_attribute_columns.as_deref().unwrap_or(&[]),
+            display: self.display_colour_source.unwrap_or_default(),
+        }
     }
 
     /// File offset where the block payloads end and the child pages begin.
@@ -342,6 +356,23 @@ fn parse_header_block(
     } else {
         None
     };
+    let display_colour_source = if layout.derives_display_attribute() {
+        let (kind, index) = (cursor.u8()?, cursor.u32()?);
+        let source = match (kind, index) {
+            (0, 0) => DisplayColourSource::None,
+            (1, index) => DisplayColourSource::Rgb(index),
+            (2, index) => DisplayColourSource::Intensity(index),
+            _ => {
+                return Err(FormatError::MalformedIndex("invalid display colour source"));
+            }
+        };
+        source
+            .validate(&schema)
+            .map_err(FormatError::MalformedIndex)?;
+        Some(source)
+    } else {
+        None
+    };
     let mut attribute_ranges = Vec::with_capacity(schema.len());
     for attribute in &schema {
         let mut row = Vec::with_capacity(attribute.component_count() as usize);
@@ -413,6 +444,7 @@ fn parse_header_block(
         reference_spacing,
         distance_quantiles,
         lod_attribute_columns,
+        display_colour_source,
         attribute_ranges,
     })
 }
@@ -500,7 +532,7 @@ impl PagedCore {
                 pages_start: header.pages_start,
                 index_offset: location.offset,
                 layout: location.layout,
-                lod_columns: header.lod_attribute_columns.as_deref().unwrap_or(&[]),
+                rules: header.column_rules(),
             },
             PageExpect::Root,
         )?;
@@ -577,7 +609,7 @@ impl PagedCore {
                 pages_start: self.header.pages_start,
                 index_offset: self.index_offset,
                 layout: self.layout,
-                lod_columns: self.header.lod_attribute_columns.as_deref().unwrap_or(&[]),
+                rules: self.header.column_rules(),
             },
             PageExpect::Child {
                 anchor,
@@ -1047,6 +1079,10 @@ pub(crate) fn assemble_with(
         Some(columns) => metadata.with_lod_attribute_columns(columns.clone()),
         None => metadata,
     };
+    let metadata = match header.display_colour_source {
+        Some(source) => metadata.with_display_colour_source(source),
+        None => metadata,
+    };
     validate_metadata(&metadata)?;
     Ok((metadata, blocks, block_bounds))
 }
@@ -1423,6 +1459,20 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
             for &column in columns {
                 out.u32(column)?;
             }
+        }
+        if layout.derives_display_attribute() {
+            let source = metadata
+                .display_colour_source()
+                .ok_or(FormatError::InvalidMetadata(
+                    "this format revision needs a display colour source in the metadata",
+                ))?;
+            let (kind, index) = match source {
+                DisplayColourSource::None => (0, 0),
+                DisplayColourSource::Rgb(index) => (1, index),
+                DisplayColourSource::Intensity(index) => (2, index),
+            };
+            out.u8(kind)?;
+            out.u32(index)?;
         }
         for row in global_attribute_ranges(
             hierarchy.attributes(),

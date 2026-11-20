@@ -283,8 +283,8 @@ pub(crate) struct PageContext<'a> {
     pub(crate) pages_start: u64,
     pub(crate) index_offset: u64,
     pub(crate) layout: StorageLayout,
-    /// The header's LOD column set (empty when the revision has none).
-    pub(crate) lod_columns: &'a [u32],
+    /// The header's LOD column set and display colour source.
+    pub(crate) rules: ColumnRules<'a>,
 }
 
 fn prefix_fits(level: u32, prefix: u64) -> bool {
@@ -664,15 +664,7 @@ fn decode_block(
     block_is_lod: bool,
 ) -> Result<PageBlock, FormatError> {
     let layout = ctx.layout;
-    let column_rule = |column: usize| {
-        layout.stored_column(
-            block_is_lod,
-            column,
-            ColumnRules {
-                lod_columns: ctx.lod_columns,
-            },
-        )
-    };
+    let column_rule = |column: usize| layout.stored_column(block_is_lod, column, ctx.rules);
     let offset = cursor.u64()?;
     let attribute_offset = cursor.u64()?;
     let point_count = cursor.u64()?;

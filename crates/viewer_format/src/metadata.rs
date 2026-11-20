@@ -17,6 +17,7 @@ pub struct FormatMetadata {
     las_extra_bytes: Vec<LasExtraByte>,
     point_distance_quantiles: Option<PointDistanceQuantiles>,
     lod_attribute_columns: Option<Vec<u32>>,
+    display_colour_source: Option<DisplayColourSource>,
 }
 
 impl FormatMetadata {
@@ -42,6 +43,7 @@ impl FormatMetadata {
             las_extra_bytes: Vec::new(),
             point_distance_quantiles: None,
             lod_attribute_columns: None,
+            display_colour_source: None,
         })
     }
 
@@ -192,10 +194,25 @@ impl FormatMetadata {
         self.lod_attribute_columns.as_deref()
     }
 
+    /// Sets where leaf blocks derive their display colour from (`v8.N-pre` only; other versions
+    /// store it in every block, and the writer rejects a source there). The writer checks every
+    /// leaf against the derivation and errors on a difference.
+    #[must_use]
+    pub fn with_display_colour_source(mut self, source: DisplayColourSource) -> Self {
+        self.display_colour_source = Some(source);
+        self
+    }
+
+    /// The display colour source, when set; see [`Self::with_display_colour_source`].
+    pub fn display_colour_source(&self) -> Option<DisplayColourSource> {
+        self.display_colour_source
+    }
+
     /// Rules for [`crate::layout::StorageLayout::stored_column`]; empty without a LOD set.
     pub(crate) fn column_rules(&self) -> crate::layout::ColumnRules<'_> {
         crate::layout::ColumnRules {
             lod_columns: self.lod_attribute_columns.as_deref().unwrap_or(&[]),
+            display: self.display_colour_source.unwrap_or_default(),
         }
     }
 
@@ -228,6 +245,7 @@ impl FormatMetadata {
             las_extra_bytes: self.las_extra_bytes.clone(),
             point_distance_quantiles: self.point_distance_quantiles,
             lod_attribute_columns: self.lod_attribute_columns.clone(),
+            display_colour_source: self.display_colour_source,
         }
     }
 }
@@ -347,6 +365,40 @@ pub enum MetadataError {
     InvalidGlobalFrame(&'static str),
 }
 
+/// Where a leaf block's display colour comes from when it is not stored (`v8.N-pre`). The schema
+/// index names the 16-bit source column; the reader derives each channel as `value >> 8`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DisplayColourSource {
+    /// Not derivable: leaf blocks store the display colour.
+    #[default]
+    None,
+    /// A `u16` x 3 schema column; the display colour is its high byte per channel.
+    Rgb(u32),
+    /// A `u16` schema column; the display colour is its high byte as r = g = b.
+    Intensity(u32),
+}
+
+impl DisplayColourSource {
+    /// The source must name a column of the right shape inside the schema.
+    pub(crate) fn validate(
+        self,
+        schema: &[viewer_core::AttributeDescriptor],
+    ) -> Result<(), &'static str> {
+        let (index, components) = match self {
+            Self::None => return Ok(()),
+            Self::Rgb(index) => (index, 3),
+            Self::Intensity(index) => (index, 1),
+        };
+        let column = schema
+            .get(index as usize)
+            .ok_or("display colour source is outside the schema")?;
+        if column.data_type() != AttributeDataType::U16 || column.component_count() != components {
+            return Err("display colour source is not a 16-bit column of the right kind");
+        }
+        Ok(())
+    }
+}
+
 /// A LOD column list names schema columns in strictly increasing order: no index outside the
 /// schema, no repeat. One order means one byte form per set.
 pub(crate) fn validate_lod_columns(columns: &[u32], schema_len: usize) -> Result<(), &'static str> {
@@ -366,6 +418,11 @@ pub(crate) fn validate_lod_columns(columns: &[u32], schema_len: usize) -> Result
 }
 
 pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
+    if let Some(source) = metadata.display_colour_source() {
+        source
+            .validate(metadata.dataset().hierarchy().attributes())
+            .map_err(FormatError::InvalidMetadata)?;
+    }
     if let Some(columns) = metadata.lod_attribute_columns() {
         validate_lod_columns(columns, metadata.dataset().hierarchy().attributes().len())
             .map_err(FormatError::InvalidMetadata)?;

@@ -349,6 +349,10 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         let columns = lod_attribute_columns(&metadata);
         metadata = metadata.with_lod_attribute_columns(columns);
     }
+    if options.format_version().derives_display_attribute() {
+        let source = display_colour_source(&metadata);
+        metadata = metadata.with_display_colour_source(source);
+    }
     Ok(SpatialPlan {
         metadata,
         blocks: builder.output_blocks,
@@ -372,6 +376,20 @@ fn lod_attribute_columns(metadata: &FormatMetadata) -> Vec<u32> {
         .filter(|(_, attribute)| matches!(attribute.name(), "intensity" | "classification"))
         .map(|(index, _)| index as u32)
         .collect()
+}
+
+/// Where leaf display colours come from: the converter sets them to the high byte of `rgb` (or of
+/// `intensity` for a cloud without colour), so that column is the source. A schema with neither
+/// cannot reproduce them and keeps the stored colour.
+fn display_colour_source(metadata: &FormatMetadata) -> viewer_format::DisplayColourSource {
+    use viewer_format::DisplayColourSource::{Intensity, None, Rgb};
+    let attributes = metadata.dataset().hierarchy().attributes();
+    let find = |name: &str| attributes.iter().position(|a| a.name() == name);
+    match (find("rgb"), find("intensity")) {
+        (Some(index), _) => Rgb(index as u32),
+        (Option::None, Some(index)) => Intensity(index as u32),
+        (Option::None, Option::None) => None,
+    }
 }
 
 /// Dataset distance quantiles from the leaves' samples, pooled in node-id order.

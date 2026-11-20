@@ -72,6 +72,10 @@ pub enum FormatError {
     UnknownAttribute(u32),
     #[error("block {block:?} does not store attribute {attribute}")]
     AttributeAbsent { block: BlockId, attribute: u32 },
+    #[error(
+        "block {0:?} stores no display colour and its source column differs from the leaf's colour"
+    )]
+    DisplayColourNotDerivable(BlockId),
     #[error("row {row_id} is outside block {block:?}")]
     UnknownRow { block: BlockId, row_id: u64 },
     #[error("invalid quantization error limit {0}")]

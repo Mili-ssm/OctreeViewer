@@ -222,7 +222,9 @@ fn with_revision_extras(version: FormatVersion, metadata: FormatMetadata) -> For
         metadata
     };
     if version.omits_lod_attributes() {
-        metadata.with_lod_attribute_columns(vec![0])
+        metadata
+            .with_lod_attribute_columns(vec![0])
+            .with_display_colour_source(viewer_format::DisplayColourSource::None)
     } else {
         metadata
     }
@@ -1276,7 +1278,8 @@ fn v8_pre1_without_quantiles_is_rejected() {
     .unwrap()
     .with_global_frame(metadata.global_frame().unwrap().clone())
     .unwrap()
-    .with_lod_attribute_columns(vec![0]);
+    .with_lod_attribute_columns(vec![0])
+    .with_display_colour_source(viewer_format::DisplayColourSource::None);
     assert_eq!(bare.point_distance_quantiles(), None);
     // Construction succeeds; `finish` is where the missing quantiles are caught.
     let mut writer = FormatWriter::new_split_for_version(

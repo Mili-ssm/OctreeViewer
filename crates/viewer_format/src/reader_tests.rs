@@ -1695,14 +1695,14 @@ fn reading_an_absent_column_is_an_error_not_a_panic() {
     let sizes = reader.block_storage_stats().unwrap();
     let size = sizes.iter().find(|stat| stat.id == id).unwrap();
     assert_eq!(size.logical_bytes, 2 * 15 + 2 * 2);
-    // A derived colour column has no payload either: reading it is an error.
+    // A derived colour whose source column is not stored (here the absent column 1) is an error.
     let entry = std::sync::Arc::get_mut(&mut reader.blocks)
         .unwrap()
         .get_mut(&id)
         .unwrap();
     let offset = entry.payloads[1].offset;
     entry.payloads[1] = crate::layout::PayloadDirectoryEntry::not_stored(
-        crate::layout::StoredColumn::Derived { from: 2 },
+        crate::layout::StoredColumn::Derived { from: 3 },
         offset,
     );
     assert!(reader.read_display_colors(id).is_err());

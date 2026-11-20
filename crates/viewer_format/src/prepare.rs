@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use viewer_core::{
-    AttributeValues, BlockId, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy,
+    AttributeColumn, AttributeValues, BlockId, DatasetMetadata, NodeId, SpatialBounds,
+    SpatialHierarchy,
 };
 
 use crate::geometry::{GeometryEncoding, encode_delta, encode_delta_iter};
@@ -32,7 +33,8 @@ fn block_is_lod_by_scan(
     metadata: &FormatMetadata,
 ) -> Result<bool, FormatError> {
     // Only layouts that omit LOD columns need the answer; the others never look at it.
-    if !StorageLayout::from_version(version)?.omits_lod_attributes() {
+    let layout = StorageLayout::from_version(version)?;
+    if !(layout.omits_lod_attributes() || layout.derives_display_attribute()) {
         return Ok(false);
     }
     Ok(lod_block_ids(metadata.dataset().hierarchy())?.contains(&block))
@@ -86,6 +88,9 @@ pub(crate) fn prepare_point_block_for_version_impl(
     }
     let schema = metadata.dataset().hierarchy().attributes();
     let attributes = order_attributes(block.attributes(), schema, point_count)?;
+    if let StoredColumn::Derived { from } = column_rule(1) {
+        ensure_display_is_derivable(block.id(), block.colors(), attributes[from - 2])?;
+    }
     let ranges = attributes
         .iter()
         .enumerate()
@@ -769,6 +774,32 @@ pub(crate) fn encode_geometry(
         });
     }
     Ok(bytes)
+}
+
+/// A leaf that does not store its display colour must hold exactly what the reader derives from
+/// the source column: each channel is the high byte of the 16-bit value (r = g = b for a single
+/// value), so any other colour would read back changed.
+fn ensure_display_is_derivable(
+    id: BlockId,
+    colors: &[viewer_core::ColorRgb],
+    source: &AttributeColumn,
+) -> Result<(), FormatError> {
+    let AttributeValues::U16(values) = source.values() else {
+        return Err(FormatError::InvalidMetadata(
+            "display colour source is not a 16-bit column",
+        ));
+    };
+    let derived =
+        crate::reader::derive_display_colors(values, source.descriptor().component_count());
+    if derived.len() != colors.len()
+        || derived
+            .iter()
+            .zip(colors)
+            .any(|(derived, color)| derived != color)
+    {
+        return Err(FormatError::DisplayColourNotDerivable(id));
+    }
+    Ok(())
 }
 
 /// Appends a column according to the storage rule: a stored column is compressed, any other keeps

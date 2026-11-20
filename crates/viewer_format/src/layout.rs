@@ -1,7 +1,7 @@
 //! Binary layouts shared by the reader and writer.
 use viewer_core::AttributeDataType;
 
-use crate::{BlockCodec, FormatError};
+use crate::{BlockCodec, DisplayColourSource, FormatError};
 
 pub const FORMAT_VERSION: u16 = 5;
 /// Common header envelope, identified by the final byte of OCTVFRM1.
@@ -178,7 +178,17 @@ impl StorageLayout {
         column: usize,
         rules: ColumnRules<'_>,
     ) -> StoredColumn {
-        // Geometry (0) and the display colour (1) are always stored; schema column `s` is payload `s + 2`.
+        // Geometry (0) is always stored; schema column `s` is payload `s + 2`.
+        if self.derives_display_attribute() && !block_is_lod && column == 1 {
+            return match rules.display {
+                DisplayColourSource::None => StoredColumn::Present,
+                DisplayColourSource::Rgb(schema) | DisplayColourSource::Intensity(schema) => {
+                    StoredColumn::Derived {
+                        from: schema as usize + 2,
+                    }
+                }
+            };
+        }
         if self.omits_lod_attributes()
             && block_is_lod
             && column >= 2
@@ -255,14 +265,12 @@ pub(crate) struct ColumnRules<'a> {
     /// Schema indices a LOD block keeps (the header's `lod_attribute_columns`); empty on revisions that
     /// store every column in every block.
     pub(crate) lod_columns: &'a [u32],
+    /// Where leaf blocks derive their display colour from (the header's `display_colour_source`).
+    pub(crate) display: DisplayColourSource,
 }
 
 /// How a block holds one payload column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "a later revision constructs `Derived`")
-)]
 pub(crate) enum StoredColumn {
     /// The column has a payload in the file.
     Present,
@@ -387,6 +395,7 @@ mod tests {
         let layout = StorageLayout::V8Pre1;
         let rules = ColumnRules {
             lod_columns: &[0, 2],
+            display: DisplayColourSource::None,
         };
         for column in 0..6 {
             assert_eq!(
@@ -400,6 +409,34 @@ mod tests {
             .collect();
         // Geometry, display colour, schema 0, (schema 1 absent), schema 2, (schema 3 absent).
         assert_eq!(lod, [Present, Present, Present, Absent, Present, Absent]);
+    }
+
+    #[test]
+    fn v8_leaves_derive_the_display_colour_from_its_source() {
+        let layout = StorageLayout::V8Pre1;
+        for (display, expected) in [
+            (DisplayColourSource::None, StoredColumn::Present),
+            (
+                DisplayColourSource::Rgb(1),
+                StoredColumn::Derived { from: 3 },
+            ),
+            (
+                DisplayColourSource::Intensity(0),
+                StoredColumn::Derived { from: 2 },
+            ),
+        ] {
+            let rules = ColumnRules {
+                lod_columns: &[0],
+                display,
+            };
+            assert_eq!(layout.stored_column(false, 1, rules), expected);
+            // LOD blocks keep their own colour; other revisions never derive.
+            assert_eq!(layout.stored_column(true, 1, rules), StoredColumn::Present);
+            assert_eq!(
+                StorageLayout::V7.stored_column(false, 1, rules),
+                StoredColumn::Present
+            );
+        }
     }
 
     #[test]

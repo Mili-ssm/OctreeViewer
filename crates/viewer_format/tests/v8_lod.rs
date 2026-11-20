@@ -144,7 +144,9 @@ fn write_with(lod_columns: Option<Vec<u32>>) -> Result<(Vec<u8>, Vec<u8>), Forma
     let metadata = match lod_columns {
         Some(columns) => metadata.with_lod_attribute_columns(columns),
         None => metadata,
-    };
+    }
+    // The fixture's leaf colours (1, 2, 3) are not derivable from its intensity column.
+    .with_display_colour_source(viewer_format::DisplayColourSource::None);
     let mut writer = FormatWriter::new_split_for_version(
         V8_PRE1,
         Cursor::new(Vec::new()),
