@@ -1264,7 +1264,7 @@ fn split_attribute_file_length(
 fn validate_supported_primary(
     identity: crate::FormatIdentity,
 ) -> Result<StorageLayout, FormatError> {
-    if !matches!(identity.version.major(), 5..=7) {
+    if !matches!(identity.version.major(), 5..=8) {
         return Err(FormatError::UnsupportedVersion(identity.version.major()));
     }
     let layout = StorageLayout::from_version(identity.version)?;

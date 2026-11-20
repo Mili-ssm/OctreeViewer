@@ -338,7 +338,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
     // retried with its rows sorted by Morton key and DeltaVarint; ties keep source order.
     let mut row_permutation: Option<Vec<u32>> = None;
     if row_order == RowOrder::Hybrid
-        && layout.is_v7()
+        && layout.supports_hybrid_rows()
         && geometry_encoding == GeometryEncoding::CompactOccupied
         && u32::try_from(point_count).is_ok()
     {

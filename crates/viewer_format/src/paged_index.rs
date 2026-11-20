@@ -261,9 +261,13 @@ pub(crate) fn paged_layout_of_footer(footer: &[u8]) -> Option<StorageLayout> {
     if footer.len() != FOOTER_SIZE as usize {
         return None;
     }
-    [StorageLayout::V7Pre5, StorageLayout::V7]
-        .into_iter()
-        .find(|layout| footer[..8] == *layout.footer_magic())
+    [
+        StorageLayout::V7Pre5,
+        StorageLayout::V7,
+        StorageLayout::V8Pre1,
+    ]
+    .into_iter()
+    .find(|layout| footer[..8] == *layout.footer_magic())
 }
 
 fn parse_header_block(

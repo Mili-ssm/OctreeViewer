@@ -62,7 +62,7 @@ impl ConvertOptions {
     /// check ranges, so each conversion entry point runs this idempotent check.
     pub fn validate(self) -> Result<Self, ConvertError> {
         let version = self.format_version();
-        if self.row_order == Some(RowOrder::Hybrid) && version.major() != 7 {
+        if self.row_order == Some(RowOrder::Hybrid) && !version.supports_hybrid_rows() {
             return Err(ConvertError::HybridRowOrderUnsupported);
         }
         if let (Some(fixed), Some(requested)) = (version.fixed_row_order(), self.row_order)

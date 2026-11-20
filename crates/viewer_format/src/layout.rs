@@ -33,6 +33,8 @@ pub(crate) enum StorageLayout {
     V7Pre5,
     /// Final v7: the v7.5-pre byte layout under its own identity.
     V7,
+    /// Experimental v8.1-pre: the v7 byte layout under its own identity; later tasks change the payload.
+    V8Pre1,
 }
 
 impl StorageLayout {
@@ -49,6 +51,7 @@ impl StorageLayout {
             crate::FormatVersion::V7Pre(revision) if revision.get() == 4 => Ok(Self::V7Pre4),
             crate::FormatVersion::V7Pre(revision) if revision.get() == 5 => Ok(Self::V7Pre5),
             crate::FormatVersion::V7 => Ok(Self::V7),
+            crate::FormatVersion::V8Pre(revision) if revision.get() == 1 => Ok(Self::V8Pre1),
             _ => Err(FormatError::UnsupportedFormatVersion(version)),
         }
     }
@@ -66,6 +69,7 @@ impl StorageLayout {
             Self::V7Pre4 => crate::FormatVersion::V7_PRE4,
             Self::V7Pre5 => crate::FormatVersion::V7_PRE5,
             Self::V7 => crate::FormatVersion::V7,
+            Self::V8Pre1 => crate::FormatVersion::V8_PRE1,
         }
     }
 
@@ -82,6 +86,7 @@ impl StorageLayout {
             Self::V7Pre4 => b"OCTVI74P",
             Self::V7Pre5 => b"OCTVI75P",
             Self::V7 => b"OCTVIDX7",
+            Self::V8Pre1 => b"OCTVI81P",
         }
     }
 
@@ -98,6 +103,7 @@ impl StorageLayout {
             Self::V7Pre4 => b"OCTVE74P",
             Self::V7Pre5 => b"OCTVE75P",
             Self::V7 => b"OCTVEND7",
+            Self::V8Pre1 => b"OCTVE81P",
         }
     }
 
@@ -108,33 +114,58 @@ impl StorageLayout {
 
     /// Global `i64` integer frame, node prefixes, CRS record and `u32` offsets (v7.4-pre onward).
     pub(crate) const fn uses_global_frame(self) -> bool {
-        matches!(self, Self::V7Pre4 | Self::V7Pre5 | Self::V7)
+        matches!(self, Self::V7Pre4 | Self::V7Pre5 | Self::V7 | Self::V8Pre1)
     }
 
     /// Paged hierarchy: the index is a metadata block plus a root page, and the rest of the
     /// node table lives in child pages (v7.5-pre and v7).
     pub(crate) const fn uses_pages(self) -> bool {
-        matches!(self, Self::V7Pre5 | Self::V7)
+        matches!(self, Self::V7Pre5 | Self::V7 | Self::V8Pre1)
     }
 
     /// Writer policy: occupancy blocks are always compact 24-bit candidates.
     pub(crate) const fn restricts_occupancy_to_compact24(self) -> bool {
         matches!(
             self,
-            Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7
+            Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7 | Self::V8Pre1
         )
     }
 
     /// Writer policy: attribute payloads use the v7.3 dictionary-tuple encoder.
     pub(crate) const fn restricts_dictionary_tuples(self) -> bool {
-        matches!(self, Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7)
-    }
-
-    pub(crate) const fn is_v7(self) -> bool {
         matches!(
             self,
-            Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7
+            Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7 | Self::V8Pre1
         )
+    }
+
+    /// Whether the writer may re-sort a block's rows by Morton key (the hybrid row order).
+    pub(crate) const fn supports_hybrid_rows(self) -> bool {
+        matches!(
+            self,
+            Self::V7Pre1
+                | Self::V7Pre2
+                | Self::V7Pre3
+                | Self::V7Pre4
+                | Self::V7Pre5
+                | Self::V7
+                | Self::V8Pre1
+        )
+    }
+
+    /// The display colour is derived from stored data instead of being stored twice.
+    pub(crate) const fn derives_display_attribute(self) -> bool {
+        matches!(self, Self::V8Pre1)
+    }
+
+    /// Interior LOD nodes omit the attribute columns the viewer does not draw.
+    pub(crate) const fn omits_lod_attributes(self) -> bool {
+        matches!(self, Self::V8Pre1)
+    }
+
+    /// Nodes store nearest-neighbour distance quantiles.
+    pub(crate) const fn stores_distance_quantiles(self) -> bool {
+        matches!(self, Self::V8Pre1)
     }
 
     pub(crate) const fn supports_occupancy(self) -> bool {
@@ -149,6 +180,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8Pre1
         )
     }
 
@@ -162,6 +194,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8Pre1
         )
     }
 
@@ -176,6 +209,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8Pre1
         )
     }
 
@@ -189,6 +223,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8Pre1
         )
     }
 }

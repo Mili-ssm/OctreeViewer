@@ -61,3 +61,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0055](0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) | En modo celda la GPU decide el nivel dibujado y la CPU solo la residencia: conjunto activo contiguo (precisa ADR 0050 y 0053; cambia la lectura de RF-31 y R3-Q21) | Aceptada |
 | [0056](0056-se-retira-el-modo-octante.md) | Se retira el modo octante: el modo celda es el único y el predeterminado; se borra `setCellLod` (sustituye a 0034; precisa 0050 y 0055) | Aceptada |
 | [0057](0057-release-optimiza-velocidad.md) | `release` optimiza velocidad con `opt-level = 3` (sustituye a 0008 en ese punto) | Aceptada |
+| [0058](0058-formato-v8-experimental.md) | Se abre V8 como revisiones previas experimentales (`v8.N-pre`); LOD solo con lo que se dibuja, color no duplicado, solo V8 al final (precisa 0047) | Aceptada |

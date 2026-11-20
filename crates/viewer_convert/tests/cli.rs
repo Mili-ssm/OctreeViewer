@@ -221,6 +221,18 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[test]
+fn cli_accepts_v8_pre1() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    let output = tmp.path().join("out.oct");
+    let run = run_cli(&[&input, &output], &["--format-version", "v8.1-pre"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let primary = fs::read(&output).unwrap();
+    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVE81P");
+}
+
+#[test]
 fn default_conversion_writes_v7_pair() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
