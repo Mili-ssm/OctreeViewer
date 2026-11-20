@@ -147,15 +147,15 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
   ≤ radio del anillo; una muestra sin vecino no cuenta; distancias² en `u128`. Solo con `JobContext.collect_distance_quantiles` (verdadero solo si
   `stores_distance_quantiles()`), así que v7 no hace trabajo extra.
 
-- [ ] **Step 1: failing tests**: `quantiles_of_a_regular_grid` (rejilla de paso conocido d: p1 = p5 = p50 = d con
+- [x] **Step 1: failing tests**: `quantiles_of_a_regular_grid` (rejilla de paso conocido d: p1 = p5 = p50 = d con
   tolerancia de un cuanto); `duplicates_do_not_count` (puntos repetidos más una rejilla: mismos cuantiles);
   `isolated_and_outlier_points_terminate` (punto aislado y cúmulo con un punto lejano: termina y no cuenta lo que no
   tiene vecino); tiempo del cálculo sobre las hojas de Belvedere ≤ 10 % del de los trabajos de hoja;
   `quantiles_do_not_depend_on_workers` (W ∈ {1, 2, 8}, ejecutor serie y con hilos: mismos valores).
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar.
-- [ ] **Step 4:** tests del workspace (SHA de v7 intactos) y clippy → OK.
-- [ ] **Step 5:** commit `feat(convert): nearest-neighbour distance quantiles for v8.1-pre`.
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar.
+- [x] **Step 4:** tests del workspace (SHA de v7 intactos) y clippy → OK.
+- [x] **Step 5:** commit `feat(convert): nearest-neighbour distance quantiles for v8.1-pre`.
 
 ### Task 4a: One rule for what each block stores (no byte change)
 
