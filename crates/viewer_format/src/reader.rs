@@ -1410,29 +1410,27 @@ struct DisplaySource {
 
 /// The display colour of a leaf that does not store it: the high byte of each 16-bit channel, or of
 /// the single value for r = g = b. Shared with the writer's check, so both sides agree by construction.
+pub(crate) fn derived_display_colors(
+    values: &[u16],
+    components: u32,
+) -> impl ExactSizeIterator<Item = ColorRgb> + '_ {
+    let step = if components == 3 { 3 } else { 1 };
+    values.chunks_exact(step).map(move |chunk| {
+        if step == 3 {
+            ColorRgb::new(
+                (chunk[0] >> 8) as u8,
+                (chunk[1] >> 8) as u8,
+                (chunk[2] >> 8) as u8,
+            )
+        } else {
+            let gray = (chunk[0] >> 8) as u8;
+            ColorRgb::new(gray, gray, gray)
+        }
+    })
+}
+
 pub(crate) fn derive_display_colors(values: &[u16], components: u32) -> Vec<ColorRgb> {
-    if components == 3 {
-        values
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .map(|rgb| {
-                ColorRgb::new(
-                    (rgb[0] >> 8) as u8,
-                    (rgb[1] >> 8) as u8,
-                    (rgb[2] >> 8) as u8,
-                )
-            })
-            .collect()
-    } else {
-        values
-            .iter()
-            .map(|value| {
-                let gray = (value >> 8) as u8;
-                ColorRgb::new(gray, gray, gray)
-            })
-            .collect()
-    }
+    derived_display_colors(values, components).collect()
 }
 
 pub(crate) fn contains_point(bounds: SpatialBounds, point: [f64; 3]) -> bool {

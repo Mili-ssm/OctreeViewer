@@ -596,22 +596,30 @@ pub(crate) fn validate_column_codec(
     Ok(())
 }
 
-/// Range a block occupies in the split companion: from its display payload to the furthest end
-/// of a stored column (a column that is not stored has no bytes, whatever its offset).
+/// Range a block occupies in the split companion: from the first stored column (a derived display
+/// colour has no payload of its own, its slot only carries an offset) to the furthest end of a
+/// stored column. A column that is not stored has no bytes, whatever its offset.
 fn companion_range(block: &BlockDirectoryEntry) -> Result<(u64, u64), FormatError> {
-    let start = block.payloads[1].offset;
-    let end = block
+    let mut stored = block
         .payloads
         .iter()
         .skip(1)
         .filter(|payload| payload.stored.is_present())
-        .try_fold(start, |end, payload| {
-            payload
-                .offset
-                .checked_add(payload.stored_length)
-                .map(|next| end.max(next))
-                .ok_or(FormatError::FileSizeOverflow)
-        })?;
+        .peekable();
+    let Some(start) = stored.peek().map(|payload| payload.offset) else {
+        let offset = block.payloads[1].offset;
+        return Ok((offset, offset));
+    };
+    let mut start = start;
+    let mut end = start;
+    for payload in stored {
+        start = start.min(payload.offset);
+        let next = payload
+            .offset
+            .checked_add(payload.stored_length)
+            .ok_or(FormatError::FileSizeOverflow)?;
+        end = end.max(next);
+    }
     Ok((start, end))
 }
 
@@ -1231,6 +1239,29 @@ mod companion_range_tests {
                 payload(103, 5, StoredColumn::Present),
                 // Absent last column with a stale offset: ignored.
                 PayloadDirectoryEntry::not_stored(StoredColumn::Absent, 5000),
+            ],
+        };
+        assert_eq!(companion_range(&block).unwrap(), (100, 108));
+    }
+
+    #[test]
+    fn a_derived_display_colour_does_not_start_the_range() {
+        let block = BlockDirectoryEntry {
+            offset: 0,
+            payload_length: 12,
+            point_count: 1,
+            quantization_error: 0.0,
+            origin: [0.0; 3],
+            scale: [1.0; 3],
+            origin_quanta: [0; 3],
+            node_cell: None,
+            geometry_encoding: GeometryEncoding::RawU32,
+            payloads: vec![
+                payload(0, 12, StoredColumn::Present),
+                // The derived slot carries the source column's offset, which is not the minimum.
+                PayloadDirectoryEntry::not_stored(StoredColumn::Derived { from: 3 }, 103),
+                payload(100, 3, StoredColumn::Present),
+                payload(103, 5, StoredColumn::Present),
             ],
         };
         assert_eq!(companion_range(&block).unwrap(), (100, 108));

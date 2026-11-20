@@ -103,8 +103,11 @@ fn display_of(cloud: Cloud, intensity: &[u16], rgb: &[u16], row: usize) -> Color
     }
 }
 
-/// `tamper` changes one leaf colour so it is no longer derivable.
-fn dataset(cloud: Cloud, tamper: bool) -> (FormatMetadata, Vec<SourcePointBlock>) {
+/// `tamper` is a (node, row) whose colour is changed so it is no longer derivable.
+fn dataset(
+    cloud: Cloud,
+    tamper: Option<(usize, usize)>,
+) -> (FormatMetadata, Vec<SourcePointBlock>) {
     let depths = [0_u32, 1, 1];
     let prefixes: [[u64; 3]; NODES] = [
         ROOT_PREFIX,
@@ -187,8 +190,9 @@ fn dataset(cloud: Cloud, tamper: bool) -> (FormatMetadata, Vec<SourcePointBlock>
                 }
             })
             .collect();
-        if tamper && i == 2 {
-            colors[5].g ^= 1;
+        if let Some((node, row)) = tamper.filter(|(node, _)| *node == i) {
+            colors[row].g ^= 1;
+            assert_eq!(node, i);
         }
         let columns = schema
             .iter()
@@ -229,7 +233,7 @@ type Pair = (Vec<u8>, Vec<u8>);
 fn write(
     version: FormatVersion,
     cloud: Cloud,
-    tamper: bool,
+    tamper: Option<(usize, usize)>,
     source: Option<DisplayColourSource>,
 ) -> Result<Pair, FormatError> {
     let (metadata, blocks) = dataset(cloud, tamper);
@@ -261,11 +265,11 @@ fn write(
 }
 
 fn v8(cloud: Cloud) -> Pair {
-    write(FormatVersion::V8_PRE1, cloud, false, Some(cloud.source())).unwrap()
+    write(FormatVersion::V8_PRE1, cloud, None, Some(cloud.source())).unwrap()
 }
 
 fn v7(cloud: Cloud) -> Pair {
-    write(FormatVersion::V7, cloud, false, None).unwrap()
+    write(FormatVersion::V7, cloud, None, None).unwrap()
 }
 
 fn open(file: &Pair) -> FormatReader<Cursor<Vec<u8>>> {
@@ -311,7 +315,14 @@ fn assert_reads_like_v7(cloud: Cloud) {
         let (old_block, new_block) = (old.read_block(id).unwrap(), new.read_block(id).unwrap());
         assert_eq!(new_block.points().points(), old_block.points().points());
         for column in 0..cloud.schema().len() as u32 {
-            if new.attribute_present(id, column).unwrap() {
+            // Leaves keep every attribute column; the LOD block keeps only its listed ones.
+            let expected = block != 0 || cloud.lod_columns().contains(&column);
+            assert_eq!(
+                new.attribute_present(id, column).unwrap(),
+                expected,
+                "{cloud:?} block {block} column {column} presence"
+            );
+            if expected {
                 assert_eq!(
                     new.read_attribute(id, column).unwrap(),
                     old.read_attribute(id, column).unwrap(),
@@ -332,17 +343,52 @@ fn stored_kinds(file: &Pair, block: u64) -> Vec<BlockPayloadKind> {
         .collect()
 }
 
+/// The hybrid row order really permuted each leaf: its stored rows are a different order of the
+/// source rows (the source columns are the reference, v7 sorts too), and the display colour of
+/// every stored row still derives from that same row's own source column.
+fn assert_leaves_were_resorted(file: &Pair) {
+    let (_, sources) = dataset(Cloud::Colour, None);
+    let mut reader = open(file);
+    for leaf in [1_u64, 2] {
+        let id = BlockId::new(leaf);
+        let source = &sources[leaf as usize].attributes();
+        let stored = |reader: &mut FormatReader<Cursor<Vec<u8>>>, column| {
+            reader.read_attribute(id, column).unwrap()
+        };
+        let (intensity, rgb) = (stored(&mut reader, 0), stored(&mut reader, 1));
+        let (AttributeValues::U16(source_intensity), AttributeValues::U16(stored_intensity)) =
+            (source[0].values(), intensity.values())
+        else {
+            panic!("intensity is u16");
+        };
+        assert_ne!(
+            stored_intensity, source_intensity,
+            "leaf {leaf} kept source order"
+        );
+        let (mut a, mut b) = (stored_intensity.clone(), source_intensity.clone());
+        a.sort_unstable();
+        b.sort_unstable();
+        assert_eq!(a, b, "leaf {leaf} rows are not a permutation");
+        let AttributeValues::U16(stored_rgb) = rgb.values() else {
+            panic!("rgb is u16");
+        };
+        let colors = reader.read_display_colors(id).unwrap();
+        assert_eq!(colors.len(), POINTS);
+        for (row, color) in colors.iter().enumerate() {
+            assert_eq!(
+                *color,
+                display_of(Cloud::Colour, stored_intensity, stored_rgb, row),
+                "leaf {leaf} row {row}"
+            );
+        }
+    }
+}
+
 #[test]
 fn leaf_display_reads_back_identical_to_v7() {
     assert_reads_like_v7(Cloud::Colour);
     let file = v8(Cloud::Colour);
-    // The fixture exercises the hybrid row order: some leaf was re-sorted by Morton key.
-    let resorted = open(&file)
-        .block_storage_stats()
-        .unwrap()
-        .iter()
-        .any(|stat| format!("{:?}", stat.geometry_encoding).contains("DeltaVarint"));
-    assert!(resorted, "no block took the hybrid row order");
+    assert_leaves_were_resorted(&file);
     for leaf in [1, 2] {
         assert!(!stored_kinds(&file, leaf).contains(&BlockPayloadKind::DisplayColor));
     }
@@ -364,6 +410,11 @@ fn leaf_display_from_intensity_without_colour() {
     let mut reader = open(&file);
     let colors = reader.read_display_colors(BlockId::new(1)).unwrap();
     assert!(colors.iter().all(|c| c.r == c.g && c.g == c.b));
+    let paged = PagedReader::open(Cursor::new(file.0)).unwrap();
+    assert_eq!(
+        paged.header().display_colour_source(),
+        Some(DisplayColourSource::Intensity(0))
+    );
 }
 
 #[test]
@@ -407,10 +458,38 @@ fn the_read_plan_counts_the_source_column() {
 #[test]
 fn display_mismatch_is_rejected_by_the_writer() {
     for cloud in [Cloud::Colour, Cloud::IntensityOnly] {
-        let result = write(FormatVersion::V8_PRE1, cloud, true, Some(cloud.source()));
+        // Node 2 is block 3; its first row, then its last row.
+        for row in [5, POINTS - 1] {
+            let result = write(
+                FormatVersion::V8_PRE1,
+                cloud,
+                Some((2, row)),
+                Some(cloud.source()),
+            );
+            assert!(
+                matches!(result, Err(FormatError::DisplayColourNotDerivable(id)) if id == BlockId::new(3)),
+                "{cloud:?} row {row}: {result:?}"
+            );
+        }
+        let result = write(
+            FormatVersion::V8_PRE1,
+            cloud,
+            Some((1, POINTS - 1)),
+            Some(cloud.source()),
+        );
         assert!(
-            matches!(result, Err(FormatError::DisplayColourNotDerivable(id)) if id == BlockId::new(3)),
-            "{cloud:?}: {result:?}"
+            matches!(result, Err(FormatError::DisplayColourNotDerivable(id)) if id == BlockId::new(2)),
+            "{cloud:?} first leaf: {result:?}"
+        );
+        // The LOD block stores its colour, so nothing derives it and any value is accepted.
+        assert!(
+            write(
+                FormatVersion::V8_PRE1,
+                cloud,
+                Some((0, 5)),
+                Some(cloud.source())
+            )
+            .is_ok()
         );
     }
     // The same cloud with the colour stored is accepted, and v7 never checks.
@@ -418,12 +497,12 @@ fn display_mismatch_is_rejected_by_the_writer() {
         write(
             FormatVersion::V8_PRE1,
             Cloud::Colour,
-            true,
+            Some((2, 5)),
             Some(DisplayColourSource::None)
         )
         .is_ok()
     );
-    assert!(write(FormatVersion::V7, Cloud::Colour, true, None).is_ok());
+    assert!(write(FormatVersion::V7, Cloud::Colour, Some((2, 5)), None).is_ok());
 }
 
 #[test]
@@ -435,18 +514,39 @@ fn the_writer_rejects_a_wrong_or_missing_source() {
         DisplayColourSource::Intensity(2),
     ];
     for source in bad {
-        let result = write(FormatVersion::V8_PRE1, Cloud::Colour, false, Some(source));
+        let result = write(FormatVersion::V8_PRE1, Cloud::Colour, None, Some(source));
         assert!(
             matches!(result, Err(FormatError::InvalidMetadata(_))),
             "{source:?}: {result:?}"
         );
     }
     assert!(matches!(
-        write(FormatVersion::V8_PRE1, Cloud::Colour, false, None),
+        write(FormatVersion::V8_PRE1, Cloud::Colour, None, None),
         Err(FormatError::InvalidMetadata(_))
     ));
+    // A real 16-bit column whose high byte is not the stored colour, and a u8 column.
+    let result = write(
+        FormatVersion::V8_PRE1,
+        Cloud::Colour,
+        None,
+        Some(DisplayColourSource::Intensity(0)),
+    );
+    assert!(
+        matches!(result, Err(FormatError::DisplayColourNotDerivable(_))),
+        "intensity on the colour cloud: {result:?}"
+    );
+    let result = write(
+        FormatVersion::V8_PRE1,
+        Cloud::IntensityOnly,
+        None,
+        Some(DisplayColourSource::Rgb(1)),
+    );
+    assert!(
+        matches!(result, Err(FormatError::InvalidMetadata(_))),
+        "rgb naming the u8 column: {result:?}"
+    );
     // Revisions that store the colour take no source.
-    let (metadata, _) = dataset(Cloud::Colour, false);
+    let (metadata, _) = dataset(Cloud::Colour, None);
     let result = FormatWriter::new_split_for_version(
         FormatVersion::V7,
         Cursor::new(Vec::new()),
@@ -530,4 +630,49 @@ fn the_file_is_smaller_by_the_leaf_display_colour() {
     };
     assert!(omitted(&old) > omitted(&new));
     assert!(new.1.len() < old.1.len());
+}
+
+#[test]
+fn parallel_and_budgeted_reads_return_the_v7_display_colours() {
+    use std::ops::ControlFlow;
+    use viewer_format::{ParallelReadStatus, ReadBudget, read_selected_parallel};
+
+    for cloud in [Cloud::Colour, Cloud::IntensityOnly] {
+        let file = v8(cloud);
+        let mut old = open(&v7(cloud));
+        let mut readers = vec![open(&file)];
+        let mut fork = readers[0].fork_reader(Cursor::new(file.0.clone()));
+        fork.attach_attributes(Cursor::new(file.1.clone())).unwrap();
+        readers.push(fork);
+        let requests: Vec<_> = (0..NODES as u64)
+            .map(|block| (BlockId::new(block), ReadSelection::DisplayColors))
+            .collect();
+        let budget = ReadBudget::new(u64::MAX);
+        let mut seen = 0;
+        let progress = read_selected_parallel(&mut readers, &requests, &budget, |index, read| {
+            let SelectedRead::DisplayColors(colors) = read else {
+                panic!("wrong variant at {index}");
+            };
+            let expected = old.read_display_colors(requests[index].0).unwrap();
+            assert_eq!(*colors, expected, "{cloud:?} request {index}");
+            seen += 1;
+            ControlFlow::Continue(())
+        })
+        .unwrap();
+        assert_eq!(
+            (seen, progress.status),
+            (NODES, ParallelReadStatus::Complete)
+        );
+        assert_eq!(budget.reserved_bytes(), 0);
+        for (id, selection) in requests {
+            let read = readers[0]
+                .try_read_selected(id, selection, &budget)
+                .unwrap()
+                .expect("budget is unlimited");
+            let SelectedRead::DisplayColors(colors) = read.selected() else {
+                panic!("wrong variant");
+            };
+            assert_eq!(*colors, old.read_display_colors(id).unwrap());
+        }
+    }
 }

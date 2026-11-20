@@ -32,7 +32,7 @@ fn block_is_lod_by_scan(
     block: BlockId,
     metadata: &FormatMetadata,
 ) -> Result<bool, FormatError> {
-    // Only layouts that omit LOD columns need the answer; the others never look at it.
+    // Only layouts that omit or derive columns for leaves need the answer; the others never look at it.
     let layout = StorageLayout::from_version(version)?;
     if !(layout.omits_lod_attributes() || layout.derives_display_attribute()) {
         return Ok(false);
@@ -433,15 +433,18 @@ pub(crate) fn prepare_point_block_for_version_impl(
         &mut bytes,
         &mut payloads,
     )?;
-    raw.clear();
-    for color in block.colors() {
-        raw.extend_from_slice(&[color.r, color.g, color.b]);
+    let display_rule = column_rule(1);
+    if display_rule.is_present() {
+        raw.clear();
+        for color in block.colors() {
+            raw.extend_from_slice(&[color.r, color.g, color.b]);
+        }
+        if let Some(permutation) = &row_permutation {
+            permute_rows(&raw, permutation, 3, &mut scratch);
+            std::mem::swap(&mut raw, &mut scratch);
+        }
     }
-    if let Some(permutation) = &row_permutation {
-        permute_rows(&raw, permutation, 3, &mut scratch);
-        std::mem::swap(&mut raw, &mut scratch);
-    }
-    append_stored_payload(column_rule(1), &raw, &mut bytes, &mut payloads, layout, 3)?;
+    append_stored_payload(display_rule, &raw, &mut bytes, &mut payloads, layout, 3)?;
     for (schema_index, column) in attributes.into_iter().enumerate() {
         let stored = column_rule(schema_index + 2);
         if !stored.is_present() {
@@ -789,13 +792,12 @@ fn ensure_display_is_derivable(
             "display colour source is not a 16-bit column",
         ));
     };
-    let derived =
-        crate::reader::derive_display_colors(values, source.descriptor().component_count());
+    let components = source.descriptor().component_count();
+    let derived = crate::reader::derived_display_colors(values, components);
     if derived.len() != colors.len()
         || derived
-            .iter()
             .zip(colors)
-            .any(|(derived, color)| derived != color)
+            .any(|(derived, color)| derived != *color)
     {
         return Err(FormatError::DisplayColourNotDerivable(id));
     }

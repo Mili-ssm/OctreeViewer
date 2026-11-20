@@ -1706,4 +1706,14 @@ fn reading_an_absent_column_is_an_error_not_a_panic() {
         offset,
     );
     assert!(reader.read_display_colors(id).is_err());
+    // A source index outside the schema is an error too, not a panic.
+    let entry = std::sync::Arc::get_mut(&mut reader.blocks)
+        .unwrap()
+        .get_mut(&id)
+        .unwrap();
+    entry.payloads[1] = crate::layout::PayloadDirectoryEntry::not_stored(
+        crate::layout::StoredColumn::Derived { from: 99 },
+        offset,
+    );
+    assert!(reader.read_display_colors(id).is_err());
 }

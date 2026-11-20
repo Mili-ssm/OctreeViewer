@@ -350,7 +350,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         metadata = metadata.with_lod_attribute_columns(columns);
     }
     if options.format_version().derives_display_attribute() {
-        let source = display_colour_source(&metadata);
+        let source = display_colour_source(metadata.dataset().hierarchy().attributes());
         metadata = metadata.with_display_colour_source(source);
     }
     Ok(SpatialPlan {
@@ -379,13 +379,21 @@ fn lod_attribute_columns(metadata: &FormatMetadata) -> Vec<u32> {
 }
 
 /// Where leaf display colours come from: the converter sets them to the high byte of `rgb` (or of
-/// `intensity` for a cloud without colour), so that column is the source. A schema with neither
-/// cannot reproduce them and keeps the stored colour.
-fn display_colour_source(metadata: &FormatMetadata) -> viewer_format::DisplayColourSource {
+/// `intensity` for a cloud without colour), so that column is the source. A column only
+/// qualifies as a 16-bit one with 1 or 3 components (the reader's rule); a same-named column of
+/// another type falls through to the next option, and a schema with none keeps the stored colour.
+fn display_colour_source(
+    attributes: &[viewer_core::AttributeDescriptor],
+) -> viewer_format::DisplayColourSource {
     use viewer_format::DisplayColourSource::{Intensity, None, Rgb};
-    let attributes = metadata.dataset().hierarchy().attributes();
-    let find = |name: &str| attributes.iter().position(|a| a.name() == name);
-    match (find("rgb"), find("intensity")) {
+    let find = |name: &str, components: &[u32]| {
+        attributes.iter().position(|a| {
+            a.name() == name
+                && a.data_type() == viewer_core::AttributeDataType::U16
+                && components.contains(&a.component_count())
+        })
+    };
+    match (find("rgb", &[1, 3]), find("intensity", &[1, 3])) {
         (Some(index), _) => Rgb(index as u32),
         (Option::None, Some(index)) => Intensity(index as u32),
         (Option::None, Option::None) => None,
@@ -468,4 +476,42 @@ pub(super) struct NodeRecord {
     pub(super) point_count: u64,
     pub(super) geometric_error: f64,
     pub(super) blocks: Vec<BlockId>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::display_colour_source;
+    use viewer_core::{AttributeDataType, AttributeDescriptor};
+    use viewer_format::DisplayColourSource::{Intensity, None, Rgb};
+
+    fn column(name: &str, data_type: AttributeDataType, components: u32) -> AttributeDescriptor {
+        AttributeDescriptor::new(name, data_type, components).unwrap()
+    }
+
+    #[test]
+    fn the_source_is_the_named_column_when_it_is_16_bit() {
+        let u16s = |name, n| column(name, AttributeDataType::U16, n);
+        let schema = [u16s("intensity", 1), u16s("rgb", 3)];
+        assert_eq!(display_colour_source(&schema), Rgb(1));
+        assert_eq!(display_colour_source(&schema[..1]), Intensity(0));
+        assert_eq!(display_colour_source(&[]), None);
+    }
+
+    #[test]
+    fn a_same_named_column_of_another_type_falls_through() {
+        let u16_intensity = column("intensity", AttributeDataType::U16, 1);
+        let u8_rgb = column("rgb", AttributeDataType::U8, 3);
+        let two_component_rgb = column("rgb", AttributeDataType::U16, 2);
+        let u8_intensity = column("intensity", AttributeDataType::U8, 1);
+        assert_eq!(
+            display_colour_source(&[u16_intensity.clone(), u8_rgb.clone()]),
+            Intensity(0)
+        );
+        assert_eq!(
+            display_colour_source(&[u16_intensity, two_component_rgb.clone()]),
+            Intensity(0)
+        );
+        assert_eq!(display_colour_source(&[u8_intensity, u8_rgb]), None);
+        assert_eq!(display_colour_source(&[two_component_rgb]), None);
+    }
 }
