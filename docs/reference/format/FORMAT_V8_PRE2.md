@@ -25,7 +25,7 @@ experimental y **no está congelada** (ADR 0058, D6): puede cambiar sin compatib
 | --- | ---: | --- | --- |
 | `Zstd` | 5 | Una trama zstd | Payloads de `.octattrs` |
 | `BytePlanesZstd` | 6 | Planos de bytes independientes de una tupla de atributo, comprimidos con zstd | Payloads de `.octattrs` |
-| Diccionario, etiqueta interna `2` | — | Partes del diccionario en zstd (0 crudo, 1 LZ4) | Payloads de `.octattrs` |
+| Diccionario, etiqueta interna `2` | — | Parte del diccionario en zstd (las etiquetas internas 0 y 1 siguen siendo crudo y LZ4) | Payloads de `.octattrs` |
 
 - **Trama:** nivel 3, sin número mágico, sin checksum y sin tamaño de contenido (el directorio ya guarda
   `raw_length`). El lector descomprime en un búfer de exactamente `raw_length` bytes; otro tamaño es un error.
@@ -37,7 +37,7 @@ experimental y **no está congelada** (ADR 0058, D6): puede cambiar sin compatib
 
 ## Esquemas del conversor (`--attr-codec`)
 
-Opción experimental que decide qué columnas usan zstd; el fichero no la guarda y cualquier lector v8.2-pre lee todos
+Opción experimental, solo con `--format-version v8.2-pre` (con otro formato, un esquema distinto de `lz4` es un error), que decide qué columnas usan zstd; el fichero no la guarda y cualquier lector v8.2-pre lee todos
 los esquemas. Al congelar la V8 se fija un esquema y la opción desaparece (D4).
 
 | Esquema | Columnas con zstd |

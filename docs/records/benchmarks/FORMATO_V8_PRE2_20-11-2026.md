@@ -92,8 +92,8 @@ asíncrono (`asyncBlocks.decodeMs`); «hasta objetivo» es `timeToReachedMs` de 
   velocidades de la tarea 0 eran de caché caliente, y aquí la decodificación de zstd y de LZ4 tampoco se distingue.
 - **Recuento de bloques:** varía unos pocos por ciento entre ejecuciones (la elección de LOD depende del tiempo), así
   que `decodeMs` no está normalizado por bloque.
-- **Brazo `gps_time`:** `openTimings.targetLodMs` sale nulo porque cambiar el color tras abrir reinicia la ventana de
-  medida de la demo; por eso la tabla usa `timeToReachedMs` en todos los brazos.
+- **Brazo `gps_time`:** `openTimings.targetLodMs` sale nulo: la demo solo lo guarda para el refinamiento que lanza
+  el dataset, y el cambio de color justo tras abrir lo sustituye; por eso la tabla usa `timeToReachedMs` en todos los brazos.
 - `loadavg` a 1 min al empezar: 1,24–3,29, probablemente inflado por el navegador de la ejecución anterior; sin `cargo` ni otro
   navegador en marcha.
 - Cada ejecución registra los dos errores de consola `404` ya conocidos del registro de v8.1-pre (sin identificar).
