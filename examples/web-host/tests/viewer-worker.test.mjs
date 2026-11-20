@@ -30,7 +30,7 @@ test("default cells without a build worker run the CPU path and report needsBuil
     assert.equal(worker.messages.at(-1).value.lod.cellPath, "needsBuildWorker");
 });
 
-async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null, { skipInit = false, initFields = {}, resolveSource = async (spec) => spec } = {}) {
+async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null, { skipInit = false, initFields = {}, resolveSource = async (spec) => spec, openResult = {} } = {}) {
     const messages = [];
     const enableCellsCalls = [];
     class FakeBuildWorker {
@@ -77,7 +77,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         fitScene() {},
         openLodDataset() {
             colorMode = "rgb";
-            return { status: "metadata_ready" };
+            return { status: "metadata_ready", ...openResult };
         },
         nextAsyncLodBlock: () => pendingBlockIds[0] ?? null,
         pendingAsyncLodBlocks: () => [...pendingBlockIds],
@@ -338,6 +338,20 @@ test("a render setting changed at rest re-posts lodProgress with the live stats"
         await worker.send("frame", { camera: CELLS_CAMERA });
         assert.equal(count(), before + 1, `${command} posts a new lodProgress`);
         assert.deepEqual(latestProgress(worker.messages).lod[field], expected);
+    }
+});
+
+test("the in-worker open path carries the file's p5 as recommendedMinSize (ADR 0059)", async () => {
+    const open = { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 };
+    const withCells = await runWorker(undefined, null, { openResult: { cellsInfo: { recommendedMinSize: 0.172 } } });
+    await withCells.send("openFile", open);
+    assert.equal(withCells.messages.find(message => message.type === "datasetOpened").opened.recommendedMinSize, 0.172);
+    assert.equal(withCells.messages.find(message => message.type === "dataset").opened.recommendedMinSize, 0.172);
+    // Without cells (CPU path) or without a measured p5 the page keeps 0.1 mm.
+    for (const openResult of [{}, { cellsInfo: { recommendedMinSize: null } }]) {
+        const worker = await runWorker(undefined, null, { openResult });
+        await worker.send("openFile", open);
+        assert.equal(worker.messages.find(message => message.type === "datasetOpened").opened.recommendedMinSize, null);
     }
 });
 

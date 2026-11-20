@@ -58,11 +58,30 @@ test("the default length is the file's p5 in the unit that reads best, else 0.1 
     assert.deepEqual(defaultLength(0.172, null), { value: 17.2, unit: "cm" });
     // The p5 is in dataset units: a foot (0.3048 m) file converts to metres first.
     assert.deepEqual(defaultLength(1, { unit: "foot", metresPerUnit: 0.3048, geographic: false }), { value: 30.5, unit: "cm" });
-    assert.ok(Number.isFinite(lengthToDatasetUnits(17.2, "cm", 1)));
+    assert.equal(lengthToDatasetUnits(17.2, "cm", 1), 17.2 * 1e-2);
+});
+
+// The panel path: control value (shown, rounded) -> side sent to the viewer, as main.js computes it.
+function sentSide(recommendedMinSize, crsUnit) {
+    const { value, unit } = defaultLength(recommendedMinSize, crsUnit);
+    return lengthToDatasetUnits(value, unit, crsUnitPolicy(crsUnit).metresPerUnit);
+}
+
+test("the side sent for a default length is p5 within the 3-digit rounding (0.5 %)", () => {
+    const metres = { unit: "metre", metresPerUnit: 1, geographic: false };
+    const foot = { unit: "foot", metresPerUnit: 0.3048, geographic: false };
+    for (const [p5, crs] of [[0.172, metres], [0.001234, metres], [2.5, metres], [0.17, null], [1, foot], [0.0004567, metres]]) {
+        const side = sentSide(p5, crs);
+        assert.ok(Math.abs(side - p5) / p5 <= 0.005, `p5 ${p5} -> side ${side}`);
+    }
+    assert.ok(Math.abs(sentSide(0.172, metres) - 0.172) < 1e-12);
+    // 0.1 mm when there is no p5 (dataset units are metres): the API default of 1e-4.
+    assert.ok(Math.abs(sentSide(null, null) - 1e-4) < 1e-18);
 });
 
 test("no usable p5, or a geographic CRS, keeps 0.1 mm", () => {
     for (const p5 of [null, undefined, 0, -1, Number.NaN, Infinity]) assert.deepEqual(defaultLength(p5, null), FALLBACK_LENGTH);
     assert.deepEqual(defaultLength(0.5, { unit: "degree", metresPerUnit: 1, geographic: true }), FALLBACK_LENGTH);
     assert.deepEqual(FALLBACK_LENGTH, { value: 0.1, unit: "mm" });
+    assert.ok(Math.abs(sentSide(Number.NaN, null) - 1e-4) < 1e-18);
 });
