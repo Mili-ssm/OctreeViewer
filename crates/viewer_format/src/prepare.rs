@@ -10,8 +10,8 @@ use crate::layout::{
     PayloadDirectoryEntry, StorageLayout, StoredColumn, attribute_payload_size, block_payload_size,
 };
 use crate::{
-    FormatError, FormatMetadata, FormatVersion, SourcePointBlock, compress_block, crc32,
-    quantize_local_positions,
+    EntropyCoder, FormatError, FormatMetadata, FormatVersion, SourcePointBlock, compress_block,
+    crc32, quantize_local_positions,
 };
 
 /// Encodes one block without appending it, allowing independent blocks to be prepared concurrently.
@@ -465,7 +465,14 @@ pub(crate) fn prepare_point_block_for_version_impl(
             permute_rows(&raw, permutation, width, &mut scratch);
             std::mem::swap(&mut raw, &mut scratch);
         }
-        append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
+        append_payload(
+            &raw,
+            &mut bytes,
+            &mut payloads,
+            layout,
+            width,
+            EntropyCoder::Lz4,
+        )?;
     }
     Ok((
         PreparedPointBlock {
@@ -815,7 +822,7 @@ fn append_stored_payload(
     width: usize,
 ) -> Result<(), FormatError> {
     if stored.is_present() {
-        append_payload(raw, bytes, payloads, layout, width)
+        append_payload(raw, bytes, payloads, layout, width, EntropyCoder::Lz4)
     } else {
         payloads.push(PayloadDirectoryEntry::not_stored(
             stored,
@@ -832,13 +839,19 @@ pub(crate) fn append_payload(
     payloads: &mut Vec<PayloadDirectoryEntry>,
     layout: StorageLayout,
     width: usize,
+    coder: EntropyCoder,
 ) -> Result<(), FormatError> {
+    if coder == EntropyCoder::Zstd && !layout.supports_zstd() {
+        return Err(FormatError::MalformedBlock(
+            "zstd is not valid in this revision",
+        ));
+    }
     let encoded = if layout.restricts_dictionary_tuples() {
-        crate::attribute_codec::encode_v7_pre3(raw, width)?
+        crate::attribute_codec::encode_v7_pre3(raw, width, coder)?
     } else if layout.supports_byte_planes() {
-        crate::attribute_codec::encode_pre4(raw, width)?
+        crate::attribute_codec::encode_pre4(raw, width, coder)?
     } else if layout.supports_dictionary() {
-        crate::attribute_codec::encode(raw, width)?
+        crate::attribute_codec::encode(raw, width, coder)?
     } else {
         compress_block(raw)
     };

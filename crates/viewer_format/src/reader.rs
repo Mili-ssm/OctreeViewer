@@ -1315,12 +1315,13 @@ impl<R: Read + Seek> IndexedReader<R> {
         if range.codec() == BlockCodec::None {
             Ok(stored)
         } else if let Some(width) = attribute_width {
-            crate::attribute_codec::decode(
+            crate::attribute_codec::decode_with(
                 range.codec(),
                 &stored,
                 raw_size,
                 width,
                 usize::try_from(self.limits.max_block_bytes).unwrap_or(usize::MAX),
+                self.layout.supports_zstd(),
             )
         } else {
             Ok(decompress_block(

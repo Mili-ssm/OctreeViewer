@@ -173,6 +173,9 @@ fn checked_usize(value: u64) -> Result<(), FormatError> {
         .map_err(|_| FormatError::SizeOutOfRange(value))
 }
 
+/// Upper bound of the zstd decompression context (a few hundred KiB for level-3 frames).
+const ZSTD_DECOMPRESSION_CONTEXT_BYTES: u64 = 1 << 20;
+
 fn add(left: u64, right: u64) -> Result<u64, FormatError> {
     left.checked_add(right)
         .ok_or(FormatError::BlockSizeOverflow)
@@ -211,11 +214,24 @@ pub(crate) fn estimate_payload(
     let codec_peak = match range.codec {
         BlockCodec::None => range.stored_bytes,
         BlockCodec::Lz4 | BlockCodec::Constant => add(range.stored_bytes, decoded_bytes)?,
+        BlockCodec::Zstd => add(
+            add(range.stored_bytes, decoded_bytes)?,
+            ZSTD_DECOMPRESSION_CONTEXT_BYTES,
+        )?,
         BlockCodec::BytePlanes => add(
             range.stored_bytes,
             decoded_bytes
                 .checked_mul(2)
                 .ok_or(FormatError::BlockSizeOverflow)?,
+        )?,
+        BlockCodec::BytePlanesZstd => add(
+            add(
+                range.stored_bytes,
+                decoded_bytes
+                    .checked_mul(2)
+                    .ok_or(FormatError::BlockSizeOverflow)?,
+            )?,
+            ZSTD_DECOMPRESSION_CONTEXT_BYTES,
         )?,
         BlockCodec::Dictionary => add(
             range.stored_bytes,
@@ -270,6 +286,13 @@ mod tests {
             assert_eq!(estimate.decoded_bytes(), 20);
             assert_eq!(estimate.output_bytes(), 5);
             assert_eq!(estimate.peak_bytes(), (10 + 20 * (multiplier - 1)).max(25));
+        }
+        for (codec, multiplier) in [(BlockCodec::Zstd, 2), (BlockCodec::BytePlanesZstd, 3)] {
+            let estimate = estimate_payload(&range(codec, 10, 20), 5, None).unwrap();
+            assert_eq!(
+                estimate.peak_bytes(),
+                10 + 20 * (multiplier - 1) + ZSTD_DECOMPRESSION_CONTEXT_BYTES
+            );
         }
     }
 

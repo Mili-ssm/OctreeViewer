@@ -42,7 +42,10 @@ mod writer;
 /// Largest attribute schema the writer emits and the default reader limit accepts (RF-27).
 pub(crate) const MAX_SCHEMA_ATTRIBUTES: usize = 256;
 
-pub use codec::{BlockCodec, CodecError, EncodedBlock, compress_block, decompress_block};
+pub use codec::{
+    BlockCodec, CodecError, EncodedBlock, EntropyCoder, compress_block, compress_block_with,
+    decompress_block,
+};
 pub use contracts::{BlockEncoder, OctreeReader, OctreeWriter, PreparedOctreeWriter};
 pub use crc32::{Crc32, crc32};
 pub use crs_unit::{CrsLinearUnit, CrsUnit};
