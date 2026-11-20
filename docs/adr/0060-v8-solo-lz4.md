@@ -9,9 +9,11 @@ Estado: Aceptada · Fecha: 21-11-2026 · Decide: propietario · Cierra D3 del [A
   la salida un −9,45 % en Albuera, −8,73 % en Majadas y −7,86 % en Belvedere. Convierte como mucho ~3 % más lento, y en
   el navegador la diferencia de carga y decodificación no es medible. `cold` y `cold-rgb` ahorran menos sin ventaja
   medida.
-- zstd en wasm exige una dependencia en C (`zstd-sys`) y clang con destino wasm32 para compilar el wasm. Además añade
+- zstd en wasm exige una dependencia en C (`zstd-sys`) y clang con destino wasm32 para compilar el wasm
+  ([tarea 0 del plan](../plans/formato-v8-pre2.md#codificador)). Además añade
   códecs, compuertas por layout, casos de paridad y tests que mantener.
-- V2 (Albuera ≥ 35 % más pequeña que v7) ya se cumple sin zstd: v8.1-pre da −40,6 %.
+- V2 (Albuera ≥ 35 % más pequeña que v7) ya se cumple sin zstd: v8.1-pre da −40,6 %
+  ([registro de v8.1-pre](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md)).
 
 ## Decisión
 El propietario (21-11-2026), tras medir v8.2-pre: **la V8 congelada usa solo LZ4**, como v8.1-pre. No lleva códec zstd ni
@@ -20,7 +22,7 @@ la opción `--attr-codec`.
 ## Alternativas
 | Opción | Por qué no |
 | --- | --- |
-| `all` (zstd en todo `.octattrs`) | −8 a −9,5 % de salida sin coste medible, pero con una dependencia C permanente y más superficie que mantener; V2 ya se cumple |
+| `all` (zstd en todo `.octattrs`) | −7,9 a −9,5 % de salida, con un coste de conversión del orden del ruido y sin diferencia medible en el navegador, pero con una dependencia C permanente y más superficie que mantener; V2 ya se cumple |
 | `cold-rgb` o `cold` | Mismo coste de dependencia que `all`, con menos ahorro (`cold`: 0 % en dos de tres nubes) |
 
 ## Consecuencias

@@ -26,7 +26,7 @@ aparcada ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)).
 
 | Id | Resolución |
 | --- | --- |
-| D3 | Sigue abierta como experimento: `v8.2-pre` mide cuatro esquemas fijos — LZ4 en todo (v8.1-pre, la base), todo `.octattrs` con zstd, zstd solo en las columnas frías (las que el render no lee: tiempo GPS, ángulo, retornos, id de fuente, datos de usuario, extra bytes) y frías más el RGB de 16 bits — en tamaño, tiempo de conversión, tiempo de carga y rendimiento de render en el navegador. «Quizá sea mejor quedarse solo con LZ4». |
+| D3 | (Resuelta el 21-11-2026: ver la fila siguiente.) Sigue abierta como experimento: `v8.2-pre` mide cuatro esquemas fijos — LZ4 en todo (v8.1-pre, la base), todo `.octattrs` con zstd, zstd solo en las columnas frías (las que el render no lee: tiempo GPS, ángulo, retornos, id de fuente, datos de usuario, extra bytes) y frías más el RGB de 16 bits — en tamaño, tiempo de conversión, tiempo de carga y rendimiento de render en el navegador. «Quizá sea mejor quedarse solo con LZ4». |
 | D4 | La V8 se congela (y se retiran v5, v6 y v7) después de medir `v8.2-pre`, con el esquema que salga de D3. |
 | D3 (21-11-2026) | Tras medir `v8.2-pre`: **solo LZ4**; la V8 no lleva zstd ([ADR 0060](../adr/0060-v8-solo-lz4.md)). |
 | D5 | La demo usa el p5 del fichero como mínimo en longitud por defecto cuando lo trae; si no, 0,1 mm ([ADR 0059](../adr/0059-minimo-por-defecto-desde-p5.md)). |
@@ -80,7 +80,7 @@ basta con no guardar el RGB de 16 bits (D2).
 - **Uso:** la API pública lo expone como «tamaño mínimo recomendado»; el modo «espaciado de la nube» del filtro de
   longitud puede pasar a usarlo. Cambiar el valor por defecto de la demo es la decisión pendiente de D5.
 
-### Compresión por fichero (D3, abierta)
+### Compresión por fichero (D3, resuelta: solo LZ4)
 
 Medido en Albuera ([experimento del 20-11-2026](#medida-de-zstd-20-11-2026)): zstd nivel 3 ahorra ~2,5 GB (−16 % de la
 salida), pero en el navegador (`ruzstd`, Rust puro, wasm) descomprime a ~250 MB/s frente a 3,6–4,9 GB/s de LZ4.
@@ -130,4 +130,4 @@ hoja; checkpoints en el formato paginado (RF-26); cambiar el mínimo por defecto
 
 | Id | Pregunta |
 | --- | --- |
-| P1 | Esquema de compresión de V8: se decide con las cuatro variantes de `v8.2-pre` (resolución de D3 del 20-11-2026, arriba). |
+| P1 | Esquema de compresión de V8: resuelta el 21-11-2026 tras medir las cuatro variantes de `v8.2-pre`: solo LZ4 ([ADR 0060](../adr/0060-v8-solo-lz4.md)). |
