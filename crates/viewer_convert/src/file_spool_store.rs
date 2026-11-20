@@ -23,9 +23,10 @@ use crate::spool_frame::{
     FRAME_HEADER_BYTES, FrameHeader, MAX_FRAME_RECORDS, decode_frame, encode_frame,
 };
 
-/// One sparse-index entry per this many frames. A per-frame table costs 16 bytes per frame, about
-/// 0.05 % of the live logical bytes (~1.3 GB for ~2.7 TB of live spools at the 500 GB scale); a
-/// header walk from the file start would make block reads quadratic on large leaf spools.
+/// One sparse-index entry per this many frames. A per-frame table costs 16 bytes per frame, and a
+/// frame holds at most one append (32-64 KiB for child spools): ~0.025-0.05 % of the live logical
+/// bytes, 1-2 GB for ~4 TB of live spools at the ESC-1 scale. A header walk from the file start
+/// would make block reads quadratic on large leaf spools.
 const INDEX_STRIDE_FRAMES: u64 = 64;
 /// Encoded frames are written in batches of about this size.
 const WRITE_BATCH_BYTES: usize = 1 << 20;
@@ -521,13 +522,18 @@ impl SpoolStore for FileSpoolStore {
         let (created, len, physical) = {
             let mut open = lock(&self.open);
             // A spool whose write failed never closes; it can still be deleted.
-            if let Some(entry) = open.entries.get_mut(&id).filter(|e| e.failed) {
+            if let Some(entry) = open
+                .entries
+                .get_mut(&id)
+                .filter(|e| e.failed && e.phase == Phase::Open)
+            {
                 entry.phase = Phase::Closed;
             }
             let entry = entry_in(&mut open.entries, id, "delete", Phase::Closed, |e| e.phase)?;
             entry.phase = Phase::Deleted;
             drop(std::mem::take(&mut entry.carry));
             drop(std::mem::take(&mut entry.sparse_index));
+            drop(entry.writer.take());
             (entry.created, entry.len, entry.physical_len)
         };
         if created {
@@ -687,6 +693,34 @@ mod tests {
                 .len()
                 < data.len() as u64
         );
+    }
+
+    #[test]
+    fn a_carry_before_multi_frame_appends_keeps_offsets_exact() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileSpoolStore::new(dir.path(), false);
+        // 1_000_003-byte appends leave a varying partial record and split into several frames each.
+        let data = records(MAX_FRAME_RECORDS * 70 + 5);
+        let id = framed(&store, 1, &data, 1_000_003);
+        assert!(lock(&store.open).entries[&id].sparse_index.len() >= 2);
+        let starts = frame_starts(&dir.path().join("spool-1.spool"));
+        let end = data.len();
+        let index: Vec<usize> = lock(&store.open).entries[&id]
+            .sparse_index
+            .iter()
+            .map(|&(logical, _)| usize::try_from(logical).unwrap())
+            .collect();
+        assert!(
+            index.iter().all(|at| starts.contains(at)),
+            "index entries are frame starts"
+        );
+        for &at in starts.iter().chain(&index).filter(|&&at| at > 0) {
+            for offset in [at - RECORD, at, (at + RECORD).min(end)] {
+                let len = (3 * RECORD).min(end - offset);
+                let got = read(&store, id, offset as u64, len as u64).unwrap();
+                assert_eq!(got, &data[offset..offset + len], "offset {offset}");
+            }
+        }
     }
 
     #[test]
@@ -867,6 +901,8 @@ mod tests {
         assert!(message(store.close(id)).contains("earlier write failed"));
         store.delete(id).unwrap();
         assert!(!path.exists());
+        // A second delete is a lifecycle error, not an I/O error on the missing file.
+        assert!(message(store.delete(id)).contains("cannot delete"));
         let ledger = store.ledger.as_ref().unwrap();
         assert_eq!(ledger.live.load(Ordering::Relaxed), 0);
         assert_eq!(ledger.physical_live.load(Ordering::Relaxed), 0);
