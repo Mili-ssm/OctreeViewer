@@ -245,3 +245,102 @@ fn a_page_target_splits_a_small_cloud_into_more_pages() {
     }
     assert!(pages[1] > pages[0], "{pages:?}");
 }
+
+/// Distance quantiles of a plan built with `workers` workers, on the threaded or serial executor.
+fn planned_quantiles(
+    input: &Path,
+    workers: usize,
+    serial: bool,
+    version: FormatVersion,
+) -> Option<viewer_format::PointDistanceQuantiles> {
+    use crate::{
+        las_source::{FileBytes, inspect_source, open_las_reader},
+        pipeline::{
+            clock::SystemClock,
+            point_source::{LasFactory, LasPointSource, RangeSource},
+            spool_store::MemSpoolStore,
+        },
+    };
+    use viewer_convert_core::{
+        pipeline::executor::SerialExecutor, spatial::build_spatial_plan_from_source,
+    };
+
+    let reader = open_las_reader(input).unwrap();
+    let options = options(version).with_spatial_workers(workers).unwrap();
+    let source = inspect_source(&reader)
+        .unwrap()
+        .for_options(options)
+        .unwrap();
+    let factory = LasFactory::new(FileBytes {
+        path: input.to_owned(),
+        len: fs::metadata(input).unwrap().len(),
+    });
+    let mut first = RangeSource::Las(LasPointSource::full(reader));
+    let store = MemSpoolStore::new(true);
+    let plan = if serial {
+        build_spatial_plan_from_source(
+            &mut first,
+            &factory,
+            &source,
+            options,
+            &store,
+            &SystemClock,
+            &SerialExecutor,
+            &mut |_| true,
+            false,
+        )
+    } else {
+        build_spatial_plan_from_source(
+            &mut first,
+            &factory,
+            &source,
+            options,
+            &store,
+            &SystemClock,
+            &crate::executor::ThreadedExecutor,
+            &mut |_| true,
+            false,
+        )
+    }
+    .unwrap();
+    plan.metadata.point_distance_quantiles()
+}
+
+#[test]
+fn quantiles_do_not_depend_on_workers() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.las");
+    write_las(
+        &input,
+        &cloud(150_000, [-40.0, -40.0, -40.0], 80.0, 5),
+        vlr_wkt(),
+    );
+    let reference = planned_quantiles(&input, 1, false, FormatVersion::V8_PRE1).unwrap();
+    // Uniform random points in 80^3 with 150 000 points: the mean nearest-neighbour distance is
+    // about 0.83, so the quantiles are of that order and ordered.
+    assert!(
+        0.05 < reference.p1 && reference.p1 <= reference.p5 && reference.p5 <= reference.p50,
+        "{reference:?}"
+    );
+    assert!(reference.p50 > 0.4 && reference.p50 < 1.5, "{reference:?}");
+    for workers in [1, 2, 8] {
+        for serial in [false, true] {
+            assert_eq!(
+                planned_quantiles(&input, workers, serial, FormatVersion::V8_PRE1),
+                Some(reference),
+                "workers {workers}, serial {serial}"
+            );
+        }
+    }
+    // v7 stores none, so it has nothing to compute.
+    assert_eq!(planned_quantiles(&input, 2, false, FormatVersion::V7), None);
+}
+
+#[test]
+fn a_cloud_of_duplicates_stores_the_not_measured_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.las");
+    write_las(&input, &vec![[3.0, 4.0, 5.0]; 100], vlr_wkt());
+    let quantiles = planned_quantiles(&input, 1, false, FormatVersion::V8_PRE1).unwrap();
+    assert_eq!((quantiles.p1, quantiles.p5, quantiles.p50), (0.0, 0.0, 0.0));
+}

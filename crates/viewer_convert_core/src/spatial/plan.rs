@@ -213,6 +213,8 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         next_block_id: 0,
         on_progress,
         source_point_count: source.point_count,
+        collect_distance_quantiles: options.format_version().stores_distance_quantiles(),
+        nn_sample_threshold: crate::pipeline::nn_distance::sample_threshold(source.point_count),
         parallel_workers: options.spatial_workers(),
         root_ranges: options.root_partition_ranges(),
         ranges_used: 0,
@@ -339,6 +341,10 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     if let Some(frame) = global_frame {
         metadata = metadata.with_global_frame(frame)?;
     }
+    if options.format_version().stores_distance_quantiles() {
+        metadata =
+            metadata.with_point_distance_quantiles(distance_quantiles(&builder.node_records)?);
+    }
     Ok(SpatialPlan {
         metadata,
         blocks: builder.output_blocks,
@@ -348,6 +354,20 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         spool_diagnostics: builder.spool_diagnostics,
         spatial_phases: builder.spatial_phases,
     })
+}
+
+/// Dataset distance quantiles from the leaves' samples, pooled in node-id order.
+fn distance_quantiles(
+    records: &[NodeRecord],
+) -> Result<viewer_format::PointDistanceQuantiles, ConvertError> {
+    let mut ordered: Vec<&NodeRecord> = records.iter().collect();
+    ordered.sort_by_key(|node| node.id);
+    let pooled = ordered
+        .into_iter()
+        .flat_map(|node| node.nn_samples.iter().copied())
+        .collect();
+    let [p1, p5, p50] = crate::pipeline::nn_distance::quantiles_from_samples(pooled);
+    Ok(viewer_format::PointDistanceQuantiles::new(p1, p5, p50)?)
 }
 
 /// Prefix of a node from its absolute cube: the top `a` bits of its minimum corner minus the
@@ -403,6 +423,8 @@ fn global_frame(
 pub(super) struct NodeRecord {
     /// Measured leaf spacing of `v7.4-pre` in CRS units; 0 when not measured.
     pub(super) spacing: f64,
+    /// Leaf nearest-neighbour distance samples (quanta²); empty when not collected.
+    pub(super) nn_samples: Vec<u64>,
     pub(super) id: NodeId,
     pub(super) parent: Option<NodeId>,
     pub(super) level: u32,

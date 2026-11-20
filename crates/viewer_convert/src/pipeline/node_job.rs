@@ -46,6 +46,8 @@ mod tests {
             frame: info.frame,
             layout: SpoolLayout::source(info),
             collect_diagnostics: true,
+            collect_distance_quantiles: false,
+            nn_sample_threshold: u64::MAX,
         }
     }
 

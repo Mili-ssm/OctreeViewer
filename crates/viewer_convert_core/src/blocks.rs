@@ -70,34 +70,15 @@ pub fn output_writer<W: Write + Seek>(
     if let Some(row_order) = options.row_order {
         writer_options = writer_options.with_row_order(row_order);
     }
-    let mut writer_metadata = metadata.clone();
-    if options.format_version().stores_distance_quantiles()
-        && writer_metadata.point_distance_quantiles().is_none()
-    {
-        writer_metadata =
-            writer_metadata.with_point_distance_quantiles(placeholder_distance_quantiles());
-    }
     let writer = FormatWriter::new_split_for_version(
         options.format_version(),
         geometry,
         attributes,
-        writer_metadata,
+        metadata.clone(),
         writer_options,
     )?;
     let encoder = FormatBlockEncoder::new(options.format_version(), metadata, writer_options)?;
     Ok((writer, encoder))
-}
-
-/// Stand-in distance quantiles so `v8.1-pre` output passes the writer's check until the
-/// converter measures the real ones (plan task 3 replaces this function and its call).
-/// All zeros is the "not measured" value, valid but carrying no information: readers treat
-/// `p5 == 0` as "no recommendation" and must not use it to pick a point size.
-fn placeholder_distance_quantiles() -> viewer_format::PointDistanceQuantiles {
-    viewer_format::PointDistanceQuantiles {
-        p1: 0.0,
-        p5: 0.0,
-        p50: 0.0,
-    }
 }
 
 /// Reads one planned block from its spool and encodes it.

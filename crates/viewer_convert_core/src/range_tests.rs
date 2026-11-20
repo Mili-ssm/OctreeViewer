@@ -166,6 +166,8 @@ fn context(info: &crate::source::SourceInfo, divisions: u8, limit: u64) -> JobCo
         frame: info.frame,
         layout: SpoolLayout::source(info),
         collect_diagnostics: false,
+        collect_distance_quantiles: false,
+        nn_sample_threshold: u64::MAX,
     }
 }
 

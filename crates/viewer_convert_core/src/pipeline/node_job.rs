@@ -8,6 +8,7 @@ use std::io::Read;
 use las::PointDataBuilder;
 use viewer_core::{CoordinateFrame, SpatialBounds, SpatialSubdivision};
 
+use super::nn_distance::nearest_distance_samples;
 use super::{
     clock::Clock,
     point_source::{PointRange, PointSource},
@@ -54,6 +55,10 @@ pub struct JobContext {
     pub frame: CoordinateFrame,
     pub layout: SpoolLayout,
     pub collect_diagnostics: bool,
+    /// Leaves also measure nearest-neighbour distance samples (only when the output version
+    /// stores distance quantiles), keeping the points whose position hash is `<=` the threshold.
+    pub collect_distance_quantiles: bool,
+    pub nn_sample_threshold: u64,
 }
 
 impl JobContext {
@@ -111,6 +116,9 @@ pub struct NodeJobOutput {
     pub geometric_error: f64,
     /// `v7.4-pre` leaf spacing in CRS units (0 for internal nodes and other formats).
     pub spacing: f64,
+    /// Squared nearest-neighbour distances of the sampled points of a leaf, in quanta² (see
+    /// [`super::nn_distance`]); empty unless `JobContext::collect_distance_quantiles`.
+    pub nn_samples: Vec<u64>,
     pub blocks: Vec<BlockPlan>,      // no ids yet, in allocation order
     pub children: Vec<ChildOutput>,  // ascending key, empty ones skipped
     pub release: Vec<SpoolId>,       // deleted by the host after the job
@@ -460,6 +468,7 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
         point_count: sample_count as u64,
         geometric_error: sample_error + center_rounding_error(job.bounds, ctx.frame),
         spacing: 0.0,
+        nn_samples: Vec::new(),
         blocks: lod_blocks(lod_spool, &lod),
         children: child_outputs(children, subdivision),
         release: vec![job.input],
@@ -980,12 +989,13 @@ pub fn lod_blocks(spool: SpoolId, lod: &LodWritten) -> Vec<BlockPlan> {
 /// `v7.4-pre` leaf spacing: `side / 2^d` for the first `d >= 1` at which the occupied cells grow
 /// by less than x1.5 once the points occupy more than one cell (`d` is capped at 32 and at the
 /// quantum), so a cloud tucked in a corner of its leaf is measured where it starts to spread.
-/// Reads the leaf spool once.
+/// Reads the leaf spool once, and returns the nearest-neighbour distance samples of the leaf
+/// next to the spacing when the context asks for them.
 fn measure_leaf_spacing<S: SpoolStore>(
     ctx: &JobContext,
     job: &NodeJob,
     store: &S,
-) -> Result<f64, ConvertError> {
+) -> Result<(f64, Vec<u64>), ConvertError> {
     let side_exponent = 64 - global_level(job.bounds);
     let max_depth = side_exponent.min(LEAF_SPACING_MAX_DEPTH);
     let mut cells = Vec::with_capacity(usize::try_from(job.point_count).unwrap_or(0));
@@ -1016,7 +1026,19 @@ fn measure_leaf_spacing<S: SpoolStore>(
         }
     }
     let depth = spacing_depth(&cells, side_exponent, max_depth);
-    Ok(2.0_f64.powi(49 - global_level(job.bounds) as i32 - depth as i32))
+    let spacing = 2.0_f64.powi(49 - global_level(job.bounds) as i32 - depth as i32);
+    let nn_samples = if ctx.collect_distance_quantiles {
+        nearest_distance_samples(
+            &cells,
+            origin,
+            side_exponent,
+            depth,
+            ctx.nn_sample_threshold,
+        )
+    } else {
+        Vec::new()
+    };
+    Ok((spacing, nn_samples))
 }
 
 fn spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32) -> u32 {
@@ -1144,16 +1166,17 @@ fn leaf_output<S: SpoolStore>(
     if job.point_count == 0 {
         release.push(job.input);
     }
-    let spacing = if ctx.layout.is_global() && job.point_count > 0 {
+    let (spacing, nn_samples) = if ctx.layout.is_global() && job.point_count > 0 {
         measure_leaf_spacing(ctx, job, store)?
     } else {
-        0.0
+        (0.0, Vec::new())
     };
     Ok(NodeJobOutput {
         path: job.path.clone(),
         point_count: job.point_count,
         geometric_error: 0.0,
         spacing,
+        nn_samples,
         blocks,
         children: Vec::new(),
         release,

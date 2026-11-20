@@ -81,6 +81,9 @@ pub struct SpatialBuilder<'a, S: PlanStore, C: Clock, X> {
     pub(super) next_block_id: u64,
     pub(super) on_progress: &'a mut dyn FnMut(ConversionProgress) -> bool,
     pub(super) source_point_count: u64,
+    /// The output version stores distance quantiles: leaves collect nearest-neighbour samples.
+    pub(super) collect_distance_quantiles: bool,
+    pub(super) nn_sample_threshold: u64,
     pub(super) parallel_workers: usize,
     /// Ranges the root partition may use; 0 scans the root as one stream.
     pub(super) root_ranges: usize,
@@ -261,6 +264,8 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             frame: self.frame,
             layout: self.layout,
             collect_diagnostics: self.spool_diagnostics.is_some(),
+            collect_distance_quantiles: self.collect_distance_quantiles,
+            nn_sample_threshold: self.nn_sample_threshold,
         }
     }
 
@@ -475,6 +480,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         self.commit_node(
             NodeRecord {
                 spacing: 0.0,
+                nn_samples: Vec::new(),
                 id: root_id,
                 parent: None,
                 level: 0,
@@ -579,6 +585,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         self.commit_node(
             NodeRecord {
                 spacing: output.spacing,
+                nn_samples: output.nn_samples,
                 id,
                 parent,
                 level: job.level,
@@ -766,6 +773,8 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             next_block_id: branch.next_block_id,
             on_progress: &mut *self.on_progress,
             source_point_count: self.source_point_count,
+            collect_distance_quantiles: self.collect_distance_quantiles,
+            nn_sample_threshold: self.nn_sample_threshold,
             parallel_workers: 1,
             root_ranges: 0,
             ranges_used: 0,
