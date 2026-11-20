@@ -380,8 +380,9 @@ fn lod_attribute_columns(metadata: &FormatMetadata) -> Vec<u32> {
 
 /// Where leaf display colours come from: the converter sets them to the high byte of `rgb` (or of
 /// `intensity` for a cloud without colour), so that column is the source. A column only
-/// qualifies as a 16-bit one with 1 or 3 components (the reader's rule); a same-named column of
-/// another type falls through to the next option, and a schema with none keeps the stored colour.
+/// qualifies as the writer's `DisplayColourSource::validate` accepts it (16-bit; 3 components for
+/// `rgb`, 1 for `intensity`); a same-named column of another shape falls through to the next
+/// option, and a schema with none keeps the stored colour.
 fn display_colour_source(
     attributes: &[viewer_core::AttributeDescriptor],
 ) -> viewer_format::DisplayColourSource {
@@ -393,7 +394,7 @@ fn display_colour_source(
                 && components.contains(&a.component_count())
         })
     };
-    match (find("rgb", &[1, 3]), find("intensity", &[1, 3])) {
+    match (find("rgb", &[3]), find("intensity", &[1])) {
         (Some(index), _) => Rgb(index as u32),
         (Option::None, Some(index)) => Intensity(index as u32),
         (Option::None, Option::None) => None,
@@ -513,5 +514,12 @@ mod tests {
         );
         assert_eq!(display_colour_source(&[u8_intensity, u8_rgb]), None);
         assert_eq!(display_colour_source(&[two_component_rgb]), None);
+        // Shapes the writer rejects (one-component rgb, three-component intensity) fall through.
+        let one_component_rgb = column("rgb", AttributeDataType::U16, 1);
+        let three_component_intensity = column("intensity", AttributeDataType::U16, 3);
+        assert_eq!(
+            display_colour_source(&[three_component_intensity, one_component_rgb]),
+            None
+        );
     }
 }
