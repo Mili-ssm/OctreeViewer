@@ -93,14 +93,14 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
   comportamiento llega en las tareas 2, 4 y 5). `is_v7` pasa a `supports_hybrid_rows()`. `options.rs:65` usa esa
   capacidad en vez de `major() != 7`.
 
-- [ ] **Step 1: failing tests**: `v8_pre1_parses_and_prints` (`"v8.1-pre".parse()` ↔ `Display`), `v8_pre1_is_writable`,
+- [x] **Step 1: failing tests**: `v8_pre1_parses_and_prints` (`"v8.1-pre".parse()` ↔ `Display`), `v8_pre1_is_writable`,
   `unknown_major_nine_is_rejected` (el caso que hoy usa `(8, 9)` pasa a major 9) y `cli_accepts_v8_pre1` (CLI tests).
-- [ ] **Step 2:** los tests fallan.
-- [ ] **Step 3:** implementar; los tests que recorren `WRITABLE` (corruption.rs, v7_final.rs, v7_4.rs, writer_tests.rs)
+- [x] **Step 2:** los tests fallan.
+- [x] **Step 3:** implementar; los tests que recorren `WRITABLE` (corruption.rs, v7_final.rs, v7_4.rs, writer_tests.rs)
   deben pasar con V8Pre1 sin cambiar sus aserciones.
-- [ ] **Step 4:** `cargo test --workspace --offline`, `cargo clippy --workspace --all-targets --offline -- -D warnings`,
+- [x] **Step 4:** `cargo test --workspace --offline`, `cargo clippy --workspace --all-targets --offline -- -D warnings`,
   `bash scripts/check_version_literals.sh`, `python3 scripts/check_docs_links.py`, `python3 scripts/check_docs_index.py` → OK.
-- [ ] **Step 5:** commit `feat(format): v8.1-pre identity (experimental V8)`.
+- [x] **Step 5:** commit `feat(format): v8.1-pre identity (experimental V8)`.
 
 ### Task 2: Distance quantiles in the paged header
 
