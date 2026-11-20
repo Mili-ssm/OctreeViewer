@@ -478,10 +478,11 @@ async function openDataset(data) {
         if (data.cellPoolPages > 0) nextBuilder.setCellPoolPages(data.cellPoolPages);
     }
     const descriptor = nextReader.lodDatasetDescriptor(data.cacheBytes);
+    const result = descriptor.paged
+        ? nextBuilder.openPagedLodDataset(nextReader, data.cacheBytes)
+        : nextBuilder.openLodDataset(descriptor);
     const opened = {
-        ...(descriptor.paged
-            ? nextBuilder.openPagedLodDataset(nextReader, data.cacheBytes)
-            : nextBuilder.openLodDataset(descriptor)),
+        ...result,
         nodeCount: descriptor.nodeCount,
         maxLevel: descriptor.maxLevel,
         paged: descriptor.paged,
@@ -493,6 +494,8 @@ async function openDataset(data) {
         hasAttributes: descriptor.hasAttributes,
         sourcePointCount: descriptor.sourcePointCount ?? null,
         crsUnit: descriptor.crsUnit ?? null,
+        // The file's p5 in dataset units (ADR 0059); null without cells, without p5 or when unmeasured.
+        recommendedMinSize: result.cellsInfo?.recommendedMinSize ?? null,
     };
     builder = nextBuilder;
     reader = nextReader;

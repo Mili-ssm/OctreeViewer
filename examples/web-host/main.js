@@ -4,7 +4,7 @@ import {
     renderPathStatsLines, summarizeFrameReplies,
 } from "./benchmark-metrics.mjs";
 import { sidecarUrl } from "./http-range-source.mjs";
-import { crsUnitPolicy, lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";
+import { FALLBACK_LENGTH, crsUnitPolicy, defaultLength, lengthToDatasetUnits, minLengthCommands, parseSpacingFactor } from "./min-length.mjs";
 import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
@@ -964,10 +964,20 @@ function setCrsUnit(crsUnit) {
 // No dataset: the policy, the note and the Length option go back to their initial state.
 function resetCrsUnit() {
     setCrsUnit(null);
+    setLengthControl(FALLBACK_LENGTH);
+}
+
+function setLengthControl({ value, unit }) {
+    minLengthValue.value = String(value);
+    minLengthUnit.value = unit;
 }
 
 function applyCrsUnit(opened) {
     setCrsUnit(opened?.crsUnit ?? null);
+    // Every opened file starts from its own default (ADR 0059): its p5 when it carries one, else 0.1 mm.
+    // A value the user typed for the previous file does not carry over; the mode is kept.
+    setLengthControl(defaultLength(opened?.recommendedMinSize ?? null, opened?.crsUnit ?? null));
+    minLengthValue.setAttribute("aria-invalid", "false");
     // The panel value is read in the new unit: the previous dataset's side must not survive.
     const side = lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value, unitPolicy.metresPerUnit);
     lastValid.side = Number.isNaN(side) ? 0 : side;
