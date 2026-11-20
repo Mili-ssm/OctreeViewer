@@ -403,6 +403,19 @@ mod tests {
     }
 
     #[test]
+    fn v8_pre2_defaults_to_hybrid_and_rejects_source() {
+        let v8 = v(ConvertOptions::default(), FormatVersion::V8_PRE2);
+        assert_eq!(v8.validate().unwrap().row_order(), RowOrder::Hybrid);
+        let source = ConvertOptions::default()
+            .with_row_order(RowOrder::Source)
+            .unwrap();
+        assert!(matches!(
+            v(source, FormatVersion::V8_PRE2).validate(),
+            Err(ConvertError::FixedByFormat("row order"))
+        ));
+    }
+
+    #[test]
     fn default_output_is_v7_hybrid() {
         let options = ConvertOptions::default().validate().unwrap();
         assert_eq!(options.format_version(), FormatVersion::V7);

@@ -294,6 +294,7 @@ pub(crate) fn paged_layout_of_footer(footer: &[u8]) -> Option<StorageLayout> {
         StorageLayout::V7Pre5,
         StorageLayout::V7,
         StorageLayout::V8Pre1,
+        StorageLayout::V8Pre2,
     ]
     .into_iter()
     .find(|layout| footer[..8] == *layout.footer_magic())

@@ -3,11 +3,11 @@
 
 const GB = 1e9;
 
-/** Writable output revisions: v7 (the default) first, then the v7.N-pre revisions in ascending order, then v5, the v6.N-pre revisions and the experimental v8.1-pre. */
-export const FORMAT_VERSIONS = ["v7", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v8.1-pre"];
+/** Writable output revisions: v7 (the default) first, then the v7.N-pre revisions in ascending order, then v5, the v6.N-pre revisions and the experimental v8.1-pre and v8.2-pre. */
+export const FORMAT_VERSIONS = ["v7", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v8.1-pre", "v8.2-pre"];
 export const SPATIAL_DIVISIONS = [2, 4, 8];
 
-const GLOBAL_FRAME_FORMATS = new Set(["v7", "v7.4-pre", "v7.5-pre", "v8.1-pre"]);
+const GLOBAL_FRAME_FORMATS = new Set(["v7", "v7.4-pre", "v7.5-pre", "v8.1-pre", "v8.2-pre"]);
 
 /** Global-frame formats fix points per block and spatial divisions; the core rejects other values. */
 export const isGlobalFrameFormat = (formatVersion) => GLOBAL_FRAME_FORMATS.has(formatVersion);

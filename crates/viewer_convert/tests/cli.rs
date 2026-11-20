@@ -221,6 +221,29 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[test]
+fn cli_accepts_v8_pre2() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    let output = tmp.path().join("out.oct");
+    let run = run_cli(&[&input, &output], &["--format-version", "v8.2-pre"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let primary = fs::read(&output).unwrap();
+    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVE82P");
+    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    assert_eq!(
+        reader.format_version(),
+        viewer_format::FormatVersion::V8_PRE2
+    );
+    let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
+        .arg("verify")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(verify.status.success(), "{}", stderr(&verify));
+}
+
+#[test]
 fn cli_converts_and_verifies_v8_pre1() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");

@@ -19,6 +19,7 @@ Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [est
 | [Formato V7](reference/format/FORMAT_V7.md) | Especificación de la identidad final `v7` (disposición de v7.5-pre, magics propios). | vivo |
 | [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](reference/format/FORMAT_V7_PRE4.md), [V7.5-pre](reference/format/FORMAT_V7_PRE5.md) | Especificaciones de las revisiones V7 experimentales (v7.5: índice paginado, R5). | vivo |
 | [V8.1-pre](reference/format/FORMAT_V8_PRE1.md) | Revisión V8 experimental: cabecera con cuantiles de distancia, columnas LOD y origen del color de pantalla, y reglas de almacenamiento por bloque ([ADR 0058](adr/0058-formato-v8-experimental.md)). | vivo |
+| [V8.2-pre](reference/format/FORMAT_V8_PRE2.md) | Revisión V8 experimental: los bytes de v8.1-pre con identidad propia; el códec zstd llega en tareas posteriores ([ADR 0058](adr/0058-formato-v8-experimental.md)). | vivo |
 
 ## Planes y specs
 

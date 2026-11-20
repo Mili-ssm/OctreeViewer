@@ -26,7 +26,7 @@ test("v5 and v7.5-pre are accepted; only v5 sends leaf size and divisions", () =
 });
 
 test("global-frame formats send neither points per block nor divisions, even if invalid", () => {
-    for (const formatVersion of ["v7", "v7.4-pre", "v7.5-pre", "v8.1-pre"]) {
+    for (const formatVersion of ["v7", "v7.4-pre", "v7.5-pre", "v8.1-pre", "v8.2-pre"]) {
         assert.ok(isGlobalFrameFormat(formatVersion));
         const { errors, options } = validateConverterOptions({ formatVersion, pointsPerBlock: "0", spatialDivisions: "3" });
         assert.deepEqual(errors, {});
