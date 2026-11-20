@@ -198,13 +198,13 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
   conversor la llena con intensidad y clasificación del esquema LAS; `stored_column` devuelve `Absent` para las demás en
   bloques LOD.
 
-- [ ] **Step 1: failing tests**: `lod_blocks_omit_columns_outside_the_lod_set`; `reading_an_absent_column_is_an_error_not_a_panic`;
+- [x] **Step 1: failing tests**: `lod_blocks_omit_columns_outside_the_lod_set`; `reading_an_absent_column_is_an_error_not_a_panic`;
   `corrupt_lod_set_is_rejected` (índice fuera del esquema, repetido, truncado); `cli_converts_and_verifies_v8_pre1`
   (CLI con `--format-version v8.1-pre` y `viewer_convert verify`).
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar.
-- [ ] **Step 4:** tests del workspace (SHA de v7 intactos), clippy; Belvedere en v8.1-pre con `verify` correcto → OK.
-- [ ] **Step 5:** commit `feat(format): v8.1-pre LOD blocks store only the drawing columns`.
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar.
+- [x] **Step 4:** tests del workspace (SHA de v7 intactos), clippy; Belvedere en v8.1-pre con `verify` correcto → OK.
+- [x] **Step 5:** commit `feat(format): v8.1-pre LOD blocks store only the drawing columns`.
 
 ### Task 5: Leaf display colour is derived on read
 
