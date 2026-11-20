@@ -35,8 +35,8 @@ calculan en los trabajos de hoja y se agregan en orden de id de nodo.
   (duplicados exactos; si todo son duplicados, los tres valen 0); finitos, ≥ 0 y p1 ≤ p5 ≤ p50; muestra elegida por
   hash con semilla fija de la posición cuantizada, independiente del orden y de W; el recomendado es p5.
 - Paridad web/CLI (RQ-08) también para `v8.1-pre` (caso nuevo en `tools/convert_parity`).
-- **Objetivo de tamaño (V2):** lo fija la proyección de la tarea 0 (decisión técnica; el 35 % del diseño era una
-  estimación previa). Si la proyección para Albuera queda por debajo del −25 %, se para y decide el propietario.
+- **Objetivo de tamaño (V2):** Albuera ≥ 35 % más pequeña que en v7 (la tarea 0 proyecta −40,6 %; Majadas −40,5 %,
+  Belvedere −34,8 %; ver «Proyección»).
 - Desde la tarea 4b, cada tarea que cambia bytes de v8.1-pre termina con una conversión real de Belvedere en
   `v8.1-pre` y `viewer_convert verify` correcto.
 - Sin `cargo clean`; worktree con su propio target; `FORMAT_PARITY_REAL_INPUT` con la ruta absoluta del LAZ de
@@ -67,10 +67,10 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
 - Create: nada en el repositorio; programa desechable en el scratchpad; resultado anotado en este plan (sección
   «Proyección», al final).
 
-- [ ] **Step 1:** con una salida v7 de Albuera (rama, `release`) y `crates/viewer_format/examples/storage_payload_stats.rs`
+- [x] **Step 1:** con una salida v7 de Albuera (rama, `release`) y `crates/viewer_format/examples/storage_payload_stats.rs`
   más `has_children` de cada nodo, separar los bytes guardados de cada flujo en hojas y LOD.
-- [ ] **Step 2:** averiguar el escalado del color de Albuera (8 bits ×256, ×257 o 16 bits reales) en una muestra.
-- [ ] **Step 3:** proyectar el tamaño de `v8.1-pre` (LOD sin columnas fuera de {intensidad, clase}; hojas sin la
+- [x] **Step 2:** averiguar el escalado del color de Albuera (8 bits ×256, ×257 o 16 bits reales) en una muestra.
+- [x] **Step 3:** proyectar el tamaño de `v8.1-pre` (LOD sin columnas fuera de {intensidad, clase}; hojas sin la
   columna 1) y anotarlo; si queda por debajo del −25 %, parar y llevarlo al propietario.
 
 ### Task 1: v8.1-pre identity
@@ -292,4 +292,56 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
 
 ## Proyección
 
-(La rellena la tarea 0.)
+Medición de la tarea 0 (20-11-2026). Código: `main` en `59b3d52` (`viewer_convert --release`, formato v7 por defecto,
+sin otras opciones); equipo del propietario (AMD Ryzen AI 9 365, 20 hilos, 30 GiB de RAM). Conversión de Albuera:
+11 min 58 s. Programa desechable fuera del repositorio: recorre las páginas del índice (`PagedReader`) para marcar
+los bloques de nodos con hijos (LOD) y suma los bytes guardados por flujo (`block_payload_storage_stats`). Una sola
+medición por conjunto (el tamaño de salida es determinista).
+
+Proyección = v7 − (bytes LOD de las columnas omitidas, es decir todas salvo geometría, color de visualización,
+intensidad y clasificación) − (bytes de hoja de la columna 1, color de visualización).
+
+| Conjunto | v7 (B) | Ahorro LOD | Ahorro hoja (col. 1) | v8.1-pre proyectado (B) | Cambio | Reparto del ahorro (LOD / hoja) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Albuera | 15 751 915 636 | 4 901 677 051 (31,1 %) | 1 486 993 716 (9,4 %) | 9 363 244 869 | −40,6 % | 76,7 % / 23,3 % |
+| Majadas | 7 688 544 926 | 1 905 202 379 (24,8 %) | 1 206 627 776 (15,7 %) | 4 576 714 771 | −40,5 % | 61,2 % / 38,8 % |
+| Belvedere | 1 420 602 171 | 255 246 969 (18,0 %) | 239 185 048 (16,8 %) | 926 170 154 | −34,8 % | 51,6 % / 48,4 % |
+
+Albuera, bytes guardados por flujo (hojas 20 051 nodos / 508,8 M puntos; LOD 5 787 nodos / 492,7 M puntos):
+
+| Flujo | Hojas (B) | LOD (B) | Destino en v8.1-pre |
+| --- | ---: | ---: | --- |
+| geometría | 3 750 093 225 | 805 293 865 | se mantiene |
+| 1 color de visualización | 1 486 993 716 | 1 473 058 865 | hoja: derivado; LOD: se mantiene |
+| 00 intensidad | 349 094 157 | 420 881 897 | se mantiene |
+| 01 clasificación | 16 388 751 | 15 599 303 | se mantiene |
+| 02 return_number | 3 493 895 | 34 938 740 | LOD omitido |
+| 03 number_of_returns | 23 580 819 | 44 699 396 | LOD omitido |
+| 04 scan_angle | 182 307 031 | 345 578 557 | LOD omitido |
+| 05 user_data | 20 051 | 5 787 | LOD omitido |
+| 06 point_source_id | 869 836 | 56 002 174 | LOD omitido |
+| 07 gps_time | 813 756 165 | 2 195 017 167 | LOD omitido (mayor ahorro: 44,8 % del ahorro LOD) |
+| 08 rgb (16 bits) | 1 500 971 719 | 2 225 429 443 | LOD omitido (45,4 % del ahorro LOD) |
+| 09 las_flags | 20 051 | 5 787 | LOD omitido |
+
+Escalado del color (muestra de 1 de cada 20 bloques con ≥ 1000 puntos, componentes R, G, B de la columna `rgb`):
+
+| Conjunto | Componentes | byte bajo = byte alto (×257, incluye negro) | byte bajo = 0 (×256) | 16 bits reales |
+| --- | ---: | ---: | ---: | ---: |
+| Albuera | 149 601 990 | 0,6 % | 85,2 % | 14,3 % |
+| Majadas | 124 327 683 | 0,2 % | 84,4 % | 15,4 % |
+| Belvedere | 19 631 037 | 0,1 % | 83,4 % | 16,5 % |
+
+Lectura y límites:
+
+- El ahorro supera el −25 % en los tres conjuntos: no se activa la parada de la tarea 0.
+- El ahorro LOD depende de qué columnas lleve el conjunto: en Majadas y Belvedere solo `rgb` pesa (no hay `gps_time`
+  útil ni intensidad); en Albuera pesan `gps_time` y `rgb`.
+- En hojas el color de visualización ocupa casi lo mismo que `rgb` (1,49 frente a 1,50 GB en Albuera); el ahorro de
+  hoja supone que el lector lo recompone sin coste de tamaño (la recomposición `rgb16 >> 8` no se comprobó byte a
+  byte contra la columna 1 guardada).
+- Como ~15 % de los componentes tienen byte bajo distinto de 0 y de byte alto, `rgb16 >> 8` no equivale a un
+  escalado ×256 exacto en todos los puntos; la derivación es la regla de visualización, no una identidad con el
+  8 bits original.
+- Los LOD guardan casi tantos puntos como las hojas (492,7 M frente a 508,8 M en Albuera), por eso su peso es grande.
+- Proyección sobre bytes guardados: no incluye el índice (< 8 MB en Albuera) ni posibles cambios de códec.
