@@ -247,13 +247,13 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
   rango global; `cellsInfo().recommendedMinSize` (p5, o `null` si el fichero no lo trae) y
   `LodDataset::with_recommended_min_size`. La demo aún **no** lo usa por defecto (D5).
 
-- [ ] **Step 1: failing tests**: `attribute_mode_falls_back_to_intensity_on_lod_blocks` (wasm); `cells_info_reports_recommended_min_size`.
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar (camino de celdas y camino CPU, que debe pedir la intensidad en vez de la columna ausente).
-- [ ] **Step 4:** tests de wasm, tests de node de la demo, clippy wasm32 → OK; verificación en navegador con Playwright
+- [x] **Step 1: failing tests**: `attribute_mode_falls_back_to_intensity_on_lod_blocks` (wasm); `cells_info_reports_recommended_min_size`.
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar (camino de celdas y camino CPU, que debe pedir la intensidad en vez de la columna ausente).
+- [x] **Step 4:** tests de wasm, tests de node de la demo, clippy wasm32 → OK; verificación en navegador con Playwright
   (`ui-verifier`) de un `.oct` v8.1-pre de Belvedere: modos RGB, intensidad, elevación, clase y un atributo genérico,
   sin errores de consola.
-- [ ] **Step 5:** commit `feat(viewer): read v8.1-pre (absent LOD columns, recommended minimum size)`.
+- [x] **Step 5:** commit `feat(viewer): read v8.1-pre (absent LOD columns, recommended minimum size)`.
 
 ### Task 7: Web/CLI parity for v8.1-pre
 
