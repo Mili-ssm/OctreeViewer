@@ -1,0 +1,46 @@
+InspectingInput
+PlanningMetadata
+PlanningSpatialIndex
+  55600/81682329 points (0 MiB written; 0%)
+  8174271/81682329 points (0 MiB written; 10%)
+  16366271/81682329 points (0 MiB written; 20%)
+  24558271/81682329 points (0 MiB written; 30%)
+  32686271/81682329 points (0 MiB written; 40%)
+  40878271/81682329 points (0 MiB written; 50%)
+  49070271/81682329 points (0 MiB written; 60%)
+  57198271/81682329 points (0 MiB written; 70%)
+  65390271/81682329 points (0 MiB written; 80%)
+  73518271/81682329 points (0 MiB written; 90%)
+  81682329/81682329 points (0 MiB written; 100%)
+BuildingSpatialHierarchy
+ReadingAndWritingBlocks
+  0/81682329 points (0 MiB written; 0%)
+  8172172/81682329 points (52 MiB written; 10%)
+  16366396/81682329 points (104 MiB written; 20%)
+  24511762/81682329 points (156 MiB written; 30%)
+  32674702/81682329 points (206 MiB written; 40%)
+  40856382/81682329 points (255 MiB written; 50%)
+  49053697/81682329 points (305 MiB written; 60%)
+  57236900/81682329 points (355 MiB written; 70%)
+  65363553/81682329 points (406 MiB written; 80%)
+  73519583/81682329 points (457 MiB written; 90%)
+  81682329/81682329 points (505 MiB written; 100%)
+ValidatingOutput
+  0/81682329 points (883 MiB written; 0%)
+  8180740/81682329 points (883 MiB written; 10%)
+  16358321/81682329 points (883 MiB written; 20%)
+  24546845/81682329 points (883 MiB written; 30%)
+  32726968/81682329 points (883 MiB written; 40%)
+  40871350/81682329 points (883 MiB written; 50%)
+  49021846/81682329 points (883 MiB written; 60%)
+  57223326/81682329 points (883 MiB written; 70%)
+  65408083/81682329 points (883 MiB written; 80%)
+  73520508/81682329 points (883 MiB written; 90%)
+  81682329/81682329 points (883 MiB written; 100%)
+PublishingOutput
+Complete
+Converted 81682329 points in 3941 blocks (926000077 bytes; estimated controlled memory 130 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree-fase-a/target/v82-measure/w/out.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree-fase-a/target/v82-measure/w/out.octattrs
+Not preserved: scan direction and flight-line edge flags, scanner channel
+fs=btrfs rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/home
+peak_work_bytes=1452618685 peak_fs_used_delta_bytes=146673664 wall_s=51.6 max_rss_kb=106988 sha_oct=c9a8f9cbec684556765563dd786a4a228190956468fa5f20d1876cfce9175384 sha_octattrs=91c610e82b78ca5454f343566a489c6e83d2cc8d408792bd773c953b4d5a8e2c
+exit=0

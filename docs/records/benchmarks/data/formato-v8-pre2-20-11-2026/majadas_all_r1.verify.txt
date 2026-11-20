@@ -1,0 +1,2 @@
+OK v8.2-pre: 24091 nodes, 24091 blocks, 810 pages (max 232838 B; by levels k=1..5: [0, 0, 0, 0, 810]), index 5596127 B
+exit=0

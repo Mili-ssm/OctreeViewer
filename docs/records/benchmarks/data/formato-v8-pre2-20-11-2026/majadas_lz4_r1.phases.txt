@@ -1,0 +1,46 @@
+InspectingInput
+PlanningMetadata
+PlanningSpatialIndex
+  16000/415465882 points (0 MiB written; 0%)
+  41568000/415465882 points (0 MiB written; 10%)
+  83104000/415465882 points (0 MiB written; 20%)
+  124640000/415465882 points (0 MiB written; 30%)
+  166240000/415465882 points (0 MiB written; 40%)
+  207776000/415465882 points (0 MiB written; 50%)
+  249312000/415465882 points (0 MiB written; 60%)
+  290848000/415465882 points (0 MiB written; 70%)
+  332384000/415465882 points (0 MiB written; 80%)
+  373920000/415465882 points (0 MiB written; 90%)
+  415465882/415465882 points (0 MiB written; 100%)
+BuildingSpatialHierarchy
+ReadingAndWritingBlocks
+  0/415465882 points (0 MiB written; 0%)
+  41563015/415465882 points (204 MiB written; 10%)
+  83096187/415465882 points (405 MiB written; 20%)
+  124670177/415465882 points (599 MiB written; 30%)
+  166203585/415465882 points (776 MiB written; 40%)
+  207745081/415465882 points (976 MiB written; 50%)
+  249282938/415465882 points (1177 MiB written; 60%)
+  290836074/415465882 points (1370 MiB written; 70%)
+  332374598/415465882 points (1577 MiB written; 80%)
+  373942498/415465882 points (1803 MiB written; 90%)
+  415465882/415465882 points (2016 MiB written; 100%)
+ValidatingOutput
+  0/415465882 points (4363 MiB written; 0%)
+  41551609/415465882 points (4363 MiB written; 10%)
+  83094010/415465882 points (4363 MiB written; 20%)
+  124642156/415465882 points (4363 MiB written; 30%)
+  166194034/415465882 points (4363 MiB written; 40%)
+  207733947/415465882 points (4363 MiB written; 50%)
+  249314316/415465882 points (4363 MiB written; 60%)
+  290846642/415465882 points (4363 MiB written; 70%)
+  332377420/415465882 points (4363 MiB written; 80%)
+  373925255/415465882 points (4363 MiB written; 90%)
+  415465882/415465882 points (4363 MiB written; 100%)
+PublishingOutput
+Complete
+Converted 415465882 points in 24091 blocks (4575835569 bytes; estimated controlled memory 130 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree-fase-a/target/v82-measure/w/out.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree-fase-a/target/v82-measure/w/out.octattrs
+Not preserved: scan direction and flight-line edge flags
+fs=btrfs rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/home
+peak_work_bytes=6489084385 peak_fs_used_delta_bytes=0 wall_s=326.7 max_rss_kb=244380 sha_oct=3013bf3b5e5204d74237b71e89b80112baf39fdcd2ff422fdb308e62c0b45353 sha_octattrs=752309c41ba226e6784431c2de4d5492ba83cdec11640186b25c02194b57387a
+exit=0
