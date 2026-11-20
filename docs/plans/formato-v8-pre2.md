@@ -63,14 +63,14 @@ fija un esquema y la opción desaparece (D4).
 
 ### Task 0: Feasibility and projection (spike, no commit to production code)
 
-- [ ] **Step 1:** comprobar que `zstd`/`zstd-sys` 2.1.3 compila para `wasm32-unknown-unknown` con el toolchain local
+- [x] **Step 1:** comprobar que `zstd`/`zstd-sys` 2.1.3 compila para `wasm32-unknown-unknown` con el toolchain local
   (crate desechable fuera del workspace).
-- [ ] **Step 2:** en payloads de una muestra de bloques **v8.1-pre** de Albuera (semilla fija; hojas y LOD), codificar
+- [x] **Step 2:** en payloads de una muestra de bloques **v8.1-pre** de Albuera (semilla fija; hojas y LOD), codificar
   con C zstd nivel 3 en nativo y en wasm (node) y comparar el hash de los bytes por tramos de tamaño (≤ 16 KB,
   ≤ 128 KB, ≤ 256 KB, > 256 KB); medir la velocidad de decodificación en wasm.
-- [ ] **Step 3:** proyectar el tamaño total de Albuera v8.1-pre con cada esquema (`cold`, `cold-rgb`, `all`), con zstd
+- [x] **Step 3:** proyectar el tamaño total de Albuera v8.1-pre con cada esquema (`cold`, `cold-rgb`, `all`), con zstd
   en todas las etapas de entropía (también planos de bytes y la tabla del diccionario).
-- [ ] **Step 4: puerta.** Parar y llevar las cifras al propietario antes de la tarea 1 si: C zstd no compila para
+- [x] **Step 4: puerta.** Parar y llevar las cifras al propietario antes de la tarea 1 si: C zstd no compila para
   wasm32, algún hash nativo/wasm difiere, la decodificación en wasm baja de 500 MB/s, o `cold-rgb` ahorra < 5 % del
   total de Albuera. Anotar las cifras en «Codificador».
 
