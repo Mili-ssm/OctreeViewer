@@ -34,6 +34,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 | [Temporales del conversor](plans/temporales-del-conversor.md) | Bajar el disco temporal del CLI de 11 × a ≤ 2 × el LAZ (RQ-06) sin cambiar la salida: spools comprimidos (LZ4 por planos) y escritura por subárbol; fase B fusionada (#108, 3,5 ×), falta la A. | en curso |
 | [Temporales, fase A](plans/temporales-del-conversor-fase-a.md) | Plan de implementación de la escritura por subárbol: codificador sin jerarquía, escritor en flujo, sumidero de bloques y un hijo de la raíz cada vez. | en pausa (#109) |
+| [Formato V8](plans/formato-v8.md) | Diseño de la V8: color de pantalla derivado, LOD solo con atributos de dibujo, distancia mínima entre puntos en la cabecera, zstd según medida y retirada de V5, v6 y v7. | pendiente |
 
 ## Explicación
 
