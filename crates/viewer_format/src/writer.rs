@@ -71,6 +71,7 @@ impl<W: Write + Seek> FormatWriter<W> {
             return Err(FormatError::UnsupportedFormatVersion(version));
         }
         ensure_global_frame_matches(layout, &metadata)?;
+        ensure_distance_quantiles_match(layout, &metadata)?;
         validate_metadata(&metadata)?;
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
         let primary_end = writer.seek(SeekFrom::End(0))?;
@@ -249,6 +250,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         }
         writer.seek(SeekFrom::Start(0))?;
         ensure_global_frame_matches(layout, &metadata)?;
+        ensure_distance_quantiles_match(layout, &metadata)?;
         validate_metadata(&metadata)?;
         ensure_schema_within_limit(&metadata)?;
         if layout.uses_pages()
@@ -602,6 +604,19 @@ impl<W: Write + Seek> FormatWriter<W> {
         }
         Ok(source_metadata.with_dataset(dataset, ranges))
     }
+}
+
+/// Quantiles on a revision that does not store them would be dropped silently: reject them.
+fn ensure_distance_quantiles_match(
+    layout: StorageLayout,
+    metadata: &FormatMetadata,
+) -> Result<(), FormatError> {
+    if !layout.stores_distance_quantiles() && metadata.point_distance_quantiles().is_some() {
+        return Err(FormatError::InvalidMetadata(
+            "this format revision does not store distance quantiles",
+        ));
+    }
+    Ok(())
 }
 
 fn ensure_schema_within_limit(metadata: &FormatMetadata) -> Result<(), FormatError> {

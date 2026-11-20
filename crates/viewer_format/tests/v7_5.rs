@@ -204,12 +204,11 @@ fn dataset_for_fixture(
     )
     .unwrap()
     .with_global_frame(frame)
-    .unwrap()
-    .with_point_distance_quantiles(quantiles());
+    .unwrap();
     (metadata, blocks)
 }
 
-/// A valid triple for the revisions that store distance quantiles; the others ignore it.
+/// A valid triple for the revisions that store distance quantiles; the others reject it.
 fn quantiles() -> viewer_format::PointDistanceQuantiles {
     viewer_format::PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap()
 }
@@ -221,6 +220,11 @@ fn write_pair(
     page_target: Option<usize>,
 ) -> (Vec<u8>, Vec<u8>) {
     let (metadata, blocks) = dataset(tree);
+    let metadata = if version.stores_distance_quantiles() {
+        metadata.with_point_distance_quantiles(quantiles())
+    } else {
+        metadata
+    };
     let mut options = FormatWriterOptions::new(0.01, 1 << 24).unwrap();
     if let Some(target) = page_target {
         options = options.with_page_target_bytes(target);
@@ -1327,4 +1331,56 @@ fn corrupt_quantiles_are_rejected() {
             "{cut}"
         );
     }
+}
+
+/// Writes the sample dataset as `version` with `quantiles` attached, up to `finish_pair`.
+fn write_with_quantiles(
+    version: FormatVersion,
+    quantiles: viewer_format::PointDistanceQuantiles,
+) -> Result<(), FormatError> {
+    let tree = random_tree(9, 7, 20);
+    let (metadata, blocks) = dataset(&tree);
+    let mut writer = FormatWriter::new_split_for_version(
+        version,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata.with_point_distance_quantiles(quantiles),
+        FormatWriterOptions::new(0.01, 1 << 24).unwrap(),
+    )?;
+    for block in blocks {
+        writer.write_block(block)?;
+    }
+    writer.finish_pair().map(|_| ())
+}
+
+#[test]
+fn writer_revalidates_hand_built_quantiles() {
+    for (p1, p5, p50) in [(f64::NAN, 0.5, 1.5), (-0.25, 0.5, 1.5), (0.5, 0.25, 1.5)] {
+        // Struct literals bypass `PointDistanceQuantiles::new`.
+        let bad = viewer_format::PointDistanceQuantiles { p1, p5, p50 };
+        assert!(
+            matches!(
+                write_with_quantiles(V8_PRE1, bad),
+                Err(FormatError::InvalidMetadata(_))
+            ),
+            "{bad:?}"
+        );
+    }
+}
+
+#[test]
+fn quantiles_on_a_revision_that_does_not_store_them_are_rejected() {
+    assert!(matches!(
+        write_with_quantiles(V75, quantiles()),
+        Err(FormatError::InvalidMetadata(_))
+    ));
+}
+
+#[test]
+fn quantile_constructor_boundaries() {
+    use viewer_format::PointDistanceQuantiles as Q;
+    assert!(Q::new(1.0, 1.0, 1.0).is_ok());
+    assert!(Q::new(0.0, 0.0, 0.0).is_ok());
+    assert!(Q::new(-1e-300, 0.5, 1.5).is_err());
+    assert!(Q::new(0.0, 0.5, 1.5).is_ok());
 }

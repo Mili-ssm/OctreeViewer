@@ -99,7 +99,7 @@ impl PageSource {
         self.lock().core.header().reference_spacing()
     }
 
-    /// Nearest-neighbour distance quantiles, from the metadata block (`v8.N-pre` only).
+    /// Nearest-neighbour distance quantiles, from the index header (`v8.N-pre` only).
     pub fn point_distance_quantiles(&self) -> Option<crate::PointDistanceQuantiles> {
         self.lock().core.header().distance_quantiles()
     }

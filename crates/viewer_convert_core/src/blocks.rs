@@ -90,8 +90,8 @@ pub fn output_writer<W: Write + Seek>(
 
 /// Stand-in distance quantiles so `v8.1-pre` output passes the writer's check until the
 /// converter measures the real ones (plan task 3 replaces this function and its call).
-/// All zeros is the value of a cloud made only of exact duplicates, so it is valid but carries
-/// no information: do not use it to pick a point size.
+/// All zeros is the "not measured" value, valid but carrying no information: readers treat
+/// `p5 == 0` as "no recommendation" and must not use it to pick a point size.
 fn placeholder_distance_quantiles() -> viewer_format::PointDistanceQuantiles {
     viewer_format::PointDistanceQuantiles {
         p1: 0.0,

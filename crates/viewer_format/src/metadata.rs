@@ -170,6 +170,7 @@ impl FormatMetadata {
         self
     }
 
+    /// Distance quantiles to store, when set; see [`PointDistanceQuantiles`].
     pub const fn point_distance_quantiles(&self) -> Option<PointDistanceQuantiles> {
         self.point_distance_quantiles
     }
@@ -208,6 +209,10 @@ impl FormatMetadata {
 
 /// Quantiles of the distance from a point to its nearest neighbour, in dataset units, with exact
 /// duplicates (distance 0) left out.
+///
+/// All zeros is the defined "not measured" value: a cloud where no sampled point found a
+/// neighbour at non-zero distance (only duplicates, a single point) stores zeros. Readers must
+/// treat `p5 == 0` as "no recommendation".
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PointDistanceQuantiles {
     pub p1: f64,

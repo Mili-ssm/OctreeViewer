@@ -148,6 +148,7 @@ impl PagedHeader {
         self.reference_spacing
     }
 
+    /// Nearest-neighbour distance quantiles; `None` when the revision does not store them.
     pub fn distance_quantiles(&self) -> Option<PointDistanceQuantiles> {
         self.distance_quantiles
     }
