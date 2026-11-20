@@ -19,8 +19,10 @@ fn main() {
     let mut tail = tail.iter();
     while let Some(argument) = tail.next() {
         match argument.as_str() {
-            "--attr-codec" => attr_codec = tail.next(),
-            "--workers" => workers = tail.next(),
+            "--attr-codec" => {
+                attr_codec = Some(tail.next().expect("--attr-codec needs a scheme"));
+            }
+            "--workers" => workers = Some(tail.next().expect("--workers needs a count")),
             _ => rest.push(argument),
         }
     }

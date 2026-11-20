@@ -113,6 +113,7 @@ const cases = [
   { name: "small-v82-cold-rgb", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.2-pre", attrCodec: "cold-rgb" },
   { name: "small-v82-all", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.2-pre", attrCodec: "all" },
   { name: "small-v82-all-4w", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.2-pre", attrCodec: "all", workers: 4 },
+  { name: "flags-extra-v82-lz4", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v8.2-pre", attrCodec: "lz4" },
   { name: "flags-extra-v82-all", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v8.2-pre", attrCodec: "all" },
 ];
 if (autzen) {
@@ -123,6 +124,7 @@ if (autzen) {
   }
 } else {
   console.log("skip autzen-copc: las-0.11 test data not found in the cargo registry");
+  console.log("WARNING: the RGB16 zstd path (cold-rgb / all on real colour) was NOT exercised: no autzen-v82-* cases ran");
 }
 
 // `las` pulls `chrono` -> `js-sys`/`wasm-bindgen`, which leave placeholder imports in the module.
@@ -144,11 +146,16 @@ const dumpDir = process.env.CONVERT_PARITY_DUMP;
 const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2, v5: 3, v7: 4, "v8.1-pre": 5, "v8.2-pre": 6 };
 const ATTR_CODEC_CODES = { lz4: 0, cold: 1, "cold-rgb": 2, all: 3 };
 
+function codeOf(table, kind, key) {
+  if (!Object.hasOwn(table, key)) throw new Error(`unknown ${kind} ${JSON.stringify(key)}`);
+  return table[key];
+}
+
 function wasmConvert(name, bytes, ppb, divisions, format, rowOrder, attrCodec) {
   const ptr = x.convert_parity_alloc(bytes.length);
   // Viewed after the allocation: growing memory detaches earlier buffers.
   new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
-  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, FORMAT_CODES[format ?? ""], rowOrder === "hybrid" ? 1 : rowOrder === "source" ? 2 : 0, ATTR_CODEC_CODES[attrCodec ?? "lz4"]);
+  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, codeOf(FORMAT_CODES, "format", format ?? ""), rowOrder === "hybrid" ? 1 : rowOrder === "source" ? 2 : 0, codeOf(ATTR_CODEC_CODES, "attrCodec", attrCodec ?? "lz4"));
   const view = (p, l) => new Uint8Array(x.memory.buffer, p, l);
   if (!ok) {
     const message = new TextDecoder().decode(
@@ -199,7 +206,8 @@ for (const { name, input, ppb, divisions, multi, format, rowOrder, sourceTwin, a
   // The zstd schemes must change `.octattrs` (the index in `.oct` records the payload sizes too).
   if (attrCodec && attrCodec !== "lz4" && format === "v8.2-pre") {
     const lz4Twin = results.get(name.replace(/-(cold-rgb|cold|all)(-4w)?$/, "-lz4"));
-    if (lz4Twin && lz4Twin.attrs === native.attrs) problems.push("attr codec equals lz4");
+    if (!lz4Twin) problems.push("missing lz4 twin case");
+    else if (lz4Twin.attrs === native.attrs) problems.push("attr codec equals lz4");
   }
   if (native.oct !== wasm.oct) problems.push("oct differs");
   if (native.attrs !== wasm.attrs) problems.push("octattrs differs");

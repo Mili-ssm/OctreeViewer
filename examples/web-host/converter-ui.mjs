@@ -71,8 +71,8 @@ export function validateConverterOptions(raw = {}) {
 
     // Absent or `lz4` is the default and is not sent; any other scheme needs v8.2-pre.
     if (input.attrCodec !== undefined && input.attrCodec !== "lz4") {
-        if (!ATTR_CODECS.includes(input.attrCodec)) errors.attrCodec = `Attribute codec must be ${ATTR_CODECS.join(", ")}.`;
-        else if (input.formatVersion !== "v8.2-pre") errors.attrCodec = "Attribute codec other than lz4 needs format v8.2-pre.";
+        if (!ATTR_CODECS.includes(input.attrCodec)) errors.attrCodec = `unknown attribute codec "${input.attrCodec}" (expected lz4, cold, cold-rgb or all)`;
+        else if (input.formatVersion !== "v8.2-pre") errors.attrCodec = `attribute codec ${input.attrCodec} needs format version v8.2-pre`;
         else options.attrCodec = input.attrCodec;
     }
 

@@ -104,7 +104,7 @@ pub enum ConvertError {
         what: &'static str,
         version: FormatVersion,
     },
-    #[error("attribute codec {0} needs --format-version v8.2-pre; {1} stores no zstd payloads")]
+    #[error("attribute codec {0} needs format version v8.2-pre; {1} stores no zstd payloads")]
     AttributeCodecUnsupported(AttributeCodecScheme, FormatVersion),
     #[error("row order hybrid needs a v7 output format")]
     HybridRowOrderUnsupported,

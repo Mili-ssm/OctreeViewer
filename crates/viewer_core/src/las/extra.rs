@@ -17,6 +17,8 @@ pub const MAX_EXTRA_BYTES_PER_POINT: usize = 64;
 pub const EXTRA_BYTE_DESCRIPTOR_LEN: usize = 192;
 /// Name of the flags column.
 pub const LAS_FLAGS_NAME: &str = "las_flags";
+/// Prefix of the column name of each Extra Byte (`extra:<name>`).
+pub const EXTRA_COLUMN_PREFIX: &str = "extra:";
 /// Bits of the `las_flags` column.
 pub const LAS_FLAG_SYNTHETIC: u8 = 1;
 pub const LAS_FLAG_KEY_POINT: u8 = 2;
@@ -302,9 +304,9 @@ pub fn las_attribute_schema_for(
         return Err(LasExtraBytesError::TooManyBytes { bytes });
     }
     for (index, extra) in spec.extra_bytes.iter().enumerate() {
-        let mut name = format!("extra:{}", extra.name());
+        let mut name = format!("{EXTRA_COLUMN_PREFIX}{}", extra.name());
         if extra.name().is_empty() || schema.iter().any(|d| d.name() == name) {
-            name = format!("extra:{}#{index}", extra.name());
+            name = format!("{EXTRA_COLUMN_PREFIX}{}#{index}", extra.name());
         }
         schema.push(AttributeDescriptor::new(
             name,

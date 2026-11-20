@@ -224,7 +224,7 @@ report(rowOrderResults.source !== rowOrderResults.hybrid, "rowOrder hybrid diffe
 
 // `attrCodec` reaches the bindings: each v8.2-pre scheme matches native, and `all` differs from `lz4`.
 const attrResults = {};
-for (const attrCodec of ["lz4", "all"]) {
+for (const attrCodec of ["lz4", "cold", "cold-rgb", "all"]) {
   const name = `small-v82-${attrCodec}`;
   const native = nativeConvert(name, small, 262144, 2, "v8.2-pre", undefined, attrCodec);
   const { attrs } = bindingConvert(name, small, 262144, 2, { formatVersion: "v8.2-pre", attrCodec });
