@@ -1,6 +1,6 @@
 # Temporales del conversor, fase A: escritura por subárbol (plan de implementación)
 
-Estado: pendiente · 20-11-2026 · plan escrito; antes de ejecutarlo pasa el análisis de riesgos
+Estado: en pausa · 20-11-2026 · aparcado por el propietario ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)): tras la fase B el disco lo marca la salida; antes se estudia su tamaño ([registro](../records/benchmarks/TAMANO_SALIDA_V7_20-11-2026.md))
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
