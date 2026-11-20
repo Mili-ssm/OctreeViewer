@@ -19,6 +19,7 @@ aparcada ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)).
 | D2 | Los puntos LOD guardan solo lo que dibuja el visor: coordenadas, RGB, intensidad y clase. Las hojas guardan todos los atributos. |
 | D3 | zstd solo si una medida (tamaño, tiempo de conversión y lectura en wasm) lo justifica; la decide el propietario con las cifras. |
 | D4 | El visor y el conversor soportan **solo V8**: los ficheros v7 (también el recorte de la demo) se reconvierten. Con el [ADR 0047](../adr/0047-v5-heredado-hasta-v8.md), empezar V8 retira V5 ([#28](https://github.com/Mili-ssm/OctreeViewer/issues/28)); D4 retira además v6 y v7 y sus revisiones previas. |
+| D6 | V8 está en desarrollo y en pruebas: no se fija nada todavía (propietario, 20-11-2026). Se trabaja en revisiones previas (`v8.1-pre`, `v8.2-pre`…), como v7, y se congela cuando las pruebas lo justifiquen. |
 | D5 | V8 guarda una estimación estocástica de la distancia mínima entre puntos, como tamaño mínimo de vóxel recomendado. Que la demo la use en lugar de los 0,1 mm por defecto se decide más adelante (hoy lo fija la resolución de OQ-13 del 18-11-2026, RQ-09 y el [ADR 0054](../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md)). |
 
 ## Requisitos
@@ -65,10 +66,29 @@ de hoja: el lector lo deriva al decodificar el bloque, con la misma regla, antes
 - **Uso:** la API pública lo expone como «tamaño mínimo recomendado»; el modo «espaciado de la nube» del filtro de
   longitud puede pasar a usarlo. Cambiar el valor por defecto de la demo es la decisión pendiente de D5.
 
-### zstd (D3, pendiente de medida)
+### Compresión por fichero (D3, abierta)
 
-Se mide en Albuera (tiempo GPS, RGB de 16 bits y geometría) frente a LZ4: tamaño, codificación y decodificación en
-nativo y en wasm. Con las cifras, el propietario decide si V8 lo incluye y para qué flujos.
+Medido en Albuera ([experimento del 20-11-2026](#medida-de-zstd-20-11-2026)): zstd nivel 3 ahorra ~2,5 GB (−16 % de la
+salida), pero en el navegador (`ruzstd`, Rust puro, wasm) descomprime a ~250 MB/s frente a 3,6–4,9 GB/s de LZ4.
+Idea del propietario a probar: un esquema **fijo por fichero**, no un códec elegido por bloque: `.oct` (lo que el render
+necesita) con LZ4 y `.octattrs` (atributos de carga diferida) con zstd.
+
+Consecuencia para el color: si el color de pantalla se deriva del RGB de 16 bits, ese RGB pasa a ser necesario para
+dibujar. Variante a probar: partir el RGB de 16 bits por planos de bytes, sin pérdida: el byte alto (que es el color de
+pantalla) en `.oct` con LZ4 y el byte bajo en `.octattrs`. El color se guarda una sola vez y el render no depende de zstd.
+
+#### Medida de zstd (20-11-2026)
+
+Muestra de 654 de 25 838 bloques de Albuera (semilla fija), un hilo, mediana de 7 repeticiones; `lz4_flex` 0.14,
+`zstd` 0.13.5 (C), `ruzstd` 0.8.3; wasm en node 22 (equipo del propietario):
+
+| Flujo | Hoy (relación guardado/crudo) | zstd 3 | Ahorro extrapolado | Decodificación wasm: LZ4 / `ruzstd` |
+| --- | --- | --- | --- | --- |
+| Geometría | 0,731 | 0,543 (−25,7 %) | 1,17 GB | 2 875 / 304 MB/s |
+| Tiempo GPS | 0,389 | 0,310 (−20,3 %) | 0,61 GB | 4 737 / 266 MB/s |
+| RGB de 16 bits | 0,629 | 0,512 (−18,6 %) | 0,69 GB | 3 599–4 902 / 235 MB/s |
+
+El nivel 3 es el codo (el 6 gana 1–2 puntos y codifica 2,5–3 × más lento). Sin medir: zstd en C compilado a wasm.
 
 ### Solo V8 (D4)
 
@@ -80,11 +100,12 @@ nativo y en wasm. Con las cifras, el propietario decide si V8 lo incluye y para 
 
 ## Fases
 
-1. **V8 en el formato:** versión, bloques hoja/LOD, color derivado, cuantiles de distancia en la cabecera; escritor y
-   lector; v7 sigue disponible mientras tanto para comparar.
+1. **`v8.1-pre` en el formato:** versión, bloques hoja/LOD, color de pantalla sin duplicar, cuantiles de distancia en la
+   cabecera; escritor y lector; v7 sigue disponible mientras tanto para comparar.
 2. **Conversor y visor con V8:** el conversor escribe V8 (LOD reducido, cuantiles); el visor lee V8 y deriva el color;
    medida frente a v7 (V1–V5).
-3. **zstd**, si el propietario lo aprueba con la medida.
+3. **Compresión por fichero** (P1): revisiones previas siguientes con las variantes, medidas en tamaño y en carga real
+   en la demo.
 4. **Retirada de V5, v6 y v7** (D4, #28) y reconversión del recorte de la demo.
 
 ## Fuera de alcance
@@ -96,4 +117,4 @@ hoja; checkpoints en el formato paginado (RF-26); cambiar el mínimo por defecto
 
 | Id | Pregunta |
 | --- | --- |
-| P1 | ¿Incluye V8 zstd, y en qué flujos? (D3, tras la medida) |
+| P1 | Esquema de compresión de V8: LZ4 en todo, o fijo por fichero (`.oct` LZ4, `.octattrs` zstd), con o sin el RGB de 16 bits partido por planos. Se decide con las pruebas de las revisiones previas (D3, D6). |
