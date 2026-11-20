@@ -178,12 +178,12 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
   columnas presentes (y cuentan los puntos por la geometría); los cargadores síncronos de wasm comprueban la presencia.
   Todos los sitios que suponían todas las columnas usan `stored_column`.
 
-- [ ] **Step 1: failing tests**: `stored_column_is_present_for_v7` (todas las versiones de `WRITABLE`, todos los bloques);
+- [x] **Step 1: failing tests**: `stored_column_is_present_for_v7` (todas las versiones de `WRITABLE`, todos los bloques);
   `lod_set_matches_has_children` (raíz hoja, raíz con todos los puntos iguales y árbol normal).
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar sin cambiar bytes.
-- [ ] **Step 4:** tests del workspace (SHA de v7 intactos), clippy, wasm32 → OK.
-- [ ] **Step 5:** commit `refactor(format): one rule decides which columns a block stores`.
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar sin cambiar bytes.
+- [x] **Step 4:** tests del workspace (SHA de v7 intactos), clippy, wasm32 → OK.
+- [x] **Step 5:** commit `refactor(format): one rule decides which columns a block stores`.
 
 ### Task 4b: LOD blocks omit non-drawing columns
 
