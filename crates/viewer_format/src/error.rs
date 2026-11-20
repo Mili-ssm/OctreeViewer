@@ -21,6 +21,10 @@ pub enum FormatError {
     UnsupportedFormatVersion(crate::FormatVersion),
     #[error("format version {0} fixes its row order; another order cannot be requested")]
     RowOrderFixedByFormat(crate::FormatVersion),
+    #[error(
+        "format version {0} cannot store zstd payloads; an attribute codec other than lz4 needs v8.2-pre"
+    )]
+    AttributeCodecUnsupported(crate::FormatVersion),
     #[error("prepared block version {block} does not match writer version {writer}")]
     PreparedVersionMismatch {
         writer: crate::FormatVersion,

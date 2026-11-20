@@ -123,16 +123,16 @@ if (singleInput) {
 const small = join(root, "data/samples/fs_e430_n4008_18.las");
 const synthetic = join(root, "tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
 
-function nativeConvert(name, input, ppb, divisions, format, rowOrder) {
+function nativeConvert(name, input, ppb, divisions, format, rowOrder, attrCodec) {
   const output = join(workDir, `${name}.native.oct`);
-  const extra = format ? [format, ...(rowOrder ? [rowOrder] : [])] : [];
+  const extra = [...(format ? [format, ...(rowOrder ? [rowOrder] : [])] : []), ...(attrCodec ? ["--attr-codec", attrCodec] : [])];
   const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...extra], { encoding: "utf8" });
   if (run.status !== 0) throw new Error(`native conversion failed: ${run.stderr}`);
   return { oct: sha256(readFileSync(output)), attrs: sha256(readFileSync(`${output}attrs`)) };
 }
 
 // Runs one binding conversion; `outputQuota` and `zoneQuota` (bytes) make the fakes write short.
-function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, zoneQuota = Infinity, formatVersion, rowOrder, omitPointsPerBlock = false } = {}) {
+function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, zoneQuota = Infinity, formatVersion, rowOrder, attrCodec, omitPointsPerBlock = false } = {}) {
   const paths = [`${name}.oct`, `${name}.octattrs`].map((file) => join(workDir, file));
   const handles = [
     openFsSyncHandle(paths[0], { quotaBytes: outputQuota }),
@@ -155,6 +155,7 @@ function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, z
         spoolBudgetBytes: SPOOL_BUDGET_BYTES,
         ...(formatVersion ? { formatVersion } : {}),
         ...(rowOrder ? { rowOrder } : {}),
+        ...(attrCodec ? { attrCodec } : {}),
       },
       undefined,
       createSpoolHost({ zones }),
@@ -220,6 +221,17 @@ for (const rowOrder of ["source", "hybrid"]) {
   report(problems.length === 0, `${name} bindings=${oct.slice(0, 12)} native=${native.oct.slice(0, 12)}` + (problems.length ? ` (${problems.join(", ")})` : ""));
 }
 report(rowOrderResults.source !== rowOrderResults.hybrid, "rowOrder hybrid differs from source");
+
+// `attrCodec` reaches the bindings: each v8.2-pre scheme matches native, and `all` differs from `lz4`.
+const attrResults = {};
+for (const attrCodec of ["lz4", "all"]) {
+  const name = `small-v82-${attrCodec}`;
+  const native = nativeConvert(name, small, 262144, 2, "v8.2-pre", undefined, attrCodec);
+  const { attrs } = bindingConvert(name, small, 262144, 2, { formatVersion: "v8.2-pre", attrCodec });
+  attrResults[attrCodec] = attrs;
+  report(attrs === native.attrs, `${name} bindings=${attrs.slice(0, 12)} native=${native.attrs.slice(0, 12)}`);
+}
+report(attrResults.lz4 !== attrResults.all, "attrCodec all differs from lz4");
 
 // A full spill zone or a full output surfaces as a `QuotaExceededError`.
 const quotaCases = [

@@ -6,6 +6,7 @@
 #[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]
 mod async_reader;
 mod attribute_codec;
+mod attribute_scheme;
 mod block_encoder;
 mod checkpoint_record;
 mod codec;
@@ -42,6 +43,7 @@ mod writer;
 /// Largest attribute schema the writer emits and the default reader limit accepts (RF-27).
 pub(crate) const MAX_SCHEMA_ATTRIBUTES: usize = 256;
 
+pub use attribute_scheme::AttributeCodecScheme;
 pub use codec::{
     BlockCodec, CodecError, EncodedBlock, EntropyCoder, compress_block, compress_block_with,
     decompress_block,

@@ -70,6 +70,7 @@ pub fn output_writer<W: Write + Seek>(
     if let Some(row_order) = options.row_order {
         writer_options = writer_options.with_row_order(row_order);
     }
+    writer_options = writer_options.with_attribute_codec(options.attribute_codec);
     let writer = FormatWriter::new_split_for_version(
         options.format_version(),
         geometry,

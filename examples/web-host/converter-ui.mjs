@@ -6,6 +6,8 @@ const GB = 1e9;
 /** Writable output revisions: v7 (the default) first, then the v7.N-pre revisions in ascending order, then v5, the v6.N-pre revisions and the experimental v8.1-pre and v8.2-pre. */
 export const FORMAT_VERSIONS = ["v7", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v8.1-pre", "v8.2-pre"];
 export const SPATIAL_DIVISIONS = [2, 4, 8];
+/** Experimental per-column-class entropy coder of `v8.2-pre` (`--attr-codec`); reachable by API only, with no form field. */
+export const ATTR_CODECS = ["lz4", "cold", "cold-rgb", "all"];
 
 const GLOBAL_FRAME_FORMATS = new Set(["v7", "v7.4-pre", "v7.5-pre", "v8.1-pre", "v8.2-pre"]);
 
@@ -66,6 +68,13 @@ export function validateConverterOptions(raw = {}) {
 
     if (FORMAT_VERSIONS.includes(input.formatVersion)) options.formatVersion = input.formatVersion;
     else errors.formatVersion = "Choose one of the listed format versions.";
+
+    // Absent or `lz4` is the default and is not sent; any other scheme needs v8.2-pre.
+    if (input.attrCodec !== undefined && input.attrCodec !== "lz4") {
+        if (!ATTR_CODECS.includes(input.attrCodec)) errors.attrCodec = `Attribute codec must be ${ATTR_CODECS.join(", ")}.`;
+        else if (input.formatVersion !== "v8.2-pre") errors.attrCodec = "Attribute codec other than lz4 needs format v8.2-pre.";
+        else options.attrCodec = input.attrCodec;
+    }
 
     const fixedFrame = isGlobalFrameFormat(input.formatVersion);
 

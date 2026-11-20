@@ -1,4 +1,4 @@
-use viewer_format::{FormatVersion, RowOrder};
+use viewer_format::{AttributeCodecScheme, FormatVersion, RowOrder};
 
 use crate::error::ConvertError;
 
@@ -49,6 +49,8 @@ pub struct ConvertOptions {
     pub(crate) page_target_bytes: Option<usize>,
     /// Requested row order; `None` takes the format's fixed order or `Source` (ADR 0041/0042/0044).
     pub(crate) row_order: Option<RowOrder>,
+    /// Experimental `v8.2-pre` coder policy per column class; `Lz4` on every other format.
+    pub(crate) attribute_codec: AttributeCodecScheme,
 }
 
 impl ConvertOptions {
@@ -64,6 +66,12 @@ impl ConvertOptions {
         let version = self.format_version();
         if self.row_order == Some(RowOrder::Hybrid) && !version.supports_hybrid_rows() {
             return Err(ConvertError::HybridRowOrderUnsupported);
+        }
+        if self.attribute_codec != AttributeCodecScheme::Lz4 && !version.supports_zstd() {
+            return Err(ConvertError::AttributeCodecUnsupported(
+                self.attribute_codec,
+                version,
+            ));
         }
         if let (Some(fixed), Some(requested)) = (version.fixed_row_order(), self.row_order)
             && fixed != requested
@@ -102,6 +110,18 @@ impl ConvertOptions {
     pub fn with_row_order(mut self, row_order: RowOrder) -> Result<Self, ConvertError> {
         self.row_order = Some(row_order);
         Ok(self)
+    }
+
+    /// Requests a per-column-class entropy coder policy (`--attr-codec`). Only `v8.2-pre`
+    /// stores zstd; [`Self::validate`] rejects any other scheme than `Lz4` for the other formats.
+    #[must_use]
+    pub const fn with_attribute_codec(mut self, scheme: AttributeCodecScheme) -> Self {
+        self.attribute_codec = scheme;
+        self
+    }
+
+    pub const fn attribute_codec(self) -> AttributeCodecScheme {
+        self.attribute_codec
     }
 
     /// Resolved row order: the requested one, else the format's fixed one, else `Source`.
@@ -168,6 +188,7 @@ impl ConvertOptions {
             format_version: None,
             page_target_bytes: None,
             row_order: None,
+            attribute_codec: AttributeCodecScheme::Lz4,
         })
     }
 
@@ -284,6 +305,7 @@ impl Default for ConvertOptions {
             format_version: None,
             page_target_bytes: None,
             row_order: None,
+            attribute_codec: AttributeCodecScheme::Lz4,
         }
     }
 }

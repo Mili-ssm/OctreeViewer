@@ -105,9 +105,22 @@ const cases = [
   { name: "small-v81", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.1-pre" },
   { name: "flags-extra-v81", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v8.1-pre" },
   { name: "synthetic-v81", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v8.1-pre" },
+  // v8.2-pre with every attribute scheme on a real multi-block cloud (the synthetic fixtures have only
+  // constant columns, so zstd never applies). Native uses 4 spatial workers where `workers` is set; the
+  // wasm side is serial. Each zstd scheme must change `.octattrs` compared with `lz4`.
+  { name: "small-v82-lz4", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.2-pre", attrCodec: "lz4" },
+  { name: "small-v82-cold", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.2-pre", attrCodec: "cold" },
+  { name: "small-v82-cold-rgb", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.2-pre", attrCodec: "cold-rgb" },
+  { name: "small-v82-all", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.2-pre", attrCodec: "all" },
+  { name: "small-v82-all-4w", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.2-pre", attrCodec: "all", workers: 4 },
+  { name: "flags-extra-v82-all", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v8.2-pre", attrCodec: "all" },
 ];
 if (autzen) {
   cases.push({ name: "autzen-copc-4096-d2", input: autzen, ppb: 4096, divisions: 2, multi: false, format: "v5" });
+  // Real colour (RGB16) and several attribute columns: zstd applies to `rgb` under cold-rgb and all.
+  for (const attrCodec of ["lz4", "cold-rgb", "all"]) {
+    cases.push({ name: `autzen-v82-${attrCodec}`, input: autzen, ppb: 262144, divisions: 2, multi: false, format: "v8.2-pre", attrCodec, workers: attrCodec === "all" ? 4 : undefined });
+  }
 } else {
   console.log("skip autzen-copc: las-0.11 test data not found in the cargo registry");
 }
@@ -128,13 +141,14 @@ const x = (await WebAssembly.instantiate(module, imports)).exports;
 const dumpDir = process.env.CONVERT_PARITY_DUMP;
 
 // `convert_parity_run` format argument.
-const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2, v5: 3, v7: 4, "v8.1-pre": 5 };
+const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2, v5: 3, v7: 4, "v8.1-pre": 5, "v8.2-pre": 6 };
+const ATTR_CODEC_CODES = { lz4: 0, cold: 1, "cold-rgb": 2, all: 3 };
 
-function wasmConvert(name, bytes, ppb, divisions, format, rowOrder) {
+function wasmConvert(name, bytes, ppb, divisions, format, rowOrder, attrCodec) {
   const ptr = x.convert_parity_alloc(bytes.length);
   // Viewed after the allocation: growing memory detaches earlier buffers.
   new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
-  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, FORMAT_CODES[format ?? ""], rowOrder === "hybrid" ? 1 : rowOrder === "source" ? 2 : 0);
+  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, FORMAT_CODES[format ?? ""], rowOrder === "hybrid" ? 1 : rowOrder === "source" ? 2 : 0, ATTR_CODEC_CODES[attrCodec ?? "lz4"]);
   const view = (p, l) => new Uint8Array(x.memory.buffer, p, l);
   if (!ok) {
     const message = new TextDecoder().decode(
@@ -157,12 +171,12 @@ function wasmConvert(name, bytes, ppb, divisions, format, rowOrder) {
   };
 }
 
-function nativeConvert(name, input, ppb, divisions, format, rowOrder) {
+function nativeConvert(name, input, ppb, divisions, format, rowOrder, attrCodec, workers) {
   const output = join(workDir, `${name}.oct`);
   // The converter refuses to overwrite an existing output.
   rmSync(output, { force: true });
   rmSync(`${output}attrs`, { force: true });
-  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...(format ? [format] : []), ...(rowOrder ? [rowOrder] : [])], {
+  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...(format ? [format] : []), ...(rowOrder ? [rowOrder] : []), ...(attrCodec ? ["--attr-codec", attrCodec] : []), ...(workers ? ["--workers", String(workers)] : [])], {
     encoding: "utf8",
   });
   if (run.status !== 0) throw new Error(`native conversion failed: ${run.stderr}`);
@@ -175,13 +189,18 @@ function nativeConvert(name, input, ppb, divisions, format, rowOrder) {
 
 let failed = false;
 const results = new Map();
-for (const { name, input, ppb, divisions, multi, format, rowOrder, sourceTwin } of cases) {
-  const native = nativeConvert(name, input, ppb, divisions, format, rowOrder);
-  const wasm = wasmConvert(name, readFileSync(input), ppb, divisions, format, rowOrder);
+for (const { name, input, ppb, divisions, multi, format, rowOrder, sourceTwin, attrCodec, workers } of cases) {
+  const native = nativeConvert(name, input, ppb, divisions, format, rowOrder, attrCodec, workers);
+  const wasm = wasmConvert(name, readFileSync(input), ppb, divisions, format, rowOrder, attrCodec);
   results.set(name, native);
   const problems = [];
   // The option must reach both sides: the hybrid pair differs from its source-order twin.
   if (sourceTwin && results.get(sourceTwin).oct === native.oct) problems.push("hybrid equals source order");
+  // The zstd schemes must change `.octattrs` (the index in `.oct` records the payload sizes too).
+  if (attrCodec && attrCodec !== "lz4" && format === "v8.2-pre") {
+    const lz4Twin = results.get(name.replace(/-(cold-rgb|cold|all)(-4w)?$/, "-lz4"));
+    if (lz4Twin && lz4Twin.attrs === native.attrs) problems.push("attr codec equals lz4");
+  }
   if (native.oct !== wasm.oct) problems.push("oct differs");
   if (native.attrs !== wasm.attrs) problems.push("octattrs differs");
   if (native.blocks !== wasm.blocks) problems.push("block count differs");

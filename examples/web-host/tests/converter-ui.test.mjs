@@ -91,3 +91,15 @@ test("fixed-frame fields show the fixed values for global-frame formats and rest
     assert.equal(fixedFrameHint("pointsPerBlock"), "Fixed by the selected format (64,000).");
     assert.equal(fixedFrameHint("spatialDivisions"), "Fixed by the selected format (2).");
 });
+
+test("attr codec is optional, API-only and valid only for v8.2-pre", () => {
+    assert.ok(!("attrCodec" in validateConverterOptions(OPTION_DEFAULTS).options));
+    assert.ok(!("attrCodec" in validateConverterOptions({ formatVersion: "v5", attrCodec: "lz4" }).options));
+    for (const attrCodec of ["cold", "cold-rgb", "all"]) {
+        const ok = validateConverterOptions({ formatVersion: "v8.2-pre", attrCodec });
+        assert.deepEqual(ok.errors, {});
+        assert.equal(ok.options.attrCodec, attrCodec);
+        assert.deepEqual(Object.keys(validateConverterOptions({ formatVersion: "v8.1-pre", attrCodec }).errors), ["attrCodec"]);
+    }
+    assert.deepEqual(Object.keys(validateConverterOptions({ formatVersion: "v8.2-pre", attrCodec: "zstd" }).errors), ["attrCodec"]);
+});
