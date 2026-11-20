@@ -38,8 +38,13 @@ Serve the repository root (with `pkg/`) on any port, pass it as `--url`, and pic
 python3 -m http.server 8791 --bind 127.0.0.1 &
 node examples/web-host/probe-orbit-load.mjs data/samples/fs_e430_n4008_18.oct target/orbit-load.json \
   --url=http://127.0.0.1:8791/examples/web-host/index.html \
-  [--browser=chrome|firefox] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels]
+  [--browser=chrome|firefox] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] \
+  [--color=rgb|intensity|classification|attribute:COLUMN]
 ```
+
+`--color` picks the demo's Color control once the dataset is open (default `rgb`, unchanged); `attribute:COLUMN` needs
+`--attrs` and a single-component sidecar column. OUTPUT.json `colorMode` records the request and the value read back
+from the select and the render worker; a mode that is not active fails the run.
 
 `--browser=chrome` (default) launches `/usr/bin/google-chrome` (`CHROME_BIN`) through playwright-core
 (`PLAYWRIGHT_CORE` = its directory) with `--headless=new --enable-unsafe-webgpu
