@@ -108,7 +108,7 @@ impl FormatVersion {
             .is_ok_and(crate::layout::StorageLayout::stores_distance_quantiles)
     }
 
-    /// Row order the format fixes: `v7` and `v8.N-pre` always write hybrid (ADR 0044); every other revision
+    /// Row order the format fixes: `v7` and the implemented `v8.N-pre` revisions (today `v8.1-pre`) always write hybrid (ADR 0044); every other revision
     /// leaves the choice to the caller (`Source` by default).
     pub fn fixed_row_order(self) -> Option<crate::RowOrder> {
         match self {
