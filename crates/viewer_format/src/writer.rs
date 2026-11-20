@@ -140,6 +140,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         let (id, record) = decode_checkpoint_record(
             bytes,
             self.metadata.dataset().hierarchy().attributes(),
+            self.layout,
             self.attributes.is_some(),
         )?;
         self.ensure_block_available(id)?;
@@ -153,6 +154,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         }
         validate_checkpoint_record(
             &record,
+            self.layout,
             self.attributes.is_some(),
             self.metadata.dataset().hierarchy().attributes(),
         )?;

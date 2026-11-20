@@ -183,10 +183,13 @@ fn add(left: u64, right: u64) -> Result<u64, FormatError> {
 
 /// Estimate payload-buffer peaks. For Occupied/CompactOccupied geometry, materialization
 /// conservatively adds 12 bytes per point and a presence bitset to raw payload and output.
+/// `zstd_layout` is whether the layout supports zstd: a dictionary payload may then carry zstd
+/// inner parts (its tags are only known after reading), so it is charged the decompression context.
 pub(crate) fn estimate_payload(
     range: &PayloadReadRange,
     output_bytes: u64,
     geometry: Option<(GeometryEncoding, u64)>,
+    zstd_layout: bool,
 ) -> Result<ReadMemoryEstimate, FormatError> {
     range
         .offset
@@ -233,12 +236,19 @@ pub(crate) fn estimate_payload(
             )?,
             ZSTD_DECOMPRESSION_CONTEXT_BYTES,
         )?,
-        BlockCodec::Dictionary => add(
-            range.stored_bytes,
-            decoded_bytes
-                .checked_mul(3)
-                .ok_or(FormatError::BlockSizeOverflow)?,
-        )?,
+        BlockCodec::Dictionary => {
+            let peak = add(
+                range.stored_bytes,
+                decoded_bytes
+                    .checked_mul(3)
+                    .ok_or(FormatError::BlockSizeOverflow)?,
+            )?;
+            if zstd_layout {
+                add(peak, ZSTD_DECOMPRESSION_CONTEXT_BYTES)?
+            } else {
+                peak
+            }
+        }
     };
     let materialize_peak = add(add(decoded_bytes, output_bytes)?, materialization_scratch)?;
     Ok(ReadMemoryEstimate {
@@ -281,14 +291,18 @@ mod tests {
             (BlockCodec::BytePlanes, 3),
             (BlockCodec::Dictionary, 4),
         ] {
-            let estimate = estimate_payload(&range(codec, 10, 20), 5, None).unwrap();
+            let estimate = estimate_payload(&range(codec, 10, 20), 5, None, false).unwrap();
             assert_eq!(estimate.stored_bytes(), 10);
             assert_eq!(estimate.decoded_bytes(), 20);
             assert_eq!(estimate.output_bytes(), 5);
             assert_eq!(estimate.peak_bytes(), (10 + 20 * (multiplier - 1)).max(25));
         }
-        for (codec, multiplier) in [(BlockCodec::Zstd, 2), (BlockCodec::BytePlanesZstd, 3)] {
-            let estimate = estimate_payload(&range(codec, 10, 20), 5, None).unwrap();
+        for (codec, multiplier) in [
+            (BlockCodec::Zstd, 2),
+            (BlockCodec::BytePlanesZstd, 3),
+            (BlockCodec::Dictionary, 4),
+        ] {
+            let estimate = estimate_payload(&range(codec, 10, 20), 5, None, true).unwrap();
             assert_eq!(
                 estimate.peak_bytes(),
                 10 + 20 * (multiplier - 1) + ZSTD_DECOMPRESSION_CONTEXT_BYTES
@@ -302,6 +316,7 @@ mod tests {
             &range(BlockCodec::None, 3, 4),
             24,
             Some((GeometryEncoding::Occupied, 9)),
+            false,
         )
         .unwrap();
         assert_eq!(estimate.decoded_bytes(), 4);
@@ -310,8 +325,8 @@ mod tests {
 
     #[test]
     fn combined_geometry_counts_sequential_reads_and_retained_positions() {
-        let position = estimate_payload(&range(BlockCodec::Lz4, 10, 20), 30, None).unwrap();
-        let color = estimate_payload(&range(BlockCodec::Lz4, 4, 8), 12, None).unwrap();
+        let position = estimate_payload(&range(BlockCodec::Lz4, 10, 20), 30, None, false).unwrap();
+        let color = estimate_payload(&range(BlockCodec::Lz4, 4, 8), 12, None, false).unwrap();
         let combined = combine_geometry(position, color).unwrap();
         assert_eq!(combined.stored_bytes(), 14);
         assert_eq!(combined.decoded_bytes(), 28);
@@ -325,7 +340,8 @@ mod tests {
             estimate_payload(
                 &PayloadReadRange::new(ReadSource::Primary, u64::MAX, 1, 1, BlockCodec::None, 0),
                 0,
-                None
+                None,
+                false
             )
             .is_err()
         );
@@ -333,7 +349,8 @@ mod tests {
             estimate_payload(
                 &range(BlockCodec::None, 1, u64::MAX),
                 1,
-                Some((GeometryEncoding::Occupied, 1))
+                Some((GeometryEncoding::Occupied, 1)),
+                false
             )
             .is_err()
         );

@@ -157,8 +157,10 @@ pub(crate) fn encode(
 /// Dictionary inner tag: 0 raw, 1 LZ4, 2 zstd (v8.2-pre only).
 fn inner_tag(codec: BlockCodec) -> u8 {
     match codec {
+        BlockCodec::None => 0,
+        BlockCodec::Lz4 => 1,
         BlockCodec::Zstd => 2,
-        other => other as u8,
+        _ => unreachable!("dictionary parts are stored raw, LZ4 or zstd"),
     }
 }
 

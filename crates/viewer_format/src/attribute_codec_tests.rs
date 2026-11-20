@@ -1063,10 +1063,101 @@ mod zstd {
                 let mut flipped = stored.to_vec();
                 flipped[position] ^= 0xA5;
                 if let Ok(output) = decode(&flipped, raw.len()) {
+                    // Decoding is bounded by raw_length; only the payload CRC rejects the damage.
                     assert_eq!(output.len(), raw.len());
+                    assert!(
+                        output == raw || crate::crc32(&output) != crate::crc32(&raw),
+                        "flip at {position}"
+                    );
                 }
             }
         }
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        use std::fmt::Write;
+        bytes.iter().fold(String::new(), |mut out, byte| {
+            write!(out, "{byte:02x}").unwrap();
+            out
+        })
+    }
+
+    /// One small fixed input per layout; the expected bytes pin level 3, magicless frames and no
+    /// checksum or content size, so changing any of them fails here (and in the parity digest).
+    fn golden_inputs() -> Vec<(&'static str, usize, Vec<u8>)> {
+        let raw: Vec<u8> = (0..96_u32).map(|i| (i * i % 23) as u8).collect();
+        let planes: Vec<u8> = (0..64_u32)
+            .flat_map(|row| (row * 3 + row % 3).to_le_bytes())
+            .collect();
+        let mut state = 12345_u32;
+        let dictionary: Vec<u8> = (0..512)
+            .flat_map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let id = (((state >> 16) % 13) * ((state >> 28) % 2)) as u8;
+                [id * 19, 255 - id * 7]
+            })
+            .collect();
+        vec![
+            ("raw", 1, raw),
+            ("planes", 4, planes),
+            ("dictionary", 2, dictionary),
+        ]
+    }
+
+    #[test]
+    fn golden_payload_bytes_pin_the_zstd_parameters() {
+        let golden: [(&str, BlockCodec, &str, &str); 3] = [
+            (
+                "raw",
+                BlockCodec::Zstd,
+                "0000f50000b80001040910020d03120c080606080c12030d021009040101004dd1d904",
+                "ff080001040910020d03120c080606080c12030d021009040117003060040100010409",
+            ),
+            (
+                "planes",
+                BlockCodec::BytePlanesZstd,
+                "00004d02001404000408090d1112161a1b1f2324282c2d3135363a3e3f4347484c505155595a5e6263676b6c707475797d7e8286878b8f909498999da1a2a6aaabafb3b4b8bcbd000100018f0251",
+                "ff33000408090d1112161a1b1f2324282c2d3135363a3e3f4347484c505155595a5e6263676b6c707475797d7e8286878b8f909498999da1a2a6aaabafb3b4b8bcbd00000200a560000000000000",
+            ),
+            (
+                "dictionary",
+                BlockCodec::Dictionary,
+                "0d00000000021a00000000ffe4abd1b213f898c74ce35fdc26f139ea72d585cebeb9abc00000cd06000650352e506d5b0d70ab952bf3593dac621f36821b02d2be4f184848c0142e89c806986c5397ed2cecf68996d676f777ff1426002c00280047a637fa892621f5db0b6c2a7ecf256512f366db18a43042e6f99386e01c6fdf645598ea1afd1400f2988663f7c9a1b4f835f8b344a22e9c80dc10ff46184a5eeafd2017e0994544cc5e163d0f037d59c601770082b6533dc97fab3fbda0f0f20e0e3b52973907b4653618d21a9a40d0995fbfad6ced6e478d647f4c44dca4f90b28025c252d2f5ae463ee23edb6f52dfd0d587d4d59e3ebd87c5e21ae7cab1200",
+                "0d00000000001a00000000ffe4abd1b213f898c74ce35fdc26f139ea72d585cebeb9abc00000100203405262703005800000a900060a002005000b00574a00510a9000028002000b7bb02087b8000000898417000002000040c8080cc010020010000100009ab005105ab8050cb005b007778ab00006550961000560a00960520ca00000075b00c60806a060200400c00037a0000702138b0b00a09000060030ac0a1110090c40aba003007000228000000087000b9421501071002097845702103c8b002c60070090035c00002c061095100000004002000000000405629480060a1ca02270000009a06b40000b000b9000400000a200130087006206a7000010800000408000030020c003900000092807052809620315862b0000007130030182b500",
+            ),
+        ];
+        for ((name, width, raw), (golden_name, codec, zstd_hex, lz4_hex)) in
+            golden_inputs().into_iter().zip(golden)
+        {
+            assert_eq!(name, golden_name);
+            let zstd = encode_pre4(&raw, width, EntropyCoder::Zstd).unwrap();
+            let lz4 = encode_pre4(&raw, width, EntropyCoder::Lz4).unwrap();
+            assert_eq!(zstd.codec(), codec, "{name}");
+            assert_eq!(hex(zstd.bytes()), zstd_hex, "{name} zstd");
+            assert_eq!(hex(lz4.bytes()), lz4_hex, "{name} lz4");
+        }
+    }
+
+    #[test]
+    fn crafted_zstd_frame_with_a_huge_window_is_a_format_error() {
+        // Magicless frame: descriptor 0 (no content size, checksum or dictionary), window byte
+        // with exponent 31 (2^41 bytes), then one empty last raw block.
+        let huge_window = [0x00, 0xF8, 0x01, 0x00, 0x00];
+        let error = decode_with(BlockCodec::Zstd, &huge_window, 16, 1, 16, true);
+        assert!(error.is_err(), "{error:?}");
+        // The same patch on a real frame: the window field is the byte after the descriptor.
+        let raw: Vec<u8> = (0..64_u8).map(|i| i % 5).collect();
+        let encoded = compress_block_with(&raw, EntropyCoder::Zstd).unwrap();
+        assert_eq!(encoded.codec(), BlockCodec::Zstd);
+        let mut patched = encoded.bytes().to_vec();
+        assert_eq!(
+            patched[0] & 0x20,
+            0,
+            "a single-segment frame has no window byte"
+        );
+        patched[1] = 0xF8;
+        let result = decode_with(BlockCodec::Zstd, &patched, raw.len(), 1, raw.len(), true);
+        assert!(result.is_err(), "{result:?}");
     }
 
     #[test]
