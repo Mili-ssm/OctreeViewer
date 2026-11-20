@@ -371,9 +371,58 @@ pub(crate) fn resolve_color_selection(
     })
 }
 
+/// The column a block is painted with when `requested` is the selected attribute. A block that
+/// omits it (v8 pre-revision LOD blocks keep only the columns the viewer draws) is painted with
+/// intensity, whose global range `assemble_async_block` then applies; with no intensity either
+/// the block keeps its display colours (`None`). Intensity and classification are never
+/// replaced: they are mode columns, not generic attributes. A failing lookup is an error.
+/// `present` tells whether the block stores a column. The read plan uses this decision, and
+/// `painted_with` applies it to the column that arrives, so the two cannot disagree.
+pub(crate) fn substitute_column<E>(
+    requested: u32,
+    schema: &[AttributeDescriptor],
+    mut present: impl FnMut(u32) -> Result<bool, E>,
+) -> Result<Option<u32>, E> {
+    if present(requested)? {
+        return Ok(Some(requested));
+    }
+    let is_mode_column = schema
+        .get(requested as usize)
+        .is_some_and(|d| matches!(d.name(), "intensity" | "classification"));
+    let Some(intensity) = crate::block_loading::intensity_index(schema) else {
+        return Ok(None);
+    };
+    if is_mode_column || !present(intensity)? {
+        return Ok(None);
+    }
+    Ok(Some(intensity))
+}
+
+/// Component and range a delivered column is painted with: the selected column keeps its own
+/// component and range; the substitute (intensity) uses component 0 and intensity's global
+/// range. `None` when the column is neither.
+fn painted_with(
+    delivered: &str,
+    selected: Option<&str>,
+    component: u32,
+    selected_range: Option<[f64; 2]>,
+    fallback_range: Option<[f64; 2]>,
+) -> Option<(u32, Option<[f64; 2]>)> {
+    if selected == Some(delivered) {
+        Some((component, selected_range))
+    } else if delivered == "intensity" {
+        Some((0, fallback_range))
+    } else {
+        None
+    }
+}
+
 /// Turns one asynchronously delivered block into a cacheable `PointBlock`. With an attribute
 /// selected the column is painted into the colours; otherwise it travels with the block.
 /// `carried` is `Some` on the cells path only: its columns, and a painted one, travel with the block (R3-Q32).
+/// A block that omits the selected column (`v8.1-pre` LOD blocks) arrives with intensity instead
+/// (the plan's substitute): it is painted with `fallback_range`, intensity's global range. With no
+/// column at all the block keeps its display colours.
 #[expect(
     clippy::too_many_arguments,
     reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
@@ -386,26 +435,26 @@ pub(crate) fn assemble_async_block(
     schema: &[AttributeDescriptor],
     selected_attribute: Option<(u32, u32)>,
     selected_range: Option<[f64; 2]>,
+    fallback_range: Option<[f64; 2]>,
     budget_bytes: usize,
 ) -> Result<PointBlock, String> {
     let mut geometry = geometry;
     let mut columns = Vec::new();
     if let Some(column) = column {
         if let Some((schema_index, component)) = selected_attribute {
-            if schema
+            let selected = schema
                 .get(schema_index as usize)
-                .map(AttributeDescriptor::name)
-                != Some(column.descriptor().name())
-            {
-                return Err("async attribute does not match the selected color column".to_owned());
-            }
-            geometry = viewer_render_wgpu::colorize_attribute(
-                geometry,
-                &column,
+                .map(AttributeDescriptor::name);
+            let (component, range) = painted_with(
+                column.descriptor().name(),
+                selected,
                 component,
                 selected_range,
+                fallback_range,
             )
-            .map_err(str::to_owned)?;
+            .ok_or_else(|| "async attribute does not match the selected color column".to_owned())?;
+            geometry = viewer_render_wgpu::colorize_attribute(geometry, &column, component, range)
+                .map_err(str::to_owned)?;
         }
         // On the cells path (`carried` is `Some`) the painted column stays with the block too:
         // the cells keep intensity and class words even when that column is the painted one
@@ -413,8 +462,6 @@ pub(crate) fn assemble_async_block(
         if selected_attribute.is_none() || carried.is_some() {
             columns.push(column);
         }
-    } else if selected_attribute.is_some() {
-        return Err("selected attribute payload is required".to_owned());
     }
     columns.extend(carried.into_iter().flatten());
     let block = PointBlock::new(block_id, geometry, columns);
@@ -427,6 +474,87 @@ pub(crate) fn assemble_async_block(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn schema() -> Vec<AttributeDescriptor> {
+        use viewer_core::AttributeDataType;
+        ["intensity", "classification", "gps_time"]
+            .into_iter()
+            .map(|name| AttributeDescriptor::new(name, AttributeDataType::U16, 1).unwrap())
+            .collect()
+    }
+
+    /// Column read, component and range painted with; `None` keeps the display colours.
+    type Painted = Option<(u32, u32, Option<[f64; 2]>)>;
+
+    /// The substitute decision end to end: the column the plan reads, then the component and
+    /// range that column is painted with.
+    fn decide(
+        schema: &[AttributeDescriptor],
+        selected: (u32, u32),
+        stored: &[u32],
+        ranges: (Option<[f64; 2]>, Option<[f64; 2]>),
+    ) -> Result<Painted, String> {
+        let column = substitute_column(selected.0, schema, |index| {
+            Ok::<_, String>(stored.contains(&index))
+        })?;
+        Ok(column.map(|column| {
+            let delivered = schema[column as usize].name();
+            let selected_name = schema
+                .get(selected.0 as usize)
+                .map(AttributeDescriptor::name);
+            let (component, range) =
+                painted_with(delivered, selected_name, selected.1, ranges.0, ranges.1).unwrap();
+            (column, component, range)
+        }))
+    }
+
+    #[test]
+    fn a_stored_selected_column_is_painted_with_its_own_range() {
+        let schema = schema();
+        let ranges = (Some([1.0, 2.0]), Some([10.0, 20.0]));
+        assert_eq!(
+            decide(&schema, (2, 1), &[0, 2], ranges),
+            Ok(Some((2, 1, Some([1.0, 2.0]))))
+        );
+    }
+
+    #[test]
+    fn an_absent_column_is_painted_by_intensity_with_its_global_range() {
+        let schema = schema();
+        let ranges = (Some([1.0, 2.0]), Some([10.0, 20.0]));
+        assert_eq!(
+            decide(&schema, (2, 1), &[0], ranges),
+            Ok(Some((0, 0, Some([10.0, 20.0]))))
+        );
+    }
+
+    #[test]
+    fn an_absent_column_without_intensity_keeps_the_display_colours() {
+        let schema = schema();
+        assert_eq!(decide(&schema, (2, 0), &[], (None, None)), Ok(None));
+        assert_eq!(decide(&schema, (2, 0), &[1], (None, None)), Ok(None));
+        // No intensity column in the schema at all.
+        assert_eq!(decide(&schema[1..], (1, 0), &[], (None, None)), Ok(None));
+        // Mode columns are never replaced.
+        assert_eq!(decide(&schema, (1, 0), &[0], (None, None)), Ok(None));
+    }
+
+    #[test]
+    fn a_failing_presence_lookup_is_an_error() {
+        let schema = schema();
+        assert_eq!(
+            substitute_column(2, &schema, |_| Err::<bool, _>("lookup failed")),
+            Err("lookup failed")
+        );
+        assert_eq!(
+            substitute_column(2, &schema, |index| if index == 2 {
+                Ok(false)
+            } else {
+                Err("lookup failed")
+            }),
+            Err("lookup failed")
+        );
+    }
 
     /// Runs frames of the ladder the way the drivers do (`next_lod_stage` after each rung, no
     /// pending blocks) and returns the rungs in the order they were drawn.

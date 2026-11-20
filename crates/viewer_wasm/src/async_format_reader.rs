@@ -3,7 +3,7 @@ use std::{cell::Cell, io::Cursor, rc::Rc, sync::Arc};
 
 use js_sys::{ArrayBuffer, Float32Array, Promise, Uint8Array};
 use serde::Serialize;
-use viewer_core::{AttributeValues, BlockId, NodeId, PointBatch};
+use viewer_core::{AttributeValues, BlockId, DatasetSource, NodeId, PointBatch};
 use viewer_format::{
     FormatReader, FormatReaderLimits, PageGraft, PagedCore, PayloadReadRange, ReadBudget,
     ReadReservation, ReadSelection, ReadSource, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES,
@@ -522,12 +522,14 @@ impl WasmAsyncFormatReader {
                         .plan_read(id, ReadSelection::Positions)
                         .map_err(format_error)?,
                 );
-                plans.push(
-                    self.shared
-                        .reader
-                        .plan_read(id, ReadSelection::Attribute { schema_index })
-                        .map_err(format_error)?,
-                );
+                if let Some(schema_index) = self.painted_column(id, schema_index)? {
+                    plans.push(
+                        self.shared
+                            .reader
+                            .plan_read(id, ReadSelection::Attribute { schema_index })
+                            .map_err(format_error)?,
+                    );
+                }
             }
             "geometryAttributes" => {
                 let plan = |selection| {
@@ -537,10 +539,29 @@ impl WasmAsyncFormatReader {
                         .map_err(format_error)
                 };
                 plans.push(plan(ReadSelection::Geometry)?);
-                if let Some(schema_index) = schema_index {
+                let painted = match schema_index {
+                    Some(schema_index) => self.painted_column(id, schema_index)?,
+                    None => None,
+                };
+                if let Some(schema_index) = painted {
                     plans.push(plan(ReadSelection::Attribute { schema_index })?);
                 }
-                for schema_index in carried_indices.unwrap_or_default() {
+                // The painted column already travels with the block: a substitute that is also
+                // a carried column (intensity) is read once.
+                for schema_index in carried_indices
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|index| Some(*index) != painted)
+                {
+                    // A carried column a LOD block omits is left out, as the synchronous loader does.
+                    if !self
+                        .shared
+                        .reader
+                        .attribute_present(id, schema_index)
+                        .map_err(format_error)?
+                    {
+                        continue;
+                    }
                     plans.push(plan(ReadSelection::Attribute { schema_index })?);
                     carried += 1;
                 }
@@ -942,6 +963,18 @@ fn format_error(error: impl std::fmt::Display) -> JsValue {
 }
 
 impl WasmAsyncFormatReader {
+    /// The column a block is painted with when `requested` is the selected attribute (see
+    /// `substitute_column`, which `assemble_async_block` shares).
+    fn painted_column(&self, id: BlockId, requested: u32) -> Result<Option<u32>, JsValue> {
+        let reader = &self.shared.reader;
+        crate::lod_driver::substitute_column(
+            requested,
+            reader.metadata().hierarchy().attributes(),
+            |index| reader.attribute_present(id, index),
+        )
+        .map_err(format_error)
+    }
+
     /// The metadata-only reader behind this facade (root page only when the format is paged).
     pub(crate) fn format_reader(&self) -> &Reader {
         &self.shared.reader

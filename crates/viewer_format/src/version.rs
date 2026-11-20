@@ -19,7 +19,12 @@ pub enum FormatVersion {
     V6,
     V7Pre(NonZeroU32),
     V7,
-    Unknown { major: u16, revision: u32 },
+    /// Experimental v8 revisions (`v8.N-pre`).
+    V8Pre(NonZeroU32),
+    Unknown {
+        major: u16,
+        revision: u32,
+    },
 }
 
 impl FormatVersion {
@@ -38,11 +43,17 @@ impl FormatVersion {
     /// Paged hierarchy: root page next to the footer, child pages on demand (R5).
     pub const V7_PRE5: Self = Self::V7Pre(NonZeroU32::new(5).expect("nonzero revision"));
 
+    /// First experimental v8 revision: the v7 layout plus the v8 header fields and column rules.
+    pub const V8_PRE1: Self = Self::V8Pre(NonZeroU32::new(1).expect("nonzero revision"));
+
+    /// Second experimental v8 revision: v8.1-pre plus the zstd entropy stage for `.octattrs` payloads (geometry, index and checkpoint records never use zstd).
+    pub const V8_PRE2: Self = Self::V8Pre(NonZeroU32::new(2).expect("nonzero revision"));
+
     /// Revision written when the caller does not choose one.
     pub const DEFAULT_OUTPUT: Self = Self::V7;
 
     /// Every revision the writer implements, in user-facing listing order.
-    pub const WRITABLE: [Self; 11] = [
+    pub const WRITABLE: [Self; 13] = [
         Self::V7_PRE1,
         Self::V7_PRE2,
         Self::V7_PRE3,
@@ -54,6 +65,8 @@ impl FormatVersion {
         Self::V7_PRE4,
         Self::V7_PRE5,
         Self::V7,
+        Self::V8_PRE1,
+        Self::V8_PRE2,
     ];
 
     /// Whether block-level EPT checkpoint/resume can target this revision.
@@ -75,11 +88,46 @@ impl FormatVersion {
             .is_ok_and(crate::layout::StorageLayout::uses_pages)
     }
 
-    /// Row order the format fixes: `v7` always writes hybrid (ADR 0044); every other revision
+    /// Whether the writer can produce the hybrid row order (Morton re-sort) for this revision.
+    pub fn supports_hybrid_rows(self) -> bool {
+        crate::layout::StorageLayout::from_version(self)
+            .is_ok_and(crate::layout::StorageLayout::supports_hybrid_rows)
+    }
+
+    /// Whether the display colour is derived from stored data instead of stored twice (`v8.N-pre`).
+    pub fn derives_display_attribute(self) -> bool {
+        crate::layout::StorageLayout::from_version(self)
+            .is_ok_and(crate::layout::StorageLayout::derives_display_attribute)
+    }
+
+    /// Whether interior LOD nodes omit the attribute columns the viewer does not draw (`v8.N-pre`).
+    pub fn omits_lod_attributes(self) -> bool {
+        crate::layout::StorageLayout::from_version(self)
+            .is_ok_and(crate::layout::StorageLayout::omits_lod_attributes)
+    }
+
+    /// Whether the zstd payload codec may be written (`v8.2-pre`).
+    pub fn supports_zstd(self) -> bool {
+        crate::layout::StorageLayout::from_version(self)
+            .is_ok_and(crate::layout::StorageLayout::supports_zstd)
+    }
+
+    /// Whether nodes store nearest-neighbour distance quantiles (`v8.N-pre`).
+    pub fn stores_distance_quantiles(self) -> bool {
+        crate::layout::StorageLayout::from_version(self)
+            .is_ok_and(crate::layout::StorageLayout::stores_distance_quantiles)
+    }
+
+    /// Row order the format fixes: `v7` and the implemented `v8.N-pre` revisions (today `v8.1-pre`
+    /// and `v8.2-pre`) always write hybrid (ADR 0044); every other revision
     /// leaves the choice to the caller (`Source` by default).
-    pub const fn fixed_row_order(self) -> Option<crate::RowOrder> {
+    pub fn fixed_row_order(self) -> Option<crate::RowOrder> {
         match self {
-            Self::V7 => Some(crate::RowOrder::Hybrid),
+            Self::V7 | Self::V8Pre(_)
+                if crate::layout::StorageLayout::from_version(self).is_ok() =>
+            {
+                Some(crate::RowOrder::Hybrid)
+            }
             _ => None,
         }
     }
@@ -94,13 +142,14 @@ impl FormatVersion {
             Self::V5 => 5,
             Self::V6Pre(_) | Self::V6 => 6,
             Self::V7Pre(_) | Self::V7 => 7,
+            Self::V8Pre(_) => 8,
             Self::Unknown { major, .. } => major,
         }
     }
 
     pub const fn revision(self) -> u32 {
         match self {
-            Self::V6Pre(revision) | Self::V7Pre(revision) => revision.get(),
+            Self::V6Pre(revision) | Self::V7Pre(revision) | Self::V8Pre(revision) => revision.get(),
             Self::Unknown { revision, .. } => revision,
             Self::V5 | Self::V6 | Self::V7 => 0,
         }
@@ -115,6 +164,7 @@ impl fmt::Display for FormatVersion {
             Self::V6Pre(revision) => write!(f, "v6.{revision}-pre"),
             Self::V7 => f.write_str("v7"),
             Self::V7Pre(revision) => write!(f, "v7.{revision}-pre"),
+            Self::V8Pre(revision) => write!(f, "v8.{revision}-pre"),
             Self::Unknown { major, revision } => write!(f, "unknown({major}, {revision})"),
         }
     }
@@ -140,7 +190,14 @@ impl std::str::FromStr for FormatVersion {
                         .and_then(|v| v.parse::<NonZeroU32>().ok())
                         .map(Self::V7Pre)
                 })
-                .ok_or("expected v5, v6, v7 or a positive pre-release revision"),
+                .or_else(|| {
+                    value
+                        .strip_prefix("v8.")
+                        .and_then(|v| v.strip_suffix("-pre"))
+                        .and_then(|v| v.parse::<NonZeroU32>().ok())
+                        .map(Self::V8Pre)
+                })
+                .ok_or("expected v5, v6, v7 or a positive pre-release revision (v6.N-pre, v7.N-pre, v8.N-pre)"),
         }
     }
 }
@@ -228,6 +285,7 @@ pub(crate) fn parse_identity(
         (6, Some(revision)) => FormatVersion::V6Pre(revision),
         (7, None) => FormatVersion::V7,
         (7, Some(revision)) => FormatVersion::V7Pre(revision),
+        (8, Some(revision)) => FormatVersion::V8Pre(revision),
         _ => FormatVersion::Unknown { major, revision },
     };
     let role = match flags {
@@ -274,8 +332,82 @@ mod tests {
             .collect();
         assert_eq!(
             names.join("|"),
-            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre|v7.5-pre|v7"
+            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre|v7.5-pre|v7|v8.1-pre|v8.2-pre"
         );
+    }
+
+    #[test]
+    fn v8_pre1_parses_and_prints() {
+        let version: FormatVersion = "v8.1-pre".parse().unwrap();
+        assert_eq!(version, FormatVersion::V8_PRE1);
+        assert_eq!(version.to_string(), "v8.1-pre");
+        assert!("v8".parse::<FormatVersion>().is_err());
+    }
+
+    #[test]
+    fn v8_pre2_parses_and_prints() {
+        let version: FormatVersion = "v8.2-pre".parse().unwrap();
+        assert_eq!(version, FormatVersion::V8_PRE2);
+        assert_eq!(version.to_string(), "v8.2-pre");
+    }
+
+    #[test]
+    fn v8_pre2_is_writable() {
+        assert!(FormatVersion::WRITABLE.contains(&FormatVersion::V8_PRE2));
+        assert!(FormatVersion::V8_PRE2.ensure_writable().is_ok());
+    }
+
+    #[test]
+    fn v8_pre2_has_the_v8_pre1_capabilities_plus_zstd() {
+        let (a, b) = (FormatVersion::V8_PRE1, FormatVersion::V8_PRE2);
+        assert_eq!(a.uses_global_frame(), b.uses_global_frame());
+        assert_eq!(a.uses_pages(), b.uses_pages());
+        assert_eq!(a.supports_hybrid_rows(), b.supports_hybrid_rows());
+        assert_eq!(a.fixed_row_order(), b.fixed_row_order());
+        assert_eq!(a.derives_display_attribute(), b.derives_display_attribute());
+        assert_eq!(a.omits_lod_attributes(), b.omits_lod_attributes());
+        assert_eq!(a.stores_distance_quantiles(), b.stores_distance_quantiles());
+        assert_eq!(a.supports_block_checkpoint(), b.supports_block_checkpoint());
+        assert!(b.uses_global_frame() && b.uses_pages() && b.stores_distance_quantiles());
+        assert!(b.supports_zstd());
+        for other in FormatVersion::WRITABLE {
+            assert_eq!(other.supports_zstd(), other == b, "{other}");
+        }
+    }
+
+    #[test]
+    fn v8_pre1_is_writable() {
+        assert!(FormatVersion::WRITABLE.contains(&FormatVersion::V8_PRE1));
+        assert!(FormatVersion::V8_PRE1.ensure_writable().is_ok());
+        assert!(
+            FormatVersion::V8Pre(NonZeroU32::new(3).unwrap())
+                .ensure_writable()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn unimplemented_v8_revision_fixes_no_row_order() {
+        let unknown = FormatVersion::V8Pre(NonZeroU32::new(3).unwrap());
+        assert_eq!(unknown.fixed_row_order(), None);
+        assert!(!unknown.supports_hybrid_rows());
+        assert_eq!(
+            FormatVersion::V8_PRE1.fixed_row_order(),
+            Some(crate::RowOrder::Hybrid)
+        );
+    }
+
+    #[test]
+    fn unknown_major_nine_is_rejected() {
+        let identity = probe_format(&mut Cursor::new(header(9, 1))).unwrap();
+        assert_eq!(
+            identity.version,
+            FormatVersion::Unknown {
+                major: 9,
+                revision: 1
+            }
+        );
+        assert!(identity.version.ensure_writable().is_err());
     }
 
     #[test]
@@ -308,13 +440,15 @@ mod tests {
             (7, 4, "v7.4-pre"),
             (7, 5, "v7.5-pre"),
             (7, 0, "v7"),
-            (8, 9, "unknown(8, 9)"),
+            (8, 1, "v8.1-pre"),
+            (8, 2, "v8.2-pre"),
+            (9, 9, "unknown(9, 9)"),
         ] {
             let mut input = Cursor::new(header(major, revision));
             input.set_position(11);
             let identity = probe_format(&mut input).unwrap();
             assert_eq!(identity.version.to_string(), label);
-            if major <= 7 {
+            if major <= 8 {
                 assert_eq!(label.parse::<FormatVersion>().unwrap(), identity.version);
             }
             assert_eq!(identity.version.major(), major);

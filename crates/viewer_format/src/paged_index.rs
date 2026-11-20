@@ -2,7 +2,7 @@
 //! ([spec](../../../docs/reference/format/FORMAT_V7_PRE5.md)). Holds the writer path that plans and
 //! emits pages, the page-granular [`PagedReader`], and the eager loader used by `FormatReader`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use viewer_core::las::{LasExtraByte, LasExtraByteFields};
@@ -26,8 +26,8 @@ use crate::prepare::BlockRecord;
 use crate::reader_limits::FormatReaderLimits;
 use crate::slice_cursor::SliceCursor;
 use crate::{
-    Crc32, FormatError, FormatMetadata, GlobalFrame, NodeAttributeRange, NodeCell,
-    crc32::checksum_matches,
+    Crc32, DisplayColourSource, FormatError, FormatMetadata, GlobalFrame, NodeAttributeRange,
+    NodeCell, PointDistanceQuantiles, crc32::checksum_matches,
 };
 
 /// How much of the file end a reader fetches first: footer, metadata block and root page.
@@ -53,6 +53,12 @@ pub struct PagedHeader {
     /// Point-weighted median leaf spacing of the whole cloud (RF-05), see
     /// [`viewer_core::reference_spacing`]. Stored because a lazy reader never holds every leaf.
     reference_spacing: f64,
+    /// Present only when the layout stores them (`v8.N-pre`).
+    distance_quantiles: Option<PointDistanceQuantiles>,
+    /// Present only when the layout omits columns from LOD blocks (`v8.N-pre`).
+    lod_attribute_columns: Option<Vec<u32>>,
+    /// Present only when the layout derives the leaf display colour (`v8.N-pre`).
+    display_colour_source: Option<DisplayColourSource>,
     /// Range over every node of the file, per attribute and component; `None` when no node has a
     /// finite value. Stored here because a lazy reader never holds every page.
     attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
@@ -144,6 +150,29 @@ impl PagedHeader {
     /// leaf. Fixed for the file, whichever pages are resident.
     pub fn reference_spacing(&self) -> f64 {
         self.reference_spacing
+    }
+
+    /// Nearest-neighbour distance quantiles; `None` when the revision does not store them.
+    pub fn distance_quantiles(&self) -> Option<PointDistanceQuantiles> {
+        self.distance_quantiles
+    }
+
+    /// Schema columns LOD blocks keep (strictly increasing, inside the schema); `None` when the
+    /// revision stores every column in every block.
+    pub fn lod_attribute_columns(&self) -> Option<&[u32]> {
+        self.lod_attribute_columns.as_deref()
+    }
+
+    /// Where leaf blocks derive their display colour from; `None` when the revision stores it.
+    pub fn display_colour_source(&self) -> Option<DisplayColourSource> {
+        self.display_colour_source
+    }
+
+    pub(crate) fn column_rules(&self) -> crate::layout::ColumnRules<'_> {
+        crate::layout::ColumnRules {
+            lod_columns: self.lod_attribute_columns.as_deref().unwrap_or(&[]),
+            display: self.display_colour_source.unwrap_or_default(),
+        }
     }
 
     /// File offset where the block payloads end and the child pages begin.
@@ -261,9 +290,14 @@ pub(crate) fn paged_layout_of_footer(footer: &[u8]) -> Option<StorageLayout> {
     if footer.len() != FOOTER_SIZE as usize {
         return None;
     }
-    [StorageLayout::V7Pre5, StorageLayout::V7]
-        .into_iter()
-        .find(|layout| footer[..8] == *layout.footer_magic())
+    [
+        StorageLayout::V7Pre5,
+        StorageLayout::V7,
+        StorageLayout::V8Pre1,
+        StorageLayout::V8Pre2,
+    ]
+    .into_iter()
+    .find(|layout| footer[..8] == *layout.footer_magic())
 }
 
 fn parse_header_block(
@@ -297,6 +331,49 @@ fn parse_header_block(
     if !reference_spacing.is_finite() || reference_spacing <= 0.0 {
         return Err(FormatError::MalformedIndex("invalid reference spacing"));
     }
+    let distance_quantiles = if layout.stores_distance_quantiles() {
+        let (p1, p5, p50) = (cursor.f64()?, cursor.f64()?, cursor.f64()?);
+        Some(
+            PointDistanceQuantiles::new(p1, p5, p50)
+                .map_err(|_| FormatError::MalformedIndex("invalid distance quantiles"))?,
+        )
+    } else {
+        None
+    };
+    let lod_attribute_columns = if layout.omits_lod_attributes() {
+        let count = cursor.u32()? as usize;
+        if count > schema.len() {
+            return Err(FormatError::MalformedIndex(
+                "LOD column list is longer than the schema",
+            ));
+        }
+        let mut columns = Vec::with_capacity(count);
+        for _ in 0..count {
+            columns.push(cursor.u32()?);
+        }
+        crate::metadata::validate_lod_columns(&columns, schema.len())
+            .map_err(FormatError::MalformedIndex)?;
+        Some(columns)
+    } else {
+        None
+    };
+    let display_colour_source = if layout.derives_display_attribute() {
+        let (kind, index) = (cursor.u8()?, cursor.u32()?);
+        let source = match (kind, index) {
+            (0, 0) => DisplayColourSource::None,
+            (1, index) => DisplayColourSource::Rgb(index),
+            (2, index) => DisplayColourSource::Intensity(index),
+            _ => {
+                return Err(FormatError::MalformedIndex("invalid display colour source"));
+            }
+        };
+        source
+            .validate(&schema)
+            .map_err(FormatError::MalformedIndex)?;
+        Some(source)
+    } else {
+        None
+    };
     let mut attribute_ranges = Vec::with_capacity(schema.len());
     for attribute in &schema {
         let mut row = Vec::with_capacity(attribute.component_count() as usize);
@@ -366,6 +443,9 @@ fn parse_header_block(
         total_blocks,
         pages_start,
         reference_spacing,
+        distance_quantiles,
+        lod_attribute_columns,
+        display_colour_source,
         attribute_ranges,
     })
 }
@@ -453,6 +533,7 @@ impl PagedCore {
                 pages_start: header.pages_start,
                 index_offset: location.offset,
                 layout: location.layout,
+                rules: header.column_rules(),
             },
             PageExpect::Root,
         )?;
@@ -529,6 +610,7 @@ impl PagedCore {
                 pages_start: self.header.pages_start,
                 index_offset: self.index_offset,
                 layout: self.layout,
+                rules: self.header.column_rules(),
             },
             PageExpect::Child {
                 anchor,
@@ -990,6 +1072,18 @@ pub(crate) fn assemble_with(
     .with_visual_scale(header.visual_scale)?
     .with_las_extra_bytes(header.las_extra_bytes.clone())
     .with_global_frame(frame)?;
+    let metadata = match header.distance_quantiles {
+        Some(quantiles) => metadata.with_point_distance_quantiles(quantiles),
+        None => metadata,
+    };
+    let metadata = match &header.lod_attribute_columns {
+        Some(columns) => metadata.with_lod_attribute_columns(columns.clone()),
+        None => metadata,
+    };
+    let metadata = match header.display_colour_source {
+        Some(source) => metadata.with_display_colour_source(source),
+        None => metadata,
+    };
     validate_metadata(&metadata)?;
     Ok((metadata, blocks, block_bounds))
 }
@@ -1056,7 +1150,12 @@ fn base_record_len(
     for id in node.blocks() {
         let record = blocks.get(id).ok_or(FormatError::UnreferencedBlock(*id))?;
         // offset, length, points, geometry tag, error; split cell; per column codec, crc, length
-        length += 33 + if level < 32 { 12 } else { 0 } + 13 * record.payloads.len() + 8;
+        let stored = record
+            .payloads
+            .iter()
+            .filter(|payload| payload.stored.is_present())
+            .count();
+        length += 33 + if level < 32 { 12 } else { 0 } + 13 * stored + 8;
     }
     for range in ranges {
         length += 2 + value_bytes(range.min()) + value_bytes(range.max());
@@ -1081,6 +1180,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
     writer: &mut W,
     metadata: &FormatMetadata,
     blocks: &BTreeMap<BlockId, BlockRecord>,
+    lod_blocks: &BTreeSet<BlockId>,
     page_target_bytes: usize,
     layout: StorageLayout,
 ) -> Result<PagedIndexWritten, FormatError> {
@@ -1243,6 +1343,13 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
             let node = p.node;
             let mut node_blocks = Vec::with_capacity(node.blocks().len());
             for block_id in node.blocks() {
+                // The writer chose each block's columns from this set: it must agree with the
+                // `has_children` flag the page is about to carry.
+                if lod_blocks.contains(block_id) == p.children.is_empty() {
+                    return Err(FormatError::InvalidMetadata(
+                        "a block is shared by nodes with and without children",
+                    ));
+                }
                 let record = &blocks[block_id];
                 node_blocks.push(PageBlock {
                     id: BlockId::new(id),
@@ -1325,6 +1432,49 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
         out.u64(blocks.len() as u64)?;
         out.u64(pages_start)?;
         out.f64(reference_spacing)?;
+        if layout.stores_distance_quantiles() {
+            let quantiles =
+                metadata
+                    .point_distance_quantiles()
+                    .ok_or(FormatError::InvalidMetadata(
+                        "this format revision needs distance quantiles in the metadata",
+                    ))?;
+            // Re-validated so a hand-built struct literal cannot write an unreadable file.
+            PointDistanceQuantiles::new(quantiles.p1, quantiles.p5, quantiles.p50)?;
+            out.f64(quantiles.p1)?;
+            out.f64(quantiles.p5)?;
+            out.f64(quantiles.p50)?;
+        }
+        if layout.omits_lod_attributes() {
+            let columns = metadata
+                .lod_attribute_columns()
+                .ok_or(FormatError::InvalidMetadata(
+                    "this format revision needs a LOD column set in the metadata",
+                ))?;
+            out.u32(
+                u32::try_from(columns.len()).map_err(|_| FormatError::TooManyAttributes {
+                    count: columns.len(),
+                    limit: crate::MAX_SCHEMA_ATTRIBUTES,
+                })?,
+            )?;
+            for &column in columns {
+                out.u32(column)?;
+            }
+        }
+        if layout.derives_display_attribute() {
+            let source = metadata
+                .display_colour_source()
+                .ok_or(FormatError::InvalidMetadata(
+                    "this format revision needs a display colour source in the metadata",
+                ))?;
+            let (kind, index) = match source {
+                DisplayColourSource::None => (0, 0),
+                DisplayColourSource::Rgb(index) => (1, index),
+                DisplayColourSource::Intensity(index) => (2, index),
+            };
+            out.u8(kind)?;
+            out.u32(index)?;
+        }
         for row in global_attribute_ranges(
             hierarchy.attributes(),
             plan.iter()

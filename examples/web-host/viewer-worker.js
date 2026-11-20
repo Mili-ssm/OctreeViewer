@@ -1215,6 +1215,9 @@ function startAsyncDataset(data, requestId = null) {
                 sourcePointCount: descriptor.sourcePointCount ?? null,
                 crsUnit: descriptor.crsUnit ?? null,
             };
+            // The file's p5 in dataset units (ADR 0059), as the build worker reports it; `cellsInfo` exists
+            // only when the cells path is enabled here, so without it the page keeps 0.1 mm.
+            opened.recommendedMinSize = opened.cellsInfo?.recommendedMinSize ?? null;
             asyncFormatReader = reader;
             asyncHasAttributes = descriptor.hasAttributes;
             asyncAttributeIndices = new Map(descriptor.attributeSchema.map(

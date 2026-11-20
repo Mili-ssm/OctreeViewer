@@ -735,6 +735,19 @@ fn rejects_truncated_and_unsupported_legacy_version_files() {
             Err(FormatError::UnsupportedVersion(actual)) if actual == version
         ));
     }
+    // Major 8 is recognized, but only the implemented revisions (8.1, 8.2) have a layout.
+    for revision in [0_u32, 3] {
+        let mut unsupported = format_bytes();
+        unsupported[8..10].copy_from_slice(&8_u16.to_le_bytes());
+        unsupported[16..20].copy_from_slice(&revision.to_le_bytes());
+        let crc = crate::crc32(&unsupported[..20]);
+        unsupported[20..24].copy_from_slice(&crc.to_le_bytes());
+        assert!(matches!(
+            FormatReader::new(Cursor::new(unsupported)),
+            Err(FormatError::UnsupportedFormatVersion(version))
+                if version.major() == 8 && version.revision() == revision
+        ));
+    }
     let mut bad_footer = format_bytes();
     let footer = bad_footer.len() - 40;
     bad_footer[footer..footer + 8].copy_from_slice(b"OCTVEND3");
@@ -1637,4 +1650,70 @@ fn attribute_range_cache_preserves_multicomponent_integer_ranges_and_evicts_lru(
     drop(cache);
     assert_eq!(reader.attribute_range(0, 1).unwrap(), Some([7.0, 11.0]));
     assert_eq!(reader.attribute_range_cache.lock().unwrap().len(), 64);
+}
+
+#[test]
+fn reading_an_absent_column_is_an_error_not_a_panic() {
+    let mut reader = FormatReader::new(Cursor::new(columnar_format_bytes())).unwrap();
+    let id = BlockId::new(42);
+    let blocks = std::sync::Arc::get_mut(&mut reader.blocks).unwrap();
+    let entry = blocks.get_mut(&id).unwrap();
+    let offset = entry.payloads[3].offset;
+    entry.payloads[3] = crate::layout::PayloadDirectoryEntry::not_stored(
+        crate::layout::StoredColumn::Absent,
+        offset,
+    );
+    assert!(reader.attribute_present(id, 0).unwrap());
+    assert!(!reader.attribute_present(id, 1).unwrap());
+    assert!(!reader.attribute_present(id, 2).unwrap(), "unknown index");
+    assert!(
+        !reader.attribute_present(id, u32::MAX).unwrap(),
+        "huge index"
+    );
+    assert!(
+        reader.attribute_present(BlockId::new(999), 0).is_err(),
+        "unknown block is an error, not an absent column"
+    );
+    assert!(matches!(
+        reader.read_attribute(id, 1),
+        Err(FormatError::AttributeAbsent { block, attribute: 1 }) if block == id
+    ));
+    assert!(matches!(
+        reader.plan_read(id, crate::ReadSelection::Attribute { schema_index: 1 }),
+        Err(FormatError::AttributeAbsent { attribute: 1, .. })
+    ));
+    assert!(matches!(
+        reader.read_attribute_row(id, 0, 1),
+        Err(FormatError::AttributeAbsent { .. })
+    ));
+    // The other columns, the whole block and the stats still work and skip the absent column.
+    reader.read_attribute(id, 0).unwrap();
+    let block = reader.read_point_block(id).unwrap();
+    assert_eq!((block.points().len(), block.attributes().len()), (2, 1));
+    let stats = reader.block_payload_storage_stats().unwrap();
+    assert_eq!(stats.iter().filter(|stat| stat.id == id).count(), 3);
+    let sizes = reader.block_storage_stats().unwrap();
+    let size = sizes.iter().find(|stat| stat.id == id).unwrap();
+    assert_eq!(size.logical_bytes, 2 * 15 + 2 * 2);
+    // A derived colour whose source column is not stored (here the absent column 1) is an error.
+    let entry = std::sync::Arc::get_mut(&mut reader.blocks)
+        .unwrap()
+        .get_mut(&id)
+        .unwrap();
+    let offset = entry.payloads[1].offset;
+    entry.payloads[1] = crate::layout::PayloadDirectoryEntry::not_stored(
+        crate::layout::StoredColumn::Derived { from: 3 },
+        offset,
+    );
+    assert!(reader.read_display_colors(id).is_err());
+    // A source index outside the schema is an error too, not a panic.
+    let entry = std::sync::Arc::get_mut(&mut reader.blocks)
+        .unwrap()
+        .get_mut(&id)
+        .unwrap();
+    entry.payloads[1] = crate::layout::PayloadDirectoryEntry::not_stored(
+        crate::layout::StoredColumn::Derived { from: 99 },
+        offset,
+    );
+    assert!(reader.read_display_colors(id).is_err());
 }

@@ -25,7 +25,7 @@ const opened = () => ({
 // ---- Build worker in a vm with a fake WASM binding ------------------------------------------
 
 async function runBuildWorker({
-    updates = [], graftFails = false, pageLoadFails = false, asyncBlocks = null, abortable = null, file = {},
+    updates = [], graftFails = false, pageLoadFails = false, asyncBlocks = null, abortable = null, file = {}, cellsInfo,
 } = {}) {
     const posted = [];
     const grafted = [];
@@ -40,7 +40,7 @@ async function runBuildWorker({
         constructor(maxVoxels, maxBytes) { this.limits = [maxVoxels, maxBytes]; builders.push(this); }
         openLodDataset() {
             return {
-                status: "metadata_ready", visualScale: 2, cellPath: asyncBlocks?.cells ? "enabled" : "disabled",
+                status: "metadata_ready", visualScale: 2, cellPath: asyncBlocks?.cells ? "enabled" : "disabled", cellsInfo,
             };
         }
         enableCells() {}
@@ -158,6 +158,15 @@ test("build worker opens the dataset and reports its metadata", async () => {
     assert.equal(message.opened.visualScale, 2);
     assert.equal(message.opened.nodeCount, 1);
     assert.deepEqual([...message.opened.boundsMax], [0.5, 0.5, 0.5]); // tight data extent, not the root node
+});
+
+test("build worker reports the file's p5 as recommendedMinSize, null when there is none (ADR 0059)", async () => {
+    const withP5 = await runBuildWorker({ cellsInfo: { recommendedMinSize: 0.172 } });
+    assert.equal(withP5.posted.find(item => item.type === "opened").opened.recommendedMinSize, 0.172);
+    for (const cellsInfo of [undefined, { recommendedMinSize: null }]) {
+        const worker = await runBuildWorker({ cellsInfo });
+        assert.equal(worker.posted.find(item => item.type === "opened").opened.recommendedMinSize, null);
+    }
 });
 
 test("build worker recreates the read budget when a later open brings another cacheBytes", async () => {
@@ -505,6 +514,15 @@ test("render worker sends the first view once the dataset opens and applies scen
     await settle();
     const metrics = render.messages.find(item => item.type === "metrics").workerMetrics;
     assert.equal(metrics.sceneAgeMs.count, 1, "age is measured against the view that is still known");
+});
+
+test("render worker forwards recommendedMinSize to the page", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [worker] = render.workers;
+    worker.emit({ type: "opened", gen: 1, opened: { ...opened(), recommendedMinSize: 0.172 } });
+    await settle();
+    assert.equal(render.messages.find(item => item.type === "datasetOpened").opened.recommendedMinSize, 0.172);
 });
 
 test("render worker drops scenes from an old epoch or another gen", async () => {

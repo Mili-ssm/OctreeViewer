@@ -38,8 +38,15 @@ Serve the repository root (with `pkg/`) on any port, pass it as `--url`, and pic
 python3 -m http.server 8791 --bind 127.0.0.1 &
 node examples/web-host/probe-orbit-load.mjs data/samples/fs_e430_n4008_18.oct target/orbit-load.json \
   --url=http://127.0.0.1:8791/examples/web-host/index.html \
-  [--browser=chrome|firefox] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels]
+  [--browser=chrome|firefox] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] \
+  [--color=rgb|intensity|classification|attribute:COLUMN]
 ```
+
+`--color` picks the demo's Color control once the dataset is open (default `rgb`, unchanged); `attribute:COLUMN` needs
+`--attrs` and a single-component sidecar column. OUTPUT.json `colorMode` records the request and the value read back
+from the select and the render worker; a requested mode other than `rgb` that is not active fails the run (`rgb` is
+only recorded). The demo records `openTimings.targetLodMs` only for the refinement started by the dataset;
+a colour change right after open replaces it, so `targetLodMs` stays null in those runs: use `timeToReachedMs`. `elevation` and multi-component columns are not supported.
 
 `--browser=chrome` (default) launches `/usr/bin/google-chrome` (`CHROME_BIN`) through playwright-core
 (`PLAYWRIGHT_CORE` = its directory) with `--headless=new --enable-unsafe-webgpu
@@ -233,8 +240,8 @@ The converter writes final v7 by default. Callers may select another revision wi
 option `formatVersion`, for example `converter.convert(file, { options: { formatVersion: "v7.3-pre" } })`.
 Opening a Blob automatically selects final v5, final v7 or an implemented experimental identity: `v6.1-pre`–`v6.4-pre`
 and `v7.1-pre`–`v7.3-pre`. The option accepts these exact strings;
-paired files must have the exact same identity. Final `v6` and revisions after final `v7` remain unsupported; final `v7` is supported and the default.
-The demo converter panel defaults to `v7` and lists the other writable revisions in its format selector; for global-frame formats (`v7`, `v7.4-pre`, `v7.5-pre`) it disables **Points per block** and **Spatial divisions** (fixed by the format) and does not send them.
+paired files must have the exact same identity. Final `v6`, v7 revisions after `v7.5-pre` and v8 revisions other than the experimental `v8.1-pre` and `v8.2-pre` remain unsupported; final `v7` is supported and the default.
+The demo converter panel defaults to `v7` and lists the other writable revisions in its format selector; for global-frame formats (`v7`, `v7.4-pre`, `v7.5-pre`, `v8.1-pre`, `v8.2-pre`) it disables **Points per block** and **Spatial divisions** (fixed by the format) and does not send them.
 
 For the storage probe, pass `expectedVersion: "v7.3-pre"` with the converted Blobs and check the
 returned `formatVersion`. Use fresh bindings and reload worker scripts after rebuilding (a cache

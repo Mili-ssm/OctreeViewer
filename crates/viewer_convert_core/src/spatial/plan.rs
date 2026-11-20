@@ -213,6 +213,8 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         next_block_id: 0,
         on_progress,
         source_point_count: source.point_count,
+        collect_distance_quantiles: options.format_version().stores_distance_quantiles(),
+        nn_sample_threshold: crate::pipeline::nn_distance::sample_threshold(source.point_count),
         parallel_workers: options.spatial_workers(),
         root_ranges: options.root_partition_ranges(),
         ranges_used: 0,
@@ -339,6 +341,18 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     if let Some(frame) = global_frame {
         metadata = metadata.with_global_frame(frame)?;
     }
+    if options.format_version().stores_distance_quantiles() {
+        metadata =
+            metadata.with_point_distance_quantiles(distance_quantiles(&builder.node_records)?);
+    }
+    if options.format_version().omits_lod_attributes() {
+        let columns = lod_attribute_columns(&metadata);
+        metadata = metadata.with_lod_attribute_columns(columns);
+    }
+    if options.format_version().derives_display_attribute() {
+        let source = display_colour_source(metadata.dataset().hierarchy().attributes());
+        metadata = metadata.with_display_colour_source(source);
+    }
     Ok(SpatialPlan {
         metadata,
         blocks: builder.output_blocks,
@@ -348,6 +362,57 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         spool_diagnostics: builder.spool_diagnostics,
         spatial_phases: builder.spatial_phases,
     })
+}
+
+/// Schema columns the viewer draws from LOD points besides the display colour: intensity and
+/// classification, found by their LAS schema names. A source without them gets a shorter list.
+fn lod_attribute_columns(metadata: &FormatMetadata) -> Vec<u32> {
+    metadata
+        .dataset()
+        .hierarchy()
+        .attributes()
+        .iter()
+        .enumerate()
+        .filter(|(_, attribute)| matches!(attribute.name(), "intensity" | "classification"))
+        .map(|(index, _)| index as u32)
+        .collect()
+}
+
+/// Where leaf display colours come from: the converter sets them to the high byte of `rgb` (or of
+/// `intensity` for a cloud without colour), so that column is the source. A column only
+/// qualifies as the writer's `DisplayColourSource::validate` accepts it (16-bit; 3 components for
+/// `rgb`, 1 for `intensity`); a same-named column of another shape falls through to the next
+/// option, and a schema with none keeps the stored colour.
+fn display_colour_source(
+    attributes: &[viewer_core::AttributeDescriptor],
+) -> viewer_format::DisplayColourSource {
+    use viewer_format::DisplayColourSource::{Intensity, None, Rgb};
+    let find = |name: &str, components: &[u32]| {
+        attributes.iter().position(|a| {
+            a.name() == name
+                && a.data_type() == viewer_core::AttributeDataType::U16
+                && components.contains(&a.component_count())
+        })
+    };
+    match (find("rgb", &[3]), find("intensity", &[1])) {
+        (Some(index), _) => Rgb(index as u32),
+        (Option::None, Some(index)) => Intensity(index as u32),
+        (Option::None, Option::None) => None,
+    }
+}
+
+/// Dataset distance quantiles from the leaves' samples, pooled in node-id order.
+fn distance_quantiles(
+    records: &[NodeRecord],
+) -> Result<viewer_format::PointDistanceQuantiles, ConvertError> {
+    let mut ordered: Vec<&NodeRecord> = records.iter().collect();
+    ordered.sort_by_key(|node| node.id);
+    let pooled = ordered
+        .into_iter()
+        .flat_map(|node| node.nn_samples.iter().copied())
+        .collect();
+    let [p1, p5, p50] = crate::pipeline::nn_distance::quantiles_from_samples(pooled);
+    Ok(viewer_format::PointDistanceQuantiles::new(p1, p5, p50)?)
 }
 
 /// Prefix of a node from its absolute cube: the top `a` bits of its minimum corner minus the
@@ -403,6 +468,8 @@ fn global_frame(
 pub(super) struct NodeRecord {
     /// Measured leaf spacing of `v7.4-pre` in CRS units; 0 when not measured.
     pub(super) spacing: f64,
+    /// Leaf nearest-neighbour distance samples (quanta²); empty when not collected.
+    pub(super) nn_samples: Vec<u64>,
     pub(super) id: NodeId,
     pub(super) parent: Option<NodeId>,
     pub(super) level: u32,
@@ -410,4 +477,49 @@ pub(super) struct NodeRecord {
     pub(super) point_count: u64,
     pub(super) geometric_error: f64,
     pub(super) blocks: Vec<BlockId>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::display_colour_source;
+    use viewer_core::{AttributeDataType, AttributeDescriptor};
+    use viewer_format::DisplayColourSource::{Intensity, None, Rgb};
+
+    fn column(name: &str, data_type: AttributeDataType, components: u32) -> AttributeDescriptor {
+        AttributeDescriptor::new(name, data_type, components).unwrap()
+    }
+
+    #[test]
+    fn the_source_is_the_named_column_when_it_is_16_bit() {
+        let u16s = |name, n| column(name, AttributeDataType::U16, n);
+        let schema = [u16s("intensity", 1), u16s("rgb", 3)];
+        assert_eq!(display_colour_source(&schema), Rgb(1));
+        assert_eq!(display_colour_source(&schema[..1]), Intensity(0));
+        assert_eq!(display_colour_source(&[]), None);
+    }
+
+    #[test]
+    fn a_same_named_column_of_another_type_falls_through() {
+        let u16_intensity = column("intensity", AttributeDataType::U16, 1);
+        let u8_rgb = column("rgb", AttributeDataType::U8, 3);
+        let two_component_rgb = column("rgb", AttributeDataType::U16, 2);
+        let u8_intensity = column("intensity", AttributeDataType::U8, 1);
+        assert_eq!(
+            display_colour_source(&[u16_intensity.clone(), u8_rgb.clone()]),
+            Intensity(0)
+        );
+        assert_eq!(
+            display_colour_source(&[u16_intensity, two_component_rgb.clone()]),
+            Intensity(0)
+        );
+        assert_eq!(display_colour_source(&[u8_intensity, u8_rgb]), None);
+        assert_eq!(display_colour_source(&[two_component_rgb]), None);
+        // Shapes the writer rejects (one-component rgb, three-component intensity) fall through.
+        let one_component_rgb = column("rgb", AttributeDataType::U16, 1);
+        let three_component_intensity = column("intensity", AttributeDataType::U16, 3);
+        assert_eq!(
+            display_colour_source(&[three_component_intensity, one_component_rgb]),
+            None
+        );
+    }
 }

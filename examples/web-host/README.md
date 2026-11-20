@@ -274,8 +274,21 @@ converts the length into dataset units with `metresPerUnit`, disables `Length` f
 says when metres are assumed because the CRS declares no unit (`unrecognised`: it declares one this reader cannot
 interpret). The stats report `minLength`.
 The cells path never draws cubes smaller than a default length minimum of `1e-4` dataset units (0.1 mm when
-the unit is metres; the demo sends its own value converted with `crsUnit`); continuity (cloud spacing x
-factor) wins when larger.
+the unit is metres); continuity (cloud spacing x factor) wins when larger.
+The demo's default length (ADR 0059) is the file's p5 when it carries one: the open result has
+`recommendedMinSize` (p5 of the nearest-neighbour distance in dataset units; `null` for a v7 file, a file
+whose p5 was not measured, or the CPU path). The panel then shows it converted with `crsUnit` in mm, cm or m
+(3 significant digits) and sends the same value; with `null`, or a geographic CRS, it shows 0.1 mm.
+Both open paths (build worker and in-worker, `?buildWorker=0`) carry `recommendedMinSize`; only the cells path
+knows it. Each opened file starts from its own default: a value the user typed for the previous file is
+replaced (the selected mode is kept); changing the control afterwards works as before. "Recreate viewer"
+reopens the file, so it also ends at that file's default (p5), not at 0.1 mm or at the typed value.
+- In `Cloud spacing` mode the demo still sends the length with the spacing factor, and that length is the
+  file's default (p5 when present): the larger side wins per cell (ADR 0054), so the effective minimum can
+  be the p5 length rather than the spacing side.
+- The shown value is rounded to 3 significant digits and the applied side is that rounded value, so it can
+  differ from p5 by up to about 0.5 %.
+The API's own default (above) does not change.
 `renderedVoxels` reports submitted/current HZB-visible instances; it does not guarantee each voxel
 contributes a final pixel. Metadata reports bounds and coordinate origin; a CRS is not inferred when
 the file does not provide one. The canvas is transferred to a worker and cannot be reused after
@@ -356,7 +369,7 @@ converter.dispose();
 
 | Item | Behaviour |
 | --- | --- |
-| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `formatVersion` (default `"v7"`, the final global-frame format), `rowOrder` (`"source"` or `"hybrid"`; the default depends on the format: v7 fixes hybrid, v7.N-pre defaults to source, and hybrid is rejected for non-v7 formats; V7 is frozen by ADR 0044), `pointsPerBlock` and `spatialDivisions` (global-frame formats `v7`, `v7.4-pre` and `v7.5-pre` fix them at 64000 and 2, so omit them; values other than the fixed ones, except the legacy default 262144 points per block, which is treated as unset, are errors), `maxError`, `maxMemoryMiB`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS) |
+| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `formatVersion` (default `"v7"`, the final global-frame format), `rowOrder` (`"source"` or `"hybrid"`; the default depends on the format: v7, v8.1-pre and v8.2-pre fix hybrid, v7.N-pre defaults to source, and hybrid is rejected for formats without hybrid rows; V7 is frozen by ADR 0044), `pointsPerBlock` and `spatialDivisions` (global-frame formats `v7`, `v7.4-pre`, `v7.5-pre`, `v8.1-pre` and `v8.2-pre` fix them at 64000 and 2, so omit them; values other than the fixed ones, except the legacy default 262144 points per block, which is treated as unset, are errors), `maxError`, `maxMemoryMiB`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS), `attrCodec` (experimental, `v8.2-pre` only: `"lz4"` default, `"cold"`, `"cold-rgb"` or `"all"` pick zstd for `.octattrs` columns by class, see [FORMAT_V8_PRE2](../../docs/reference/format/FORMAT_V8_PRE2.md#esquemas-del-conversor---attr-codec); API only, no form field) |
 | `ready` | Promise that settles once stale partial files are deleted; `convert()` waits for it on its own, so awaiting it is optional |
 | Events | `on("progress" \| "status" \| "warning" \| "complete" \| "cancelled" \| "error", callback)` returns an unsubscribe function |
 | `warning` | Emitted when OPFS is unavailable (Chrome `file://`): the conversion runs RAM-only and is limited by `ramBudget`; serve the page over `http://localhost` for large files |

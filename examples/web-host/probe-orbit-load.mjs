@@ -6,7 +6,10 @@
 //   node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4]
 //        [--max-load-s=120] [--orbit-s=10] [--pixels] [--force-timing] [--browser=chrome|firefox]
 //        [--build-worker | --no-build-worker] [--cells=0|1] [--remote [--rtt-ms=50] [--mbps=100]] [--attrs]
-//        [--pixels=final] [--pss-out=FILE.jsonl] [--jump-after-ms=N]
+//        [--pixels=final] [--pss-out=FILE.jsonl] [--jump-after-ms=N] [--color=rgb|intensity|classification|attribute:COLUMN]
+// --color=MODE selects the demo's Color control once the dataset is open (the demo has no URL parameter for it):
+// `attribute:COLUMN` picks the single-component sidecar column COLUMN (needs --attrs); default `rgb` changes nothing.
+// OUTPUT.json `colorMode` records the request and the value read back from the select and the render worker.
 // --jump-after-ms=N: N ms after the load starts (blocks still loading, use --px=1) the camera jumps to the
 // fitted pose seen from 10x farther, so reads in flight become stale. With --remote the client counters
 // (`remoteClient`: requests, bytes, aborted, abortedBytes per worker) sit next to the server's getRequests/bodyBytes.
@@ -47,6 +50,8 @@ const remote = args.includes("--remote");
 const withAttrs = args.includes("--attrs");
 const pixelsMode = args.includes("--pixels") ? "orbit" : (option("pixels", null) === "final" ? "final" : null);
 const restFirst = args.includes("--rest-first");
+const colorRequest = option("color", "rgb");
+if (args.includes("--color")) throw new Error("--color needs a value: --color=MODE");
 const jumpAfterMs = args.some(arg => arg.startsWith("--jump-after-ms=")) ? Number(option("jump-after-ms", "0")) : null;
 const psssOut = option("pss-out", null); const buildWorker = !args.includes("--no-build-worker");
 const url = (() => {
@@ -62,8 +67,9 @@ const capturePixels = pixelsMode === "orbit";
 const browser = option("browser", "chrome");
 const CHROME_BIN = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 const PLAYWRIGHT_CORE = process.env.PLAYWRIGHT_CORE ?? "/usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/";
-if (!["chrome", "firefox"].includes(browser) || !input || !output || !Number.isInteger(targetPixels * 2) || targetPixels < 0.5 || targetPixels > 16) {
-    throw new Error("Usage: node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] [--browser=chrome|firefox] [--build-worker|--no-build-worker]");
+if (!["chrome", "firefox"].includes(browser) || !input || !output || !Number.isInteger(targetPixels * 2) || targetPixels < 0.5 || targetPixels > 16
+    || !/^(rgb|intensity|classification|attribute:.+)$/.test(colorRequest)) {
+    throw new Error("Usage: node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] [--browser=chrome|firefox] [--build-worker|--no-build-worker] [--color=rgb|intensity|classification|attribute:COLUMN]");
 }
 const ORBIT_STEP_MS = 16;
 
@@ -410,6 +416,29 @@ try {
         await backend.setDatasetFile(datasetPath);
     }
     const loadStartedMs = Date.now();
+    // Colour mode: options are enabled and sidecar columns added only on the dataset event, so wait for the open
+    // dataset (metadata) before choosing; the static intensity/classification options exist earlier.
+    // The worker confirms the mode in sceneInputs().colorMode; a mode that never shows there fails the run.
+    const colorState = async () => ({
+        select: (await evaluate('document.querySelector("#color-mode").value')).value,
+        worker: (await evalJson("window.__renderBench.apiCall('sceneInputs')"))?.colorMode ?? null,
+    });
+    result.colorMode = { requested: colorRequest, value: null, select: null, worker: null, verified: false };
+    if (colorRequest !== "rgb") {
+        const wanted = JSON.stringify(colorRequest.startsWith("attribute:") ? `Attribute: ${colorRequest.slice(10)}` : colorRequest);
+        const find = `(() => { const o = [...document.querySelector("#color-mode").options].find(o => !o.disabled
+            && (o.dataset.attribute ? o.textContent === ${wanted} : o.value === ${wanted})); return o ? o.value : null; })()`;
+        let value = null;
+        while (value === null && Date.now() - loadStartedMs < maxLoadMs) {
+            const opened = (await evalJson("window.__renderBench.apiCall('getMetadata')").catch(() => null))?.nodeCount;
+            value = opened ? await evalJson(find) : null;
+            if (value === null) await sleep(100);
+        }
+        if (value === null) throw new Error(`colour mode ${colorRequest} is not offered by the demo (columns missing or --attrs not set)`);
+        result.colorMode.value = value;
+        result.colorMode.appliedAtMs = Date.now() - loadStartedMs;
+        await evaluate(`(() => { const s = document.querySelector("#color-mode"); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event("change")); return true; })()`);
+    } else result.colorMode.value = "rgb";
     // Orbit only once the first LOD message exists, so the gesture overlaps real loading.
     const statusText = async () => (await evaluate('document.querySelector("#renderer-status").textContent')).value;
     while (!(await evalJson("window.__renderBench.latestLodCounters()")) && Date.now() - loadStartedMs < 60_000) {
@@ -537,6 +566,11 @@ try {
     } : null;
     result.metadata = await evalJson("window.__renderBench.apiCall('getMetadata')");
     result.metadata = { name: result.metadata?.name, bytes: result.metadata?.bytes, nodeCount: result.metadata?.nodeCount, sourcePointCount: result.metadata?.sourcePointCount };
+    {
+        const end = await colorState();
+        Object.assign(result.colorMode, end, { verified: end.select === result.colorMode.value && end.worker === result.colorMode.value });
+        if (colorRequest !== "rgb" && !result.colorMode.verified) throw new Error(`colour mode ${colorRequest} not active: ${JSON.stringify(end)}`);
+    }
     fs.writeFileSync(`${output}.png`, await backend.screenshot());
     if (pixelsMode) result.finalEmptyPixels = await captureEmptyPixels();
     result.idleGpuBusyPercent = idleGpu;

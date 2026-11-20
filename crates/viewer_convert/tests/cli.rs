@@ -2,7 +2,7 @@ use std::{fs, process::Command};
 
 use las::{Builder, Point, Writer, point::Format};
 use viewer_core::HierarchySemantics;
-use viewer_format::FormatReader;
+use viewer_format::{FormatReader, OctreeReader};
 
 #[test]
 fn ept_cli_preserves_implicit_workers_and_rejects_explicit_repartitioning() {
@@ -218,6 +218,105 @@ fn stderr(output: &std::process::Output) -> String {
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+#[test]
+fn cli_accepts_v8_pre2() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    let output = tmp.path().join("out.oct");
+    let run = run_cli(&[&input, &output], &["--format-version", "v8.2-pre"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let primary = fs::read(&output).unwrap();
+    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVE82P");
+    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    assert_eq!(
+        reader.format_version(),
+        viewer_format::FormatVersion::V8_PRE2
+    );
+    let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
+        .arg("verify")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(verify.status.success(), "{}", stderr(&verify));
+}
+
+#[test]
+fn cli_converts_and_verifies_each_scheme() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    las_with_points(&input, 5000);
+    for scheme in ["lz4", "cold", "cold-rgb", "all"] {
+        let output = tmp.path().join(format!("{scheme}.oct"));
+        let run = run_cli(
+            &[&input, &output],
+            &["--format-version", "v8.2-pre", "--attr-codec", scheme],
+        );
+        assert!(run.status.success(), "{scheme}: {}", stderr(&run));
+        let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
+            .arg("verify")
+            .arg(&output)
+            .output()
+            .unwrap();
+        assert!(verify.status.success(), "{scheme}: {}", stderr(&verify));
+    }
+    // The scheme is not part of the file identity: the same input with another scheme still
+    // writes a v8.2-pre pair, and an unknown scheme or a format without zstd is refused.
+    let refused = |name: &str, flags: &[&str]| {
+        let output = tmp.path().join(name);
+        let run = run_cli(&[&input, &output], flags);
+        assert!(!run.status.success(), "{name}");
+        assert!(!output.exists(), "{name} left an output");
+        stderr(&run)
+    };
+    assert!(
+        refused(
+            "bad.oct",
+            &["--format-version", "v8.2-pre", "--attr-codec", "zstd"]
+        )
+        .contains("unknown attribute codec")
+    );
+    for version in ["v8.1-pre", "v7"] {
+        assert!(
+            refused(
+                &format!("{version}.oct"),
+                &["--format-version", version, "--attr-codec", "cold"]
+            )
+            .contains("v8.2-pre"),
+            "{version}"
+        );
+    }
+    assert!(refused("default.oct", &["--attr-codec", "all"]).contains("v8.2-pre"));
+}
+
+#[test]
+fn cli_converts_and_verifies_v8_pre1() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    let output = tmp.path().join("out.oct");
+    let run = run_cli(&[&input, &output], &["--format-version", "v8.1-pre"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let primary = fs::read(&output).unwrap();
+    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVE81P");
+    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    assert_eq!(
+        reader.format_version(),
+        viewer_format::FormatVersion::V8_PRE1
+    );
+    // The LAS schema starts with intensity and classification: those are the LOD set.
+    assert_eq!(
+        reader.format_metadata().lod_attribute_columns(),
+        Some(&[0, 1][..])
+    );
+    let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
+        .arg("verify")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(verify.status.success(), "{}", stderr(&verify));
 }
 
 #[test]

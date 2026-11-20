@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Write};
 
 use viewer_core::{
@@ -88,6 +89,19 @@ fn second_sample_block() -> SourcePointBlock {
 }
 
 #[test]
+fn resume_rejects_quantiles_on_a_revision_that_does_not_store_them() {
+    let quantiles = crate::PointDistanceQuantiles::new(0.25, 0.5, 1.0).unwrap();
+    let resumed = FormatWriter::resume_for_version(
+        FormatVersion::V7_PRE1,
+        Cursor::new(Vec::new()),
+        Some(Cursor::new(Vec::new())),
+        two_block_metadata().with_point_distance_quantiles(quantiles),
+        options(),
+    );
+    assert!(matches!(resumed, Err(FormatError::InvalidMetadata(_))));
+}
+
+#[test]
 fn split_writer_resumes_from_committed_checkpoint_byte_identically() {
     let metadata = two_block_metadata();
     let mut clean = FormatWriter::new_split_for_version(
@@ -132,6 +146,66 @@ fn split_writer_resumes_from_committed_checkpoint_byte_identically() {
         resumed_attributes.unwrap().into_inner(),
         clean_attributes.unwrap().into_inner()
     );
+}
+
+#[test]
+fn checkpoint_record_rejects_zstd_codecs_on_layouts_without_zstd() {
+    use crate::checkpoint_record::{decode_checkpoint_record, validate_checkpoint_record};
+    use crate::{BlockCodec, layout::StorageLayout};
+
+    let metadata = two_block_metadata();
+    let mut writer = FormatWriter::new_split_for_version(
+        FormatVersion::V7_PRE1,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata.clone(),
+        options(),
+    )
+    .unwrap();
+    writer.write_block(sample_block()).unwrap();
+    let bytes = writer.checkpoint_record(BlockId::new(7)).unwrap();
+    let schema = metadata.dataset().hierarchy().attributes();
+    let layout = StorageLayout::from_version(FormatVersion::V7_PRE1).unwrap();
+    let (_, mut record) = decode_checkpoint_record(&bytes, schema, layout, true).unwrap();
+    for codec in [BlockCodec::Zstd, BlockCodec::BytePlanesZstd] {
+        record.payloads[1].codec = codec;
+        record.payloads[1].stored_length = record.payloads[1].raw_length - 1;
+        assert!(validate_checkpoint_record(&record, layout, true, schema).is_err());
+        let zstd = StorageLayout::from_version(FormatVersion::V8_PRE2).unwrap();
+        assert!(validate_checkpoint_record(&record, zstd, true, schema).is_ok());
+    }
+}
+
+#[test]
+fn checkpoint_record_rejects_zstd_on_geometry_and_non_shrinking_payloads() {
+    use crate::checkpoint_record::{decode_checkpoint_record, validate_checkpoint_record};
+    use crate::{BlockCodec, layout::StorageLayout};
+
+    let metadata = two_block_metadata();
+    let mut writer = FormatWriter::new_split_for_version(
+        FormatVersion::V7_PRE1,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata.clone(),
+        options(),
+    )
+    .unwrap();
+    writer.write_block(sample_block()).unwrap();
+    let bytes = writer.checkpoint_record(BlockId::new(7)).unwrap();
+    let schema = metadata.dataset().hierarchy().attributes();
+    let v7 = StorageLayout::from_version(FormatVersion::V7_PRE1).unwrap();
+    let (_, record) = decode_checkpoint_record(&bytes, schema, v7, true).unwrap();
+    let layout = StorageLayout::from_version(FormatVersion::V8_PRE2).unwrap();
+    for codec in [BlockCodec::Zstd, BlockCodec::BytePlanesZstd] {
+        let mut geometry = record.clone();
+        geometry.payloads[0].codec = codec;
+        assert!(validate_checkpoint_record(&geometry, layout, true, schema).is_err());
+
+        let mut grown = record.clone();
+        grown.payloads[1].codec = codec;
+        grown.payloads[1].raw_length = grown.payloads[1].stored_length;
+        assert!(validate_checkpoint_record(&grown, layout, true, schema).is_err());
+    }
 }
 
 #[test]
@@ -693,5 +767,73 @@ fn split_writer_is_poisoned_after_partial_failure_of_either_sink() {
             OctreeWriter::finish_pair(writer),
             Err(FormatError::WriterPoisoned)
         ));
+    }
+}
+
+/// Nodes as `(id, parent, blocks)`; every child is the first octant of its parent.
+type TestNodes<'a> = &'a [(u64, Option<u64>, &'a [u64])];
+
+fn hierarchy_of(nodes: TestNodes<'_>) -> SpatialHierarchy {
+    let mut levels = BTreeMap::<u64, u32>::new();
+    let mut built = Vec::new();
+    for &(id, parent, blocks) in nodes {
+        let level = parent.map_or(0, |parent| levels[&parent] + 1);
+        let side = 8.0 / f64::from(1_u32 << level);
+        let node_bounds = SpatialBounds::new([0.0; 3], [side; 3]).unwrap();
+        levels.insert(id, level);
+        built.push(
+            SpatialNode::new(
+                NodeId::new(id),
+                parent.map(NodeId::new),
+                level,
+                node_bounds,
+                blocks.len() as u64,
+                0.0,
+                blocks.iter().map(|&block| BlockId::new(block)).collect(),
+            )
+            .unwrap(),
+        );
+    }
+    SpatialHierarchy::new(built, Vec::new(), None).unwrap()
+}
+
+#[test]
+fn lod_set_matches_has_children() {
+    let shapes: [TestNodes<'_>; 3] = [
+        // A root leaf, as for a cloud that fits one node.
+        &[(0, None, &[0])],
+        // A root leaf whose points are all equal: several blocks, still no children.
+        &[(0, None, &[0, 1, 2])],
+        // A normal tree: interior nodes own the LOD blocks.
+        &[
+            (0, None, &[0]),
+            (1, Some(0), &[1, 2]),
+            (2, Some(0), &[3]),
+            (3, Some(1), &[4]),
+            (4, Some(1), &[5]),
+        ],
+    ];
+    for nodes in shapes {
+        let hierarchy = hierarchy_of(nodes);
+        let lod = super::lod_block_ids(&hierarchy).unwrap();
+        let expected: BTreeSet<_> = nodes
+            .iter()
+            .filter(|(id, _, _)| !hierarchy.is_leaf(NodeId::new(*id)))
+            .flat_map(|(_, _, blocks)| blocks.iter().map(|&block| BlockId::new(block)))
+            .collect();
+        assert_eq!(lod, expected, "{nodes:?}");
+        // Per node: a block is LOD exactly when its node has children, which is what the page's
+        // `has_children` flag records.
+        for (id, _, blocks) in nodes {
+            let has_children = !hierarchy.is_leaf(NodeId::new(*id));
+            for &block in *blocks {
+                assert_eq!(
+                    lod.contains(&BlockId::new(block)),
+                    has_children,
+                    "node {id} block {block} in {nodes:?}"
+                );
+            }
+        }
+        assert_eq!(lod.is_empty(), nodes.len() == 1 || nodes[0].2.len() > 1);
     }
 }

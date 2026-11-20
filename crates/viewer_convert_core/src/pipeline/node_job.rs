@@ -8,6 +8,7 @@ use std::io::Read;
 use las::PointDataBuilder;
 use viewer_core::{CoordinateFrame, SpatialBounds, SpatialSubdivision};
 
+use super::nn_distance::{MortonOrder, nearest_distance_samples};
 use super::{
     clock::Clock,
     point_source::{PointRange, PointSource},
@@ -54,6 +55,10 @@ pub struct JobContext {
     pub frame: CoordinateFrame,
     pub layout: SpoolLayout,
     pub collect_diagnostics: bool,
+    /// Leaves also measure nearest-neighbour distance samples (only when the output version
+    /// stores distance quantiles), keeping the points whose position hash is `<=` the threshold.
+    pub collect_distance_quantiles: bool,
+    pub nn_sample_threshold: u64,
 }
 
 impl JobContext {
@@ -111,6 +116,9 @@ pub struct NodeJobOutput {
     pub geometric_error: f64,
     /// `v7.4-pre` leaf spacing in CRS units (0 for internal nodes and other formats).
     pub spacing: f64,
+    /// Squared nearest-neighbour distances of the sampled points of a leaf, in quanta² (see
+    /// [`super::nn_distance`]); empty unless `JobContext::collect_distance_quantiles`.
+    pub nn_samples: Vec<u64>,
     pub blocks: Vec<BlockPlan>,      // no ids yet, in allocation order
     pub children: Vec<ChildOutput>,  // ascending key, empty ones skipped
     pub release: Vec<SpoolId>,       // deleted by the host after the job
@@ -460,6 +468,7 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
         point_count: sample_count as u64,
         geometric_error: sample_error + center_rounding_error(job.bounds, ctx.frame),
         spacing: 0.0,
+        nn_samples: Vec::new(),
         blocks: lod_blocks(lod_spool, &lod),
         children: child_outputs(children, subdivision),
         release: vec![job.input],
@@ -980,12 +989,13 @@ pub fn lod_blocks(spool: SpoolId, lod: &LodWritten) -> Vec<BlockPlan> {
 /// `v7.4-pre` leaf spacing: `side / 2^d` for the first `d >= 1` at which the occupied cells grow
 /// by less than x1.5 once the points occupy more than one cell (`d` is capped at 32 and at the
 /// quantum), so a cloud tucked in a corner of its leaf is measured where it starts to spread.
-/// Reads the leaf spool once.
+/// Reads the leaf spool once, and returns the nearest-neighbour distance samples of the leaf
+/// next to the spacing when the context asks for them.
 fn measure_leaf_spacing<S: SpoolStore>(
     ctx: &JobContext,
     job: &NodeJob,
     store: &S,
-) -> Result<f64, ConvertError> {
+) -> Result<(f64, Vec<u64>), ConvertError> {
     let side_exponent = 64 - global_level(job.bounds);
     let max_depth = side_exponent.min(LEAF_SPACING_MAX_DEPTH);
     let mut cells = Vec::with_capacity(usize::try_from(job.point_count).unwrap_or(0));
@@ -1015,8 +1025,27 @@ fn measure_leaf_spacing<S: SpoolStore>(
             }));
         }
     }
-    let depth = spacing_depth(&cells, side_exponent, max_depth);
-    Ok(2.0_f64.powi(49 - global_level(job.bounds) as i32 - depth as i32))
+    let (depth, nn_samples) = if ctx.collect_distance_quantiles {
+        // One sort of the leaf serves the depth search and the neighbour lookups when the Morton
+        // path applies.
+        let (depth, order) = match morton_spacing_order(&cells, side_exponent, max_depth) {
+            Some((depth, order)) => (depth, Some(order)),
+            None => (sorted_spacing_depth(&cells, side_exponent, max_depth), None),
+        };
+        let samples = nearest_distance_samples(
+            &cells,
+            origin,
+            side_exponent,
+            depth,
+            ctx.nn_sample_threshold,
+            order,
+        );
+        (depth, samples)
+    } else {
+        (spacing_depth(&cells, side_exponent, max_depth), Vec::new())
+    };
+    let spacing = 2.0_f64.powi(49 - global_level(job.bounds) as i32 - depth as i32);
+    Ok((spacing, nn_samples))
 }
 
 fn spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32) -> u32 {
@@ -1035,7 +1064,7 @@ fn growth_ends_search(previous: usize, occupied: usize, min_cells: usize) -> boo
 }
 
 /// Spreads the low 21 bits of `value` three positions apart.
-fn spread_bits(mut value: u64) -> u64 {
+pub(super) fn spread_bits(mut value: u64) -> u64 {
     value &= 0x1f_ffff;
     value = (value | value << 32) & 0x001f_0000_0000_ffff;
     value = (value | value << 16) & 0x001f_0000_ff00_00ff;
@@ -1049,37 +1078,73 @@ fn spread_bits(mut value: u64) -> u64 {
 /// found from the highest differing bit. `None` when a cell lies outside the node (the general
 /// search handles it).
 fn morton_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32) -> Option<u32> {
+    let (code_depth, codes) = sorted_morton(cells, side_exponent, max_depth, |code, _| code)?;
+    morton_depth_of_sorted(&codes, |&code| code, code_depth, max_depth)
+}
+
+/// [`morton_spacing_depth`] that also keeps the sorted `(code, point index)` pairs, so the
+/// nearest-neighbour search reads a cell as the range of codes sharing its prefix instead of
+/// sorting the leaf again.
+fn morton_spacing_order(
+    cells: &[[i128; 3]],
+    side_exponent: u32,
+    max_depth: u32,
+) -> Option<(u32, MortonOrder)> {
+    let (code_depth, sorted) =
+        sorted_morton(cells, side_exponent, max_depth, |code, index| (code, index))?;
+    let depth = morton_depth_of_sorted(&sorted, |&(code, _)| code, code_depth, max_depth)?;
+    Some((depth, MortonOrder { code_depth, sorted }))
+}
+
+/// The cells' Morton codes at the code depth (at most [`MORTON_SPACING_MAX_DEPTH`] levels),
+/// each mapped by `item` and sorted; `None` when a cell lies outside the node or `max_depth`
+/// is 0.
+fn sorted_morton<T: Ord>(
+    cells: &[[i128; 3]],
+    side_exponent: u32,
+    max_depth: u32,
+    item: impl Fn(u64, usize) -> T,
+) -> Option<(u32, Vec<T>)> {
     if max_depth == 0 {
         return None;
     }
-    // Codes hold at most `MORTON_SPACING_MAX_DEPTH` levels. The search only reads the counts of
-    // the depths it visits, so when it ends within them a deeper `max_depth` gives the same
-    // result; otherwise the general search takes over.
     let code_depth = max_depth.min(MORTON_SPACING_MAX_DEPTH);
     let shift = side_exponent - code_depth;
-    let mut codes = Vec::with_capacity(cells.len());
-    for relative in cells {
+    let mut sorted = Vec::with_capacity(cells.len());
+    for (index, relative) in cells.iter().enumerate() {
         let [x, y, z] = relative.map(|value| value >> shift);
         let limit = 1_i128 << code_depth;
         if [x, y, z].iter().any(|v| !(0..limit).contains(v)) {
             return None;
         }
-        codes.push(spread_bits(x as u64) << 2 | spread_bits(y as u64) << 1 | spread_bits(z as u64));
+        let code = spread_bits(x as u64) << 2 | spread_bits(y as u64) << 1 | spread_bits(z as u64);
+        sorted.push(item(code, index));
     }
-    codes.sort_unstable();
+    sorted.sort_unstable();
+    Some((code_depth, sorted))
+}
+
+fn morton_depth_of_sorted<T>(
+    sorted: &[T],
+    code: impl Fn(&T) -> u64,
+    code_depth: u32,
+    max_depth: u32,
+) -> Option<u32> {
     // `first_split[d]`: neighbours whose keys differ for the first time at depth `d`.
     let mut first_split = [0_usize; MORTON_SPACING_MAX_DEPTH as usize + 1];
-    for pair in codes.windows(2) {
-        let differing = pair[0] ^ pair[1];
+    for pair in sorted.windows(2) {
+        let differing = code(&pair[0]) ^ code(&pair[1]);
         if differing != 0 {
             let top_group = differing.ilog2() / 3;
             first_split[(code_depth - top_group) as usize] += 1;
         }
     }
-    let min_cells = LEAF_PLATEAU_MIN_CELLS.min(cells.len());
+    let min_cells = LEAF_PLATEAU_MIN_CELLS.min(sorted.len());
     let mut previous = 1_usize;
     let mut occupied = 1_usize;
     let mut depth = 0;
+    // The search only reads the counts of the depths it visits, so when it ends within the code
+    // depth a deeper `max_depth` gives the same result; otherwise the general search takes over.
     for candidate in 1..=code_depth {
         occupied += first_split[candidate as usize];
         depth = candidate;
@@ -1144,16 +1209,17 @@ fn leaf_output<S: SpoolStore>(
     if job.point_count == 0 {
         release.push(job.input);
     }
-    let spacing = if ctx.layout.is_global() && job.point_count > 0 {
+    let (spacing, nn_samples) = if ctx.layout.is_global() && job.point_count > 0 {
         measure_leaf_spacing(ctx, job, store)?
     } else {
-        0.0
+        (0.0, Vec::new())
     };
     Ok(NodeJobOutput {
         path: job.path.clone(),
         point_count: job.point_count,
         geometric_error: 0.0,
         spacing,
+        nn_samples,
         blocks,
         children: Vec::new(),
         release,
@@ -1288,5 +1354,49 @@ mod spacing_tests {
         let general = sorted_spacing_depth(&cells, 40, 32);
         assert!(general <= MORTON_SPACING_MAX_DEPTH);
         assert_eq!(morton_spacing_depth(&cells, 40, 32), Some(general));
+    }
+
+    #[test]
+    fn the_morton_order_gives_the_same_nearest_distances_as_an_own_sort() {
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        // Spread over a node of side 2^30 quanta, with duplicates, so the measured depth is below
+        // the code depth; squared distances (~2^52) stay far from the u64 saturation.
+        let mut cells = (0..3_000)
+            .map(|_| std::array::from_fn(|_| i128::from(next() >> 34)))
+            .collect::<Vec<[i128; 3]>>();
+        cells.extend_from_within(..300);
+        let (depth, order) = morton_spacing_order(&cells, 30, 24).unwrap();
+        assert_eq!(Some(depth), morton_spacing_depth(&cells, 30, 24));
+        assert!(depth < order.code_depth);
+        let mut own = nearest_distance_samples(&cells, [0; 3], 30, depth, u64::MAX, None);
+        let mut reused = nearest_distance_samples(&cells, [0; 3], 30, depth, u64::MAX, Some(order));
+        // Brute-force oracle: nearest non-zero squared distance of every point.
+        let mut oracle: Vec<u64> = cells
+            .iter()
+            .map(|a| {
+                let nearest = cells
+                    .iter()
+                    .map(|b| {
+                        (0..3)
+                            .map(|axis| a[axis].abs_diff(b[axis]).pow(2))
+                            .sum::<u128>()
+                    })
+                    .filter(|&squared| squared != 0)
+                    .min()
+                    .unwrap();
+                u64::try_from(nearest).unwrap()
+            })
+            .collect();
+        own.sort_unstable();
+        reused.sort_unstable();
+        oracle.sort_unstable();
+        assert_eq!(own, oracle);
+        assert_eq!(reused, oracle);
     }
 }

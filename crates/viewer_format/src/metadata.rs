@@ -15,6 +15,9 @@ pub struct FormatMetadata {
     node_attribute_ranges: BTreeMap<NodeId, Vec<NodeAttributeRange>>,
     global_frame: Option<GlobalFrame>,
     las_extra_bytes: Vec<LasExtraByte>,
+    point_distance_quantiles: Option<PointDistanceQuantiles>,
+    lod_attribute_columns: Option<Vec<u32>>,
+    display_colour_source: Option<DisplayColourSource>,
 }
 
 impl FormatMetadata {
@@ -38,6 +41,9 @@ impl FormatMetadata {
             node_attribute_ranges: ranges,
             global_frame: None,
             las_extra_bytes: Vec::new(),
+            point_distance_quantiles: None,
+            lod_attribute_columns: None,
+            display_colour_source: None,
         })
     }
 
@@ -157,6 +163,59 @@ impl FormatMetadata {
         Ok(self)
     }
 
+    /// Attaches the nearest-neighbour distance quantiles (`v8.N-pre` only; other versions do not
+    /// store them, and the writer rejects them there).
+    #[must_use]
+    pub const fn with_point_distance_quantiles(
+        mut self,
+        quantiles: PointDistanceQuantiles,
+    ) -> Self {
+        self.point_distance_quantiles = Some(quantiles);
+        self
+    }
+
+    /// Distance quantiles to store, when set; see [`PointDistanceQuantiles`].
+    pub const fn point_distance_quantiles(&self) -> Option<PointDistanceQuantiles> {
+        self.point_distance_quantiles
+    }
+
+    /// Sets the schema columns blocks of nodes with children keep (`v8.N-pre` only; other versions
+    /// store every column everywhere, and the writer rejects a list there). Geometry and the display
+    /// colour are always kept. The list must be strictly increasing and inside the schema; an empty
+    /// list is valid. The writer and the reader reject any other list.
+    #[must_use]
+    pub fn with_lod_attribute_columns(mut self, columns: Vec<u32>) -> Self {
+        self.lod_attribute_columns = Some(columns);
+        self
+    }
+
+    /// The LOD column set, when set; see [`Self::with_lod_attribute_columns`].
+    pub fn lod_attribute_columns(&self) -> Option<&[u32]> {
+        self.lod_attribute_columns.as_deref()
+    }
+
+    /// Sets where leaf blocks derive their display colour from (`v8.N-pre` only; other versions
+    /// store it in every block, and the writer rejects a source there). The writer checks every
+    /// leaf against the derivation and errors on a difference.
+    #[must_use]
+    pub fn with_display_colour_source(mut self, source: DisplayColourSource) -> Self {
+        self.display_colour_source = Some(source);
+        self
+    }
+
+    /// The display colour source, when set; see [`Self::with_display_colour_source`].
+    pub fn display_colour_source(&self) -> Option<DisplayColourSource> {
+        self.display_colour_source
+    }
+
+    /// Rules for [`crate::layout::StorageLayout::stored_column`]; empty without a LOD set.
+    pub(crate) fn column_rules(&self) -> crate::layout::ColumnRules<'_> {
+        crate::layout::ColumnRules {
+            lod_columns: self.lod_attribute_columns.as_deref().unwrap_or(&[]),
+            display: self.display_colour_source.unwrap_or_default(),
+        }
+    }
+
     pub fn node_attribute_ranges(&self, node_id: NodeId) -> &[NodeAttributeRange] {
         self.node_attribute_ranges
             .get(&node_id)
@@ -184,6 +243,35 @@ impl FormatMetadata {
             node_attribute_ranges: ranges,
             global_frame: self.global_frame.clone(),
             las_extra_bytes: self.las_extra_bytes.clone(),
+            point_distance_quantiles: self.point_distance_quantiles,
+            lod_attribute_columns: self.lod_attribute_columns.clone(),
+            display_colour_source: self.display_colour_source,
+        }
+    }
+}
+
+/// Quantiles of the distance from a point to its nearest neighbour, in dataset units, with exact
+/// duplicates (distance 0) left out.
+///
+/// All zeros is the defined "not measured" value: a cloud where no sampled point found a
+/// neighbour at non-zero distance (only duplicates, a single point) stores zeros. Readers must
+/// treat `p5 == 0` as "no recommendation".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PointDistanceQuantiles {
+    pub p1: f64,
+    pub p5: f64,
+    pub p50: f64,
+}
+
+impl PointDistanceQuantiles {
+    /// Rejects non-finite or negative values and quantiles out of order.
+    pub fn new(p1: f64, p5: f64, p50: f64) -> Result<Self, FormatError> {
+        let valid =
+            [p1, p5, p50].iter().all(|v| v.is_finite() && *v >= 0.0) && p1 <= p5 && p5 <= p50;
+        if valid {
+            Ok(Self { p1, p5, p50 })
+        } else {
+            Err(FormatError::InvalidMetadata("invalid distance quantiles"))
         }
     }
 }
@@ -277,7 +365,68 @@ pub enum MetadataError {
     InvalidGlobalFrame(&'static str),
 }
 
+/// Where a leaf block's display colour comes from when it is not stored (`v8.N-pre`). The schema
+/// index names the 16-bit source column; the reader derives each channel as `value >> 8`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DisplayColourSource {
+    /// Not derivable: leaf blocks store the display colour.
+    #[default]
+    None,
+    /// A `u16` x 3 schema column; the display colour is its high byte per channel.
+    Rgb(u32),
+    /// A `u16` schema column; the display colour is its high byte as r = g = b.
+    Intensity(u32),
+}
+
+impl DisplayColourSource {
+    /// The source must name a column of the right shape inside the schema.
+    pub(crate) fn validate(
+        self,
+        schema: &[viewer_core::AttributeDescriptor],
+    ) -> Result<(), &'static str> {
+        let (index, components) = match self {
+            Self::None => return Ok(()),
+            Self::Rgb(index) => (index, 3),
+            Self::Intensity(index) => (index, 1),
+        };
+        let column = schema
+            .get(index as usize)
+            .ok_or("display colour source is outside the schema")?;
+        if column.data_type() != AttributeDataType::U16 || column.component_count() != components {
+            return Err("display colour source is not a 16-bit column of the right kind");
+        }
+        Ok(())
+    }
+}
+
+/// A LOD column list names schema columns in strictly increasing order: no index outside the
+/// schema, no repeat. One order means one byte form per set.
+pub(crate) fn validate_lod_columns(columns: &[u32], schema_len: usize) -> Result<(), &'static str> {
+    if columns.len() > schema_len {
+        return Err("LOD column list is longer than the schema");
+    }
+    if columns.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err("LOD column list is not strictly increasing");
+    }
+    if columns
+        .last()
+        .is_some_and(|&last| last as usize >= schema_len)
+    {
+        return Err("LOD column index is outside the schema");
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
+    if let Some(source) = metadata.display_colour_source() {
+        source
+            .validate(metadata.dataset().hierarchy().attributes())
+            .map_err(FormatError::InvalidMetadata)?;
+    }
+    if let Some(columns) = metadata.lod_attribute_columns() {
+        validate_lod_columns(columns, metadata.dataset().hierarchy().attributes().len())
+            .map_err(FormatError::InvalidMetadata)?;
+    }
     if !metadata.visual_scale().is_finite() || metadata.visual_scale() <= 0.0 {
         return Err(FormatError::InvalidVisualScale);
     }

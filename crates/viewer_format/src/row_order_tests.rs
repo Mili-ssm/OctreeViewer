@@ -299,6 +299,33 @@ fn v7_resolves_hybrid_row_order_by_default() {
 }
 
 #[test]
+fn v8_pre1_fixes_hybrid_row_order_like_v7() {
+    let unset = FormatWriterOptions::new(0.001, 16 << 20).unwrap();
+    assert_eq!(
+        unset.resolved_row_order(FormatVersion::V8_PRE1).unwrap(),
+        RowOrder::Hybrid
+    );
+    assert!(
+        options(RowOrder::Hybrid)
+            .resolved_row_order(FormatVersion::V8_PRE1)
+            .is_ok()
+    );
+    let (block, _) = dense_block();
+    let result = prepare_point_block_for_version(
+        FormatVersion::V8_PRE1,
+        block,
+        &metadata(5000),
+        options(RowOrder::Source),
+    );
+    assert!(matches!(
+        result,
+        Err(crate::FormatError::RowOrderFixedByFormat(
+            FormatVersion::V8_PRE1
+        ))
+    ));
+}
+
+#[test]
 fn v7_rejects_explicit_source_order() {
     let (block, _) = dense_block();
     let result = prepare_point_block_for_version(

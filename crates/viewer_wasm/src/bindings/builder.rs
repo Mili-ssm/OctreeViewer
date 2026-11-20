@@ -174,11 +174,20 @@ impl WasmSceneBuilder {
         attribute: Option<JsValue>,
         carried: Option<js_sys::Array>,
     ) -> Result<usize, JsValue> {
-        let core = self.core_mut()?;
-        let selection = core.selected_attribute();
+        let core = self
+            .core
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        let (selected_attribute, selected_range) = core.selected_attribute();
+        let fallback_range = super::intensity_fallback_range(
+            selected_attribute,
+            Some(core.session()),
+            self.async_format_context.as_ref(),
+        )
+        .map_err(|message| JsValue::from_str(&message))?;
         let accounted_bytes = insert_async_block(
             Some(core.session_mut()),
-            selection,
+            (selected_attribute, selected_range, fallback_range),
             block_id,
             positions,
             colors,

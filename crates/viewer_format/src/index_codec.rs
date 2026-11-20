@@ -10,8 +10,8 @@ use viewer_core::{
 
 use crate::geometry::GeometryEncoding;
 use crate::layout::{
-    FOOTER_SIZE, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout, attribute_payload_size,
-    block_payload_size,
+    FOOTER_SIZE, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout, StoredColumn,
+    attribute_payload_size, block_payload_size,
 };
 use crate::metadata::validate_metadata;
 use crate::prepare::BlockRecord;
@@ -203,6 +203,12 @@ pub(crate) fn write_index<W: Write>(
         index.u8(0)?;
         index.u32(0)?;
         for payload in &block.payloads {
+            // The whole-index layouts have no way to say that a column is missing.
+            if !payload.stored.is_present() {
+                return Err(FormatError::InvalidMetadata(
+                    "this index layout stores every column",
+                ));
+            }
             index.u64(payload.offset)?;
             index.u64(payload.stored_length)?;
             index.u64(payload.raw_length)?;
@@ -560,9 +566,21 @@ pub(crate) fn validate_column_codec(
     point_count: u64,
     column: &PayloadDirectoryEntry,
 ) -> Result<(), FormatError> {
+    if matches!(column.codec, BlockCodec::Zstd | BlockCodec::BytePlanesZstd)
+        && (!layout.supports_zstd()
+            || payload_index == 0
+            || column.stored_length >= column.raw_length)
+    {
+        return Err(FormatError::MalformedIndex(
+            "zstd codec not valid in this revision or column",
+        ));
+    }
     if matches!(
         column.codec,
-        BlockCodec::Constant | BlockCodec::Dictionary | BlockCodec::BytePlanes
+        BlockCodec::Constant
+            | BlockCodec::Dictionary
+            | BlockCodec::BytePlanes
+            | BlockCodec::BytePlanesZstd
     ) {
         let width = match payload_index {
             0 => 0,
@@ -579,8 +597,10 @@ pub(crate) fn validate_column_codec(
             || column.stored_length >= column.raw_length
             || (column.codec == BlockCodec::Constant && column.stored_length != width)
             || (column.codec == BlockCodec::Dictionary && column.stored_length < 10)
-            || (column.codec == BlockCodec::BytePlanes
-                && (!layout.supports_byte_planes() || width <= 1 || column.stored_length == 0))
+            || (matches!(
+                column.codec,
+                BlockCodec::BytePlanes | BlockCodec::BytePlanesZstd
+            ) && (!layout.supports_byte_planes() || width <= 1 || column.stored_length == 0))
         {
             return Err(FormatError::MalformedIndex(
                 "attribute codec not valid in this revision or column",
@@ -588,6 +608,33 @@ pub(crate) fn validate_column_codec(
         }
     }
     Ok(())
+}
+
+/// Range a block occupies in the split companion: from the first stored column (a derived display
+/// colour has no payload of its own, its slot only carries an offset) to the furthest end of a
+/// stored column. A column that is not stored has no bytes, whatever its offset.
+fn companion_range(block: &BlockDirectoryEntry) -> Result<(u64, u64), FormatError> {
+    let mut stored = block
+        .payloads
+        .iter()
+        .skip(1)
+        .filter(|payload| payload.stored.is_present())
+        .peekable();
+    let Some(start) = stored.peek().map(|payload| payload.offset) else {
+        let offset = block.payloads[1].offset;
+        return Ok((offset, offset));
+    };
+    let mut start = start;
+    let mut end = start;
+    for payload in stored {
+        start = start.min(payload.offset);
+        let next = payload
+            .offset
+            .checked_add(payload.stored_length)
+            .ok_or(FormatError::FileSizeOverflow)?;
+        end = end.max(next);
+    }
+    Ok((start, end))
 }
 
 pub(crate) fn parse_index(
@@ -868,7 +915,8 @@ pub(crate) fn parse_index(
         }
         let point_count_usize =
             usize::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
-        let logical_size = block_payload_size(point_count_usize, &schema)?;
+        // Whole-index layouts store every column.
+        let logical_size = block_payload_size(point_count_usize, &schema, |_| true)?;
         if logical_size > limits.max_block_bytes {
             return Err(FormatError::BlockExceedsLimit {
                 requested: logical_size,
@@ -913,6 +961,7 @@ pub(crate) fn parse_index(
                 raw_length: cursor.u64()?,
                 codec: BlockCodec::try_from(cursor.u8()?)?,
                 checksum: cursor.u32()?,
+                stored: StoredColumn::Present,
             };
             validate_column_codec(layout, &schema, payload_index, point_count, &column)?;
             if split && payload_index > 0 {
@@ -991,16 +1040,7 @@ pub(crate) fn parse_index(
     if split {
         let mut ranges = blocks
             .values()
-            .map(|block| {
-                let first = &block.payloads[1];
-                let last = block.payloads.last().expect("display payload exists");
-                Ok((
-                    first.offset,
-                    last.offset
-                        .checked_add(last.stored_length)
-                        .ok_or(FormatError::FileSizeOverflow)?,
-                ))
-            })
+            .map(companion_range)
             .collect::<Result<Vec<_>, FormatError>>()?;
         ranges.sort_unstable();
         let mut end = HEADER_SIZE;
@@ -1181,4 +1221,63 @@ pub(crate) fn validate_node_error_bounds(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod companion_range_tests {
+    use super::*;
+
+    fn payload(offset: u64, length: u64, stored: StoredColumn) -> PayloadDirectoryEntry {
+        PayloadDirectoryEntry {
+            stored_length: length,
+            raw_length: length,
+            ..PayloadDirectoryEntry::not_stored(stored, offset)
+        }
+    }
+
+    #[test]
+    fn an_absent_last_column_does_not_move_the_range_end() {
+        let block = BlockDirectoryEntry {
+            offset: 0,
+            payload_length: 12,
+            point_count: 1,
+            quantization_error: 0.0,
+            origin: [0.0; 3],
+            scale: [1.0; 3],
+            origin_quanta: [0; 3],
+            node_cell: None,
+            geometry_encoding: GeometryEncoding::RawU32,
+            payloads: vec![
+                payload(0, 12, StoredColumn::Present),
+                payload(100, 3, StoredColumn::Present),
+                payload(103, 5, StoredColumn::Present),
+                // Absent last column with a stale offset: ignored.
+                PayloadDirectoryEntry::not_stored(StoredColumn::Absent, 5000),
+            ],
+        };
+        assert_eq!(companion_range(&block).unwrap(), (100, 108));
+    }
+
+    #[test]
+    fn a_derived_display_colour_does_not_start_the_range() {
+        let block = BlockDirectoryEntry {
+            offset: 0,
+            payload_length: 12,
+            point_count: 1,
+            quantization_error: 0.0,
+            origin: [0.0; 3],
+            scale: [1.0; 3],
+            origin_quanta: [0; 3],
+            node_cell: None,
+            geometry_encoding: GeometryEncoding::RawU32,
+            payloads: vec![
+                payload(0, 12, StoredColumn::Present),
+                // The derived slot carries the source column's offset, which is not the minimum.
+                PayloadDirectoryEntry::not_stored(StoredColumn::Derived { from: 3 }, 103),
+                payload(100, 3, StoredColumn::Present),
+                payload(103, 5, StoredColumn::Present),
+            ],
+        };
+        assert_eq!(companion_range(&block).unwrap(), (100, 108));
+    }
 }

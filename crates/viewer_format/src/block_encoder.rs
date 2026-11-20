@@ -1,3 +1,7 @@
+use std::collections::BTreeSet;
+
+use viewer_core::BlockId;
+
 use crate::{
     BlockEncoder, FormatError, FormatMetadata, FormatVersion, FormatWriterOptions,
     PreparedPointBlock, SourcePointBlock,
@@ -9,6 +13,8 @@ pub struct FormatBlockEncoder<'a> {
     version: FormatVersion,
     metadata: &'a FormatMetadata,
     options: FormatWriterOptions,
+    /// Blocks of nodes with children, built once: the rule for stored columns asks it per block.
+    lod_blocks: BTreeSet<BlockId>,
 }
 
 impl<'a> FormatBlockEncoder<'a> {
@@ -18,10 +24,12 @@ impl<'a> FormatBlockEncoder<'a> {
         options: FormatWriterOptions,
     ) -> Result<Self, FormatError> {
         version.ensure_writable()?;
+        let lod_blocks = crate::prepare::lod_block_ids(metadata.dataset().hierarchy())?;
         Ok(Self {
             version,
             metadata,
             options,
+            lod_blocks,
         })
     }
 }
@@ -30,25 +38,31 @@ impl BlockEncoder for FormatBlockEncoder<'_> {
     type PreparedBlock = PreparedPointBlock;
 
     fn prepare(&self, block: SourcePointBlock) -> Result<Self::PreparedBlock, FormatError> {
-        crate::prepare::prepare_point_block_for_version(
+        let block_is_lod = self.lod_blocks.contains(&block.id());
+        crate::prepare::prepare_point_block_for_version_impl(
             self.version,
             block,
             self.metadata,
             self.options,
+            block_is_lod,
+            false,
         )
+        .map(|(prepared, _)| prepared)
     }
 
     fn prepare_with_diagnostics(
         &self,
         block: SourcePointBlock,
     ) -> Result<(Self::PreparedBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
-        crate::prepare::prepare_point_block_for_version_with_diagnostics(
+        let block_is_lod = self.lod_blocks.contains(&block.id());
+        crate::prepare::prepare_point_block_for_version_impl(
             self.version,
             block,
             self.metadata,
             self.options,
+            block_is_lod,
+            true,
         )
-        .map(|(prepared, diagnostics)| (prepared, Some(diagnostics)))
     }
 
     fn encoded_payload_capacity_bytes(&self, block: &Self::PreparedBlock) -> usize {

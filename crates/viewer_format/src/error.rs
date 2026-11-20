@@ -21,6 +21,10 @@ pub enum FormatError {
     UnsupportedFormatVersion(crate::FormatVersion),
     #[error("format version {0} fixes its row order; another order cannot be requested")]
     RowOrderFixedByFormat(crate::FormatVersion),
+    #[error(
+        "format version {0} cannot store zstd payloads; an attribute codec other than lz4 needs v8.2-pre"
+    )]
+    AttributeCodecUnsupported(crate::FormatVersion),
     #[error("prepared block version {block} does not match writer version {writer}")]
     PreparedVersionMismatch {
         writer: crate::FormatVersion,
@@ -70,6 +74,12 @@ pub enum FormatError {
     UnknownBlock(BlockId),
     #[error("requested attribute schema index {0} does not exist")]
     UnknownAttribute(u32),
+    #[error("block {block:?} does not store attribute {attribute}")]
+    AttributeAbsent { block: BlockId, attribute: u32 },
+    #[error(
+        "block {0:?} stores no display colour and its source column differs from the leaf's colour"
+    )]
+    DisplayColourNotDerivable(BlockId),
     #[error("row {row_id} is outside block {block:?}")]
     UnknownRow { block: BlockId, row_id: u64 },
     #[error("invalid quantization error limit {0}")]

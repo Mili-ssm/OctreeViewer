@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use viewer_core::{AttributeDataType, AttributeValues, BlockId, SpatialBounds};
 
-use crate::layout::{PayloadDirectoryEntry, attribute_payload_size};
+use crate::layout::{PayloadDirectoryEntry, StorageLayout, StoredColumn, attribute_payload_size};
 use crate::prepare::{BlockRecord, encode_values};
 use crate::{FormatError, crc32, crc32::checksum_matches};
 
@@ -11,6 +11,7 @@ pub(crate) const WRITER_RECORD_VERSION: u16 = 1;
 
 pub(crate) fn validate_checkpoint_record(
     record: &BlockRecord,
+    layout: StorageLayout,
     split: bool,
     schema: &[viewer_core::AttributeDescriptor],
 ) -> Result<(), FormatError> {
@@ -28,6 +29,17 @@ pub(crate) fn validate_checkpoint_record(
         ));
     }
     for (index, payload) in record.payloads.iter().enumerate() {
+        if matches!(
+            payload.codec,
+            crate::BlockCodec::Zstd | crate::BlockCodec::BytePlanesZstd
+        ) && (!layout.supports_zstd()
+            || index == 0
+            || payload.stored_length >= payload.raw_length)
+        {
+            return Err(FormatError::MalformedIndex(
+                "writer checkpoint zstd codec not valid in this revision or payload",
+            ));
+        }
         payload
             .offset
             .checked_add(payload.stored_length)
@@ -102,6 +114,12 @@ pub(crate) fn encode_checkpoint_record(
     }
     put_count(&mut out, record.payloads.len())?;
     for payload in &record.payloads {
+        // Resumable layouts store every column; a record cannot say one is missing.
+        if !payload.stored.is_present() {
+            return Err(FormatError::InvalidMetadata(
+                "checkpoint records store every column",
+            ));
+        }
         for value in [payload.offset, payload.stored_length, payload.raw_length] {
             out.extend_from_slice(&value.to_le_bytes());
         }
@@ -122,6 +140,7 @@ pub(crate) fn encode_checkpoint_record(
 pub(crate) fn decode_checkpoint_record(
     bytes: &[u8],
     schema: &[viewer_core::AttributeDescriptor],
+    layout: StorageLayout,
     split: bool,
 ) -> Result<(BlockId, BlockRecord), FormatError> {
     let mut maximum_length = 160usize
@@ -210,6 +229,7 @@ pub(crate) fn decode_checkpoint_record(
             raw_length: input.u64()?,
             codec: crate::BlockCodec::try_from(input.u8()?)?,
             checksum: input.u32()?,
+            stored: StoredColumn::Present,
         });
     }
     if payload_count != schema.len() + 2 {
@@ -271,7 +291,7 @@ pub(crate) fn decode_checkpoint_record(
         payloads,
         ranges,
     };
-    validate_checkpoint_record(&record, split, schema)?;
+    validate_checkpoint_record(&record, layout, split, schema)?;
     Ok((id, record))
 }
 

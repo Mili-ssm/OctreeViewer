@@ -159,7 +159,8 @@ pub(super) fn open_paged(
     )
     .with_crs(crs)
     .with_crs_unit(crs_unit)
-    .with_global_frame(format.format_version().uses_global_frame());
+    .with_global_frame(format.format_version().uses_global_frame())
+    .with_point_distance_quantiles(format.point_distance_quantiles());
     let dataset = with_page_source(dataset, &source)?;
     let context = AsyncFormatContext {
         has_attributes: format.has_attributes(),
@@ -275,7 +276,8 @@ pub(super) fn open_format(
     )
     .with_crs(crs)
     .with_crs_unit(crs_unit)
-    .with_global_frame(reader.format_version().uses_global_frame());
+    .with_global_frame(reader.format_version().uses_global_frame())
+    .with_point_distance_quantiles(reader.point_distance_quantiles());
     let page_source = reader.page_source().cloned();
     let dataset = match &page_source {
         Some(source) => with_page_source(dataset, source)?,
@@ -359,11 +361,14 @@ pub(super) fn open_format(
     ))
 }
 
+/// The selected attribute, its range, and intensity's range for blocks that omit the attribute.
+pub(super) type AsyncPaint = (Option<(u32, u32)>, Option<[f64; 2]>, Option<[f64; 2]>);
+
 /// Validates and caches one block delivered by the host, painting the selected attribute into
 /// its colours. Shared by every binding that accepts asynchronous blocks.
 pub(super) fn insert_async_block(
     session: Option<&mut LodSession<FormatReader<BrowserBlobReader>>>,
-    (selected_attribute, selected_range): (Option<(u32, u32)>, Option<[f64; 2]>),
+    (selected_attribute, selected_range, fallback_range): AsyncPaint,
     block_id: String,
     positions: js_sys::Float32Array,
     colors: Option<js_sys::Uint8Array>,
@@ -435,6 +440,7 @@ pub(super) fn insert_async_block(
         schema,
         selected_attribute,
         selected_range,
+        fallback_range,
         budget_bytes,
     )
     .map_err(|message| JsValue::from_str(&message))?;
@@ -658,9 +664,19 @@ impl WasmVoxelViewer {
         colors: Option<js_sys::Uint8Array>,
         attribute: Option<JsValue>,
     ) -> Result<usize, JsValue> {
+        let fallback_range = super::intensity_fallback_range(
+            self.selected_attribute,
+            self.lod_session.as_ref(),
+            self.async_format_context.as_ref(),
+        )
+        .map_err(|message| JsValue::from_str(&message))?;
         let accounted_bytes = insert_async_block(
             self.lod_session.as_mut(),
-            (self.selected_attribute, self.selected_attribute_range),
+            (
+                self.selected_attribute,
+                self.selected_attribute_range,
+                fallback_range,
+            ),
             block_id,
             positions,
             colors,

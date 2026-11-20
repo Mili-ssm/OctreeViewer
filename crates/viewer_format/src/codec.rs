@@ -12,6 +12,34 @@ pub enum BlockCodec {
     Dictionary = 3,
     /// LZ4 over independent byte planes of one attribute tuple (pre4+).
     BytePlanes = 4,
+    /// Magicless zstd frame (v8.2-pre only; never geometry).
+    Zstd = 5,
+    /// Zstd over independent byte planes of one attribute tuple (v8.2-pre only).
+    BytePlanesZstd = 6,
+}
+
+/// Entropy stage of an attribute payload: every candidate swaps LZ4 for zstd as a whole.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntropyCoder {
+    Lz4,
+    /// Valid only when the layout supports zstd (v8.2-pre).
+    Zstd,
+}
+
+impl EntropyCoder {
+    pub(crate) const fn codec(self) -> BlockCodec {
+        match self {
+            Self::Lz4 => BlockCodec::Lz4,
+            Self::Zstd => BlockCodec::Zstd,
+        }
+    }
+
+    pub(crate) const fn byte_planes_codec(self) -> BlockCodec {
+        match self {
+            Self::Lz4 => BlockCodec::BytePlanes,
+            Self::Zstd => BlockCodec::BytePlanesZstd,
+        }
+    }
 }
 
 impl TryFrom<u8> for BlockCodec {
@@ -24,6 +52,8 @@ impl TryFrom<u8> for BlockCodec {
             2 => Ok(Self::Constant),
             3 => Ok(Self::Dictionary),
             4 => Ok(Self::BytePlanes),
+            5 => Ok(Self::Zstd),
+            6 => Ok(Self::BytePlanesZstd),
             _ => Err(CodecError::UnsupportedCodec(value)),
         }
     }
@@ -66,6 +96,66 @@ pub fn compress_block(uncompressed: &[u8]) -> EncodedBlock {
     }
 }
 
+/// Like [`compress_block`] with the chosen entropy stage; zstd uses level 3 and no frame magic,
+/// checksum or content size (the directory carries the raw length and the payload a CRC).
+pub fn compress_block_with(
+    uncompressed: &[u8],
+    coder: EntropyCoder,
+) -> Result<EncodedBlock, CodecError> {
+    if coder == EntropyCoder::Lz4 {
+        return Ok(compress_block(uncompressed));
+    }
+    let compressed = zstd_compress(uncompressed)?;
+    Ok(if compressed.len() < uncompressed.len() {
+        EncodedBlock {
+            codec: BlockCodec::Zstd,
+            bytes: compressed,
+        }
+    } else {
+        EncodedBlock {
+            codec: BlockCodec::None,
+            bytes: uncompressed.to_vec(),
+        }
+    })
+}
+
+fn zstd_compress(raw: &[u8]) -> Result<Vec<u8>, CodecError> {
+    use zstd::zstd_safe::{CParameter, FrameFormat};
+    let fail = |error: std::io::Error| CodecError::ZstdFailure(error.to_string());
+    let mut compressor = zstd::bulk::Compressor::new(3).map_err(fail)?;
+    compressor
+        .set_parameter(CParameter::Format(FrameFormat::Magicless))
+        .map_err(fail)?;
+    compressor.include_checksum(false).map_err(fail)?;
+    compressor.include_contentsize(false).map_err(fail)?;
+    compressor.compress(raw).map_err(fail)
+}
+
+/// Decodes into a buffer of exactly `size` bytes: a longer frame does not fit, a shorter one fails.
+fn zstd_decompress(stored: &[u8], size: usize) -> Result<Vec<u8>, CodecError> {
+    use zstd::zstd_safe::{DParameter, FrameFormat};
+    let fail = |error: std::io::Error| CodecError::ZstdFailure(error.to_string());
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(size)
+        .map_err(|_| CodecError::AllocationFailed(size))?;
+    output.resize(size, 0);
+    let mut decompressor = zstd::bulk::Decompressor::new().map_err(fail)?;
+    decompressor
+        .set_parameter(DParameter::Format(FrameFormat::Magicless))
+        .map_err(fail)?;
+    let written = decompressor
+        .decompress_to_buffer(stored, output.as_mut_slice())
+        .map_err(fail)?;
+    if written != size {
+        return Err(CodecError::UnexpectedDecodedSize {
+            expected: size,
+            actual: written,
+        });
+    }
+    Ok(output)
+}
+
 /// Decodes one independent block after enforcing the caller's allocation limit.
 pub fn decompress_block(
     codec: BlockCodec,
@@ -94,6 +184,9 @@ pub fn decompress_block(
         return Ok(output);
     }
 
+    if codec == BlockCodec::Zstd {
+        return zstd_decompress(stored, uncompressed_size);
+    }
     if codec != BlockCodec::Lz4 {
         return Err(CodecError::UnsupportedCodec(codec as u8));
     }
@@ -125,6 +218,8 @@ pub enum CodecError {
     AllocationFailed(usize),
     #[error("invalid LZ4 block: {0}")]
     InvalidCompressedBlock(String),
+    #[error("zstd failure: {0}")]
+    ZstdFailure(String),
     #[error("decoded block has {actual} bytes, expected {expected}")]
     UnexpectedDecodedSize { expected: usize, actual: usize },
 }

@@ -1,6 +1,6 @@
 # 0054 El objetivo de px es el tamaño mínimo del vóxel, y el mínimo en longitud está activo por defecto (0,1 mm)
 
-Estado: Aceptada · Fecha: 16-11-2026 · Decide: propietario · Cambia RQ-09 y el predeterminado del filtro de longitud de la [revisión del ADR 0049](0049-tamano-minimo-del-voxel.md#revisión-16-11-2026-dos-filtros-combinables-gana-el-más-grande)
+Estado: Sustituida en parte por el [ADR 0059](0059-minimo-por-defecto-desde-p5.md) el 20-11-2026 (el mínimo en longitud por defecto es el p5 del fichero cuando lo trae); el resto sigue aceptado · Fecha: 16-11-2026 · Decide: propietario · Cambia RQ-09 y el predeterminado del filtro de longitud de la [revisión del ADR 0049](0049-tamano-minimo-del-voxel.md#revisión-16-11-2026-dos-filtros-combinables-gana-el-más-grande)
 
 ## Contexto
 - RQ-09 decía «ningún cubo por encima del objetivo de px»: el corte refina mientras la arista proyectada supera el

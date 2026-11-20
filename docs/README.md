@@ -18,6 +18,8 @@ Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [est
 | [Formato V5](reference/format/FORMAT_V5.md) | Especificación del `.oct`/`.octattrs` V5, formato heredado de comparación hasta V8 ([ADR 0047](adr/0047-v5-heredado-hasta-v8.md)). | vivo |
 | [Formato V7](reference/format/FORMAT_V7.md) | Especificación de la identidad final `v7` (disposición de v7.5-pre, magics propios). | vivo |
 | [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](reference/format/FORMAT_V7_PRE4.md), [V7.5-pre](reference/format/FORMAT_V7_PRE5.md) | Especificaciones de las revisiones V7 experimentales (v7.5: índice paginado, R5). | vivo |
+| [V8.1-pre](reference/format/FORMAT_V8_PRE1.md) | Revisión V8 experimental: cabecera con cuantiles de distancia, columnas LOD y origen del color de pantalla, y reglas de almacenamiento por bloque ([ADR 0058](adr/0058-formato-v8-experimental.md)). | vivo |
+| [V8.2-pre](reference/format/FORMAT_V8_PRE2.md) | Revisión V8 experimental: v8.1-pre más zstd opcional en `.octattrs` (`--attr-codec`), experimento de D3 ([ADR 0058](adr/0058-formato-v8-experimental.md)). | vivo |
 
 ## Planes y specs
 
@@ -33,6 +35,11 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 | [Temporales del conversor](plans/temporales-del-conversor.md) | Bajar el disco temporal del CLI de 11 × a ≤ 2 × el LAZ (RQ-06) sin cambiar la salida: spools comprimidos (LZ4 por planos) y escritura por subárbol; fase B fusionada (#108, 3,5 ×), falta la A. | en curso |
+| [Temporales, fase A](plans/temporales-del-conversor-fase-a.md) | Plan de implementación de la escritura por subárbol: codificador sin jerarquía, escritor en flujo, sumidero de bloques y un hijo de la raíz cada vez. | en pausa (#109) |
+| [Formato V8](plans/formato-v8.md) | Diseño de la V8 (aprobado): color de pantalla sin duplicar, LOD solo con atributos de dibujo, distancia mínima entre puntos en la cabecera, solo LZ4 tras medir zstd ([ADR 0060](adr/0060-v8-solo-lz4.md)) y retirada de V5, v6 y v7. | pendiente |
+| [Formato V8, v8.1-pre](plans/formato-v8-pre1.md) | Plan de implementación de la primera revisión experimental: identidad, cuantiles de distancia, LOD con columnas de dibujo, color de pantalla derivado y lectura en el visor; ejecutado y medido. | medido |
+| [Formato V8, v8.2-pre](plans/formato-v8-pre2.md) | Experimento de D3: zstd en columnas de `.octattrs` con cuatro esquemas fijos (`lz4`, `cold`, `cold-rgb`, `all`) medidos en tamaño, conversión, carga y render; resultado: solo LZ4 (ADR 0060). | medido |
+| [Formato V8 congelado (D4)](plans/formato-v8-congelado.md) | Identidad final V8 sobre v8.1-pre y retirada de v5, v6, v7, las revisiones previas, zstd, EPT y checkpoints. | aprobado |
 
 ## Explicación
 
@@ -122,6 +129,9 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [R3: cierre del plan del rango por nodo](records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md) | `lo` y cota por datos solo con octantes a la vista (#87) y retirada de `Window`; el tramo único como fuente de la emisión se aparcó (28 tests en rojo, reglas que faltaban; PR #88) y el arreglo de «un solo tramo» se revirtió porque hacía dibujar demasiado fino (19-11-2026). | fechado |
 | [R3, fase 2c: transiciones de nivel en modo celda](records/benchmarks/R3_FASE2C_TRANSICIONES_19-11-2026.md) | Puertas del ADR 0053 en el gemelo: espacial, 0 pares visibles con más de un nivel en Belvedere y 48–855 por simulación en el octree sintético; temporal, 280 saltos dentro del nodo en una órbita real y 62–1338 en el sintético (OQ-17). | fechado |
 | [Temporales del CLI, fase B](records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md) | Spools comprimidos (planos de bytes + LZ4): pico aparente de temporales ÷ 3,2 (Albuera, 11,1 × → 3,5 × el LAZ), ÷ 5,1 (Majadas) y ÷ 4,3 (Belvedere), salida idéntica, +7–24 % de tiempo. | fechado |
+| [Formato v8.1-pre frente a v7](records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md) | Mismo binario, tres nubes: salida −40,6 % (Albuera, V2 cumplido), −40,5 % (Majadas) y −34,8 % (Belvedere), conversión −3 % / −5 % / +4 %, cuantiles de distancia y carga en el navegador de Belvedere (mediana 798 ms frente a 918 ms, 4 ejecuciones). | fechado |
+| [Formato v8.2-pre: esquemas de compresión de `.octattrs`](records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md) | Cuatro esquemas zstd frente a LZ4: salida −3,08 / −5,69 / −9,45 % en Albuera, conversión ≤ ~3 % más lenta, diferencia de carga `lz4`/`all` en el navegador no medible (80 ejecuciones). | fechado |
+| [Tamaño de la salida v7](records/benchmarks/TAMANO_SALIDA_V7_20-11-2026.md) | De dónde salen los bytes de la salida: Albuera guarda 1,97 N puntos (LOD) y el color dos veces (RGB de pantalla derivable, 19 %); candidatos para una V8. | fechado |
 | [R3 fase 2a: selección por celda en la GPU](records/benchmarks/R3_FASE2A_LOD_POR_CELDA_16-11-2026.md) | Puerta de partición (0 huecos/0 dobles), defectos del modo `cell` corregidos, contadores por profundidad en bench nativo y probe de navegador `octant`/`cell` en Belvedere y comparación en navegador: bandas sin corte en `cell` (16-11-2026). | cerrado |
 | [R3 fase 1: niveles a demanda](records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md) | Cierre de la fase 1 (#35): escenario de pares cercanos, puerta de engrosamientos, navegador con `fs_e430` y los fallos anteriores arreglados (dos de R3-Q21). | vigente |
 | [R3-T4: alternativas al error proyectado](records/benchmarks/R3_T4_METRIC_05-11-2026.md) | Métrica ajustada y nivel por octante frente a la cota; `octant_tight` casi iguala a la CPU salvo 2,27× a 1 px. | fechado |

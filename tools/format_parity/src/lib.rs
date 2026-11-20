@@ -1,7 +1,8 @@
 //! Encoding digest used to compare `viewer_format` output across targets.
 //!
 //! The same deterministic input is encoded for every writable format version and the resulting
-//! primary/attributes pair is hashed. Native and `wasm32-unknown-unknown` builds must agree.
+//! primary/attributes pair is hashed, after the zstd-encoded raw columns of its blocks (codec level,
+//! independent of format version). Native and `wasm32-unknown-unknown` builds must agree.
 
 use std::io::Cursor;
 
@@ -10,8 +11,8 @@ use viewer_core::{
     CoordinateFrame, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 use viewer_format::{
-    FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions, OctreeWriter,
-    SourcePointBlock,
+    EntropyCoder, FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions, OctreeWriter,
+    SourcePointBlock, compress_block_with,
 };
 
 const SEED: u64 = 0x5eed;
@@ -201,8 +202,51 @@ fn fnv1a(hash: &mut u64, bytes: &[u8]) {
     }
 }
 
-fn digest_versions(mut encode_version: impl FnMut(FormatVersion) -> (Vec<u8>, Vec<u8>)) -> u64 {
+/// Little-endian bytes of one attribute column, as the writer sees them.
+fn values_bytes(values: &AttributeValues) -> Vec<u8> {
+    match values {
+        AttributeValues::U8(values) => values.clone(),
+        AttributeValues::U16(values) => values.iter().flat_map(|v| v.to_le_bytes()).collect(),
+        AttributeValues::F32(values) => values.iter().flat_map(|v| v.to_le_bytes()).collect(),
+        AttributeValues::F64(values) => values.iter().flat_map(|v| v.to_le_bytes()).collect(),
+        other => panic!("unsupported attribute type {:?}", other.data_type()),
+    }
+}
+
+/// Zstd-encodes the raw columns of every block at the codec level, whatever the format version,
+/// so the digest covers the zstd bytes (level, frame parameters, library build) on each target.
+fn fnv1a_zstd_payloads(hash: &mut u64, blocks: &[SourcePointBlock]) {
+    for block in blocks {
+        let positions = block
+            .positions_local()
+            .iter()
+            .flatten()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+        let colors = block
+            .colors()
+            .iter()
+            .flat_map(|color| [color.r, color.g, color.b])
+            .collect::<Vec<_>>();
+        let columns = block
+            .attributes()
+            .iter()
+            .map(|column| values_bytes(column.values()));
+        for raw in [positions, colors].into_iter().chain(columns) {
+            let encoded = compress_block_with(&raw, EntropyCoder::Zstd).expect("zstd encode");
+            fnv1a(hash, &[encoded.codec() as u8]);
+            fnv1a(hash, &(encoded.bytes().len() as u64).to_le_bytes());
+            fnv1a(hash, encoded.bytes());
+        }
+    }
+}
+
+fn digest_versions(
+    blocks: &[SourcePointBlock],
+    mut encode_version: impl FnMut(FormatVersion) -> (Vec<u8>, Vec<u8>),
+) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325;
+    fnv1a_zstd_payloads(&mut hash, blocks);
     // v7.4-pre needs a global-frame fixture of its own; it is not covered by this digest yet.
     for version in FormatVersion::WRITABLE
         .into_iter()
@@ -218,9 +262,14 @@ fn digest_versions(mut encode_version: impl FnMut(FormatVersion) -> (Vec<u8>, Ve
     hash
 }
 
-/// FNV-1a 64 over `version || len || bytes` of both files, in `WRITABLE` order.
+/// FNV-1a 64 over the zstd-encoded columns of every block, then `version || len || bytes` of both
+/// files per writable version, in `WRITABLE` order.
 pub fn parity_digest() -> u64 {
-    digest_versions(encode)
+    let mut rng = Lcg(SEED);
+    let blocks = (0..BLOCKS)
+        .map(|index| block(index, &mut rng))
+        .collect::<Vec<_>>();
+    digest_versions(&blocks, encode)
 }
 
 /// Same digest as [`parity_digest`] for blocks produced by [`serialize_blocks`]. The metadata is
@@ -251,7 +300,7 @@ pub fn parity_digest_of_blocks(serialized: &[u8]) -> u64 {
         .map(viewer_format::SourcePointBlock::id)
         .collect::<Vec<_>>();
     let metadata = metadata_for([0.0; 3], bounds, ids, total, schema);
-    digest_versions(|version| {
+    digest_versions(&blocks, |version| {
         encode_with(version, metadata.clone(), deserialize_blocks(serialized))
     })
 }

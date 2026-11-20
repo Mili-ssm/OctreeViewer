@@ -113,6 +113,11 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend().has_attributes()
     }
 
+    /// Whether `id` stores schema column `index`; see `IndexedReader::attribute_present`.
+    pub fn attribute_present(&self, id: BlockId, index: u32) -> Result<bool, FormatError> {
+        self.backend().attribute_present(id, index)
+    }
+
     /// Builds a selective range and payload-buffer plan without payload I/O.
     /// Metadata, transport caches and allocator/control overhead are outside its estimate.
     pub fn plan_read(
@@ -166,6 +171,11 @@ impl<R: Read + Seek> FormatReader<R> {
         reservation: crate::ReadReservation,
     ) -> Result<crate::BudgetedRead, FormatError> {
         self.backend_mut().read_reserved(id, selection, reservation)
+    }
+
+    /// Nearest-neighbour distance quantiles (`v8.N-pre`); `None` for older formats.
+    pub fn point_distance_quantiles(&self) -> Option<crate::PointDistanceQuantiles> {
+        self.backend().point_distance_quantiles()
     }
 
     /// Per-cloud reference spacing (RF-05): stored in `v7.5-pre`, computed from all leaves in the
@@ -304,6 +314,10 @@ impl<R: Read + Seek> OctreeReader for FormatReader<R> {
 
     fn has_attributes(&self) -> bool {
         FormatReader::has_attributes(self)
+    }
+
+    fn attribute_present(&self, id: BlockId, index: u32) -> Result<bool, Self::Error> {
+        FormatReader::attribute_present(self, id, index)
     }
 
     fn read_positions(&mut self, id: BlockId) -> Result<PointBatch, Self::Error> {

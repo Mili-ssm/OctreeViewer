@@ -99,6 +99,11 @@ impl PageSource {
         self.lock().core.header().reference_spacing()
     }
 
+    /// Nearest-neighbour distance quantiles, from the index header (`v8.N-pre` only).
+    pub fn point_distance_quantiles(&self) -> Option<crate::PointDistanceQuantiles> {
+        self.lock().core.header().distance_quantiles()
+    }
+
     /// Nodes of the root page whose child pages are not loaded.
     pub fn root_unloaded(&self) -> &[NodeId] {
         &self.root_unloaded

@@ -57,7 +57,11 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0051](0051-granularidad-de-hojas-configurable.md) | La granularidad de las hojas es configurable: puntos máximos, lado mínimo y distancia de fusión (precisa 0044) | Aceptada (pendiente) |
 | [0052](0052-retencion-y-ajuste-al-pool-por-celda.md) | Retención por zona, hijos provisionales con el color del padre y ajuste homogéneo al pool (precisa R3-Q19, R3-Q21 y R3-Q11) | Aceptada (hijos provisionales opcionales, revisión 15-11) |
 | [0053](0053-transiciones-de-un-nivel.md) | Las transiciones de nivel avanzan de un nivel en un nivel, en el espacio y en el tiempo (precisa ADR 0050 y R3-Q21) | Aceptada (cola bajo la separación pendiente de revisión) |
-| [0054](0054-el-objetivo-de-px-es-el-tamano-minimo.md) | El objetivo de px es el tamaño mínimo del vóxel y el mínimo en longitud está activo por defecto (0,1 mm) (cambia RQ-09) | Aceptada |
+| [0054](0054-el-objetivo-de-px-es-el-tamano-minimo.md) | El objetivo de px es el tamaño mínimo del vóxel y el mínimo en longitud está activo por defecto (0,1 mm) (cambia RQ-09) | Sustituida en parte por [0059](0059-minimo-por-defecto-desde-p5.md) (valor por defecto) |
 | [0055](0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) | En modo celda la GPU decide el nivel dibujado y la CPU solo la residencia: conjunto activo contiguo (precisa ADR 0050 y 0053; cambia la lectura de RF-31 y R3-Q21) | Aceptada |
 | [0056](0056-se-retira-el-modo-octante.md) | Se retira el modo octante: el modo celda es el único y el predeterminado; se borra `setCellLod` (sustituye a 0034; precisa 0050 y 0055) | Aceptada |
 | [0057](0057-release-optimiza-velocidad.md) | `release` optimiza velocidad con `opt-level = 3` (sustituye a 0008 en ese punto) | Aceptada |
+| [0058](0058-formato-v8-experimental.md) | Se abre V8 como revisiones previas experimentales (`v8.N-pre`); LOD solo con lo que se dibuja, color no duplicado, solo V8 al final (precisa 0047) | Aceptada |
+| [0059](0059-minimo-por-defecto-desde-p5.md) | El mínimo en longitud por defecto de la demo es el p5 del fichero cuando lo trae; si no, 0,1 mm (sustituye en parte a 0054) | Aceptada |
+| [0060](0060-v8-solo-lz4.md) | La V8 comprime solo con LZ4: sin zstd en `.octattrs` tras medir v8.2-pre (cierra D3 de 0058) | Aceptada |
+| [0061](0061-ept-y-checkpoints-se-retiran-con-la-v8.md) | La entrada EPT y los checkpoints se retiran al congelar la V8 y se aplazan; RF-26 no aplica hasta entonces (precisa 0047) | Aceptada |

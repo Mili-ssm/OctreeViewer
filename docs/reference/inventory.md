@@ -66,13 +66,15 @@ Qué no demuestra lo implementado; consultar antes de afirmar capacidades. Los r
 | `v7.4-pre` (`7/4`) | Optativa; pirámide LOD densa (R4): marco y nodos sobre enteros, espaciado por nodo y CRS ([ADR 0029](../adr/0029-octree-global-por-bits-de-enteros.md)). `OCTVI74P`/`OCTVE74P`. | [V7.4-pre](format/FORMAT_V7_PRE4.md) |
 | `v7.5-pre` (`7/5`) | Optativa; jerarquía paginada (R5, [ADR 0030](../adr/0030-jerarquia-paginada-por-anclas.md)), flags LAS y Extra Bytes (RF-24). `OCTVI75P`/`OCTVE75P`. Índice −54/−55 % frente a v7.4 en Belvedere/Majadas. Ver [Entrada, checkpoints y formato](#entrada-checkpoints-y-formato). | [V7.5-pre](format/FORMAT_V7_PRE5.md) |
 | `v7` (`7/0`) | Final (ADR 0044); disposición de bytes de `v7.5-pre` con magics propios `OCTVIDX7`/`OCTVEND7`. Escribible como pareja `.oct`/`.octattrs`; el escritor usa el orden de filas híbrido. Es el predeterminado del CLI, el wasm y la app web (ADR 0044): fija 64 000 puntos por bloque, rejilla 256 y 2 divisiones y rechaza más de 256 atributos (RF-27); sus restricciones de entrada están en [Entrada, checkpoints y formato](#entrada-checkpoints-y-formato). | [V7](format/FORMAT_V7.md) |
+| `v8.1-pre` (`8/1`) | Optativa y experimental ([ADR 0058](../adr/0058-formato-v8-experimental.md)); disposición de v7 con magics propios `OCTVI81P`/`OCTVE81P`, cuantiles de distancia en la cabecera, LOD sin las columnas que el visor no dibuja y color de pantalla de las hojas derivado al leer; fija el orden de filas híbrido ([medida](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md)). | [V8.1-pre](format/FORMAT_V8_PRE1.md) |
+| `v8.2-pre` (`8/2`) | Optativa y experimental ([ADR 0058](../adr/0058-formato-v8-experimental.md)); v8.1-pre con magics propios `OCTVI82P`/`OCTVE82P` y el códec zstd para `.octattrs`, elegido por clase de columna con `--attr-codec lz4\|cold\|cold-rgb\|all` (por defecto `lz4`: mismos bytes que v8.1-pre salvo la identidad). | [V8.2-pre](format/FORMAT_V8_PRE2.md) |
 | `v6` final / otras revisiones | Identificables por cabecera, sin backend admitido. No se infiere compatibilidad por orden. | [Identidades](../../crates/viewer_format/src/version.rs) |
 | v1–v4 / provisional `OCTVWFRM` | Reconvertir desde fuente; sin migración automática ni lector legacy. | [Preparación/compatibilidad](../records/benchmarks/STORAGE_V6_PREPARATION.md) |
 
 ### Entrada, checkpoints y formato
 
-Los formatos de marco global (`v7.4-pre`, `v7.5-pre`, `v7`) rechazan la entrada EPT; los
-paginados (`v7.5-pre`, `v7`) rechazan además `--checkpoint` y `--resume`. Para EPT o
+Los formatos de marco global (`v7.4-pre`, `v7.5-pre`, `v7`, `v8.1-pre`) rechazan la entrada EPT; los
+paginados (`v7.5-pre`, `v7`, `v8.1-pre`) rechazan además `--checkpoint` y `--resume`. Para EPT o
 checkpoints se usa `--format-version v5`; EPT con checkpoints admite `v7.1-pre`–`v7.3-pre`.
 Código: `las_source.rs` y `ept.rs` de `viewer_convert`; la ayuda del CLI repite la regla.
 

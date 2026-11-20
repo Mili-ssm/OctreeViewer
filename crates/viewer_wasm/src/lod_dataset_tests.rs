@@ -1956,6 +1956,7 @@ mod binding_parity {
             &attribute_schema(),
             selected,
             range,
+            None,
             usize::MAX,
         )
         .unwrap()
@@ -2407,7 +2408,7 @@ mod binding_parity {
     }
 
     #[test]
-    fn async_blocks_are_cached_as_delivered_unless_an_attribute_is_missing() {
+    fn async_blocks_are_cached_as_delivered_and_a_missing_attribute_keeps_the_colours() {
         let (_, blocks) = native_dataset(8);
         let source = &blocks[0];
         let assemble = |selected, budget| {
@@ -2419,6 +2420,7 @@ mod binding_parity {
                 &[],
                 selected,
                 None,
+                None,
                 budget,
             )
         };
@@ -2427,7 +2429,15 @@ mod binding_parity {
             8
         );
         assert!(assemble(None, 1).is_err());
-        assert!(assemble(Some((0, 0)), usize::MAX).is_err());
+        // No column delivered for a selected attribute (a LOD block without it, and without
+        // intensity): the block keeps the colours it has.
+        assert_eq!(
+            assemble(Some((0, 0)), usize::MAX)
+                .unwrap()
+                .points()
+                .points(),
+            source.points().points()
+        );
     }
 }
 
@@ -2562,6 +2572,33 @@ fn the_stored_reference_spacing_does_not_change_as_pages_are_grafted_or_evicted(
     dataset.graft_page(page_below(3, 2, 30, 4.0, 6.0)).unwrap();
     assert_eq!(dataset.page_stats().2, 1, "the first page was evicted");
     assert_eq!(dataset.reference_spacing(), Some(0.25));
+}
+
+/// `cellsInfo().recommendedMinSize` reads this: p5 of the file's distances, `null` when the file has
+/// none or stored zeros ("not measured").
+#[test]
+fn cells_info_reports_recommended_min_size() {
+    let (dataset, _) = native_dataset(400);
+    assert_eq!(dataset.recommended_min_size(), None);
+    for unmeasured in [
+        None,
+        Some(0.0),
+        Some(-1.0),
+        Some(f64::NAN),
+        Some(f64::INFINITY),
+    ] {
+        let (dataset, _) = native_dataset(400);
+        assert_eq!(
+            dataset
+                .with_recommended_min_size(unmeasured)
+                .recommended_min_size(),
+            None
+        );
+    }
+    let dataset = dataset.with_recommended_min_size(Some(0.03));
+    assert_eq!(dataset.recommended_min_size(), Some(0.03));
+    // Informational: it does not constrain the cut.
+    assert_eq!(dataset.min_side(), None);
 }
 
 #[test]
