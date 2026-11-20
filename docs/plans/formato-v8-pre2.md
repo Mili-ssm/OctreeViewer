@@ -85,12 +85,12 @@ fija un esquema y la opción desaparece (D4).
 - Produces: `FormatVersion::V8_PRE2` (`V8Pre(2)`, texto `v8.2-pre`, en `WRITABLE`), `StorageLayout::V8Pre2` con las
   mismas capacidades que `V8Pre1`, más `supports_zstd()` (cierto solo en `V8Pre2`), magics `OCTVI82P` / `OCTVE82P`.
 
-- [ ] **Step 1: failing tests:** `v8_pre2_parses_and_prints`; `v8_pre2_is_writable`;
+- [x] **Step 1: failing tests:** `v8_pre2_parses_and_prints`; `v8_pre2_is_writable`;
   `v8_pre2_has_the_v8_pre1_capabilities_plus_zstd`; `cli_accepts_v8_pre2`.
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar; un fichero `v8.2-pre` sin zstd es v8.1-pre con otra identidad.
-- [ ] **Step 4:** tests del workspace (SHA de v7 y v8.1-pre intactos), clippy nativo y wasm32 → OK.
-- [ ] **Step 5:** commit `feat(format): v8.2-pre identity`.
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar; un fichero `v8.2-pre` sin zstd es v8.1-pre con otra identidad.
+- [x] **Step 4:** tests del workspace (SHA de v7 y v8.1-pre intactos), clippy nativo y wasm32 → OK.
+- [x] **Step 5:** commit `feat(format): v8.2-pre identity`.
 
 ### Task 2: Zstd payload codec
 
