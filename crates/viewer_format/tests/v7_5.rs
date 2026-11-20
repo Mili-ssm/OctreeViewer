@@ -204,8 +204,14 @@ fn dataset_for_fixture(
     )
     .unwrap()
     .with_global_frame(frame)
-    .unwrap();
+    .unwrap()
+    .with_point_distance_quantiles(quantiles());
     (metadata, blocks)
+}
+
+/// A valid triple for the revisions that store distance quantiles; the others ignore it.
+fn quantiles() -> viewer_format::PointDistanceQuantiles {
+    viewer_format::PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap()
 }
 
 /// The `.oct` / `.octattrs` pair.
@@ -1202,4 +1208,123 @@ fn reference_spacing_is_validated_and_checked_against_the_leaves() {
         FormatReader::new(Cursor::new(bytes)),
         Err(FormatError::MalformedIndex(_))
     ));
+}
+
+const V8_PRE1: FormatVersion = FormatVersion::V8_PRE1;
+
+#[test]
+fn distance_quantiles_round_trip() {
+    let tree = random_tree(9, 7, 20);
+    let (primary, attributes) = write_pair(V8_PRE1, &tree, Some(2_000));
+    let expected = Some(quantiles());
+
+    let eager = open_pair(primary.clone(), attributes);
+    assert_eq!(eager.point_distance_quantiles(), expected);
+    assert_eq!(eager.format_metadata().point_distance_quantiles(), expected);
+
+    let mut lazy =
+        FormatReader::open_lazy(Cursor::new(primary.clone()), FormatReaderLimits::default())
+            .unwrap();
+    assert_eq!(lazy.point_distance_quantiles(), expected);
+    let source = std::sync::Arc::clone(lazy.page_source().unwrap());
+    assert_eq!(source.point_distance_quantiles(), expected);
+    let mut pending: Vec<NodeId> = source.root_unloaded().to_vec();
+    while let Some(anchor) = pending.pop() {
+        pending.extend(lazy.read_page(anchor).unwrap().unloaded);
+        assert_eq!(source.point_distance_quantiles(), expected);
+    }
+    assert!(
+        viewer_format::verify_paged(&mut Cursor::new(primary), &FormatReaderLimits::default())
+            .is_ok()
+    );
+
+    // Revisions that do not store them report none.
+    let v7 = open_pair_of(V75, &tree);
+    assert_eq!(v7.point_distance_quantiles(), None);
+}
+
+fn open_pair_of(version: FormatVersion, tree: &[TreeNode]) -> FormatReader<Cursor<Vec<u8>>> {
+    let (primary, attributes) = write_pair(version, tree, Some(2_000));
+    open_pair(primary, attributes)
+}
+
+#[test]
+fn v8_pre1_without_quantiles_is_rejected() {
+    let tree = random_tree(9, 7, 20);
+    let (metadata, blocks) = dataset(&tree);
+    let bare = FormatMetadata::new(
+        metadata.dataset().clone(),
+        None,
+        metadata.sampling_policy().map(str::to_owned),
+        Vec::new(),
+    )
+    .unwrap()
+    .with_global_frame(metadata.global_frame().unwrap().clone())
+    .unwrap();
+    assert_eq!(bare.point_distance_quantiles(), None);
+    // Construction succeeds; `finish` is where the missing quantiles are caught.
+    let mut writer = FormatWriter::new_split_for_version(
+        V8_PRE1,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        bare,
+        FormatWriterOptions::new(0.01, 1 << 24).unwrap(),
+    )
+    .unwrap();
+    for block in blocks {
+        writer.write_block(block).unwrap();
+    }
+    assert!(matches!(
+        writer.finish_pair(),
+        Err(FormatError::InvalidMetadata(_))
+    ));
+}
+
+fn patch_quantiles(bytes: &mut [u8], triple: [f64; 3]) {
+    let footer = bytes.len() - 40;
+    let index = u64::from_le_bytes(bytes[footer + 8..footer + 16].try_into().unwrap()) as usize;
+    let length = u64::from_le_bytes(bytes[footer + 16..footer + 24].try_into().unwrap()) as usize;
+    let reader = PagedReader::open(Cursor::new(bytes.to_vec())).unwrap();
+    let spacing = reader.header().reference_spacing().to_le_bytes();
+    let at = bytes[index..index + length]
+        .windows(8)
+        .position(|window| window == spacing)
+        .unwrap()
+        + index
+        + 8;
+    for (slot, value) in triple.iter().enumerate() {
+        bytes[at + slot * 8..at + slot * 8 + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    repair_index_and_footer(bytes);
+}
+
+#[test]
+fn corrupt_quantiles_are_rejected() {
+    let tree = random_tree(9, 7, 20);
+    let primary = write_pair(V8_PRE1, &tree, Some(2_000)).0;
+    for bad in [
+        [f64::NAN, 0.5, 1.5],
+        [0.25, f64::INFINITY, f64::INFINITY],
+        [-0.25, 0.5, 1.5],
+        [0.5, 0.25, 1.5],
+        [0.25, 1.5, 0.5],
+    ] {
+        let mut bytes = primary.clone();
+        patch_quantiles(&mut bytes, bad);
+        assert!(
+            matches!(
+                PagedReader::open(Cursor::new(bytes.clone())),
+                Err(FormatError::MalformedIndex(_))
+            ),
+            "{bad:?}"
+        );
+        assert!(FormatReader::new(Cursor::new(bytes)).is_err(), "{bad:?}");
+    }
+    // A file cut short anywhere, the header included, is an error and never a panic.
+    for cut in (0..primary.len()).step_by(97) {
+        assert!(
+            PagedReader::open(Cursor::new(primary[..cut].to_vec())).is_err(),
+            "{cut}"
+        );
+    }
 }

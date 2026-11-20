@@ -442,6 +442,15 @@ impl<R: Read + Seek> IndexedReader<R> {
 
     /// Per-cloud reference spacing (RF-05): stored in `v7.5-pre`, otherwise computed from every
     /// leaf of the resident hierarchy (always complete for the other formats).
+    /// Nearest-neighbour distance quantiles stored in the header (`v8.N-pre`); `None` for
+    /// formats that do not store them. Eager and lazy readers report the same values.
+    pub fn point_distance_quantiles(&self) -> Option<crate::PointDistanceQuantiles> {
+        match &self.paged {
+            Some(source) => source.point_distance_quantiles(),
+            None => self.metadata.point_distance_quantiles(),
+        }
+    }
+
     pub fn reference_spacing(&self) -> Option<f64> {
         match (&self.paged, self.stored_reference_spacing) {
             (Some(source), _) => Some(source.reference_spacing()),

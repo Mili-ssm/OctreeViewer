@@ -59,7 +59,9 @@ pub use global_frame::{
 };
 pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
 pub use lazy_pages::{PageGraft, PageRange, PageSource};
-pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePointBlock};
+pub use metadata::{
+    FormatMetadata, MetadataError, NodeAttributeRange, PointDistanceQuantiles, SourcePointBlock,
+};
 pub use page_codec::{
     MAX_PAGE_LEVELS, Page, PageAnchor, PageBlock, PageNode, PagePointer, TARGET_PAGE_BYTES,
     page_node_id, split_node_id,

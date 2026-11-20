@@ -27,7 +27,7 @@ use crate::reader_limits::FormatReaderLimits;
 use crate::slice_cursor::SliceCursor;
 use crate::{
     Crc32, FormatError, FormatMetadata, GlobalFrame, NodeAttributeRange, NodeCell,
-    crc32::checksum_matches,
+    PointDistanceQuantiles, crc32::checksum_matches,
 };
 
 /// How much of the file end a reader fetches first: footer, metadata block and root page.
@@ -53,6 +53,8 @@ pub struct PagedHeader {
     /// Point-weighted median leaf spacing of the whole cloud (RF-05), see
     /// [`viewer_core::reference_spacing`]. Stored because a lazy reader never holds every leaf.
     reference_spacing: f64,
+    /// Present only when the layout stores them (`v8.N-pre`).
+    distance_quantiles: Option<PointDistanceQuantiles>,
     /// Range over every node of the file, per attribute and component; `None` when no node has a
     /// finite value. Stored here because a lazy reader never holds every page.
     attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
@@ -144,6 +146,10 @@ impl PagedHeader {
     /// leaf. Fixed for the file, whichever pages are resident.
     pub fn reference_spacing(&self) -> f64 {
         self.reference_spacing
+    }
+
+    pub fn distance_quantiles(&self) -> Option<PointDistanceQuantiles> {
+        self.distance_quantiles
     }
 
     /// File offset where the block payloads end and the child pages begin.
@@ -301,6 +307,15 @@ fn parse_header_block(
     if !reference_spacing.is_finite() || reference_spacing <= 0.0 {
         return Err(FormatError::MalformedIndex("invalid reference spacing"));
     }
+    let distance_quantiles = if layout.stores_distance_quantiles() {
+        let (p1, p5, p50) = (cursor.f64()?, cursor.f64()?, cursor.f64()?);
+        Some(
+            PointDistanceQuantiles::new(p1, p5, p50)
+                .map_err(|_| FormatError::MalformedIndex("invalid distance quantiles"))?,
+        )
+    } else {
+        None
+    };
     let mut attribute_ranges = Vec::with_capacity(schema.len());
     for attribute in &schema {
         let mut row = Vec::with_capacity(attribute.component_count() as usize);
@@ -370,6 +385,7 @@ fn parse_header_block(
         total_blocks,
         pages_start,
         reference_spacing,
+        distance_quantiles,
         attribute_ranges,
     })
 }
@@ -994,6 +1010,10 @@ pub(crate) fn assemble_with(
     .with_visual_scale(header.visual_scale)?
     .with_las_extra_bytes(header.las_extra_bytes.clone())
     .with_global_frame(frame)?;
+    let metadata = match header.distance_quantiles {
+        Some(quantiles) => metadata.with_point_distance_quantiles(quantiles),
+        None => metadata,
+    };
     validate_metadata(&metadata)?;
     Ok((metadata, blocks, block_bounds))
 }
@@ -1329,6 +1349,19 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
         out.u64(blocks.len() as u64)?;
         out.u64(pages_start)?;
         out.f64(reference_spacing)?;
+        if layout.stores_distance_quantiles() {
+            let quantiles =
+                metadata
+                    .point_distance_quantiles()
+                    .ok_or(FormatError::InvalidMetadata(
+                        "this format revision needs distance quantiles in the metadata",
+                    ))?;
+            // Re-validated so a hand-built struct literal cannot write an unreadable file.
+            PointDistanceQuantiles::new(quantiles.p1, quantiles.p5, quantiles.p50)?;
+            out.f64(quantiles.p1)?;
+            out.f64(quantiles.p5)?;
+            out.f64(quantiles.p50)?;
+        }
         for row in global_attribute_ranges(
             hierarchy.attributes(),
             plan.iter()

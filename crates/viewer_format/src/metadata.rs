@@ -15,6 +15,7 @@ pub struct FormatMetadata {
     node_attribute_ranges: BTreeMap<NodeId, Vec<NodeAttributeRange>>,
     global_frame: Option<GlobalFrame>,
     las_extra_bytes: Vec<LasExtraByte>,
+    point_distance_quantiles: Option<PointDistanceQuantiles>,
 }
 
 impl FormatMetadata {
@@ -38,6 +39,7 @@ impl FormatMetadata {
             node_attribute_ranges: ranges,
             global_frame: None,
             las_extra_bytes: Vec::new(),
+            point_distance_quantiles: None,
         })
     }
 
@@ -157,6 +159,21 @@ impl FormatMetadata {
         Ok(self)
     }
 
+    /// Attaches the nearest-neighbour distance quantiles (`v8.N-pre` only; other versions do not
+    /// store them, and the writer rejects them there).
+    #[must_use]
+    pub const fn with_point_distance_quantiles(
+        mut self,
+        quantiles: PointDistanceQuantiles,
+    ) -> Self {
+        self.point_distance_quantiles = Some(quantiles);
+        self
+    }
+
+    pub const fn point_distance_quantiles(&self) -> Option<PointDistanceQuantiles> {
+        self.point_distance_quantiles
+    }
+
     pub fn node_attribute_ranges(&self, node_id: NodeId) -> &[NodeAttributeRange] {
         self.node_attribute_ranges
             .get(&node_id)
@@ -184,6 +201,29 @@ impl FormatMetadata {
             node_attribute_ranges: ranges,
             global_frame: self.global_frame.clone(),
             las_extra_bytes: self.las_extra_bytes.clone(),
+            point_distance_quantiles: self.point_distance_quantiles,
+        }
+    }
+}
+
+/// Quantiles of the distance from a point to its nearest neighbour, in dataset units, with exact
+/// duplicates (distance 0) left out.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PointDistanceQuantiles {
+    pub p1: f64,
+    pub p5: f64,
+    pub p50: f64,
+}
+
+impl PointDistanceQuantiles {
+    /// Rejects non-finite or negative values and quantiles out of order.
+    pub fn new(p1: f64, p5: f64, p50: f64) -> Result<Self, FormatError> {
+        let valid =
+            [p1, p5, p50].iter().all(|v| v.is_finite() && *v >= 0.0) && p1 <= p5 && p5 <= p50;
+        if valid {
+            Ok(Self { p1, p5, p50 })
+        } else {
+            Err(FormatError::InvalidMetadata("invalid distance quantiles"))
         }
     }
 }

@@ -170,6 +170,11 @@ impl<R: Read + Seek> FormatReader<R> {
 
     /// Per-cloud reference spacing (RF-05): stored in `v7.5-pre`, computed from all leaves in the
     /// other formats.
+    /// Nearest-neighbour distance quantiles (`v8.N-pre`); `None` for older formats.
+    pub fn point_distance_quantiles(&self) -> Option<crate::PointDistanceQuantiles> {
+        self.backend().point_distance_quantiles()
+    }
+
     pub fn reference_spacing(&self) -> Option<f64> {
         self.backend().reference_spacing()
     }
