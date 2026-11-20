@@ -38,8 +38,10 @@ aparcada ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)).
 
 Hoy el color de pantalla de 8 bits es la columna 1 de cada bloque, en `.octattrs` (`prepare.rs:407-414`), y en las
 hojas es `rgb16 >> 8`, o `intensidad >> 8` sin color (`source_points.rs:140-148`); ocupa el 18,8 % de Albuera y el
-27,5 % de Belvedere. En `v8.1-pre` las hojas siguen guardando el color de pantalla (lo usa el render) y de su columna de
-origen (RGB de 16 bits o intensidad) guardan solo el byte bajo; el lector recompone `alto << 8 | bajo`. En los LOD el
+27,5 % de Belvedere. En `v8.1-pre` las hojas no guardan el color de pantalla: la cabecera dice de qué columna sale
+(RGB de 16 bits, intensidad o ninguna) y el lector lo deriva con `>> 8` al leer; el escritor comprueba en cada hoja que
+el color coincide con esa derivación (cambio tras el pre-mortem, [plan](formato-v8-pre1.md); antes se proponía partir
+la columna de origen por bytes, que ahorraba menos). En los LOD el
 color de pantalla es la media de los 8 bits de la celda y no se deriva de nada (`sample.rs:79-83`, `:150-157`): ahí
 basta con no guardar el RGB de 16 bits (D2).
 
@@ -76,8 +78,8 @@ salida), pero en el navegador (`ruzstd`, Rust puro, wasm) descomprime a ~250 MB/
 Idea del propietario a probar: un esquema **fijo por fichero**, no un códec elegido por bloque: `.oct` (lo que el render
 necesita) con LZ4 y `.octattrs` (atributos de carga diferida) con zstd.
 
-Consecuencia para el color: con el byte bajo de la columna de origen en `.octattrs`, una variante a probar es mover el
-color de pantalla (el byte alto) a `.oct`, para que el render no dependa del códec de `.octattrs`.
+Consecuencia para el color: con el color de las hojas derivado de su columna de origen en `.octattrs`, el render de
+las hojas depende del códec de `.octattrs`; una variante a probar es guardar en `.oct` el byte alto del origen.
 
 #### Medida de zstd (20-11-2026)
 
