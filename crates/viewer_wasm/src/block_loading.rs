@@ -563,5 +563,15 @@ mod tests {
             "index failed"
         );
         assert!(load_cell_block(&mut reader, id, None).is_err());
+        // Also on the selected-attribute and paint lookups.
+        let mut reader = MemoryReader::new();
+        reader.present_error = true;
+        assert_eq!(
+            load_render_block(&mut reader, id, None, Some((2, 1)), None).unwrap_err(),
+            "index failed"
+        );
+        let mut reader = MemoryReader::new();
+        reader.present_error = true;
+        assert!(load_cell_block(&mut reader, id, Some(((2, 1), None))).is_err());
     }
 }
