@@ -1,6 +1,6 @@
 # Formato V8: salida más pequeña y distancia mínima entre puntos
 
-Estado: pendiente · 20-11-2026 · diseño en curso: falta la medida de zstd y el visto bueno del propietario
+Estado: aprobado · 20-11-2026 · diseño aprobado por el propietario; primera revisión en [v8.1-pre](formato-v8-pre1.md)
 
 **Objetivo:** reducir el disco que ocupa la salida del conversor, que tras la fase B de temporales es lo que marca
 el disco necesario para convertir (Albuera: 15,75 GB = 3,7 × el LAZ), y guardar en el fichero una estimación de la
@@ -34,11 +34,14 @@ aparcada ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)).
 
 ## Diseño
 
-### Color de pantalla derivado (decisión técnica, sin pérdida)
+### Color de pantalla sin duplicar (decisión técnica, sin pérdida)
 
-Hoy el RGB de pantalla de 8 bits se guarda aparte aunque es `rgb16 >> 8`, o `intensidad >> 8` sin color
-(`source_points.rs:140-148`); ocupa el 18,8 % de Albuera y el 27,5 % de Belvedere. En V8 no se guarda en los bloques
-de hoja: el lector lo deriva al decodificar el bloque, con la misma regla, antes de subirlo a la GPU.
+Hoy el color de pantalla de 8 bits es la columna 1 de cada bloque, en `.octattrs` (`prepare.rs:407-414`), y en las
+hojas es `rgb16 >> 8`, o `intensidad >> 8` sin color (`source_points.rs:140-148`); ocupa el 18,8 % de Albuera y el
+27,5 % de Belvedere. En `v8.1-pre` las hojas siguen guardando el color de pantalla (lo usa el render) y de su columna de
+origen (RGB de 16 bits o intensidad) guardan solo el byte bajo; el lector recompone `alto << 8 | bajo`. En los LOD el
+color de pantalla es la media de los 8 bits de la celda y no se deriva de nada (`sample.rs:79-83`, `:150-157`): ahí
+basta con no guardar el RGB de 16 bits (D2).
 
 ### Puntos LOD con atributos de dibujo (D2)
 
@@ -73,9 +76,8 @@ salida), pero en el navegador (`ruzstd`, Rust puro, wasm) descomprime a ~250 MB/
 Idea del propietario a probar: un esquema **fijo por fichero**, no un códec elegido por bloque: `.oct` (lo que el render
 necesita) con LZ4 y `.octattrs` (atributos de carga diferida) con zstd.
 
-Consecuencia para el color: si el color de pantalla se deriva del RGB de 16 bits, ese RGB pasa a ser necesario para
-dibujar. Variante a probar: partir el RGB de 16 bits por planos de bytes, sin pérdida: el byte alto (que es el color de
-pantalla) en `.oct` con LZ4 y el byte bajo en `.octattrs`. El color se guarda una sola vez y el render no depende de zstd.
+Consecuencia para el color: con el byte bajo de la columna de origen en `.octattrs`, una variante a probar es mover el
+color de pantalla (el byte alto) a `.oct`, para que el render no dependa del códec de `.octattrs`.
 
 #### Medida de zstd (20-11-2026)
 
