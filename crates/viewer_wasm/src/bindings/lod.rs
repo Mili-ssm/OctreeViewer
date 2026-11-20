@@ -160,7 +160,7 @@ pub(super) fn open_paged(
     .with_crs(crs)
     .with_crs_unit(crs_unit)
     .with_global_frame(format.format_version().uses_global_frame())
-    .with_recommended_min_size(format.point_distance_quantiles().map(|q| q.p5));
+    .with_point_distance_quantiles(format.point_distance_quantiles());
     let dataset = with_page_source(dataset, &source)?;
     let context = AsyncFormatContext {
         has_attributes: format.has_attributes(),
@@ -277,7 +277,7 @@ pub(super) fn open_format(
     .with_crs(crs)
     .with_crs_unit(crs_unit)
     .with_global_frame(reader.format_version().uses_global_frame())
-    .with_recommended_min_size(reader.point_distance_quantiles().map(|q| q.p5));
+    .with_point_distance_quantiles(reader.point_distance_quantiles());
     let page_source = reader.page_source().cloned();
     let dataset = match &page_source {
         Some(source) => with_page_source(dataset, source)?,

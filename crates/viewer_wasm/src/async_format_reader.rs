@@ -963,34 +963,16 @@ fn format_error(error: impl std::fmt::Display) -> JsValue {
 }
 
 impl WasmAsyncFormatReader {
-    /// The column a block is painted with when `requested` is the selected attribute. A block that
-    /// omits it (`v8.1-pre` LOD blocks keep only the columns the viewer draws) is painted with
-    /// intensity, whose global range `insertAsyncLodBlock` then applies; with no intensity either
-    /// the block keeps its display colours (`None`). Intensity and classification are never
-    /// replaced: they are mode columns, not generic attributes. A failing lookup is an error.
+    /// The column a block is painted with when `requested` is the selected attribute (see
+    /// `substitute_column`, which `assemble_async_block` shares).
     fn painted_column(&self, id: BlockId, requested: u32) -> Result<Option<u32>, JsValue> {
         let reader = &self.shared.reader;
-        if reader
-            .attribute_present(id, requested)
-            .map_err(format_error)?
-        {
-            return Ok(Some(requested));
-        }
-        let schema = reader.metadata().hierarchy().attributes();
-        let is_mode_column = schema
-            .get(requested as usize)
-            .is_some_and(|d| matches!(d.name(), "intensity" | "classification"));
-        let Some(intensity) = crate::block_loading::intensity_index(schema) else {
-            return Ok(None);
-        };
-        if is_mode_column
-            || !reader
-                .attribute_present(id, intensity)
-                .map_err(format_error)?
-        {
-            return Ok(None);
-        }
-        Ok(Some(intensity))
+        crate::lod_driver::substitute_column(
+            requested,
+            reader.metadata().hierarchy().attributes(),
+            |index| reader.attribute_present(id, index),
+        )
+        .map_err(format_error)
     }
 
     /// The metadata-only reader behind this facade (root page only when the format is paged).

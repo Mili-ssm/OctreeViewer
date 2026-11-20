@@ -6,7 +6,8 @@ use viewer_core::{
 };
 use viewer_format::{
     CrsRecord, FormatMetadata, FormatReader, FormatReaderLimits, FormatVersion, FormatWriter,
-    FormatWriterOptions, GlobalFrame, NodeCell, OctreeReader, PagedReader, SourcePointBlock,
+    FormatWriterOptions, GlobalFrame, NodeCell, OctreeReader, PagedReader, PointDistanceQuantiles,
+    SourcePointBlock,
 };
 use viewer_render_wgpu::PackedNode;
 use viewer_render_wgpu::{
@@ -1088,8 +1089,8 @@ fn a_node_without_finite_points_is_resident_but_never_drawn() {
     assert_eq!((last.cut_nodes, last.uncovered_nodes), (7, 0));
 }
 
-#[test]
-fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
+/// Metadata and blocks of a four-node tree (root, two children, a grandchild), one block per node.
+fn paged_tree_fixture() -> (FormatMetadata, Vec<SourcePointBlock>) {
     // A paged v7.5 file with a root, two children and a grandchild, one page per node.
     let root_level = 40;
     let root_prefix = [(1_u64 << 39) + 3, (1 << 39) + 4, (1 << 39) + 5];
@@ -1170,6 +1171,12 @@ fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
     .unwrap()
     .with_global_frame(frame)
     .unwrap();
+    (metadata, blocks)
+}
+
+#[test]
+fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
+    let (metadata, blocks) = paged_tree_fixture();
     let options = FormatWriterOptions::new(0.01, 1 << 24)
         .unwrap()
         .with_page_target_bytes(1);
@@ -1262,6 +1269,46 @@ fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
 
 /// Counts the blocks owned by more than one node in the v7.5 files of `target/render-data`
 /// (`cargo test -p viewer_wasm --offline -- --ignored multi_owner --nocapture`).
+/// `cellsInfo().recommendedMinSize` comes from the file header: p5 of a v8.1-pre file's
+/// distance quantiles, `None` when they are all zero ("not measured"). The bindings build the
+/// dataset with the same `with_point_distance_quantiles` call.
+#[test]
+fn the_dataset_takes_its_recommended_min_size_from_the_file_header() {
+    let open = |quantiles| {
+        let (metadata, blocks) = paged_tree_fixture();
+        let metadata = metadata
+            .with_point_distance_quantiles(quantiles)
+            .with_lod_attribute_columns(Vec::new())
+            .with_display_colour_source(viewer_format::DisplayColourSource::None);
+        let mut writer = FormatWriter::new_split_for_version(
+            FormatVersion::V8_PRE1,
+            Cursor::new(Vec::new()),
+            Cursor::new(Vec::new()),
+            metadata,
+            FormatWriterOptions::new(0.01, 1 << 24).unwrap(),
+        )
+        .unwrap();
+        for block in blocks {
+            writer.write_block(block).unwrap();
+        }
+        let (primary, _attributes) = writer.finish_pair().unwrap();
+        let reader = FormatReader::open_lazy(
+            Cursor::new(primary.into_inner()),
+            FormatReaderLimits::default(),
+        )
+        .unwrap();
+        LodDataset::from_shared_metadata(
+            reader.format_metadata().viewer_dataset().unwrap(),
+            1 << 20,
+        )
+        .with_point_distance_quantiles(reader.point_distance_quantiles())
+    };
+    let measured = PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap();
+    assert_eq!(open(measured).recommended_min_size(), Some(0.5));
+    let unmeasured = PointDistanceQuantiles::new(0.0, 0.0, 0.0).unwrap();
+    assert_eq!(open(unmeasured).recommended_min_size(), None);
+}
+
 #[test]
 #[ignore = "needs the datasets of target/render-data"]
 fn multi_owner_blocks_in_the_v7_datasets() {

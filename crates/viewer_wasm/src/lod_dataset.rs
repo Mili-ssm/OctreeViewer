@@ -584,6 +584,16 @@ impl LodDataset {
         self
     }
 
+    /// Records the recommended smallest cell side from a file's distance quantiles: their p5.
+    #[cfg(any(target_arch = "wasm32", test))]
+    #[must_use]
+    pub fn with_point_distance_quantiles(
+        self,
+        quantiles: Option<viewer_format::PointDistanceQuantiles>,
+    ) -> Self {
+        self.with_recommended_min_size(quantiles.map(|q| q.p5))
+    }
+
     /// The smallest cell side the file recommends, if it was measured. Informational: nothing
     /// applies it unless the host calls [`LodDataset::set_min_side`].
     pub fn recommended_min_size(&self) -> Option<f64> {
