@@ -21,25 +21,22 @@ fn paint_selected_attribute<E: std::fmt::Display>(
     (index, component): (u32, u32),
     range: Option<[f64; 2]>,
 ) -> Result<PointBatch, String> {
-    let (index, component, range) = if reader
-        .attribute_present(id, index)
-        .map_err(|e| e.to_string())?
-    {
+    // The same rule as the async path (`substitute_column`), so both paint a block alike.
+    let schema = reader.metadata().hierarchy().attributes().to_vec();
+    let Some(painted) = crate::lod_driver::substitute_column(index, &schema, |column| {
+        reader.attribute_present(id, column)
+    })
+    .map_err(|e| e.to_string())?
+    else {
+        return Ok(geometry);
+    };
+    let (index, component, range) = if painted == index {
         (index, component, range)
     } else {
-        let Some(intensity) = intensity_index(reader.metadata().hierarchy().attributes()) else {
-            return Ok(geometry);
-        };
-        if !reader
-            .attribute_present(id, intensity)
-            .map_err(|e| e.to_string())?
-        {
-            return Ok(geometry);
-        }
         let range = reader
-            .attribute_range(intensity, 0)
+            .attribute_range(painted, 0)
             .map_err(|e| e.to_string())?;
-        (intensity, 0, range)
+        (painted, 0, range)
     };
     let column = reader
         .read_attribute(id, index)
@@ -679,6 +676,17 @@ mod tests {
         .unwrap();
         assert_eq!(reader.calls, ["xyz"]);
         assert!(block.attributes().is_empty());
+        assert_eq!(
+            block.points().points()[0].color,
+            ColorRgb::new(160, 160, 160)
+        );
+        // An absent mode column (classification) is not replaced by intensity, as on the async
+        // path (`substitute_column`): the block keeps its own colours and reads no column.
+        let mut reader = MemoryReader::new();
+        reader.absent = vec![1];
+        let block =
+            load_render_block(&mut reader, id, None, Some((1, 0)), Some([0.0, 10.0])).unwrap();
+        assert_eq!(reader.calls, ["xyz"]);
         assert_eq!(
             block.points().points()[0].color,
             ColorRgb::new(160, 160, 160)

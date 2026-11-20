@@ -1267,8 +1267,6 @@ fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
     assert_eq!(check(&dataset), has_children.len());
 }
 
-/// Counts the blocks owned by more than one node in the v7.5 files of `target/render-data`
-/// (`cargo test -p viewer_wasm --offline -- --ignored multi_owner --nocapture`).
 /// `cellsInfo().recommendedMinSize` comes from the file header: p5 of a v8.1-pre file's
 /// distance quantiles, `None` when they are all zero ("not measured"). The bindings build the
 /// dataset with the same `with_point_distance_quantiles` call.
@@ -1309,6 +1307,8 @@ fn the_dataset_takes_its_recommended_min_size_from_the_file_header() {
     assert_eq!(open(unmeasured).recommended_min_size(), None);
 }
 
+/// Counts the blocks owned by more than one node in the v7.5 files of `target/render-data`
+/// (`cargo test -p viewer_wasm --offline -- --ignored multi_owner --nocapture`).
 #[test]
 #[ignore = "needs the datasets of target/render-data"]
 fn multi_owner_blocks_in_the_v7_datasets() {
