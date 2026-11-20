@@ -32,10 +32,12 @@ pub(crate) fn validate_checkpoint_record(
         if matches!(
             payload.codec,
             crate::BlockCodec::Zstd | crate::BlockCodec::BytePlanesZstd
-        ) && !layout.supports_zstd()
+        ) && (!layout.supports_zstd()
+            || index == 0
+            || payload.stored_length >= payload.raw_length)
         {
             return Err(FormatError::MalformedIndex(
-                "writer checkpoint zstd codec not valid in this revision",
+                "writer checkpoint zstd codec not valid in this revision or payload",
             ));
         }
         payload

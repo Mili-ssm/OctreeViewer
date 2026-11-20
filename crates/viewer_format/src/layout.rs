@@ -35,7 +35,7 @@ pub(crate) enum StorageLayout {
     V7,
     /// Experimental v8.1-pre: the v7 byte layout plus the v8 header fields and per-block column rules.
     V8Pre1,
-    /// Experimental v8.2-pre: v8.1-pre bytes under its own identity; later tasks add the zstd codec.
+    /// Experimental v8.2-pre: v8.1-pre plus the zstd entropy stage for `.octattrs` payloads.
     V8Pre2,
 }
 
@@ -215,7 +215,7 @@ impl StorageLayout {
         StoredColumn::Present
     }
 
-    /// Whether the zstd payload codec may be written (v8.2-pre onward; unused until its codec lands).
+    /// Whether the zstd payload codec may be written (v8.2-pre onward, `.octattrs` payloads only: never geometry, index or checkpoint records).
     pub(crate) const fn supports_zstd(self) -> bool {
         matches!(self, Self::V8Pre2)
     }

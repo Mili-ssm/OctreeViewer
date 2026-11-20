@@ -46,7 +46,7 @@ impl FormatVersion {
     /// First experimental v8 revision: the v7 layout plus the v8 header fields and column rules.
     pub const V8_PRE1: Self = Self::V8Pre(NonZeroU32::new(1).expect("nonzero revision"));
 
-    /// Second experimental v8 revision: v8.1-pre bytes under its own identity, ahead of the zstd codec.
+    /// Second experimental v8 revision: v8.1-pre plus the zstd entropy stage for `.octattrs` payloads (geometry, index and checkpoint records never use zstd).
     pub const V8_PRE2: Self = Self::V8Pre(NonZeroU32::new(2).expect("nonzero revision"));
 
     /// Revision written when the caller does not choose one.
