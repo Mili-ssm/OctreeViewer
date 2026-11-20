@@ -1,6 +1,6 @@
 # Formato V8: salida más pequeña y distancia mínima entre puntos
 
-Estado: aprobado · 20-11-2026 · diseño aprobado por el propietario; primera revisión [v8.1-pre](formato-v8-pre1.md) implementada y medida ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md): −34,8 % a −40,6 % de salida frente a v7); experimento de D3 [v8.2-pre](formato-v8-pre2.md) medido ([registro](../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)), pendiente de la decisión del propietario
+Estado: aprobado · 20-11-2026 · diseño aprobado por el propietario; primera revisión [v8.1-pre](formato-v8-pre1.md) implementada y medida ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md): −34,8 % a −40,6 % de salida frente a v7); experimento de D3 [v8.2-pre](formato-v8-pre2.md) medido ([registro](../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); D3 resuelta: solo LZ4 ([ADR 0060](../adr/0060-v8-solo-lz4.md))
 
 **Objetivo:** reducir el disco que ocupa la salida del conversor, que tras la fase B de temporales es lo que marca
 el disco necesario para convertir (Albuera: 15,75 GB = 3,7 × el LAZ), y guardar en el fichero una estimación de la
@@ -28,6 +28,7 @@ aparcada ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)).
 | --- | --- |
 | D3 | Sigue abierta como experimento: `v8.2-pre` mide cuatro esquemas fijos — LZ4 en todo (v8.1-pre, la base), todo `.octattrs` con zstd, zstd solo en las columnas frías (las que el render no lee: tiempo GPS, ángulo, retornos, id de fuente, datos de usuario, extra bytes) y frías más el RGB de 16 bits — en tamaño, tiempo de conversión, tiempo de carga y rendimiento de render en el navegador. «Quizá sea mejor quedarse solo con LZ4». |
 | D4 | La V8 se congela (y se retiran v5, v6 y v7) después de medir `v8.2-pre`, con el esquema que salga de D3. |
+| D3 (21-11-2026) | Tras medir `v8.2-pre`: **solo LZ4**; la V8 no lleva zstd ([ADR 0060](../adr/0060-v8-solo-lz4.md)). |
 | D5 | La demo usa el p5 del fichero como mínimo en longitud por defecto cuando lo trae; si no, 0,1 mm ([ADR 0059](../adr/0059-minimo-por-defecto-desde-p5.md)). |
 
 ## Requisitos

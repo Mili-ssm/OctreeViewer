@@ -6,7 +6,8 @@ en el [ADR 0058](../../adr/0058-formato-v8-experimental.md); plan en [formato-v8
 
 Es lo mismo que [v8.1-pre](FORMAT_V8_PRE1.md) más el códec zstd para los payloads de `.octattrs`. Con
 `--attr-codec lz4` (por defecto) un fichero `v8.2-pre` es byte a byte uno `v8.1-pre` salvo la identidad. Es
-experimental y **no está congelada** (ADR 0058, D6): puede cambiar sin compatibilidad. Medida de los cuatro esquemas:
+experimental y **no está congelada** (ADR 0058, D6): puede cambiar sin compatibilidad. Tras medirla, la V8 se queda solo con LZ4
+([ADR 0060](../../adr/0060-v8-solo-lz4.md)), así que esta revisión no pasa a la V8 congelada. Medida de los cuatro esquemas:
 [registro del 20-11-2026](../../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md).
 
 ## Identidad

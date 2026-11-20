@@ -63,3 +63,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0057](0057-release-optimiza-velocidad.md) | `release` optimiza velocidad con `opt-level = 3` (sustituye a 0008 en ese punto) | Aceptada |
 | [0058](0058-formato-v8-experimental.md) | Se abre V8 como revisiones previas experimentales (`v8.N-pre`); LOD solo con lo que se dibuja, color no duplicado, solo V8 al final (precisa 0047) | Aceptada |
 | [0059](0059-minimo-por-defecto-desde-p5.md) | El mínimo en longitud por defecto de la demo es el p5 del fichero cuando lo trae; si no, 0,1 mm (sustituye en parte a 0054) | Aceptada |
+| [0060](0060-v8-solo-lz4.md) | La V8 comprime solo con LZ4: sin zstd en `.octattrs` tras medir v8.2-pre (cierra D3 de 0058) | Aceptada |

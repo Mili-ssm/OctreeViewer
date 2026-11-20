@@ -1,6 +1,6 @@
 # Formato V8, revisión v8.2-pre: zstd en columnas de `.octattrs` (plan de implementación)
 
-Estado: medido · 20-11-2026 · experimento de D3; el propietario aprobó el plan («hagamos la prueba, pero creo que al final nos quedaremos con LZ4»); tareas 0–4 hechas ([registro](../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); falta la decisión del propietario sobre D3
+Estado: medido · 20-11-2026 · experimento de D3; el propietario aprobó el plan («hagamos la prueba, pero creo que al final nos quedaremos con LZ4»); tareas 0–4 hechas ([registro](../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); D3 resuelta el 21-11-2026: solo LZ4 ([ADR 0060](../adr/0060-v8-solo-lz4.md))
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
