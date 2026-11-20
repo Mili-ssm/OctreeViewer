@@ -130,16 +130,16 @@ fija un esquema y la opción desaparece (D4).
   escritor y del conversor (`--attr-codec`, por defecto `lz4`); solo válida con `supports_zstd()` (en otra versión,
   `lz4` o error); en `tools/convert_parity`, casos `v8.2-pre` con los cuatro esquemas, uno con varios hilos.
 
-- [ ] **Step 1: failing tests:** `scheme_assigns_coders_by_column_class` (las cuatro listas, extra bytes incluidos);
+- [x] **Step 1: failing tests:** `scheme_assigns_coders_by_column_class` (las cuatro listas, extra bytes incluidos);
   `cold_without_cold_columns_matches_lz4` (Review Focus 4); `every_scheme_reads_back_the_same_values` (los cuatro
   ficheros dan los mismos valores por bloque, también el color de pantalla de las hojas con `rgb` en zstd: Review
   Focus 2 y 5); `attr_codec_is_rejected_on_other_versions`; `cli_converts_and_verifies_each_scheme`.
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar.
-- [ ] **Step 4:** `FUZZ_CHECK=0 scripts/check.sh --offline` con `FORMAT_PARITY_REAL_INPUT` → todo OK, con los casos
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar.
+- [x] **Step 4:** `FUZZ_CHECK=0 scripts/check.sh --offline` con `FORMAT_PARITY_REAL_INPUT` → todo OK, con los casos
   nuevos de paridad web/CLI; además, paridad nativo/wasm de bloques reales de **Albuera** con `cold` y `all`
   (Belvedere tiene constantes todas las columnas salvo el RGB y no ejercita zstd).
-- [ ] **Step 5:** commit `feat(convert): --attr-codec scheme for v8.2-pre`.
+- [x] **Step 5:** commit `feat(convert): --attr-codec scheme for v8.2-pre`.
 
 ### Task 4: Measure the four schemes and record them
 
