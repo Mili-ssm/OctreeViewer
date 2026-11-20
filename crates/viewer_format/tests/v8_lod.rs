@@ -10,8 +10,9 @@ use viewer_core::{
     CoordinateFrame, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode,
 };
 use viewer_format::{
-    CrsRecord, FormatError, FormatMetadata, FormatReader, FormatReaderLimits, FormatVersion,
-    FormatWriter, FormatWriterOptions, GlobalFrame, NodeCell, PagedReader, SourcePointBlock,
+    BlockPayloadKind, CrsRecord, FormatError, FormatMetadata, FormatReader, FormatReaderLimits,
+    FormatVersion, FormatWriter, FormatWriterOptions, GlobalFrame, NodeAttributeRange, NodeCell,
+    PagedReader, SourcePointBlock,
 };
 
 const V8_PRE1: FormatVersion = FormatVersion::V8_PRE1;
@@ -209,7 +210,71 @@ fn an_empty_lod_set_keeps_only_geometry_and_display_colour() {
 fn lod_blocks_shrink_the_file() {
     let all = write_with(Some(vec![0, 1, 2])).unwrap();
     let some = write_with(Some(vec![0])).unwrap();
-    assert!(some.1.len() < all.1.len());
+    let stats_all = payload_stats(&all);
+    let stats_some = payload_stats(&some);
+    // The only difference is the omitted columns (1 and 2) of the LOD block (0).
+    let omitted: u64 = stats_all
+        .iter()
+        .filter(|(id, kind, _)| {
+            *id == BlockId::new(0)
+                && matches!(kind, BlockPayloadKind::Attribute { schema_index, .. } if *schema_index != 0)
+        })
+        .map(|(_, _, stored)| stored)
+        .sum();
+    assert!(omitted > 0);
+    assert_eq!(all.1.len() - some.1.len(), omitted as usize);
+    // Leaf blocks keep byte-identical payload entries and attribute values.
+    for leaf in [BlockId::new(1), BlockId::new(2)] {
+        let of = |stats: &[(BlockId, BlockPayloadKind, u64)]| {
+            stats
+                .iter()
+                .filter(|(id, _, _)| *id == leaf)
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(of(&stats_all), of(&stats_some));
+    }
+}
+
+fn payload_stats(file: &(Vec<u8>, Vec<u8>)) -> Vec<(BlockId, BlockPayloadKind, u64)> {
+    open(file.0.clone(), file.1.clone())
+        .block_payload_storage_stats()
+        .unwrap()
+        .into_iter()
+        .map(|stat| (stat.id, stat.kind, stat.stored_bytes))
+        .collect()
+}
+
+#[test]
+fn lod_blocks_carry_no_range_for_omitted_columns() {
+    let all = open_pair(write_with(Some(vec![0, 1, 2])).unwrap());
+    let some = open_pair(write_with(Some(vec![0, 2])).unwrap());
+    let columns_of = |reader: &FormatReader<Cursor<Vec<u8>>>, node: u64| -> Vec<u32> {
+        reader
+            .format_metadata()
+            .node_attribute_ranges(NodeId::new(node))
+            .iter()
+            .map(NodeAttributeRange::schema_index)
+            .collect()
+    };
+    // Column 1 (scan_angle) is omitted on the LOD node 0 and present on its leaves.
+    assert_eq!(columns_of(&all, 0), [0, 1, 2]);
+    assert_eq!(columns_of(&some, 0), [0, 2]);
+    for leaf in [1, 2] {
+        assert_eq!(columns_of(&some, leaf), [0, 1, 2]);
+    }
+    // Leaves cover the LOD values, so the file-wide ranges do not change.
+    for column in 0..3 {
+        assert_eq!(
+            some.attribute_range(column, 0).unwrap(),
+            all.attribute_range(column, 0).unwrap(),
+            "column {column}"
+        );
+    }
+}
+
+fn open_pair(file: (Vec<u8>, Vec<u8>)) -> FormatReader<Cursor<Vec<u8>>> {
+    open(file.0, file.1)
 }
 
 #[test]

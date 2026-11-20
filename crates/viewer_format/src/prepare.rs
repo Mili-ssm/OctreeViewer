@@ -89,6 +89,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
     let ranges = attributes
         .iter()
         .enumerate()
+        .filter(|(index, _)| column_rule(index + 2).is_present())
         .filter_map(|(index, column)| crate::ranges::column_range(index as u32, column))
         .collect();
     let uncompressed_size = block_payload_size(point_count, schema, |column| {
