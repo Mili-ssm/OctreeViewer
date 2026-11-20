@@ -1,6 +1,6 @@
 # Temporales del conversor, fase B: spools comprimidos (plan de implementación)
 
-Estado: pendiente · 19-11-2026 · a la espera de la revisión del propietario
+Estado: completado · 20-11-2026 · tareas 1–5 hechas en `feat/temporales-fase-b`; medida en el [registro](../records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md); la fusión espera al propietario
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -62,18 +62,18 @@ para la medida.
   `peak_work_bytes=<n> wall_s=<s> max_rss_kb=<n> sha_oct=<hex> sha_octattrs=<hex>` y deja la serie de muestras en
   `OUTPUT_DIR/samples.tsv` (`elapsed_s<TAB>work_bytes`). Borra `.oct`/`.octattrs` tras calcular los SHA.
 
-- [ ] **Step 1:** escribir el script: lanza el conversor con `/usr/bin/time -v`, muestrea `du -sb` de
+- [x] **Step 1:** escribir el script: lanza el conversor con `/usr/bin/time -v`, muestrea `du -sb` de
   `OUTPUT_DIR/*.work` cada 1 s mientras el proceso vive (el bucle acaba con el proceso; sin esperas sin límite),
   y falla con código ≠ 0 si el conversor falla.
-- [ ] **Step 2:** ejecutar `bash -n scripts/measure_temp_disk.sh` y `shellcheck` si está instalado. Esperado: sin
+- [x] **Step 2:** ejecutar `bash -n scripts/measure_temp_disk.sh` y `shellcheck` si está instalado. Esperado: sin
   errores.
-- [ ] **Step 3:** línea base con el binario de `dc98e5a` (`target/release/viewer_convert` del checkout principal,
+- [x] **Step 3:** línea base con el binario de `dc98e5a` (`target/release/viewer_convert` del checkout principal,
   recompilado desde `dc98e5a` si falta) sobre Belvedere
   (`data/datasets/belv_2009_digital-aerial_pcd_copc.laz`) y Albuera
   (`data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz`), salida en
   `target/temp-disk-baseline/`. Anotar las dos líneas en «Línea base» de este plan. Esperado en Albuera: pico
   ≈ 47,9 GB y ≈ 9 min 30 s (medido el 19-11-2026).
-- [ ] **Step 4:** commit: `git add scripts/measure_temp_disk.sh docs/plans/temporales-del-conversor-fase-b.md`,
+- [x] **Step 4:** commit: `git add scripts/measure_temp_disk.sh docs/plans/temporales-del-conversor-fase-b.md`,
   `git commit -m "tools: temp-disk measurement script and CLI baseline (RQ-06)"`.
 
 ### Task 2: The spool store learns the record size
@@ -92,16 +92,16 @@ para la medida.
   LOD con `layout.lod().record_bytes()`; `SOURCE` con el tamaño de registro de la fuente.
   `FileEntry` gana `record_bytes: usize`.
 
-- [ ] **Step 1: failing test** en `file_spool_store.rs` `mod tests`:
+- [x] **Step 1: failing test** en `file_spool_store.rs` `mod tests`:
   `create_rejects_a_zero_record_size` — `store.create(SpoolId(3), 0)` devuelve error cuyo texto contiene
   `"record size"`.
-- [ ] **Step 2:** `cargo test -p viewer_convert --offline file_spool_store` → FAIL (no compila: `create` recibe un
+- [x] **Step 2:** `cargo test -p viewer_convert --offline file_spool_store` → FAIL (no compila: `create` recibe un
   argumento).
-- [ ] **Step 3:** cambiar el trait y todas las implementaciones y llamadas; `FileSpoolStore::create` rechaza `0`
+- [x] **Step 3:** cambiar el trait y todas las implementaciones y llamadas; `FileSpoolStore::create` rechaza `0`
   con `lifecycle_error(id, "create", "record size must be positive")`; los demás almacenes ignoran el valor.
-- [ ] **Step 4:** `cargo test --workspace --offline` y
+- [x] **Step 4:** `cargo test --workspace --offline` y
   `cargo clippy --workspace --all-targets --offline -- -D warnings` → PASS.
-- [ ] **Step 5:** commit `git commit -am "refactor(convert): spool stores receive the record size at create"`.
+- [x] **Step 5:** commit `git commit -am "refactor(convert): spool stores receive the record size at create"`.
 
 ### Task 3: Byte-plane LZ4 frame codec
 
@@ -124,7 +124,7 @@ para la medida.
   transponer ni comprimir). Carga comprimida: `lz4_flex::block::compress` de los planos (byte *k* de cada registro
   seguidos, *k* = 0..record_bytes). Si la carga comprimida no es más corta que `records.len()`, se guarda en crudo.
 
-- [ ] **Step 1: failing tests**:
+- [x] **Step 1: failing tests**:
   - `frames_round_trip_for_spool_and_lod_records` — para `record_bytes` 42 y 54, registros pseudoaleatorios
     estructurados (coordenadas crecientes, atributos repetidos) de 1, 780 y 8192 registros: `decode(encode(x)) == x`
     y la trama comprimida es más corta que `x`.
@@ -132,10 +132,10 @@ para la medida.
     `out.len() == FRAME_HEADER_BYTES + records.len()`.
   - `corrupt_payload_is_invalid_data` — truncar la carga de una trama comprimida: `decode_frame` devuelve
     `ErrorKind::InvalidData`, sin pánico.
-- [ ] **Step 2:** `cargo test -p viewer_convert --offline spool_frame` → FAIL (módulo inexistente).
-- [ ] **Step 3:** implementar el módulo.
-- [ ] **Step 4:** `cargo test -p viewer_convert --offline spool_frame` → PASS; clippy como en la tarea 2.
-- [ ] **Step 5:** commit `git commit -m "feat(convert): byte-plane LZ4 frames for spool records"`.
+- [x] **Step 2:** `cargo test -p viewer_convert --offline spool_frame` → FAIL (módulo inexistente).
+- [x] **Step 3:** implementar el módulo.
+- [x] **Step 4:** `cargo test -p viewer_convert --offline spool_frame` → PASS; clippy como en la tarea 2.
+- [x] **Step 5:** commit `git commit -m "feat(convert): byte-plane LZ4 frames for spool records"`.
 
 ### Task 4: FileSpoolStore writes and reads framed spools
 
@@ -157,7 +157,7 @@ para la medida.
   completa en `append`; `reader` busca la última entrada ≤ offset, salta ahí y recorre cabeceras hasta la trama que
   contiene el offset.
 
-- [ ] **Step 1: failing tests** (en `mod tests`):
+- [x] **Step 1: failing tests** (en `mod tests`):
   - `framed_spool_round_trips_unaligned_appends` — `record_bytes = 42`, 20 000 registros añadidos en trozos de
     65 536 bytes: leer `(0, len)` devuelve los mismos bytes; `len()` es lógico.
   - `framed_reads_honour_offsets_inside_and_across_frames` — offsets 0, 42 × 100, 42 × 8191, 42 × 8192 + 42 × 5 y
@@ -175,8 +175,8 @@ para la medida.
     bytes originales.
   - Ajustar `file_store_matches_the_lifecycle_and_native_names` si comprobaba tamaños de fichero en crudo, sin
     debilitar el resto de aserciones.
-- [ ] **Step 2:** `cargo test -p viewer_convert --offline file_spool_store` → FAIL.
-- [ ] **Step 3:** implementar. `append`: antepone `carry`, parte en tramas de ≤ `MAX_FRAME_RECORDS` registros
+- [x] **Step 2:** `cargo test -p viewer_convert --offline file_spool_store` → FAIL.
+- [x] **Step 3:** implementar. `append`: antepone `carry`, parte en tramas de ≤ `MAX_FRAME_RECORDS` registros
   completos, guarda el resto en `carry`, abre el fichero en modo añadir como hoy y escribe todas las tramas en una
   llamada; `close` escribe `carry` como trama en crudo si no está vacío. El ledger suma y resta bytes físicos en
   campos nuevos (`physical_written`, `physical_peak_live`) sin tocar los lógicos. **Concurrencia:** bajo el mutex
@@ -184,9 +184,9 @@ para la medida.
   vuelve a bloquear para actualizar `physical_len`, índice y `carry` (el ciclo de vida garantiza un único escritor
   por spool). `delete` libera `carry` e índice (`mem::take`). Para reutilizar memoria, `lz4_flex::block::compress_into`
   con búferes reutilizados en lugar de asignar por trama.
-- [ ] **Step 4:** `cargo test --workspace --offline` → PASS (incluye las conversiones de
+- [x] **Step 4:** `cargo test --workspace --offline` → PASS (incluye las conversiones de
   `lib_tests.rs`).
-- [ ] **Step 5:** commit `git commit -m "feat(convert): native spools are stored as compressed frames (RQ-06)"`.
+- [x] **Step 5:** commit `git commit -m "feat(convert): native spools are stored as compressed frames (RQ-06)"`.
 
 ### Task 5: Measure phase B and record it
 
@@ -196,25 +196,25 @@ para la medida.
   (`Estado:` y casillas), `docs/estado.md` («Prioridades pendientes»), `docs/README.md` (índices de planes y
   registros), `docs/requirements.md` (fila de OQ-04 si cambia su texto)
 
-- [ ] **Step 1:** `FUZZ_CHECK=0 scripts/check.sh --offline` (en segundo plano) → todos los pasos en verde, incluida la
+- [x] **Step 1:** `FUZZ_CHECK=0 scripts/check.sh --offline` (en segundo plano) → todos los pasos en verde, incluida la
   paridad de bloques reales de Belvedere.
-- [ ] **Step 2:** `scripts/measure_temp_disk.sh` con el binario nuevo (`cargo build -p viewer_convert --release
+- [x] **Step 2:** `scripts/measure_temp_disk.sh` con el binario nuevo (`cargo build -p viewer_convert --release
   --offline`) en Belvedere, Albuera y Majadas
   (`data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz`). Esperado: SHA de
   Belvedere y Albuera iguales a la línea base (T1); pico aparente de Albuera ≈ 14–15 GB (≈ 3,4 × LAZ: hojas ÷ 3,3,
   LOD ÷ ~3,1, medido en spools vivos de Albuera el 19-11-2026); anotar tiempo, RSS y `peak_fs_used_delta_bytes`
   (T3, T4). Tiempos por fase con `--diagnostics` si el CLI lo admite, o desde las marcas de fase del log: partición de
   la raíz y unión de segmentos, planificación, bloques; planificación con `--spatial-workers 1` y por defecto.
-- [ ] **Step 3:** parar y llevar las cifras al propietario si: la pérdida de tiempo en Albuera supera +25 % (T3); el
+- [x] **Step 3:** parar y llevar las cifras al propietario si: la pérdida de tiempo en Albuera supera +25 % (T3); el
   RSS supera la línea base + 100 MB; el uso real en btrfs (`peak_fs_used_delta_bytes`) baja menos de 1,5 ×. Si algún
   SHA difiere de la línea base, parar y buscar el fallo en el lector (offset, `carry`) antes de medir nada más. Si la
   unión de segmentos añade > 5 % del tiempo total o > 30 s, añadir una tarea 4b (unir copiando tramas sin
   recomprimir) antes de cerrar B.
-- [ ] **Step 4:** escribir el registro fechado (línea base, fase B, equipo, perfil `release`, opciones por defecto, línea de
+- [x] **Step 4:** escribir el registro fechado (línea base, fase B, equipo, perfil `release`, opciones por defecto, línea de
   comando exacta) con los `samples.tsv` de cada medida copiados a `docs/records/benchmarks/data/temporales-cli-<dd-mm-aaaa>/`, y
   actualizar los documentos listados; `python3 scripts/check_docs_links.py` y `python3 scripts/check_docs_index.py`
   → OK.
-- [ ] **Step 5:** commit `git commit -m "docs: measure compressed spools against the CLI baseline (RQ-06)"`.
+- [x] **Step 5:** commit `git commit -m "docs: measure compressed spools against the CLI baseline (RQ-06)"`.
 
 ## Línea base
 

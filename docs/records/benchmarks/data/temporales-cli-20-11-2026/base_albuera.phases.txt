@@ -1,0 +1,10 @@
+0	InspectingInput
+0	PlanningMetadata
+0	PlanningSpatialIndex
+87	BuildingSpatialHierarchy
+424	ReadingAndWritingBlocks
+532	ValidatingOutput
+561	PublishingOutput
+561	Complete
+572	fs=btrfs rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/home
+572	peak_work_bytes=47945156154 peak_fs_used_delta_bytes=21997551616 wall_s=562.0 max_rss_kb=242816 sha_oct=5c15df5e9043003d53fc9e59f741e8420913cdd0088dbd39955f995e44fc8bb6 sha_octattrs=b76636f41c6f59abbfda4fc1c324d9ccfaee72f3073815bb733ca0c6d9b61076
