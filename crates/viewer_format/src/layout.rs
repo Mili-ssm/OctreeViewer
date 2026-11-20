@@ -168,6 +168,20 @@ impl StorageLayout {
         matches!(self, Self::V8Pre1)
     }
 
+    /// The one rule for which payload columns a block stores. `column` is the payload index
+    /// (0 geometry, 1 display colour, then the schema); `block_is_lod` is true for the blocks of
+    /// nodes with children. Writers, codecs, readers and verification all ask this and never
+    /// assume that every column is stored.
+    pub(crate) const fn stored_column(
+        self,
+        block_is_lod: bool,
+        column: usize,
+        rules: ColumnRules,
+    ) -> StoredColumn {
+        let _ = (self, block_is_lod, column, rules);
+        StoredColumn::Present
+    }
+
     pub(crate) const fn supports_occupancy(self) -> bool {
         matches!(
             self,
@@ -228,6 +242,31 @@ impl StorageLayout {
     }
 }
 
+/// Per-file inputs of [`StorageLayout::stored_column`]; later revisions carry the header's LOD column list.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ColumnRules;
+
+/// How a block holds one payload column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "later revisions construct the variants")
+)]
+pub(crate) enum StoredColumn {
+    /// The column has a payload in the file.
+    Present,
+    /// No payload and nothing to derive it from.
+    Absent,
+    /// No payload; readers rebuild the column from the column at index `from`.
+    Derived { from: usize },
+}
+
+impl StoredColumn {
+    pub(crate) const fn is_present(self) -> bool {
+        matches!(self, Self::Present)
+    }
+}
+
 /// One independently compressed payload. Offsets are relative to the primary block, or absolute in a split companion.
 #[derive(Debug, Clone)]
 pub(crate) struct PayloadDirectoryEntry {
@@ -236,21 +275,49 @@ pub(crate) struct PayloadDirectoryEntry {
     pub raw_length: u64,
     pub codec: BlockCodec,
     pub checksum: u32,
+    /// Absent and derived columns keep their slot (so indices stay `schema.len() + 2`) with zero
+    /// lengths and the offset the next stored column would have.
+    pub stored: StoredColumn,
 }
 
+impl PayloadDirectoryEntry {
+    pub(crate) const fn not_stored(stored: StoredColumn, offset: u64) -> Self {
+        Self {
+            offset,
+            stored_length: 0,
+            raw_length: 0,
+            codec: BlockCodec::None,
+            checksum: 0,
+            stored,
+        }
+    }
+}
+
+/// Decoded size of the columns a block stores; `stored(column)` says whether payload `column` is.
 pub(crate) fn block_payload_size(
     point_count: usize,
     schema: &[viewer_core::AttributeDescriptor],
+    stored: impl Fn(usize) -> bool,
 ) -> Result<u64, FormatError> {
     let point_count = u64::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
-    let base = point_count
-        .checked_mul(15)
-        .ok_or(FormatError::BlockSizeOverflow)?;
-    schema.iter().try_fold(base, |size, descriptor| {
-        let attribute_size = attribute_payload_size(point_count, descriptor)?;
-        size.checked_add(attribute_size)
-            .ok_or(FormatError::BlockSizeOverflow)
-    })
+    let base = [(0, 12_u64), (1, 3)]
+        .into_iter()
+        .filter(|(column, _)| stored(*column))
+        .try_fold(0_u64, |size, (_, width)| {
+            point_count
+                .checked_mul(width)
+                .and_then(|bytes| size.checked_add(bytes))
+                .ok_or(FormatError::BlockSizeOverflow)
+        })?;
+    schema
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| stored(index + 2))
+        .try_fold(base, |size, (_, descriptor)| {
+            let attribute_size = attribute_payload_size(point_count, descriptor)?;
+            size.checked_add(attribute_size)
+                .ok_or(FormatError::BlockSizeOverflow)
+        })
 }
 
 pub(crate) fn attribute_payload_size(
@@ -278,4 +345,42 @@ pub(crate) fn attribute_tuple_width(
 ) -> Result<usize, FormatError> {
     let width = primitive_width(descriptor.data_type()) * u64::from(descriptor.component_count());
     usize::try_from(width).map_err(|_| FormatError::SizeOutOfRange(width))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stored_column_is_present_for_v7() {
+        for version in crate::FormatVersion::WRITABLE {
+            let layout = StorageLayout::from_version(version).unwrap();
+            for block_is_lod in [false, true] {
+                for column in 0..12 {
+                    assert_eq!(
+                        layout.stored_column(block_is_lod, column, ColumnRules),
+                        StoredColumn::Present,
+                        "{version} lod={block_is_lod} column={column}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn block_payload_size_counts_only_the_stored_columns() {
+        let schema = [
+            viewer_core::AttributeDescriptor::new("a", AttributeDataType::U16, 1).unwrap(),
+            viewer_core::AttributeDescriptor::new("b", AttributeDataType::F32, 2).unwrap(),
+        ];
+        assert_eq!(
+            block_payload_size(10, &schema, |_| true).unwrap(),
+            150 + 20 + 80
+        );
+        assert_eq!(
+            block_payload_size(10, &schema, |c| c != 2).unwrap(),
+            150 + 80
+        );
+        assert_eq!(block_payload_size(10, &schema, |c| c < 2).unwrap(), 150);
+    }
 }

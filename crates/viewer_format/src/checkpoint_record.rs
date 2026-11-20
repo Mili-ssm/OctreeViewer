@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use viewer_core::{AttributeDataType, AttributeValues, BlockId, SpatialBounds};
 
-use crate::layout::{PayloadDirectoryEntry, attribute_payload_size};
+use crate::layout::{PayloadDirectoryEntry, StoredColumn, attribute_payload_size};
 use crate::prepare::{BlockRecord, encode_values};
 use crate::{FormatError, crc32, crc32::checksum_matches};
 
@@ -102,6 +102,12 @@ pub(crate) fn encode_checkpoint_record(
     }
     put_count(&mut out, record.payloads.len())?;
     for payload in &record.payloads {
+        // Resumable layouts store every column; a record cannot say one is missing.
+        if !payload.stored.is_present() {
+            return Err(FormatError::InvalidMetadata(
+                "checkpoint records store every column",
+            ));
+        }
         for value in [payload.offset, payload.stored_length, payload.raw_length] {
             out.extend_from_slice(&value.to_le_bytes());
         }
@@ -210,6 +216,7 @@ pub(crate) fn decode_checkpoint_record(
             raw_length: input.u64()?,
             codec: crate::BlockCodec::try_from(input.u8()?)?,
             checksum: input.u32()?,
+            stored: StoredColumn::Present,
         });
     }
     if payload_count != schema.len() + 2 {

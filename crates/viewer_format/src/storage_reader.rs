@@ -113,6 +113,11 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend().has_attributes()
     }
 
+    /// Whether `id` stores schema column `index`; see [`IndexedReader::attribute_present`].
+    pub fn attribute_present(&self, id: BlockId, index: u32) -> bool {
+        self.backend().attribute_present(id, index)
+    }
+
     /// Builds a selective range and payload-buffer plan without payload I/O.
     /// Metadata, transport caches and allocator/control overhead are outside its estimate.
     pub fn plan_read(
@@ -309,6 +314,10 @@ impl<R: Read + Seek> OctreeReader for FormatReader<R> {
 
     fn has_attributes(&self) -> bool {
         FormatReader::has_attributes(self)
+    }
+
+    fn attribute_present(&self, id: BlockId, index: u32) -> bool {
+        FormatReader::attribute_present(self, id, index)
     }
 
     fn read_positions(&mut self, id: BlockId) -> Result<PointBatch, Self::Error> {

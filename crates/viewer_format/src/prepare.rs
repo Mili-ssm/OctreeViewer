@@ -6,7 +6,8 @@ use viewer_core::{
 
 use crate::geometry::{GeometryEncoding, encode_delta, encode_delta_iter};
 use crate::layout::{
-    PayloadDirectoryEntry, StorageLayout, attribute_payload_size, block_payload_size,
+    ColumnRules, PayloadDirectoryEntry, StorageLayout, StoredColumn, attribute_payload_size,
+    block_payload_size,
 };
 use crate::{
     FormatError, FormatMetadata, FormatVersion, SourcePointBlock, compress_block, crc32,
@@ -22,23 +23,40 @@ pub fn prepare_point_block(
     prepare_point_block_for_version(FormatVersion::V5, block, metadata, options)
 }
 
+/// Whether `block` belongs to a node with children, found by scanning the hierarchy. Callers that
+/// prepare many blocks build [`lod_block_ids`] once instead.
+fn block_is_lod_by_scan(
+    version: FormatVersion,
+    block: BlockId,
+    metadata: &FormatMetadata,
+) -> Result<bool, FormatError> {
+    // Only layouts that omit LOD columns need the answer; the others never look at it.
+    if !StorageLayout::from_version(version)?.omits_lod_attributes() {
+        return Ok(false);
+    }
+    Ok(lod_block_ids(metadata.dataset().hierarchy())?.contains(&block))
+}
+
 pub(crate) fn prepare_point_block_for_version(
     version: FormatVersion,
     block: SourcePointBlock,
     metadata: &FormatMetadata,
     options: FormatWriterOptions,
 ) -> Result<PreparedPointBlock, FormatError> {
-    prepare_point_block_for_version_impl(version, block, metadata, options, false)
+    let block_is_lod = block_is_lod_by_scan(version, block.id(), metadata)?;
+    prepare_point_block_for_version_impl(version, block, metadata, options, block_is_lod, false)
         .map(|(block, _)| block)
 }
 
+#[cfg(test)]
 pub(crate) fn prepare_point_block_for_version_with_diagnostics(
     version: FormatVersion,
     block: SourcePointBlock,
     metadata: &FormatMetadata,
     options: FormatWriterOptions,
 ) -> Result<(PreparedPointBlock, crate::GeometryCodecDiagnostics), FormatError> {
-    prepare_point_block_for_version_impl(version, block, metadata, options, true)
+    let block_is_lod = block_is_lod_by_scan(version, block.id(), metadata)?;
+    prepare_point_block_for_version_impl(version, block, metadata, options, block_is_lod, true)
         .map(|(block, diagnostics)| (block, diagnostics.expect("diagnostics enabled")))
 }
 
@@ -51,9 +69,12 @@ pub(crate) fn prepare_point_block_for_version_impl(
     block: SourcePointBlock,
     metadata: &FormatMetadata,
     options: FormatWriterOptions,
+    block_is_lod: bool,
     collect_codec_diagnostics: bool,
 ) -> Result<(PreparedPointBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
     let layout = StorageLayout::from_version(version)?;
+    let rules = ColumnRules;
+    let column_rule = |column: usize| layout.stored_column(block_is_lod, column, rules);
     let row_order = options.resolved_row_order(version)?;
     let point_count = block.positions_local().len();
     if block.colors().len() != point_count {
@@ -69,7 +90,9 @@ pub(crate) fn prepare_point_block_for_version_impl(
         .enumerate()
         .filter_map(|(index, column)| crate::ranges::column_range(index as u32, column))
         .collect();
-    let uncompressed_size = block_payload_size(point_count, schema)?;
+    let uncompressed_size = block_payload_size(point_count, schema, |column| {
+        column_rule(column).is_present()
+    })?;
     if uncompressed_size > options.max_uncompressed_block_bytes {
         return Err(FormatError::BlockExceedsLimit {
             requested: uncompressed_size,
@@ -411,8 +434,16 @@ pub(crate) fn prepare_point_block_for_version_impl(
         permute_rows(&raw, permutation, 3, &mut scratch);
         std::mem::swap(&mut raw, &mut scratch);
     }
-    append_payload(&raw, &mut bytes, &mut payloads, layout, 3)?;
-    for column in attributes {
+    append_stored_payload(column_rule(1), &raw, &mut bytes, &mut payloads, layout, 3)?;
+    for (schema_index, column) in attributes.into_iter().enumerate() {
+        let stored = column_rule(schema_index + 2);
+        if !stored.is_present() {
+            payloads.push(PayloadDirectoryEntry::not_stored(
+                stored,
+                bytes.len() as u64,
+            ));
+            continue;
+        }
         let length = attribute_payload_size(point_count as u64, column.descriptor())?;
         let length = usize::try_from(length).map_err(|_| FormatError::SizeOutOfRange(length))?;
         raw.clear();
@@ -648,6 +679,26 @@ pub(crate) fn build_block_nodes(
     Ok(block_nodes)
 }
 
+/// Ids of the blocks of nodes with children, the blocks whose columns a revision may omit.
+/// Built once per writer or encoder; `finish` checks it against the written `has_children`.
+pub(crate) fn lod_block_ids(
+    hierarchy: &SpatialHierarchy,
+) -> Result<BTreeSet<BlockId>, FormatError> {
+    let root = hierarchy
+        .node(hierarchy.root_id())
+        .ok_or(FormatError::InvalidMetadata("root node is missing"))?;
+    let nodes = hierarchy.query(root.bounds()).collect::<Vec<_>>();
+    let parents = nodes
+        .iter()
+        .filter_map(|node| node.parent())
+        .collect::<BTreeSet<_>>();
+    Ok(nodes
+        .iter()
+        .filter(|node| parents.contains(&node.id()))
+        .flat_map(|node| node.blocks().iter().copied())
+        .collect())
+}
+
 pub(crate) fn order_attributes<'a>(
     attributes: &'a [viewer_core::AttributeColumn],
     schema: &[viewer_core::AttributeDescriptor],
@@ -718,6 +769,27 @@ pub(crate) fn encode_geometry(
     Ok(bytes)
 }
 
+/// Appends a column according to the storage rule: a stored column is compressed, any other keeps
+/// only its slot in the directory.
+fn append_stored_payload(
+    stored: StoredColumn,
+    raw: &[u8],
+    bytes: &mut Vec<u8>,
+    payloads: &mut Vec<PayloadDirectoryEntry>,
+    layout: StorageLayout,
+    width: usize,
+) -> Result<(), FormatError> {
+    if stored.is_present() {
+        append_payload(raw, bytes, payloads, layout, width)
+    } else {
+        payloads.push(PayloadDirectoryEntry::not_stored(
+            stored,
+            bytes.len() as u64,
+        ));
+        Ok(())
+    }
+}
+
 /// Compresses one independent payload without retaining a combined raw block.
 pub(crate) fn append_payload(
     raw: &[u8],
@@ -757,6 +829,7 @@ pub(crate) fn append_encoded_payload(
         raw_length: raw_length as u64,
         codec: encoded.codec(),
         checksum: crc32(encoded.bytes()),
+        stored: StoredColumn::Present,
     });
     bytes.extend_from_slice(encoded.bytes());
     Ok(())

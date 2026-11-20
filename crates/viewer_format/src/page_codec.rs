@@ -5,7 +5,7 @@ use viewer_core::{AttributeDescriptor, BlockId, NodeId};
 
 use crate::global_frame::{BLOCK_SIDE_EXPONENT, CellBox, GlobalFrame, power_of_two_exponent};
 use crate::index_codec::{IndexWriter, validate_column_codec};
-use crate::layout::{HEADER_SIZE, PayloadDirectoryEntry, StorageLayout};
+use crate::layout::{ColumnRules, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout, StoredColumn};
 use crate::reader::read_attribute_values;
 use crate::reader_limits::FormatReaderLimits;
 use crate::slice_cursor::SliceCursor;
@@ -515,7 +515,14 @@ pub(crate) fn decode_page(
         let mut block_points = 0_u64;
         let mut block_error = 0.0_f64;
         for _ in 0..block_count {
-            let block = decode_block(&mut cursor, ctx, node_box, level, next_block_id)?;
+            let block = decode_block(
+                &mut cursor,
+                ctx,
+                node_box,
+                level,
+                next_block_id,
+                has_children,
+            )?;
             next_block_id = next_block_id
                 .checked_add(1)
                 .ok_or(FormatError::MalformedIndex("page block ids overflow"))?;
@@ -652,8 +659,10 @@ fn decode_block(
     node_box: CellBox,
     level: u32,
     id: u64,
+    block_is_lod: bool,
 ) -> Result<PageBlock, FormatError> {
     let layout = ctx.layout;
+    let column_rule = |column: usize| layout.stored_column(block_is_lod, column, ColumnRules);
     let offset = cursor.u64()?;
     let attribute_offset = cursor.u64()?;
     let point_count = cursor.u64()?;
@@ -684,6 +693,7 @@ fn decode_block(
     let logical = crate::layout::block_payload_size(
         usize::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?,
         ctx.schema,
+        |column| column_rule(column).is_present(),
     )?;
     if logical > ctx.limits.max_block_bytes {
         return Err(FormatError::BlockExceedsLimit {
@@ -705,6 +715,19 @@ fn decode_block(
     // `.octattrs` from `attribute_offset`, so `expected_offset` is the running sum of their lengths.
     let mut expected_offset = 0_u64;
     for payload_index in 0..ctx.schema.len() + 2 {
+        let stored = column_rule(payload_index);
+        if stored != StoredColumn::Present {
+            // No directory record: the slot keeps the offset the next stored column would have.
+            let offset = if payload_index == 0 {
+                0
+            } else {
+                attribute_offset
+                    .checked_add(expected_offset)
+                    .ok_or(FormatError::FileSizeOverflow)?
+            };
+            payloads.push(PayloadDirectoryEntry::not_stored(stored, offset));
+            continue;
+        }
         let codec = BlockCodec::try_from(cursor.u8()?)?;
         let checksum = cursor.u32()?;
         let stored_length = cursor.u64()?;
@@ -729,6 +752,7 @@ fn decode_block(
             raw_length,
             codec,
             checksum,
+            stored,
         };
         validate_column_codec(layout, ctx.schema, payload_index, point_count, &column)?;
         if (payload_index == 0
@@ -845,6 +869,9 @@ pub(crate) fn encode_page(page: &Page, frame: &GlobalFrame) -> Result<Vec<u8>, F
                 }
             }
             for (index, payload) in block.payloads.iter().enumerate() {
+                if !payload.stored.is_present() {
+                    continue;
+                }
                 out.u8(payload.codec as u8)?;
                 out.u32(payload.checksum)?;
                 out.u64(payload.stored_length)?;

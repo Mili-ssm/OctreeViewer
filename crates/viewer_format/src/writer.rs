@@ -6,7 +6,7 @@ use std::{
 use viewer_core::{BlockId, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode};
 
 use crate::MAX_SCHEMA_ATTRIBUTES;
-use crate::layout::{FOOTER_SIZE, HEADER_SIZE, StorageLayout};
+use crate::layout::{ColumnRules, FOOTER_SIZE, HEADER_SIZE, StorageLayout};
 use crate::metadata::validate_metadata;
 use crate::version::FileRole;
 use crate::{FormatError, FormatMetadata, FormatVersion, SourcePointBlock};
@@ -15,9 +15,11 @@ use crate::checkpoint_record::{
     decode_checkpoint_record, encode_checkpoint_record, validate_checkpoint_record,
 };
 use crate::index_codec::{footer_bytes, header_for_role, write_index};
+#[cfg(test)]
+pub(crate) use crate::prepare::prepare_point_block_for_version;
 pub(crate) use crate::prepare::{
-    BlockRecord, BoundsAccumulator, build_block_nodes, ensure_global_frame_matches,
-    prepare_point_block_for_version,
+    BlockRecord, BoundsAccumulator, build_block_nodes, ensure_global_frame_matches, lod_block_ids,
+    prepare_point_block_for_version_impl,
 };
 pub use crate::prepare::{FormatWriterOptions, PreparedPointBlock, RowOrder, prepare_point_block};
 
@@ -30,6 +32,8 @@ pub struct FormatWriter<W> {
     options: FormatWriterOptions,
     layout: StorageLayout,
     block_nodes: BTreeMap<BlockId, Vec<NodeId>>,
+    /// Blocks of nodes with children, built once; `finish` checks it against the written index.
+    lod_blocks: BTreeSet<BlockId>,
     blocks: BTreeMap<BlockId, BlockRecord>,
     failed: bool,
     resume_boundary_pending: bool,
@@ -74,6 +78,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         ensure_distance_quantiles_match(layout, &metadata)?;
         validate_metadata(&metadata)?;
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
+        let lod_blocks = lod_block_ids(metadata.dataset().hierarchy())?;
         let primary_end = writer.seek(SeekFrom::End(0))?;
         let attr_end = attributes
             .as_mut()
@@ -115,6 +120,7 @@ impl<W: Write + Seek> FormatWriter<W> {
             options,
             layout,
             block_nodes,
+            lod_blocks,
             blocks: BTreeMap::new(),
             failed: false,
             resume_boundary_pending: true,
@@ -262,6 +268,7 @@ impl<W: Write + Seek> FormatWriter<W> {
             ));
         }
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
+        let lod_blocks = lod_block_ids(metadata.dataset().hierarchy())?;
         writer.write_all(&header_for_role(layout.version(), FileRole::Monolithic)?)?;
         Ok(Self {
             writer,
@@ -270,6 +277,7 @@ impl<W: Write + Seek> FormatWriter<W> {
             options,
             layout,
             block_nodes,
+            lod_blocks,
             blocks: BTreeMap::new(),
             failed: false,
             resume_boundary_pending: false,
@@ -309,12 +317,16 @@ impl<W: Write + Seek> FormatWriter<W> {
     /// Encodes and appends one block while retaining only its directory metadata afterward.
     pub fn write_block(&mut self, block: SourcePointBlock) -> Result<(), FormatError> {
         self.ensure_block_available(block.id())?;
-        self.write_prepared_block(prepare_point_block_for_version(
+        let block_is_lod = self.lod_blocks.contains(&block.id());
+        let (prepared, _) = prepare_point_block_for_version_impl(
             self.layout.version(),
             block,
             &self.metadata,
             self.options,
-        )?)
+            block_is_lod,
+            false,
+        )?;
+        self.write_prepared_block(prepared)
     }
 
     /// Appends a block encoded independently from this writer.
@@ -330,6 +342,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         }
         self.ensure_append_boundary()?;
         self.ensure_block_available(prepared.id)?;
+        self.ensure_columns_follow_the_rule(&prepared)?;
         let offset = self.writer.stream_position()?;
         let split_at = if self.attributes.is_some() {
             usize::try_from(prepared.payloads[0].stored_length)
@@ -372,6 +385,30 @@ impl<W: Write + Seek> FormatWriter<W> {
             },
         );
         Ok(())
+    }
+
+    /// A block prepared elsewhere must store exactly the columns the rule gives this writer.
+    fn ensure_columns_follow_the_rule(
+        &self,
+        prepared: &PreparedPointBlock,
+    ) -> Result<(), FormatError> {
+        let block_is_lod = self.lod_blocks.contains(&prepared.id);
+        let schema_len = self.metadata.dataset().hierarchy().attributes().len();
+        let follows = prepared.payloads.len() == schema_len + 2
+            && prepared
+                .payloads
+                .iter()
+                .enumerate()
+                .all(|(column, payload)| {
+                    payload.stored == self.layout.stored_column(block_is_lod, column, ColumnRules)
+                });
+        if follows {
+            Ok(())
+        } else {
+            Err(FormatError::InvalidMetadata(
+                "prepared block columns do not follow the writer's storage rule",
+            ))
+        }
     }
 
     fn ensure_block_available(&self, id: BlockId) -> Result<(), FormatError> {
@@ -435,6 +472,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 &mut self.writer,
                 &metadata,
                 &self.blocks,
+                &self.lod_blocks,
                 self.options.page_target_bytes(),
                 self.layout,
             )?;

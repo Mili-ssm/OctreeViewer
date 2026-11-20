@@ -10,8 +10,8 @@ use viewer_core::{
 
 use crate::geometry::GeometryEncoding;
 use crate::layout::{
-    FOOTER_SIZE, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout, attribute_payload_size,
-    block_payload_size,
+    FOOTER_SIZE, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout, StoredColumn,
+    attribute_payload_size, block_payload_size,
 };
 use crate::metadata::validate_metadata;
 use crate::prepare::BlockRecord;
@@ -203,6 +203,12 @@ pub(crate) fn write_index<W: Write>(
         index.u8(0)?;
         index.u32(0)?;
         for payload in &block.payloads {
+            // The whole-index layouts have no way to say that a column is missing.
+            if !payload.stored.is_present() {
+                return Err(FormatError::InvalidMetadata(
+                    "this index layout stores every column",
+                ));
+            }
             index.u64(payload.offset)?;
             index.u64(payload.stored_length)?;
             index.u64(payload.raw_length)?;
@@ -868,7 +874,8 @@ pub(crate) fn parse_index(
         }
         let point_count_usize =
             usize::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
-        let logical_size = block_payload_size(point_count_usize, &schema)?;
+        // Whole-index layouts store every column.
+        let logical_size = block_payload_size(point_count_usize, &schema, |_| true)?;
         if logical_size > limits.max_block_bytes {
             return Err(FormatError::BlockExceedsLimit {
                 requested: logical_size,
@@ -913,6 +920,7 @@ pub(crate) fn parse_index(
                 raw_length: cursor.u64()?,
                 codec: BlockCodec::try_from(cursor.u8()?)?,
                 checksum: cursor.u32()?,
+                stored: StoredColumn::Present,
             };
             validate_column_codec(layout, &schema, payload_index, point_count, &column)?;
             if split && payload_index > 0 {

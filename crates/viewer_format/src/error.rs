@@ -70,6 +70,8 @@ pub enum FormatError {
     UnknownBlock(BlockId),
     #[error("requested attribute schema index {0} does not exist")]
     UnknownAttribute(u32),
+    #[error("block {block:?} does not store attribute {attribute}")]
+    AttributeAbsent { block: BlockId, attribute: u32 },
     #[error("row {row_id} is outside block {block:?}")]
     UnknownRow { block: BlockId, row_id: u64 },
     #[error("invalid quantization error limit {0}")]

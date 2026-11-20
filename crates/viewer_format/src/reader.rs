@@ -105,6 +105,24 @@ impl std::ops::Deref for EntryHandle {
     }
 }
 
+/// The payload of `column` (0 geometry, 1 display colour, then the schema) if the block stores it.
+fn stored_payload(
+    block: &BlockDirectoryEntry,
+    id: BlockId,
+    column: usize,
+) -> Result<&PayloadDirectoryEntry, FormatError> {
+    match block.payloads.get(column) {
+        Some(payload) if payload.stored.is_present() => Ok(payload),
+        Some(_) | None if column >= 2 => Err(FormatError::AttributeAbsent {
+            block: id,
+            attribute: (column - 2) as u32,
+        }),
+        _ => Err(FormatError::MalformedIndex(
+            "geometry or display colour column is not stored",
+        )),
+    }
+}
+
 impl<R> IndexedReader<R> {
     fn entry(&self, id: BlockId) -> Result<EntryHandle, FormatError> {
         if let Some(paged) = &self.paged {
@@ -440,6 +458,17 @@ impl<R: Read + Seek> IndexedReader<R> {
         !self.split || self.attributes_attached
     }
 
+    /// Whether `block` stores schema column `index`. False for an unknown block or index, and for
+    /// a column the format omits from that block (read it with the other columns instead).
+    pub fn attribute_present(&self, id: BlockId, index: u32) -> bool {
+        self.entry(id).is_ok_and(|entry| {
+            entry
+                .payloads
+                .get(index as usize + 2)
+                .is_some_and(|payload| payload.stored.is_present())
+        })
+    }
+
     /// Nearest-neighbour distance quantiles stored in the header (`v8.N-pre`); `None` for
     /// formats that do not store them. Eager and lazy readers report the same values.
     pub fn point_distance_quantiles(&self) -> Option<crate::PointDistanceQuantiles> {
@@ -556,6 +585,12 @@ impl<R: Read + Seek> IndexedReader<R> {
                         usize::try_from(entry.point_count)
                             .map_err(|_| FormatError::PointCountOutOfRange)?,
                         self.metadata.dataset().hierarchy().attributes(),
+                        |column| {
+                            entry
+                                .payloads
+                                .get(column)
+                                .is_some_and(|payload| payload.stored.is_present())
+                        },
                     )?,
                     geometry_encoding: entry.geometry_encoding,
                 })
@@ -576,6 +611,9 @@ impl<R: Read + Seek> IndexedReader<R> {
                 )
             })?;
             for (index, payload) in entry.payloads.iter().enumerate() {
+                if !payload.stored.is_present() {
+                    continue;
+                }
                 let kind = if index == 0 {
                     BlockPayloadKind::Geometry
                 } else if index == 1 {
@@ -639,7 +677,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         })?;
         let memory = match selection {
             ReadSelection::Positions | ReadSelection::Geometry => {
-                let range = self.payload_range(&block, &block.payloads[0], false)?;
+                let range = self.payload_range(&block, stored_payload(&block, id, 0)?, false)?;
                 let positions = crate::read_plan::estimate_payload(
                     &range,
                     points_bytes()?,
@@ -647,7 +685,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                 )?;
                 ranges.push(range);
                 if selection == ReadSelection::Geometry && self.has_attributes() {
-                    let range = self.payload_range(&block, &block.payloads[1], true)?;
+                    let range = self.payload_range(&block, stored_payload(&block, id, 1)?, true)?;
                     let colors = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
                     ranges.push(range);
                     crate::read_plan::combine_geometry(positions, colors)?
@@ -656,7 +694,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                 }
             }
             ReadSelection::DisplayColors => {
-                let range = self.payload_range(&block, &block.payloads[1], true)?;
+                let range = self.payload_range(&block, stored_payload(&block, id, 1)?, true)?;
                 let memory = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
                 ranges.push(range);
                 memory
@@ -670,8 +708,11 @@ impl<R: Read + Seek> IndexedReader<R> {
                     .get(schema_index as usize)
                     .ok_or(FormatError::UnknownAttribute(schema_index))?;
                 let output_bytes = attribute_payload_size(block.point_count, descriptor)?;
-                let range =
-                    self.payload_range(&block, &block.payloads[schema_index as usize + 2], true)?;
+                let range = self.payload_range(
+                    &block,
+                    stored_payload(&block, id, schema_index as usize + 2)?,
+                    true,
+                )?;
                 let memory = crate::read_plan::estimate_payload(&range, output_bytes, None)?;
                 ranges.push(range);
                 memory
@@ -989,7 +1030,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         let cell = entry.node_cell.ok_or(FormatError::InvalidMetadata(
             "exact quanta exist only in v7.4-pre",
         ))?;
-        let raw = self.read_payload(id, &entry, &entry.payloads[0], None)?;
+        let raw = self.read_payload(id, &entry, stored_payload(&entry, id, 0)?, None)?;
         let count =
             usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
         let mut quanta = Vec::new();
@@ -1078,7 +1119,7 @@ impl<R: Read + Seek> IndexedReader<R> {
 
     pub fn read_display_colors(&mut self, id: BlockId) -> Result<Vec<ColorRgb>, FormatError> {
         let entry = self.entry(id)?;
-        let raw = self.read_payload(id, &entry, &entry.payloads[1], Some(3))?;
+        let raw = self.read_payload(id, &entry, stored_payload(&entry, id, 1)?, Some(3))?;
         Ok(raw
             .as_chunks::<3>()
             .0
@@ -1090,7 +1131,7 @@ impl<R: Read + Seek> IndexedReader<R> {
     /// Reads only XYZ; supplies neutral gray without accessing color or attribute payloads.
     pub fn read_positions(&mut self, id: BlockId) -> Result<PointBatch, FormatError> {
         let entry = self.entry(id)?;
-        let raw = self.read_payload(id, &entry, &entry.payloads[0], None)?;
+        let raw = self.read_payload(id, &entry, stored_payload(&entry, id, 0)?, None)?;
         let mut cursor = SliceCursor::new(&raw);
         let count =
             usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
@@ -1118,7 +1159,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         let raw = self.read_payload(
             id,
             &entry,
-            &entry.payloads[schema_index as usize + 2],
+            stored_payload(&entry, id, schema_index as usize + 2)?,
             Some(width),
         )?;
         let count =
@@ -1234,7 +1275,11 @@ impl<R: Read + Seek> IndexedReader<R> {
             .try_reserve_exact(schema_count)
             .map_err(|_| FormatError::AllocationFailed(schema_count))?;
         for schema_index in 0..schema_count {
-            attributes.push(self.read_attribute(id, schema_index as u32)?);
+            let schema_index = schema_index as u32;
+            // A block may omit columns; the points are counted by the geometry, not by them.
+            if self.attribute_present(id, schema_index) {
+                attributes.push(self.read_attribute(id, schema_index)?);
+            }
         }
         Ok(PointBlock::new(id, points, attributes))
     }
@@ -1259,6 +1304,7 @@ fn split_attribute_file_length(
     blocks
         .values()
         .flat_map(|block| block.payloads.iter().skip(1))
+        .filter(|payload| payload.stored.is_present())
         .try_fold(HEADER_SIZE, |end, payload| {
             payload
                 .offset

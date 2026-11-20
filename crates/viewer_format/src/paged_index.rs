@@ -2,7 +2,7 @@
 //! ([spec](../../../docs/reference/format/FORMAT_V7_PRE5.md)). Holds the writer path that plans and
 //! emits pages, the page-granular [`PagedReader`], and the eager loader used by `FormatReader`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use viewer_core::las::{LasExtraByte, LasExtraByteFields};
@@ -1081,7 +1081,12 @@ fn base_record_len(
     for id in node.blocks() {
         let record = blocks.get(id).ok_or(FormatError::UnreferencedBlock(*id))?;
         // offset, length, points, geometry tag, error; split cell; per column codec, crc, length
-        length += 33 + if level < 32 { 12 } else { 0 } + 13 * record.payloads.len() + 8;
+        let stored = record
+            .payloads
+            .iter()
+            .filter(|payload| payload.stored.is_present())
+            .count();
+        length += 33 + if level < 32 { 12 } else { 0 } + 13 * stored + 8;
     }
     for range in ranges {
         length += 2 + value_bytes(range.min()) + value_bytes(range.max());
@@ -1106,6 +1111,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
     writer: &mut W,
     metadata: &FormatMetadata,
     blocks: &BTreeMap<BlockId, BlockRecord>,
+    lod_blocks: &BTreeSet<BlockId>,
     page_target_bytes: usize,
     layout: StorageLayout,
 ) -> Result<PagedIndexWritten, FormatError> {
@@ -1268,6 +1274,13 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
             let node = p.node;
             let mut node_blocks = Vec::with_capacity(node.blocks().len());
             for block_id in node.blocks() {
+                // The writer chose each block's columns from this set: it must agree with the
+                // `has_children` flag the page is about to carry.
+                if lod_blocks.contains(block_id) == p.children.is_empty() {
+                    return Err(FormatError::InvalidMetadata(
+                        "a block is shared by nodes with and without children",
+                    ));
+                }
                 let record = &blocks[block_id];
                 node_blocks.push(PageBlock {
                     id: BlockId::new(id),

@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Write};
 
 use viewer_core::{
@@ -706,5 +707,61 @@ fn split_writer_is_poisoned_after_partial_failure_of_either_sink() {
             OctreeWriter::finish_pair(writer),
             Err(FormatError::WriterPoisoned)
         ));
+    }
+}
+
+/// Nodes as `(id, parent, blocks)`; every child is the first octant of its parent.
+type TestNodes<'a> = &'a [(u64, Option<u64>, &'a [u64])];
+
+fn hierarchy_of(nodes: TestNodes<'_>) -> SpatialHierarchy {
+    let mut levels = BTreeMap::<u64, u32>::new();
+    let mut built = Vec::new();
+    for &(id, parent, blocks) in nodes {
+        let level = parent.map_or(0, |parent| levels[&parent] + 1);
+        let side = 8.0 / f64::from(1_u32 << level);
+        let node_bounds = SpatialBounds::new([0.0; 3], [side; 3]).unwrap();
+        levels.insert(id, level);
+        built.push(
+            SpatialNode::new(
+                NodeId::new(id),
+                parent.map(NodeId::new),
+                level,
+                node_bounds,
+                blocks.len() as u64,
+                0.0,
+                blocks.iter().map(|&block| BlockId::new(block)).collect(),
+            )
+            .unwrap(),
+        );
+    }
+    SpatialHierarchy::new(built, Vec::new(), None).unwrap()
+}
+
+#[test]
+fn lod_set_matches_has_children() {
+    let shapes: [TestNodes<'_>; 3] = [
+        // A root leaf, as for a cloud that fits one node.
+        &[(0, None, &[0])],
+        // A root leaf whose points are all equal: several blocks, still no children.
+        &[(0, None, &[0, 1, 2])],
+        // A normal tree: interior nodes own the LOD blocks.
+        &[
+            (0, None, &[0]),
+            (1, Some(0), &[1, 2]),
+            (2, Some(0), &[3]),
+            (3, Some(1), &[4]),
+            (4, Some(1), &[5]),
+        ],
+    ];
+    for nodes in shapes {
+        let hierarchy = hierarchy_of(nodes);
+        let lod = super::lod_block_ids(&hierarchy).unwrap();
+        let expected: BTreeSet<_> = nodes
+            .iter()
+            .filter(|(id, _, _)| !hierarchy.is_leaf(NodeId::new(*id)))
+            .flat_map(|(_, _, blocks)| blocks.iter().map(|&block| BlockId::new(block)))
+            .collect();
+        assert_eq!(lod, expected, "{nodes:?}");
+        assert_eq!(lod.is_empty(), nodes.len() == 1 || nodes[0].2.len() > 1);
     }
 }

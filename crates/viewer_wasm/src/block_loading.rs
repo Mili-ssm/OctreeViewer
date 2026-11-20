@@ -16,7 +16,11 @@ pub(crate) fn load_render_block<E: std::fmt::Display>(
         reader.read_positions(id)
     }
     .map_err(|error| error.to_string())?;
-    if let Some((index, component)) = selected_attribute {
+    // A block may omit the column (revisions that drop what the viewer does not draw from
+    // interior nodes): it then keeps the colours it has instead of failing the load.
+    if let Some((index, component)) = selected_attribute
+        && reader.attribute_present(id, index)
+    {
         let column = reader
             .read_attribute(id, index)
             .map_err(|e| e.to_string())?;
@@ -40,11 +44,13 @@ pub(crate) fn load_render_block<E: std::fmt::Display>(
             .position(|descriptor| descriptor.name() == name)
     {
         let index = u32::try_from(index).map_err(|_| "attribute schema is too large".to_owned())?;
-        attributes.push(
-            reader
-                .read_attribute(id, index)
-                .map_err(|e| e.to_string())?,
-        );
+        if reader.attribute_present(id, index) {
+            attributes.push(
+                reader
+                    .read_attribute(id, index)
+                    .map_err(|e| e.to_string())?,
+            );
+        }
     }
     Ok(PointBlock::new(id, geometry, attributes))
 }
@@ -61,7 +67,9 @@ pub(crate) fn load_cell_block<E: std::fmt::Display>(
         .read_geometry(id)
         .map_err(|error| error.to_string())?;
     // An attribute colour mode paints the points before the cells are built from them (R3-Q33).
-    if let Some(((index, component), range)) = paint {
+    if let Some(((index, component), range)) = paint
+        && reader.attribute_present(id, index)
+    {
         let column = reader
             .read_attribute(id, index)
             .map_err(|e| e.to_string())?;
@@ -82,11 +90,13 @@ pub(crate) fn load_cell_block<E: std::fmt::Display>(
             };
             let index =
                 u32::try_from(index).map_err(|_| "attribute schema is too large".to_owned())?;
-            attributes.push(
-                reader
-                    .read_attribute(id, index)
-                    .map_err(|e| e.to_string())?,
-            );
+            if reader.attribute_present(id, index) {
+                attributes.push(
+                    reader
+                        .read_attribute(id, index)
+                        .map_err(|e| e.to_string())?,
+                );
+            }
         }
     }
     Ok(PointBlock::new(id, geometry, attributes))
@@ -160,6 +170,9 @@ mod tests {
 
         fn has_attributes(&self) -> bool {
             self.attributes_available
+        }
+        fn attribute_present(&self, _: BlockId, _: u32) -> bool {
+            true
         }
         fn read_positions(&mut self, _: BlockId) -> Result<PointBatch, Self::Error> {
             self.calls.push("xyz");
