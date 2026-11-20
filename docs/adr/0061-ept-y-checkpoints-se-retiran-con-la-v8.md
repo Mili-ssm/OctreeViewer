@@ -16,7 +16,7 @@ Estado: Aceptada · Fecha: 21-11-2026 · Decide: propietario · Precisa el [ADR 
 
 ## Decisión
 El propietario (21-11-2026): **al congelar la V8 se retiran la entrada EPT y los checkpoints (`--checkpoint`,
-`--resume`, `--verify-source`)**, con su código y sus pruebas. Se implementarán más adelante sobre V8, si se retoman
+`--resume` y la verificación de la fuente del checkpoint)**, con su código y sus pruebas. Se implementarán más adelante sobre V8, si se retoman
 ([#12](https://github.com/Mili-ssm/OctreeViewer/issues/12) pasa a V8). Hasta entonces, RF-26 no aplica.
 
 ## Alternativas

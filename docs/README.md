@@ -39,7 +39,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | [Formato V8](plans/formato-v8.md) | Diseño de la V8 (aprobado): color de pantalla sin duplicar, LOD solo con atributos de dibujo, distancia mínima entre puntos en la cabecera, solo LZ4 tras medir zstd ([ADR 0060](adr/0060-v8-solo-lz4.md)) y retirada de V5, v6 y v7. | pendiente |
 | [Formato V8, v8.1-pre](plans/formato-v8-pre1.md) | Plan de implementación de la primera revisión experimental: identidad, cuantiles de distancia, LOD con columnas de dibujo, color de pantalla derivado y lectura en el visor; ejecutado y medido. | medido |
 | [Formato V8, v8.2-pre](plans/formato-v8-pre2.md) | Experimento de D3: zstd en columnas de `.octattrs` con cuatro esquemas fijos (`lz4`, `cold`, `cold-rgb`, `all`) medidos en tamaño, conversión, carga y render; resultado: solo LZ4 (ADR 0060). | medido |
-| [Formato V8 congelado (D4)](plans/formato-v8-congelado.md) | Identidad final V8 sobre v8.1-pre y retirada de v5, v6, v7, las revisiones previas, zstd, EPT y checkpoints. | propuesto |
+| [Formato V8 congelado (D4)](plans/formato-v8-congelado.md) | Identidad final V8 sobre v8.1-pre y retirada de v5, v6, v7, las revisiones previas, zstd, EPT y checkpoints. | aprobado |
 
 ## Explicación
 

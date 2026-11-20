@@ -1,6 +1,6 @@
 # Formato V8 congelado y retirada de los demás formatos (D4, plan de implementación)
 
-Estado: propuesto · 21-11-2026 · pre-mortem hecho (enmiendas A1–A11 incorporadas); pendiente del visto bueno del propietario
+Estado: aprobado · 21-11-2026 · pre-mortem hecho (enmiendas A1–A11 incorporadas); el propietario lo aprueba y pide fusionar #111 antes de empezar, así que la rama sale de `main`
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
