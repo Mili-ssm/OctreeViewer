@@ -24,4 +24,4 @@ sigue siendo [v7](FORMAT_V7.md). Decisiones en el [ADR 0058](../../adr/0058-form
 | --- | --- | --- |
 | Color de dibujo | se deriva de los datos guardados en lugar de guardarse dos veces (`derives_display_attribute`) | Decisión técnica del diseño (no es D2) |
 | Puntos LOD | los nodos interiores omiten los atributos que el visor no dibuja (`omits_lod_attributes`) | D2 |
-| Distancia mínima | cuantiles de la distancia al vecino más cercano por nodo (`stores_distance_quantiles`) | D5 |
+| Distancia mínima | cuantiles p1, p5 y p50 de la distancia al vecino más cercano, uno por nube, en la cabecera del índice (`stores_distance_quantiles`); todo ceros significa «sin medida» y entonces no hay tamaño recomendado (`p5 == 0`) | D5 |

@@ -1355,7 +1355,12 @@ fn write_with_quantiles(
 
 #[test]
 fn writer_revalidates_hand_built_quantiles() {
-    for (p1, p5, p50) in [(f64::NAN, 0.5, 1.5), (-0.25, 0.5, 1.5), (0.5, 0.25, 1.5)] {
+    for (p1, p5, p50) in [
+        (f64::NAN, 0.5, 1.5),
+        (-0.25, 0.5, 1.5),
+        (0.5, 0.25, 1.5),
+        (0.25, 0.5, f64::INFINITY),
+    ] {
         // Struct literals bypass `PointDistanceQuantiles::new`.
         let bad = viewer_format::PointDistanceQuantiles { p1, p5, p50 };
         assert!(

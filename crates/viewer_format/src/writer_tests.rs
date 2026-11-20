@@ -88,6 +88,19 @@ fn second_sample_block() -> SourcePointBlock {
 }
 
 #[test]
+fn resume_rejects_quantiles_on_a_revision_that_does_not_store_them() {
+    let quantiles = crate::PointDistanceQuantiles::new(0.25, 0.5, 1.0).unwrap();
+    let resumed = FormatWriter::resume_for_version(
+        FormatVersion::V7_PRE1,
+        Cursor::new(Vec::new()),
+        Some(Cursor::new(Vec::new())),
+        two_block_metadata().with_point_distance_quantiles(quantiles),
+        options(),
+    );
+    assert!(matches!(resumed, Err(FormatError::InvalidMetadata(_))));
+}
+
+#[test]
 fn split_writer_resumes_from_committed_checkpoint_byte_identically() {
     let metadata = two_block_metadata();
     let mut clean = FormatWriter::new_split_for_version(
