@@ -5,15 +5,16 @@ Estado: pendiente · 20-11-2026 · plan escrito; antes de ejecutarlo pasa el an�
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** añadir la revisión experimental `v8.1-pre` junto a v7: LOD sin las columnas que el visor no dibuja,
-RGB de 16 bits (o intensidad) de las hojas sin duplicar el color de pantalla, y cuantiles de la distancia al vecino
-más cercano en la cabecera; el conversor la escribe con `--format-version v8.1-pre` y el visor la lee.
+hojas sin la copia del color de pantalla (se deriva al leer de su columna de origen, RGB de 16 bits o intensidad, como
+decidió el propietario), y cuantiles de la distancia al vecino más cercano en la cabecera; el conversor la escribe con
+`--format-version v8.1-pre` y el visor la lee.
 
 **Architecture:** nueva identidad (`V8Pre(1)`, `StorageLayout::V8Pre1`, magics propios) sobre la disposición de v7, con
 tres capacidades nuevas en `StorageLayout`. Los bloques LOD son los de nodos con hijos (`has_children`, sin campo
-nuevo); su directorio omite las columnas fuera del conjunto LOD de la cabecera, y en memoria se marcan `Absent`. En las
-hojas, la columna de origen del color (RGB o intensidad) guarda solo el byte bajo y el lector (`IndexedReader`)
-recompone `alto << 8 | bajo` con la columna 1 (color de pantalla). Los cuantiles se calculan en los trabajos de hoja
-y se agregan en orden de id de nodo.
+nuevo); su directorio omite las columnas fuera del conjunto LOD de la cabecera. En las hojas se omite la columna 1 (color de
+pantalla) y el lector (`IndexedReader`) la deriva de la columna de origen (`>> 8`). Una sola función decide qué guarda
+cada bloque (`stored_column`), y la usan escritor, códecs de página e índice, lector y verificación. Los cuantiles se
+calculan en los trabajos de hoja y se agregan en orden de id de nodo.
 
 **Tech Stack:** Rust (nightly fijado), wasm-bindgen, JS del visor (`examples/web-host`); sin dependencias nuevas.
 
@@ -34,6 +35,10 @@ y se agregan en orden de id de nodo.
   (duplicados exactos; si todo son duplicados, los tres valen 0); finitos, ≥ 0 y p1 ≤ p5 ≤ p50; muestra elegida por
   hash con semilla fija de la posición cuantizada, independiente del orden y de W; el recomendado es p5.
 - Paridad web/CLI (RQ-08) también para `v8.1-pre` (caso nuevo en `tools/convert_parity`).
+- **Objetivo de tamaño (V2):** lo fija la proyección de la tarea 0 (decisión técnica; el 35 % del diseño era una
+  estimación previa). Si la proyección para Albuera queda por debajo del −25 %, se para y decide el propietario.
+- Desde la tarea 4b, cada tarea que cambia bytes de v8.1-pre termina con una conversión real de Belvedere en
+  `v8.1-pre` y `viewer_convert verify` correcto.
 - Sin `cargo clean`; worktree con su propio target; `FORMAT_PARITY_REAL_INPUT` con la ruta absoluta del LAZ de
   Belvedere del checkout principal. Código y commits en inglés, documentos en español, sin menciones a asistentes.
 
@@ -47,7 +52,26 @@ y se agregan en orden de id de nodo.
 4. **Cuantiles deterministas:** mismos valores con W ∈ {1, 2, 8}, ejecutor serie y con hilos, nativo y wasm.
 5. **Fichero corrupto o truncado** en las partes nuevas (lista LOD, cuantiles, entradas ausentes): error, nunca pánico.
 
+## Cambios tras el análisis de riesgos (20-11-2026)
+
+Tarea 0 nueva (proyección que fija V2); la tarea 4 se divide en 4a (función `stored_column`, sin cambiar bytes) y 4b
+(LOD sin columnas); la tarea 5 pasa a derivar el color de pantalla de las hojas (decisión del propietario) en lugar de
+guardar solo el byte bajo de su origen; la validación y los cargadores síncronos dejan de suponer todas las columnas;
+la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en `finish`.
+
 ---
+
+### Task 0: Projection spike (sizes per stream, leaf vs LOD)
+
+**Files:**
+- Create: nada en el repositorio; programa desechable en el scratchpad; resultado anotado en este plan (sección
+  «Proyección», al final).
+
+- [ ] **Step 1:** con una salida v7 de Albuera (rama, `release`) y `crates/viewer_format/examples/storage_payload_stats.rs`
+  más `has_children` de cada nodo, separar los bytes guardados de cada flujo en hojas y LOD.
+- [ ] **Step 2:** averiguar el escalado del color de Albuera (8 bits ×256, ×257 o 16 bits reales) en una muestra.
+- [ ] **Step 3:** proyectar el tamaño de `v8.1-pre` (LOD sin columnas fuera de {intensidad, clase}; hojas sin la
+  columna 1) y anotarlo; si queda por debajo del −25 %, parar y llevarlo al propietario.
 
 ### Task 1: v8.1-pre identity
 
@@ -83,7 +107,7 @@ y se agregan en orden de id de nodo.
 **Files:**
 - Modify: `crates/viewer_format/src/metadata.rs`, `crates/viewer_format/src/paged_index.rs` (`PagedHeader` :40-56,
   parser :275-324, escritor :1322-1344, `load_all` :805, `assemble_with` :959), `crates/viewer_format/src/reader.rs:334-451`,
-  `crates/viewer_format/src/lazy_pages.rs:98`, `crates/viewer_format/src/storage_reader.rs:173`, `crates/viewer_format/src/verify.rs`
+  `crates/viewer_format/src/lazy_pages.rs:98`, `crates/viewer_format/src/storage_reader.rs:173`
 - Test: `crates/viewer_format/tests/` (round trip y corrupción)
 
 **Interfaces:**
@@ -92,7 +116,9 @@ y se agregan en orden de id de nodo.
   `FormatMetadata::with_point_distance_quantiles(self, PointDistanceQuantiles) -> Self` y
   `point_distance_quantiles() -> Option<PointDistanceQuantiles>`; accesor `point_distance_quantiles()` en
   `IndexedReader`, `PageSource` y el lector de almacenamiento. En la cabecera, 3 × f64 justo después de
-  `reference_spacing`, solo si `layout.stores_distance_quantiles()`. El escritor da error si V8Pre1 no los trae.
+  `reference_spacing`, solo si `layout.stores_distance_quantiles()`. El escritor comprueba en `finish` (no al crearse)
+  que V8Pre1 los trae; los helpers de test que recorren `WRITABLE` los aportan. La verificación es `verify_paged`
+  (`paged_index.rs`), no un `verify.rs`.
 
 - [ ] **Step 1: failing tests**: `distance_quantiles_round_trip` (escribir y leer con los lectores eager y lazy);
   `v8_pre1_without_quantiles_is_rejected`; `corrupt_quantiles_are_rejected` (NaN, negativo, desordenados, truncado).
@@ -115,68 +141,101 @@ y se agregan en orden de id de nodo.
   `NodeRecord.nn_samples`; en `plan.rs`, agregación en orden de id de nodo, orden total, cuantiles por rango más
   cercano, raíz cuadrada y paso a unidades una sola vez al final. Muestreo: un punto entra si
   `hash(semilla_fija, posición_cuantizada) < tasa`, con `tasa = objetivo / source.point_count` y
-  `objetivo = 1 << 20` puntos (decisión técnica; ajustable tras medir). Vecino: celdas del espaciado medido de la hoja,
-  27 vecinas, ampliando si están vacías. Solo con `JobContext.collect_distance_quantiles` (verdadero solo si
+  `objetivo = 1 << 20` puntos (decisión técnica; ajustable tras medir); hash explícito `splitmix64` (no
+  `DefaultHasher`). Vecino: celdas del espaciado medido de la hoja (o códigos Morton ya calculados,
+  `node_job.rs:1051-1069`), anillos crecientes **acotados a la caja de la hoja**, parando cuando la distancia hallada
+  ≤ radio del anillo; una muestra sin vecino no cuenta; distancias² en `u128`. Solo con `JobContext.collect_distance_quantiles` (verdadero solo si
   `stores_distance_quantiles()`), así que v7 no hace trabajo extra.
 
 - [ ] **Step 1: failing tests**: `quantiles_of_a_regular_grid` (rejilla de paso conocido d: p1 = p5 = p50 = d con
   tolerancia de un cuanto); `duplicates_do_not_count` (puntos repetidos más una rejilla: mismos cuantiles);
+  `isolated_and_outlier_points_terminate` (punto aislado y cúmulo con un punto lejano: termina y no cuenta lo que no
+  tiene vecino); tiempo del cálculo sobre las hojas de Belvedere ≤ 10 % del de los trabajos de hoja;
   `quantiles_do_not_depend_on_workers` (W ∈ {1, 2, 8}, ejecutor serie y con hilos: mismos valores).
 - [ ] **Step 2:** fallan.
 - [ ] **Step 3:** implementar.
 - [ ] **Step 4:** tests del workspace (SHA de v7 intactos) y clippy → OK.
 - [ ] **Step 5:** commit `feat(convert): nearest-neighbour distance quantiles for v8.1-pre`.
 
-### Task 4: LOD blocks omit non-drawing columns
+### Task 4a: One rule for what each block stores (no byte change)
 
 **Files:**
-- Modify: `crates/viewer_format/src/page_codec.rs` (directorio :700-751, `raw_length` :711-719), `crates/viewer_format/src/index_codec.rs:556-591`,
-  `crates/viewer_format/src/prepare.rs:395-428`, `crates/viewer_format/src/reader.rs` (`plan_read` :640-668,
-  `read_attribute` :1094-1126, `block_payload_storage_stats` :558), `crates/viewer_format/src/verify.rs`,
-  `crates/viewer_format/examples/storage_payload_stats.rs`, cabecera paginada (lista LOD)
-- Test: `crates/viewer_format/tests/` (round trip, corrupción)
+- Modify: `crates/viewer_format/src/layout.rs`, `crates/viewer_format/src/block_encoder.rs:15-36`,
+  `crates/viewer_format/src/prepare.rs:395-428`, `crates/viewer_format/src/writer.rs` (los sitios del directorio de
+  payloads), `crates/viewer_format/src/page_codec.rs:700-751`, `crates/viewer_format/src/index_codec.rs:556-591`,
+  `crates/viewer_format/src/reader.rs` (`plan_read` :640-668, `read_attribute` :1094-1126, `read_point_block` :1227,
+  `block_payload_storage_stats` :558), `crates/viewer_format/src/paged_index.rs` (`verify_paged`),
+  `crates/viewer_convert/src/publish.rs:160`, `crates/viewer_convert_core/src/serial.rs:197`,
+  `crates/viewer_wasm/src/block_loading.rs:19-21`, `:63-66`
 
 **Interfaces:**
-- Produces: en la cabecera de `v8.1-pre`, la lista de índices de esquema del conjunto LOD (`lod_attribute_columns`);
-  en memoria, el vector de payloads mantiene `schema.len() + 2` entradas con un marcador `Absent` para las omitidas en
-  bloques de nodos con hijos; `IndexedReader::attribute_present(block, index) -> bool`; `plan_read` de una columna
-  ausente devuelve `FormatError::AttributeAbsent { block, attribute }` (nunca pánico). El conversor pasa el conjunto
-  LOD (intensidad y clasificación del esquema LAS) en los metadatos.
+- Produces: `pub enum StoredColumn { Present, Absent, Derived { from: usize } }` y una función del layout
+  `stored_column(block_is_lod, column, rules) -> StoredColumn` (en esta tarea devuelve siempre `Present`);
+  `FormatBlockEncoder::new` construye una vez el conjunto de ids de bloques LOD (los de nodos con hijos) y `finish` lo
+  contrasta con `has_children`; en memoria el vector de payloads mantiene `schema.len() + 2` entradas con
+  `Absent`/`Derived`; `IndexedReader::attribute_present(block, index) -> bool`;
+  `FormatError::AttributeAbsent { block, attribute }`; `read_point_block` y la validación de salida leen solo las
+  columnas presentes (y cuentan los puntos por la geometría); los cargadores síncronos de wasm comprueban la presencia.
+  Todos los sitios que suponían todas las columnas usan `stored_column`.
 
-- [ ] **Step 1: failing tests**: `lod_blocks_omit_columns_outside_the_lod_set` (un fichero v8.1-pre: bloques de nodos
-  internos sin esas entradas; las hojas con todas); `reading_an_absent_column_is_an_error_not_a_panic`;
-  `corrupt_lod_set_is_rejected` (índice fuera del esquema, repetido, truncado).
+- [ ] **Step 1: failing tests**: `stored_column_is_present_for_v7` (todas las versiones de `WRITABLE`, todos los bloques);
+  `lod_set_matches_has_children` (raíz hoja, raíz con todos los puntos iguales y árbol normal).
 - [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar.
-- [ ] **Step 4:** tests del workspace (SHA de v7 intactos) y clippy → OK.
-- [ ] **Step 5:** commit `feat(format): v8.1-pre LOD blocks store only the drawing columns`.
+- [ ] **Step 3:** implementar sin cambiar bytes.
+- [ ] **Step 4:** tests del workspace (SHA de v7 intactos), clippy, wasm32 → OK.
+- [ ] **Step 5:** commit `refactor(format): one rule decides which columns a block stores`.
 
-### Task 5: Leaf colour source stores only its low byte
+### Task 4b: LOD blocks omit non-drawing columns
 
 **Files:**
-- Modify: `crates/viewer_format/src/prepare.rs:395-428`, `crates/viewer_format/src/page_codec.rs:711-719`,
-  `crates/viewer_format/src/index_codec.rs:556-591`, `crates/viewer_format/src/reader.rs` (`plan_read`,
-  `materialize_selected_from_buffers`, `read_attribute`, estimación de memoria del `ReadPlan`), cabecera (origen del color)
+- Modify: `crates/viewer_format/src/layout.rs` (`stored_column` para V8Pre1), cabecera paginada (lista LOD),
+  `crates/viewer_format/examples/storage_payload_stats.rs`, `crates/viewer_convert/tests/cli.rs`
 - Test: `crates/viewer_format/tests/`
 
 **Interfaces:**
-- Produces: campo de cabecera «origen del color de pantalla» (`none` | índice de la columna RGB | índice de la
-  intensidad); en hojas de `v8.1-pre` esa columna guarda solo el byte bajo (ancho 3 o 1) y el lector, al pedirla,
-  planifica dos rangos (columna 1 y bytes bajos) y devuelve `alto << 8 | bajo`. El escritor comprueba en cada hoja que
-  el color de pantalla es el byte alto (y r = g = b con intensidad) y da error si no.
+- Consumes: `stored_column`, `attribute_present`, `AttributeAbsent` (tarea 4a).
+- Produces: en la cabecera de `v8.1-pre`, la lista de índices de esquema del conjunto LOD (`lod_attribute_columns`); el
+  conversor la llena con intensidad y clasificación del esquema LAS; `stored_column` devuelve `Absent` para las demás en
+  bloques LOD.
 
-- [ ] **Step 1: failing tests**: `leaf_rgb16_reads_back_identical_to_v7` y `leaf_intensity_reads_back_identical_without_colour`
-  (misma nube convertida en v7 y v8.1-pre: valores iguales bloque a bloque, también con filas híbridas);
+- [ ] **Step 1: failing tests**: `lod_blocks_omit_columns_outside_the_lod_set`; `reading_an_absent_column_is_an_error_not_a_panic`;
+  `corrupt_lod_set_is_rejected` (índice fuera del esquema, repetido, truncado); `cli_converts_and_verifies_v8_pre1`
+  (CLI con `--format-version v8.1-pre` y `viewer_convert verify`).
+- [ ] **Step 2:** fallan.
+- [ ] **Step 3:** implementar.
+- [ ] **Step 4:** tests del workspace (SHA de v7 intactos), clippy; Belvedere en v8.1-pre con `verify` correcto → OK.
+- [ ] **Step 5:** commit `feat(format): v8.1-pre LOD blocks store only the drawing columns`.
+
+### Task 5: Leaf display colour is derived on read
+
+**Files:**
+- Modify: `crates/viewer_format/src/layout.rs` (`stored_column` para la columna 1 de hojas V8Pre1), cabecera (origen
+  del color), `crates/viewer_format/src/prepare.rs`, `crates/viewer_format/src/reader.rs` (`plan_read`,
+  `materialize_selected_from_buffers`, `read_display_colors` :1070-1079, estimación de memoria del `ReadPlan`)
+- Test: `crates/viewer_format/tests/`
+
+**Interfaces:**
+- Consumes: `StoredColumn::Derived` (tarea 4a).
+- Produces: campo de cabecera «origen del color de pantalla» (`none` | índice de la columna RGB | índice de la
+  intensidad); en hojas de `v8.1-pre` la columna 1 es `Derived { from }` y no se guarda; el lector, al pedir el color
+  de pantalla de una hoja, lee la columna de origen y devuelve `>> 8` (r = g = b con intensidad). El escritor
+  comprueba en cada hoja que el color de pantalla es esa derivación y da error si no. Los bloques LOD guardan su color
+  de pantalla (media de la celda) como hoy.
+
+- [ ] **Step 1: failing tests**: `leaf_display_reads_back_identical_to_v7` y `leaf_display_from_intensity_without_colour`
+  (misma nube en v7 y en v8.1-pre: color de pantalla igual bloque a bloque, también con filas híbridas);
   `display_mismatch_is_rejected_by_the_writer`.
 - [ ] **Step 2:** fallan.
 - [ ] **Step 3:** implementar.
-- [ ] **Step 4:** tests del workspace (SHA de v7 intactos) y clippy → OK.
-- [ ] **Step 5:** commit `feat(format): v8.1-pre leaves store only the low byte of the colour source`.
+- [ ] **Step 4:** tests del workspace (SHA de v7 intactos), clippy; Belvedere en v8.1-pre con `verify` correcto → OK.
+- [ ] **Step 5:** commit `feat(format): v8.1-pre leaves derive the display colour on read`.
 
 ### Task 6: Viewer reads v8.1-pre
 
 **Files:**
-- Modify: `crates/viewer_wasm/src/async_format_reader.rs:493-566`, `crates/viewer_wasm/src/lod_driver.rs:363-425`,
+- Modify: `crates/viewer_wasm/src/async_format_reader.rs:493-566` (`planLodRead` decide el sustituto y devuelve con
+  qué se pinta y qué rango usar), `crates/viewer_wasm/src/lod_driver.rs:363-425` (incluido :393-399, que hoy rechaza la
+  columna sustituta y usaría el rango de la seleccionada), `crates/viewer_wasm/src/block_loading.rs`,
   `crates/viewer_wasm/src/lod_dataset.rs:567-580`, `crates/viewer_wasm/src/bindings/lod.rs:175`,
   `crates/viewer_wasm/src/bindings/cells.rs:403-409`, `examples/web-host/viewer-worker.js` (:705-716, :1012, :1381),
   `examples/web-host/build-worker.js:327-348`
@@ -204,7 +263,8 @@ y se agregan en orden de id de nodo.
 
 **Interfaces:**
 - Produces: código de formato 5 = `v8.1-pre` en la herramienta de paridad (sin el `_` que cae en v7.5-pre) y su caso en
-  `run.mjs`; un test de CLI que convierte con `--format-version v8.1-pre` y verifica (`viewer_convert verify`).
+  `run.mjs` (el digest de `tools/format_parity` excluye los formatos de marco global, así que la paridad de v8.1-pre
+  depende de este caso).
 
 - [ ] **Step 1:** añadir el caso y el test → fallan si no se emiten los mismos bytes o si `verify` rechaza.
 - [ ] **Step 2:** arreglar lo que salga.
@@ -229,3 +289,7 @@ y se agregan en orden de id de nodo.
 - [ ] **Step 4:** registro fechado con las series, la orden exacta y el equipo; completar FORMAT_V8_PRE1.md;
   actualizar documentos; `check_docs_links.py` y `check_docs_index.py` → OK.
 - [ ] **Step 5:** commit `docs: measure v8.1-pre against v7`.
+
+## Proyección
+
+(La rellena la tarea 0.)
