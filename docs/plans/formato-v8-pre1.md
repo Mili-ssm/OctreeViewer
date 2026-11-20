@@ -222,13 +222,13 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
   comprueba en cada hoja que el color de pantalla es esa derivación y da error si no. Los bloques LOD guardan su color
   de pantalla (media de la celda) como hoy.
 
-- [ ] **Step 1: failing tests**: `leaf_display_reads_back_identical_to_v7` y `leaf_display_from_intensity_without_colour`
+- [x] **Step 1: failing tests**: `leaf_display_reads_back_identical_to_v7` y `leaf_display_from_intensity_without_colour`
   (misma nube en v7 y en v8.1-pre: color de pantalla igual bloque a bloque, también con filas híbridas);
   `display_mismatch_is_rejected_by_the_writer`.
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar.
-- [ ] **Step 4:** tests del workspace (SHA de v7 intactos), clippy; Belvedere en v8.1-pre con `verify` correcto → OK.
-- [ ] **Step 5:** commit `feat(format): v8.1-pre leaves derive the display colour on read`.
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar.
+- [x] **Step 4:** tests del workspace (SHA de v7 intactos), clippy; Belvedere en v8.1-pre con `verify` correcto → OK.
+- [x] **Step 5:** commit `feat(format): v8.1-pre leaves derive the display colour on read`.
 
 ### Task 6: Viewer reads v8.1-pre
 
