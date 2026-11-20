@@ -102,6 +102,9 @@ const cases = [
   { name: "synthetic-v75-hybrid", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre", rowOrder: "hybrid", sourceTwin: "synthetic-v75" },
   { name: "synthetic-v74", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
   { name: "synthetic-v7", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7" },
+  { name: "small-v81", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.1-pre" },
+  { name: "flags-extra-v81", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v8.1-pre" },
+  { name: "synthetic-v81", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v8.1-pre" },
 ];
 if (autzen) {
   cases.push({ name: "autzen-copc-4096-d2", input: autzen, ppb: 4096, divisions: 2, multi: false, format: "v5" });
@@ -125,7 +128,7 @@ const x = (await WebAssembly.instantiate(module, imports)).exports;
 const dumpDir = process.env.CONVERT_PARITY_DUMP;
 
 // `convert_parity_run` format argument.
-const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2, v5: 3, v7: 4 };
+const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2, v5: 3, v7: 4, "v8.1-pre": 5 };
 
 function wasmConvert(name, bytes, ppb, divisions, format, rowOrder) {
   const ptr = x.convert_parity_alloc(bytes.length);

@@ -113,7 +113,7 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend().has_attributes()
     }
 
-    /// Whether `id` stores schema column `index`; see [`IndexedReader::attribute_present`].
+    /// Whether `id` stores schema column `index`; see `IndexedReader::attribute_present`.
     pub fn attribute_present(&self, id: BlockId, index: u32) -> Result<bool, FormatError> {
         self.backend().attribute_present(id, index)
     }
