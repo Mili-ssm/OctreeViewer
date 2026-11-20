@@ -1,6 +1,52 @@
-use viewer_core::{BlockId, PointBlock};
+use viewer_core::{BlockId, PointBatch, PointBlock};
 use viewer_format::OctreeReader;
 use viewer_render_wgpu::ColorMode;
+
+/// Schema index of the `intensity` column, the one a block without the selected column is
+/// painted with (`v8.1-pre` LOD rows keep only what the viewer draws).
+pub(crate) fn intensity_index(schema: &[viewer_core::AttributeDescriptor]) -> Option<u32> {
+    schema
+        .iter()
+        .position(|descriptor| descriptor.name() == "intensity")
+        .and_then(|index| u32::try_from(index).ok())
+}
+
+/// Paints `geometry` with the selected `(column, component)` and its range. A block that omits
+/// that column (a LOD block of `v8.1-pre`) is painted with intensity and intensity's global
+/// range instead; when it has no intensity either, the block keeps the display colours it has.
+fn paint_selected_attribute<E: std::fmt::Display>(
+    reader: &mut dyn OctreeReader<Error = E>,
+    id: BlockId,
+    geometry: PointBatch,
+    (index, component): (u32, u32),
+    range: Option<[f64; 2]>,
+) -> Result<PointBatch, String> {
+    let (index, component, range) = if reader
+        .attribute_present(id, index)
+        .map_err(|e| e.to_string())?
+    {
+        (index, component, range)
+    } else {
+        let Some(intensity) = intensity_index(reader.metadata().hierarchy().attributes()) else {
+            return Ok(geometry);
+        };
+        if !reader
+            .attribute_present(id, intensity)
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(geometry);
+        }
+        let range = reader
+            .attribute_range(intensity, 0)
+            .map_err(|e| e.to_string())?;
+        (intensity, 0, range)
+    };
+    let column = reader
+        .read_attribute(id, index)
+        .map_err(|e| e.to_string())?;
+    viewer_render_wgpu::colorize_attribute(geometry, &column, component, range)
+        .map_err(str::to_owned)
+}
 
 /// Loads only the payloads required by the current presentation mode.
 pub(crate) fn load_render_block<E: std::fmt::Display>(
@@ -16,19 +62,8 @@ pub(crate) fn load_render_block<E: std::fmt::Display>(
         reader.read_positions(id)
     }
     .map_err(|error| error.to_string())?;
-    // A block may omit the column (revisions that drop what the viewer does not draw from
-    // interior nodes): it then keeps the colours it has instead of failing the load.
-    if let Some((index, component)) = selected_attribute
-        && reader
-            .attribute_present(id, index)
-            .map_err(|e| e.to_string())?
-    {
-        let column = reader
-            .read_attribute(id, index)
-            .map_err(|e| e.to_string())?;
-        geometry =
-            viewer_render_wgpu::colorize_attribute(geometry, &column, component, selected_range)
-                .map_err(str::to_owned)?;
+    if let Some(selected) = selected_attribute {
+        geometry = paint_selected_attribute(reader, id, geometry, selected, selected_range)?;
     }
     let requested_attribute = match mode {
         Some(ColorMode::Intensity) => Some("intensity"),
@@ -72,16 +107,8 @@ pub(crate) fn load_cell_block<E: std::fmt::Display>(
         .read_geometry(id)
         .map_err(|error| error.to_string())?;
     // An attribute colour mode paints the points before the cells are built from them (R3-Q33).
-    if let Some(((index, component), range)) = paint
-        && reader
-            .attribute_present(id, index)
-            .map_err(|e| e.to_string())?
-    {
-        let column = reader
-            .read_attribute(id, index)
-            .map_err(|e| e.to_string())?;
-        geometry = viewer_render_wgpu::colorize_attribute(geometry, &column, component, range)
-            .map_err(str::to_owned)?;
+    if let Some((selected, range)) = paint {
+        geometry = paint_selected_attribute(reader, id, geometry, selected, range)?;
     }
     let mut attributes = Vec::new();
     if reader.has_attributes() {
@@ -261,8 +288,18 @@ mod tests {
                 )
                 .map_err(|_| "unknown row")
         }
-        fn attribute_range(&self, _: u32, _: u32) -> Result<Option<[f64; 2]>, Self::Error> {
-            panic!("render loading must use the range already selected by the caller")
+        fn attribute_range(
+            &self,
+            index: u32,
+            component: u32,
+        ) -> Result<Option<[f64; 2]>, Self::Error> {
+            // Only the fallback to intensity asks for a range of its own (its global one).
+            assert_eq!(
+                (index, component),
+                (0, 0),
+                "render loading must use the range already selected by the caller"
+            );
+            Ok(Some([0.0, 200.0]))
         }
     }
 
@@ -466,6 +503,7 @@ mod tests {
             &schema,
             None,
             None,
+            None,
             usize::MAX,
         )
         .unwrap();
@@ -490,6 +528,7 @@ mod tests {
             &schema,
             Some((0, 0)),
             Some([0.0, 255.0]),
+            None,
             usize::MAX,
         )
         .unwrap();
@@ -512,10 +551,116 @@ mod tests {
             &schema,
             Some((0, 0)),
             Some([0.0, 255.0]),
+            None,
             usize::MAX,
         )
         .unwrap();
         assert!(block.attributes().is_empty());
+    }
+
+    /// The colours intensity `[100, 200]` gets over its global range `[0, 200]` (the selected
+    /// column's own range `[-1, 1]` would saturate both points).
+    const INTENSITY_COLOURS: [ColorRgb; 2] =
+        [ColorRgb::new(127, 255, 127), ColorRgb::new(255, 0, 0)];
+
+    #[test]
+    fn attribute_mode_falls_back_to_intensity_on_lod_blocks() {
+        let id = BlockId::new(7);
+        // CPU path: the block lacks the selected column, so it requests intensity instead.
+        let mut reader = MemoryReader::new();
+        reader.absent = vec![2];
+        let block = load_render_block(
+            &mut reader,
+            id,
+            Some(ColorMode::Rgb),
+            Some((2, 1)),
+            Some([-1.0, 1.0]),
+        )
+        .unwrap();
+        assert_eq!(reader.calls, ["xyz", "intensity"]);
+        assert!(block.attributes().is_empty());
+        let colours: Vec<_> = block.points().points().iter().map(|p| p.color).collect();
+        assert_eq!(colours, INTENSITY_COLOURS);
+        // Cells path: painted from intensity, and intensity and class still travel with the block.
+        let mut reader = MemoryReader::new();
+        reader.absent = vec![2];
+        let block = load_cell_block(&mut reader, id, Some(((2, 1), Some([-1.0, 1.0])))).unwrap();
+        let colours: Vec<_> = block.points().points().iter().map(|p| p.color).collect();
+        assert_eq!(colours, INTENSITY_COLOURS);
+        let names: Vec<_> = block
+            .attributes()
+            .iter()
+            .map(|column| column.descriptor().name())
+            .collect();
+        assert_eq!(names, ["intensity", "classification"]);
+        // A block that has the column paints with it, as before.
+        let mut reader = MemoryReader::new();
+        let block = load_render_block(
+            &mut reader,
+            id,
+            Some(ColorMode::Rgb),
+            Some((2, 1)),
+            Some([-1.0, 1.0]),
+        )
+        .unwrap();
+        assert_eq!(reader.calls, ["xyz", "vector"]);
+        assert_eq!(block.points().points()[0].color, ColorRgb::new(0, 0, 255));
+    }
+
+    #[test]
+    fn async_attribute_blocks_fall_back_to_intensity_with_its_global_range() {
+        let mut reader = MemoryReader::new();
+        let geometry = reader.read_positions(BlockId::new(7)).unwrap();
+        let schema = reader.metadata().hierarchy().attributes().to_vec();
+        let intensity = reader.read_attribute(BlockId::new(7), 0).unwrap();
+        // Selected `vector:1` is absent: the plan delivered intensity, painted with its own range.
+        let block = crate::lod_driver::assemble_async_block(
+            BlockId::new(7),
+            geometry,
+            Some(intensity),
+            Some(vec![]),
+            &schema,
+            Some((2, 1)),
+            Some([-1.0, 1.0]),
+            Some([0.0, 200.0]),
+            usize::MAX,
+        )
+        .unwrap();
+        let colours: Vec<_> = block.points().points().iter().map(|p| p.color).collect();
+        assert_eq!(colours, INTENSITY_COLOURS);
+        assert_eq!(block.attributes().len(), 1);
+        // Neither the selected column nor intensity arrived: the block keeps its colours.
+        let geometry = reader.read_geometry(BlockId::new(7)).unwrap();
+        let block = crate::lod_driver::assemble_async_block(
+            BlockId::new(7),
+            geometry,
+            None,
+            None,
+            &schema,
+            Some((2, 1)),
+            Some([-1.0, 1.0]),
+            Some([0.0, 200.0]),
+            usize::MAX,
+        )
+        .unwrap();
+        assert_eq!(block.points().points()[0].color, ColorRgb::new(10, 20, 30));
+        // Any other column in place of the selected one is still a mismatch.
+        let geometry = reader.read_positions(BlockId::new(7)).unwrap();
+        let classification = reader.read_attribute(BlockId::new(7), 1).unwrap();
+        assert!(
+            crate::lod_driver::assemble_async_block(
+                BlockId::new(7),
+                geometry,
+                Some(classification),
+                None,
+                &schema,
+                Some((2, 1)),
+                Some([-1.0, 1.0]),
+                Some([0.0, 200.0]),
+                usize::MAX,
+            )
+            .is_err()
+        );
     }
 
     #[test]

@@ -374,6 +374,9 @@ pub(crate) fn resolve_color_selection(
 /// Turns one asynchronously delivered block into a cacheable `PointBlock`. With an attribute
 /// selected the column is painted into the colours; otherwise it travels with the block.
 /// `carried` is `Some` on the cells path only: its columns, and a painted one, travel with the block (R3-Q32).
+/// A block that omits the selected column (`v8.1-pre` LOD blocks) arrives with intensity instead
+/// (the plan's substitute): it is painted with `fallback_range`, intensity's global range. With no
+/// column at all the block keeps its display colours.
 #[expect(
     clippy::too_many_arguments,
     reason = "the parameters are independent inputs of one computation; a parameter struct would only rename them"
@@ -386,26 +389,25 @@ pub(crate) fn assemble_async_block(
     schema: &[AttributeDescriptor],
     selected_attribute: Option<(u32, u32)>,
     selected_range: Option<[f64; 2]>,
+    fallback_range: Option<[f64; 2]>,
     budget_bytes: usize,
 ) -> Result<PointBlock, String> {
     let mut geometry = geometry;
     let mut columns = Vec::new();
     if let Some(column) = column {
         if let Some((schema_index, component)) = selected_attribute {
-            if schema
+            let selected = schema
                 .get(schema_index as usize)
-                .map(AttributeDescriptor::name)
-                != Some(column.descriptor().name())
-            {
+                .map(AttributeDescriptor::name);
+            let (component, range) = if selected == Some(column.descriptor().name()) {
+                (component, selected_range)
+            } else if column.descriptor().name() == "intensity" {
+                (0, fallback_range)
+            } else {
                 return Err("async attribute does not match the selected color column".to_owned());
-            }
-            geometry = viewer_render_wgpu::colorize_attribute(
-                geometry,
-                &column,
-                component,
-                selected_range,
-            )
-            .map_err(str::to_owned)?;
+            };
+            geometry = viewer_render_wgpu::colorize_attribute(geometry, &column, component, range)
+                .map_err(str::to_owned)?;
         }
         // On the cells path (`carried` is `Some`) the painted column stays with the block too:
         // the cells keep intensity and class words even when that column is the painted one
@@ -413,8 +415,6 @@ pub(crate) fn assemble_async_block(
         if selected_attribute.is_none() || carried.is_some() {
             columns.push(column);
         }
-    } else if selected_attribute.is_some() {
-        return Err("selected attribute payload is required".to_owned());
     }
     columns.extend(carried.into_iter().flatten());
     let block = PointBlock::new(block_id, geometry, columns);

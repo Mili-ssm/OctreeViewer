@@ -407,6 +407,15 @@ impl WasmSceneBuilder {
                 .reference_spacing()
                 .map_or(JsValue::NULL, JsValue::from_f64),
         )?;
+        // p5 of the file's point distances; null when the file has none or stored zeros. The demo
+        // does not apply it by default (owner decision D5): the host decides.
+        set(
+            &info,
+            "recommendedMinSize",
+            &dataset
+                .recommended_min_size()
+                .map_or(JsValue::NULL, JsValue::from_f64),
+        )?;
         // The tight data extent for `beginRemoteCells`; null when it is the root cube.
         let data = dataset.cell_data_bounds();
         for (key, pick) in [("dataMin", true), ("dataMax", false)] {

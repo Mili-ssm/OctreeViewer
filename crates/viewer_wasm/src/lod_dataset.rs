@@ -71,6 +71,9 @@ pub struct LodDataset {
     crs_unit: Option<DatasetUnit>,
     /// Reference spacing stored by the format (`v7.5-pre`); other formats compute it on demand.
     stored_reference_spacing: Option<f64>,
+    /// Smallest cell side the file recommends (p5 of its point distances, `v8.1-pre`); `None` when
+    /// the file carries no measurement.
+    recommended_min_size: Option<f64>,
     /// Present when the hierarchy is paged (`v7.5-pre`): pages are grafted and evicted at run time.
     pages: Option<PageResidency>,
     /// The last `graft_page` failed on the page budget and no page has been grafted since.
@@ -351,6 +354,7 @@ impl LodDataset {
             crs: None,
             crs_unit: None,
             stored_reference_spacing: None,
+            recommended_min_size: None,
             pages: None,
             page_budget_exhausted: false,
             global_frame: false,
@@ -570,6 +574,20 @@ impl LodDataset {
     pub fn with_reference_spacing(mut self, spacing: f64) -> Self {
         self.stored_reference_spacing = Some(spacing);
         self
+    }
+
+    /// Records the file's recommended smallest cell side. Zero, negative and non-finite values
+    /// mean "not measured" (a file of duplicates stores zeros) and leave it `None`.
+    #[must_use]
+    pub fn with_recommended_min_size(mut self, size: Option<f64>) -> Self {
+        self.recommended_min_size = size.filter(|size| size.is_finite() && *size > 0.0);
+        self
+    }
+
+    /// The smallest cell side the file recommends, if it was measured. Informational: nothing
+    /// applies it unless the host calls [`LodDataset::set_min_side`].
+    pub fn recommended_min_size(&self) -> Option<f64> {
+        self.recommended_min_size
     }
 
     /// Per-cloud reference spacing (RF-05). Paged clouds report the stored value, so grafting or

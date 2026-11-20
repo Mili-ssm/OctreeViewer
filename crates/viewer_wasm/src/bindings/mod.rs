@@ -118,6 +118,29 @@ pub(super) fn attribute_availability(
     }))
 }
 
+/// The range intensity is painted with when an attribute mode meets a block that omits the
+/// selected column (`v8.1-pre` LOD blocks): intensity's global range. `None` when no attribute is
+/// selected or the file has no intensity range.
+pub(super) fn intensity_fallback_range(
+    selected_attribute: Option<(u32, u32)>,
+    session: Option<&LodSession<FormatReader<BrowserBlobReader>>>,
+    async_context: Option<&AsyncFormatContext>,
+) -> Result<Option<[f64; 2]>, String> {
+    let Some(schema) = selected_attribute
+        .and(session)
+        .map(|session| session.dataset().attribute_schema())
+    else {
+        return Ok(None);
+    };
+    let Some(intensity) = crate::block_loading::intensity_index(schema) else {
+        return Ok(None);
+    };
+    Ok(
+        attribute_availability(session, async_context, intensity, 0)?
+            .and_then(|availability| availability.range),
+    )
+}
+
 #[wasm_bindgen]
 impl WasmVoxelViewer {
     #[wasm_bindgen(constructor)]
