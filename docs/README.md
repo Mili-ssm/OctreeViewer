@@ -37,6 +37,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | [Temporales, fase A](plans/temporales-del-conversor-fase-a.md) | Plan de implementación de la escritura por subárbol: codificador sin jerarquía, escritor en flujo, sumidero de bloques y un hijo de la raíz cada vez. | en pausa (#109) |
 | [Formato V8](plans/formato-v8.md) | Diseño de la V8 (aprobado): color de pantalla sin duplicar, LOD solo con atributos de dibujo, distancia mínima entre puntos en la cabecera, zstd según medida y retirada de V5, v6 y v7. | pendiente |
 | [Formato V8, v8.1-pre](plans/formato-v8-pre1.md) | Plan de implementación de la primera revisión experimental: identidad, cuantiles de distancia, LOD con columnas de dibujo, color de pantalla derivado y lectura en el visor; ejecutado y medido. | medido |
+| [Formato V8, v8.2-pre](plans/formato-v8-pre2.md) | Experimento de D3: zstd en columnas de `.octattrs` con cuatro esquemas fijos (`lz4`, `cold`, `cold-rgb`, `all`) medidos en tamaño, conversión, carga y render. | propuesto |
 
 ## Explicación
 
