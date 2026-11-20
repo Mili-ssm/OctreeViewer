@@ -2148,6 +2148,10 @@ fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_pha
     .unwrap();
     let native_phases = native_plan.spatial_phases.unwrap();
     assert!(native_phases.peak_live_spool_bytes > 0);
+    let native_totals = native.ledger_totals().unwrap();
+    assert_eq!(native_totals.written, native_phases.spool_bytes_written);
+    assert!(native_totals.physical_written <= native_totals.written);
+    assert!(native_totals.physical_peak_live <= native_totals.peak_live);
 
     let reader = open_las_reader(&input).unwrap();
     let mem = MemSpoolStore::new(true);
@@ -2402,8 +2406,12 @@ struct FailingStore {
 
 impl crate::pipeline::spool_store::SpoolStore for FailingStore {
     type Reader = std::io::Cursor<Vec<u8>>;
-    fn create(&self, id: crate::pipeline::spool_store::SpoolId) -> Result<(), ConvertError> {
-        self.inner.create(id)
+    fn create(
+        &self,
+        id: crate::pipeline::spool_store::SpoolId,
+        record_bytes: usize,
+    ) -> Result<(), ConvertError> {
+        self.inner.create(id, record_bytes)
     }
     fn append(
         &self,
@@ -3136,4 +3144,51 @@ fn threaded_root_ranges_report_a_corrupt_laz_chunk_like_the_default_scan() {
     for ranges in [2, 3, 8] {
         assert_eq!(message(ranged(block_options(2), ranges)), serial);
     }
+}
+
+#[test]
+fn joined_segments_read_back_identically() {
+    use crate::pipeline::spool_store::{SpoolExtent, SpoolId, SpoolStore};
+    use std::io::Read;
+    use viewer_convert_core::pipeline::node_job::join_segments;
+
+    const RECORD: usize = 42;
+    let dir = test_dir();
+    let store = crate::file_spool_store::FileSpoolStore::new(dir.path(), false);
+    let mut expected = Vec::new();
+    let mut ids = Vec::new();
+    for (segment, count) in [(1_u64, 9_000_usize), (2, 17_000), (3, 3_001)] {
+        let mut data = Vec::new();
+        for index in 0..count {
+            let mut record = [segment as u8; RECORD];
+            record[..8].copy_from_slice(&(index as u64).to_le_bytes());
+            data.extend_from_slice(&record);
+        }
+        let id = SpoolId(segment);
+        store.create(id, RECORD).unwrap();
+        // Chunks that do not end on record boundaries.
+        for part in data.chunks(65_536) {
+            store.append(id, part).unwrap();
+        }
+        store.close(id).unwrap();
+        expected.extend_from_slice(&data);
+        ids.push(id);
+    }
+    let target = SpoolId(9);
+    let total = join_segments(&store, target, &ids, RECORD).unwrap();
+    assert_eq!(total, expected.len() as u64);
+    assert_eq!(store.len(target).unwrap(), expected.len() as u64);
+    let mut out = Vec::new();
+    store
+        .reader(
+            target,
+            SpoolExtent {
+                offset: 0,
+                len: total,
+            },
+        )
+        .unwrap()
+        .read_to_end(&mut out)
+        .unwrap();
+    assert_eq!(out, expected);
 }

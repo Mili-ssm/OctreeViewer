@@ -183,7 +183,7 @@ impl ChildSpool {
             return Ok(());
         }
         if !self.created {
-            store.create(self.id)?;
+            store.create(self.id, self.layout.record_bytes())?;
             self.created = true;
         }
         store.append(self.id, &self.buffer)?;

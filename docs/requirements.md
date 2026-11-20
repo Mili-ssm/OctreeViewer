@@ -238,7 +238,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RF-29 | Técnico | Blando | Apaño del límite de cuota de Firefox | Firefox deje de ser mejor esfuerzo o cambie la cuota |
 | RF-30 | Funcional | Blando | Nubes densas y pequeñas, carga gradual y fusión entre nubes; los valores son referencias | El experimento #46 no mida mejora |
 | RQ-01–RQ-05 | Funcional | Duro | Fluidez, escala y memoria acotada (propósito) | Cifras: cambie el equipo o la red de referencia |
-| RQ-06 | Técnico | Blando | Objetivo sin medir (ASM-03) | El spike de temporales lo mida |
+| RQ-06 | Técnico | Blando | Objetivo; medido el 20-11-2026 (3,5 × en Albuera tras la fase B) | La fase A del [plan de temporales](plans/temporales-del-conversor.md) lo mida |
 | RQ-07 | Técnico | Blando | Protege coste de conversión; cifra revisada por el propietario (ADR 0043) | Ver «Revisar si» del ADR 0043 |
 | RQ-08 | Técnico | Duro | Un fichero sale igual se convierta donde se convierta: reproducibilidad y confianza en los datos (propietario, 19-11-2026) | — |
 | RQ-09 | Funcional | Duro | Fidelidad de nivel de detalle; la tolerancia del 0,5 % es blanda (ADR 0034) | La tolerancia cueste más que lo que gana |
@@ -266,7 +266,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | OQ-01 ([#21](https://github.com/Mili-ssm/OctreeViewer/issues/21)) | Dónde se publican la app y la librería (GitHub Pages o servidor/CDN propio) | Sin decidir por el propietario | La API cubra RF-10 a RF-15 |
 | OQ-02 ([#22](https://github.com/Mili-ssm/OctreeViewer/issues/22)) | Métricas frente a Potree 2 y COPC | Basta paridad cualitativa por ahora | RQ-11 superado |
 | OQ-03 ([#23](https://github.com/Mili-ssm/OctreeViewer/issues/23)) | Avisos upstream de seguridad de `las`/`laz` (README, prioridad 9) | Decisión del 28-10-2026: más adelante | Antes de publicar la 1.0 (propuesto) |
-| OQ-04 ([#24](https://github.com/Mili-ssm/OctreeViewer/issues/24)) | Techo de temporales definitivo | RQ-06 es un objetivo sin medir (ASM-03) | Spike de temporales del CLI |
+| OQ-04 ([#24](https://github.com/Mili-ssm/OctreeViewer/issues/24)) | Techo de temporales definitivo | RQ-06 medido el 20-11-2026: Albuera 11,1 × el LAZ en `dc98e5a` y 3,5 × con spools comprimidos ([registro](records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md)) | Fase A del [plan de temporales](plans/temporales-del-conversor.md) |
 | OQ-05 | ~~Compresión de cadenas de nodos con un solo hijo (propietario, 02-11-2026)~~ | Rechazada en [ADR 0030](adr/0030-jerarquia-paginada-por-anclas.md): 6 y 9 nodos con un solo hijo; ahorraría < 6 KB | Más del 1 % de nodos con un solo hijo |
 | OQ-06 | ~~Direccionamiento compacto de nodos: nivel `u8` + camino relativo `u16` (5 niveles × 3 bits) con nodos ancla de prefijo completo cada 5 niveles (propietario, 02-11-2026)~~ | Adoptado en [ADR 0030](adr/0030-jerarquia-paginada-por-anclas.md): nodos de página por (profundidad relativa `u8`, camino `u16`) bajo un ancla de prefijo completo | — |
 | OQ-07 ([#25](https://github.com/Mili-ssm/OctreeViewer/issues/25)) | Profundidad del visor por encima de 24: claves `u64` en CPU y posiciones relativas a un ancla cercana en GPU (WGSL no tiene `u64`) | Majadas y Belvedere llegan a ~22 y las nubes locales ya tienen raíz ajustada | Reanudar R3 (celdas ancladas por nodo) |

@@ -336,6 +336,7 @@ pub(crate) fn convert_file_inner(
         spool_store = FileSpoolStore::with_closed_source(
             workspace.root(),
             source_spool_bytes_written,
+            viewer_convert_core::spatial::SpoolLayout::source(&source).record_bytes(),
             diagnostics.is_some(),
         );
         build_spatial_plan(

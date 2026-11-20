@@ -18,6 +18,7 @@ mod fs_util;
 mod las_source;
 mod pipeline;
 mod publish;
+pub(crate) mod spool_frame;
 #[cfg(test)]
 mod test_options;
 mod verify;

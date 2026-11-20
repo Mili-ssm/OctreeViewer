@@ -37,7 +37,10 @@ pub struct SpoolExtent {
 /// Ids are never reused; any other order is an error.
 pub trait SpoolStore {
     type Reader: Read;
-    fn create(&self, id: SpoolId) -> Result<(), ConvertError>;
+    /// `record_bytes` is the size of one record of this spool: the native store transposes
+    /// records into byte planes with it, `MemSpoolStore` checks that a closed spool holds whole
+    /// records, and the web store ignores it.
+    fn create(&self, id: SpoolId, record_bytes: usize) -> Result<(), ConvertError>;
     fn append(&self, id: SpoolId, bytes: &[u8]) -> Result<(), ConvertError>;
     fn close(&self, id: SpoolId) -> Result<(), ConvertError>;
     fn len(&self, id: SpoolId) -> Result<u64, ConvertError>;
@@ -58,6 +61,9 @@ pub trait SpoolStore {
 pub struct LedgerTotals {
     pub written: u64,
     pub peak_live: u64,
+    /// Bytes as stored (after compression); equal to `written` for stores that do not compress.
+    pub physical_written: u64,
+    pub physical_peak_live: u64,
 }
 
 /// Diagnostics that live next to the bytes: the byte ledger and the ordering counter of
@@ -77,6 +83,10 @@ pub struct SpoolLedger {
     pub written: AtomicU64,
     pub live: AtomicU64,
     pub peak: AtomicU64,
+    /// Stored (compressed) counterparts of `written`, `live` and `peak`.
+    pub physical_written: AtomicU64,
+    pub physical_live: AtomicU64,
+    pub physical_peak: AtomicU64,
     /// Orders `NodeSpoolEvent` starts and ends across workers.
     pub event_seq: AtomicU64,
 }
@@ -87,6 +97,9 @@ impl SpoolLedger {
             written: AtomicU64::new(bytes),
             live: AtomicU64::new(bytes),
             peak: AtomicU64::new(bytes),
+            physical_written: AtomicU64::new(bytes),
+            physical_live: AtomicU64::new(bytes),
+            physical_peak: AtomicU64::new(bytes),
             ..Self::default()
         }
     }
@@ -109,10 +122,30 @@ impl SpoolLedger {
             });
     }
 
+    pub fn add_physical(&self, bytes: u64) {
+        self.physical_written.fetch_add(bytes, Ordering::Relaxed);
+        let live = self
+            .physical_live
+            .fetch_add(bytes, Ordering::Relaxed)
+            .saturating_add(bytes);
+        self.physical_peak.fetch_max(live, Ordering::Relaxed);
+    }
+
+    pub fn remove_physical(&self, bytes: u64) {
+        debug_assert!(self.physical_live.load(Ordering::Relaxed) >= bytes);
+        let _ = self
+            .physical_live
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |live| {
+                Some(live.saturating_sub(bytes))
+            });
+    }
+
     pub fn totals(&self) -> LedgerTotals {
         LedgerTotals {
             written: self.written.load(Ordering::Relaxed),
             peak_live: self.peak.load(Ordering::Relaxed),
+            physical_written: self.physical_written.load(Ordering::Relaxed),
+            physical_peak_live: self.physical_peak.load(Ordering::Relaxed),
         }
     }
 }
@@ -165,6 +198,10 @@ pub fn entry_in<'a, T>(
 struct MemSpool {
     phase: Phase,
     data: Vec<u8>,
+    /// Record size the caller declared at `create`; `close` checks the spool holds whole records,
+    /// so a caller that passes the wrong size fails the tests instead of silently ruining the
+    /// native store's byte-plane compression.
+    record_bytes: usize,
 }
 
 #[derive(Default)]
@@ -219,7 +256,7 @@ impl MemSpoolStore {
 impl SpoolStore for MemSpoolStore {
     type Reader = io::Cursor<Vec<u8>>;
 
-    fn create(&self, id: SpoolId) -> Result<(), ConvertError> {
+    fn create(&self, id: SpoolId, record_bytes: usize) -> Result<(), ConvertError> {
         let mut state = lock(&self.state);
         if state.spools.contains_key(&id) {
             return Err(lifecycle_error(id, "create", "id was already used"));
@@ -229,6 +266,7 @@ impl SpoolStore for MemSpoolStore {
             MemSpool {
                 phase: Phase::Open,
                 data: Vec::new(),
+                record_bytes,
             },
         );
         state.live_spools += 1;
@@ -249,7 +287,15 @@ impl SpoolStore for MemSpoolStore {
 
     fn close(&self, id: SpoolId) -> Result<(), ConvertError> {
         let mut state = lock(&self.state);
-        entry_in(&mut state.spools, id, "close", Phase::Open, |s| s.phase)?.phase = Phase::Closed;
+        let spool = entry_in(&mut state.spools, id, "close", Phase::Open, |s| s.phase)?;
+        if spool.record_bytes == 0 || !spool.data.len().is_multiple_of(spool.record_bytes) {
+            return Err(lifecycle_error(
+                id,
+                "close",
+                "length is not a whole number of records",
+            ));
+        }
+        spool.phase = Phase::Closed;
         Ok(())
     }
 
@@ -296,6 +342,8 @@ impl SpoolAccounting for MemSpoolStore {
         state.accounting.then_some(LedgerTotals {
             written: state.written,
             peak_live: state.peak_bytes,
+            physical_written: state.written,
+            physical_peak_live: state.peak_bytes,
         })
     }
 }
@@ -310,7 +358,7 @@ mod tests {
 
     fn closed(store: &MemSpoolStore, id: u64, bytes: &[u8]) -> SpoolId {
         let id = SpoolId(id);
-        store.create(id).unwrap();
+        store.create(id, 1).unwrap();
         store.append(id, bytes).unwrap();
         store.close(id).unwrap();
         id
@@ -361,7 +409,7 @@ mod tests {
     #[test]
     fn mem_store_rejects_deleting_an_open_spool() {
         let store = MemSpoolStore::new(true);
-        store.create(SpoolId(1)).unwrap();
+        store.create(SpoolId(1), 1).unwrap();
         assert!(message(store.delete(SpoolId(1))).contains("delete"));
     }
 
@@ -369,16 +417,16 @@ mod tests {
     fn mem_store_never_reuses_an_id() {
         let store = MemSpoolStore::new(true);
         let id = closed(&store, 1, b"a");
-        assert!(message(store.create(id)).contains("already used"));
+        assert!(message(store.create(id, 1)).contains("already used"));
         store.delete(id).unwrap();
-        assert!(message(store.create(id)).contains("already used"));
+        assert!(message(store.create(id, 1)).contains("already used"));
         assert!(message(store.delete(id)).contains("delete"));
     }
 
     #[test]
     fn mem_store_rejects_reads_before_close_and_outside_the_extent() {
         let store = MemSpoolStore::new(true);
-        store.create(SpoolId(1)).unwrap();
+        store.create(SpoolId(1), 1).unwrap();
         let whole = SpoolExtent { offset: 0, len: 0 };
         assert!(message(store.reader(SpoolId(1), whole)).contains("read"));
         assert!(message(store.len(SpoolId(1))).contains("len"));

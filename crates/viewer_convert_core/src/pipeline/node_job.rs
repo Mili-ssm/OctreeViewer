@@ -798,7 +798,7 @@ pub fn merge_root_ranges<S: SpoolStore>(
             .iter()
             .map(|segment| segment.spool)
             .collect::<Vec<_>>();
-        join_segments(store, target, &ids)?;
+        join_segments(store, target, &ids, ctx.layout.record_bytes())?;
         children.push(ChildOutput {
             key: u16::try_from(key).expect("at most 8³ children"),
             spool: target,
@@ -817,16 +817,17 @@ pub fn merge_root_ranges<S: SpoolStore>(
     })
 }
 
-/// Copies closed `segments` (in range order) into the new spool `target` in 64 KiB chunks and
-/// deletes each right after copying it. Returns the bytes copied. Never called with an empty
+/// Copies closed `segments` (in range order) into the new spool `target`, created with
+/// `record_bytes`, in 64 KiB chunks and deletes each right after copying it. Returns the bytes copied. Never called with an empty
 /// slice.
 pub fn join_segments<S: SpoolStore>(
     store: &S,
     target: SpoolId,
     segments: &[SpoolId],
+    record_bytes: usize,
 ) -> Result<u64, ConvertError> {
     debug_assert!(!segments.is_empty());
-    store.create(target)?;
+    store.create(target, record_bytes)?;
     let mut buffer = vec![0_u8; SPOOL_IO_BUFFER_BYTES];
     let mut total = 0_u64;
     for &segment in segments {
@@ -858,7 +859,8 @@ pub fn spool_source<P: PointSource, S: SpoolStore>(
     progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
 ) -> Result<u64, ConvertError> {
     let range = source.range();
-    store.create(id)?;
+    let record_bytes = SpoolLayout::source(info).record_bytes();
+    store.create(id, record_bytes)?;
     let mut writer = StoreWriter { store, id };
     let mut point_data = PointDataBuilder::new().for_header(source.header()).build();
     while source.next_index() < range.end {
@@ -876,7 +878,7 @@ pub fn spool_source<P: PointSource, S: SpoolStore>(
     }
     store.close(id)?;
     (range.end - range.start)
-        .checked_mul(SpoolLayout::source(info).record_bytes() as u64)
+        .checked_mul(record_bytes as u64)
         .ok_or(ConvertError::SizeOverflow)
 }
 
@@ -936,7 +938,7 @@ pub fn write_lod(
         }
     }
     if count > 0 {
-        store.create(id)?;
+        store.create(id, layout.lod().record_bytes())?;
         store.append(id, &encoded)?;
         store.close(id)?;
     }

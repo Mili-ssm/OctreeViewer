@@ -1230,6 +1230,7 @@ dependencies = [
  "ctrlc",
  "las",
  "laz",
+ "lz4_flex",
  "rayon",
  "serde",
  "serde_json",

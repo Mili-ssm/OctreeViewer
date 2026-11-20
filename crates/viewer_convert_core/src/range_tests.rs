@@ -446,8 +446,8 @@ mod spool_hints {
 
     impl SpoolStore for Recording {
         type Reader = <MemSpoolStore as SpoolStore>::Reader;
-        fn create(&self, id: SpoolId) -> Result<(), ConvertError> {
-            self.inner.create(id)
+        fn create(&self, id: SpoolId, record_bytes: usize) -> Result<(), ConvertError> {
+            self.inner.create(id, record_bytes)
         }
         fn append(&self, id: SpoolId, bytes: &[u8]) -> Result<(), ConvertError> {
             self.inner.append(id, bytes)

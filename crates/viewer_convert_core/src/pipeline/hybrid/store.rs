@@ -535,7 +535,7 @@ impl<R: RamTier, P: PageTier> Inner<R, P> {
 impl<R: RamTier + Send + Sync, P: PageTier + Send + Sync> SpoolStore for HybridSpoolStore<R, P> {
     type Reader = HybridReader<R, P>;
 
-    fn create(&self, id: SpoolId) -> Result<(), ConvertError> {
+    fn create(&self, id: SpoolId, _record_bytes: usize) -> Result<(), ConvertError> {
         let mut state = lock(&self.inner.state);
         if state.spools.contains_key(&id) {
             return Err(lifecycle_error(id, "create", "id was already used"));
@@ -691,6 +691,8 @@ impl<R, P> SpoolAccounting for HybridSpoolStore<R, P> {
         state.accounting.then_some(LedgerTotals {
             written: state.written,
             peak_live: state.peak_payload,
+            physical_written: state.written,
+            physical_peak_live: state.peak_payload,
         })
     }
 }
@@ -873,7 +875,7 @@ mod tests {
                 0 => {
                     let id = SpoolId(next_id);
                     next_id += 1;
-                    assert_eq!(outcome(hybrid.create(id)), outcome(mem.create(id)));
+                    assert_eq!(outcome(hybrid.create(id, 1)), outcome(mem.create(id, 1)));
                 }
                 1 | 2 => {
                     let size = match rng.next(6) {
@@ -929,7 +931,7 @@ mod tests {
 
     fn filled(store: &Store, id: u64, len: usize) -> SpoolId {
         let id = SpoolId(id);
-        store.create(id).unwrap();
+        store.create(id, 1).unwrap();
         let bytes: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
         store.append(id, &bytes).unwrap();
         store.close(id).unwrap();
@@ -966,7 +968,7 @@ mod tests {
     fn segments_double_up_to_the_cap_and_the_last_is_trimmed_on_close() {
         let store = store();
         let id = SpoolId(1);
-        store.create(id).unwrap();
+        store.create(id, 1).unwrap();
         // 32+64+128+256+512 KiB = 992 KiB, then 1 MiB segments.
         store.append(id, &vec![7; 992 * 1024 + 1]).unwrap();
         let k = 1024;
@@ -1028,7 +1030,7 @@ mod tests {
         let mut rng = Rng(42);
         let input: Vec<u8> = (0..1_300_000).map(|_| rng.next(256) as u8).collect();
         let id = SpoolId(1);
-        store.create(id).unwrap();
+        store.create(id, 1).unwrap();
         store.append(id, &input).unwrap();
         store.close(id).unwrap();
         let extent = SpoolExtent {
@@ -1042,7 +1044,7 @@ mod tests {
         for child in 10..40u64 {
             let child_id = SpoolId(child);
             let bytes = vec![child as u8; 30_000 + rng.next(60_000) as usize];
-            store.create(child_id).unwrap();
+            store.create(child_id, 1).unwrap();
             for piece in bytes.chunks(7_000) {
                 store.append(child_id, piece).unwrap();
             }
@@ -1062,7 +1064,7 @@ mod tests {
         let store = spilling_store(u64::MAX, 8, None, 64 * 1024, 1 << 22);
         let input: Vec<u8> = (0..300_000u32).map(|i| (i % 249) as u8).collect();
         let id = SpoolId(1);
-        store.create(id).unwrap();
+        store.create(id, 1).unwrap();
         store.append(id, &input).unwrap();
         store.close(id).unwrap();
         let extent = SpoolExtent {
@@ -1076,7 +1078,7 @@ mod tests {
         let mut chunk = vec![0; 10_000];
         for child in 10..60u64 {
             let child_id = SpoolId(child);
-            store.create(child_id).unwrap();
+            store.create(child_id, 1).unwrap();
             for piece in vec![child as u8; 90_000].chunks(5_000) {
                 store.append(child_id, piece).unwrap();
                 assert!(!is_spilled(&store, 1), "the pinned input was spilled");
@@ -1092,7 +1094,7 @@ mod tests {
         assert!(stats.over_budget_peak_bytes >= 300_000, "{stats:?}");
         drop(reader);
         // Unpinned, the input is a normal victim at the next allocation.
-        store.create(SpoolId(99)).unwrap();
+        store.create(SpoolId(99), 1).unwrap();
         store.append(SpoolId(99), &[1]).unwrap();
         assert!(is_spilled(&store, 1));
         assert_eq!(read_all(&mut store.reader(id, extent).unwrap()), input);
@@ -1102,7 +1104,7 @@ mod tests {
     fn a_short_page_write_is_a_storage_full_error() {
         let store = spilling_store(0, 1, Some(100_000), 256 * 1024, 1 << 30);
         let id = SpoolId(1);
-        store.create(id).unwrap();
+        store.create(id, 1).unwrap();
         store.append(id, &vec![1; 300_000]).unwrap();
         let ConvertError::Io(error) = store.close(id).unwrap_err() else {
             panic!("expected an I/O error");
@@ -1122,7 +1124,7 @@ mod tests {
         filled(&store, 1, 40_000);
         filled(&store, 2, 40_000);
         let id = SpoolId(3);
-        store.create(id).unwrap();
+        store.create(id, 1).unwrap();
         store.append(id, &vec![9; 40_000]).unwrap();
         let error = store.close(id).unwrap_err().to_string();
         assert!(error.contains("spill zones exhausted"), "{error}");
@@ -1172,7 +1174,7 @@ mod tests {
         store.hint_consume_rank(SpoolId(2), 100);
         // Open spools of at least a page: the largest goes first; a small one never.
         for (id, len) in [(7, 70_000), (8, 100_000), (9, 1_000)] {
-            store.create(SpoolId(id)).unwrap();
+            store.create(SpoolId(id), 1).unwrap();
             store.append(SpoolId(id), &vec![1; len]).unwrap();
         }
         // A pinned retained spool is skipped.
@@ -1198,8 +1200,8 @@ mod tests {
         let store = spilling_store(0, 2, None, 64 * 1024, 1 << 22);
         let mem = MemSpoolStore::new(false);
         let id = SpoolId(1);
-        store.create(id).unwrap();
-        mem.create(id).unwrap();
+        store.create(id, 1).unwrap();
+        mem.create(id, 1).unwrap();
         let data: Vec<u8> = (0..400_000u32).map(|i| (i % 253) as u8).collect();
         for piece in data.chunks(50_000) {
             store.append(id, piece).unwrap();
