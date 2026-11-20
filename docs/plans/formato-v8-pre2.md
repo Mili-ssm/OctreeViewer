@@ -158,6 +158,9 @@ actualizar el `Estado:` de este plan y de `formato-v8.md`, `docs/estado.md`.
   `decodeMs` (`async_format_reader.rs:161`); además el tiempo hasta el objetivo de px y el intervalo de frame p50/p95
   de la órbita. Control A/A: `cold` frente a `lz4` en modo RGB (no deberían diferir). Si la dispersión A/A es ≥ que la
   diferencia `lz4`/`all`, la diferencia de carga se declara no medible.
+  Cautela (investigación del 20-11-2026): las velocidades de decodificación en wasm de la tarea 0 (LZ4 ~5 GB/s y zstd
+  ~2 GB/s por flujo) superan todo lo publicado para wasm en navegador (LZ4 0,35–1,4 GB/s, sin cifras fiables de zstd
+  ni meshopt en wasm); seguramente son de caché caliente. Solo cuentan las cifras de este paso, con datos reales servidos por red.
 - [ ] **Step 3:** registro fechado con las series, la orden exacta y el equipo. Sin recomendación de esquema: la
   decisión es del propietario (D3). Se completa `FORMAT_V8_PRE2.md` y se actualizan los documentos;
   `check_docs_links.py` y `check_docs_index.py` → OK.
