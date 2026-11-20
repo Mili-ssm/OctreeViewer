@@ -266,10 +266,10 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
   `run.mjs` (el digest de `tools/format_parity` excluye los formatos de marco global, así que la paridad de v8.1-pre
   depende de este caso).
 
-- [ ] **Step 1:** añadir el caso y el test → fallan si no se emiten los mismos bytes o si `verify` rechaza.
-- [ ] **Step 2:** arreglar lo que salga.
-- [ ] **Step 3:** `FUZZ_CHECK=0 scripts/check.sh --offline` → 23/23 (más el caso nuevo), con la paridad de bloques reales.
-- [ ] **Step 4:** commit `test(convert): web/CLI parity and CLI round trip for v8.1-pre`.
+- [x] **Step 1:** añadir el caso y el test → fallan si no se emiten los mismos bytes o si `verify` rechaza.
+- [x] **Step 2:** arreglar lo que salga.
+- [x] **Step 3:** `FUZZ_CHECK=0 scripts/check.sh --offline` → 23/23 (más el caso nuevo), con la paridad de bloques reales.
+- [x] **Step 4:** commit `test(convert): web/CLI parity and CLI round trip for v8.1-pre`.
 
 ### Task 8: Measure v8.1-pre against v7 and record it
 
