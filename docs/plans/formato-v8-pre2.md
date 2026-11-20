@@ -38,7 +38,13 @@ fija un esquema y la opción desaparece (D4).
 - En una columna en zstd se mantienen los candidatos actuales (constante, diccionario, planos de bytes) y su elección
   por tamaño, pero zstd sustituye a LZ4 en cada etapa de entropía. La elección es determinista.
 - Decodificar un payload zstd está acotado por su `raw_length` del directorio: un payload corrupto da error, nunca
-  pánico ni una reserva sin límite.
+  pánico ni una reserva sin límite. Tramas zstd sin número mágico ni checksum (el payload ya lleva CRC).
+- **Codificador:** C `zstd` nivel 3 en nativo y en wasm32. `ruzstd` 0.8.3 solo codifica en `Fastest` (≈ nivel 1;
+  `Default`, `Better` y `Best` están sin implementar), así que no sirve de respaldo: si C zstd no compila para wasm32
+  o no da los mismos bytes que en nativo, se para y se lleva al propietario.
+- **Ahorro esperado sobre v8.1-pre, no sobre v7:** las cifras de la medida de zstd son de v7; v8.1-pre ya quitó tiempo
+  GPS y RGB de 16 bits de las filas LOD, así que se infiere ≈ −3–4 % (`cold`) y ≈ −7 % (`cold-rgb`) en Albuera. La
+  tarea 0 lo proyecta antes de construir nada.
 - `FormatVersion::V<n>` solo dentro de `viewer_format`. Sin `cargo clean`; worktree con su propio target; salidas
   grandes en el `target/` del worktree, no en `/tmp` (tmpfs de 16 GB). Código y commits en inglés, documentos en
   español, sin menciones a asistentes.
@@ -55,16 +61,18 @@ fija un esquema y la opción desaparece (D4).
 
 ---
 
-### Task 0: Choose the zstd encoder (spike, no commit to production code)
+### Task 0: Feasibility and projection (spike, no commit to production code)
 
-- [ ] **Step 1:** comprobar si `zstd`/`zstd-sys` compila para `wasm32-unknown-unknown` con el toolchain local
-  (`cargo check --target wasm32-unknown-unknown` en un crate desechable fuera del workspace).
-- [ ] **Step 2:** medir en una muestra de payloads de Albuera (la del experimento del 20-11-2026, semilla fija) la
-  relación y la velocidad de codificación de `ruzstd` 0.8.3 (sus niveles disponibles) frente a `zstd` nivel 3, y la
-  decodificación en wasm (node) de ambos.
-- [ ] **Step 3: decisión.** C `zstd` en las dos plataformas si compila para wasm32. Si no, `ruzstd` para codificar
-  y decodificar si su relación queda a ≤ 3 puntos de la del nivel 3. Si ninguna se cumple, parar y llevarlo al
-  propietario. Anotar la decisión y las cifras en la sección «Codificador» de este plan.
+- [ ] **Step 1:** comprobar que `zstd`/`zstd-sys` 2.1.3 compila para `wasm32-unknown-unknown` con el toolchain local
+  (crate desechable fuera del workspace).
+- [ ] **Step 2:** en payloads de una muestra de bloques **v8.1-pre** de Albuera (semilla fija; hojas y LOD), codificar
+  con C zstd nivel 3 en nativo y en wasm (node) y comparar el hash de los bytes por tramos de tamaño (≤ 16 KB,
+  ≤ 128 KB, ≤ 256 KB, > 256 KB); medir la velocidad de decodificación en wasm.
+- [ ] **Step 3:** proyectar el tamaño total de Albuera v8.1-pre con cada esquema (`cold`, `cold-rgb`, `all`), con zstd
+  en todas las etapas de entropía (también planos de bytes y la tabla del diccionario).
+- [ ] **Step 4: puerta.** Parar y llevar las cifras al propietario antes de la tarea 1 si: C zstd no compila para
+  wasm32, algún hash nativo/wasm difiere, la decodificación en wasm baja de 500 MB/s, o `cold-rgb` ahorra < 5 % del
+  total de Albuera. Anotar las cifras en «Codificador».
 
 ### Task 1: v8.2-pre identity
 
@@ -88,15 +96,20 @@ fija un esquema y la opción desaparece (D4).
 
 **Files:** `crates/viewer_format/src/codec.rs` (enum `BlockCodec`, `:6-29`), `crates/viewer_format/src/attribute_codec.rs`
 (candidatos `encode_raw_or_constant` ~92, `encode` ~100-160, `encode_byte_planes` ~200-225, `decode` ~236),
-`crates/viewer_format/src/prepare.rs` (`append_payload` ~826), `crates/viewer_format/Cargo.toml`.
+`crates/viewer_format/src/prepare.rs` (`append_payload` ~826), `crates/viewer_format/src/read_plan.rs` (~211),
+`crates/viewer_format/src/index_codec.rs` (~562-595, ~969-970), `crates/viewer_format/Cargo.toml`, `tools/format_parity`.
 
 **Interfaces:**
 - Consumes: `supports_zstd()` (tarea 1); el crate de la tarea 0.
-- Produces: `BlockCodec::Zstd = 5` (válido solo con `supports_zstd()`); `EntropyCoder { Lz4, Zstd }` como parámetro de
-  los candidatos de `attribute_codec`, que hoy fijan LZ4; `append_payload(..., coder: EntropyCoder)`.
+- Produces: `EntropyCoder { Lz4, Zstd }` como parámetro de los candidatos de `attribute_codec`, que hoy fijan LZ4
+  (también `BytePlanes`, `:224` y `:272`); `BlockCodec::Zstd = 5` y `BlockCodec::BytePlanesZstd = 6` (válidos solo
+  con `supports_zstd()`); etiqueta interna `2` = zstd en la tabla y los ids del diccionario (`:302-306`, hoy solo
+  0/1); `append_payload(..., coder: EntropyCoder)`; la estimación de memoria de lectura por códec (`read_plan.rs:211`)
+  cuenta el contexto de decodificación de zstd; la validación de códecs del índice (`index_codec.rs:562-595`,
+  `:969-970`) acepta 5 y 6 solo en v8.2-pre.
 
 - [ ] **Step 1: failing tests:** `zstd_payload_round_trips` (raw, planos de bytes y diccionario con
-  `EntropyCoder::Zstd`); `zstd_is_rejected_before_v8_pre2` (un directorio v8.1-pre con códec 5 es error);
+  `EntropyCoder::Zstd`, cada disposición); `zstd_is_rejected_before_v8_pre2` (un directorio v8.1-pre con códec 5 es error);
   `corrupt_zstd_payload_is_an_error` (bytes cambiados, truncado y `raw_length` menor que lo que descomprime: error, sin
   pánico); `lz4_coder_keeps_v8_pre1_bytes` (con `EntropyCoder::Lz4` los payloads son los de hoy).
 - [ ] **Step 2:** fallan.
@@ -124,7 +137,8 @@ fija un esquema y la opción desaparece (D4).
 - [ ] **Step 2:** fallan.
 - [ ] **Step 3:** implementar.
 - [ ] **Step 4:** `FUZZ_CHECK=0 scripts/check.sh --offline` con `FORMAT_PARITY_REAL_INPUT` → todo OK, con los casos
-  nuevos de paridad web/CLI.
+  nuevos de paridad web/CLI; además, paridad nativo/wasm de bloques reales de **Albuera** con `cold` y `all`
+  (Belvedere tiene constantes todas las columnas salvo el RGB y no ejercita zstd).
 - [ ] **Step 5:** commit `feat(convert): --attr-codec scheme for v8.2-pre`.
 
 ### Task 4: Measure the four schemes and record them
@@ -135,11 +149,15 @@ actualizar el `Estado:` de este plan y de `formato-v8.md`, `docs/estado.md`.
 
 - [ ] **Step 1: CLI.** Belvedere, Albuera y Majadas con `v8.2-pre` y los cuatro esquemas, una conversión cada vez,
   con `scripts/measure_temp_disk.sh`. Se mide el tamaño de `.oct` y de `.octattrs`, el tiempo, el RSS y `verify`.
-  Albuera y Majadas se repiten 2 veces con `lz4` y con `all` para conocer el ruido.
-- [ ] **Step 2: navegador.** Con `examples/web-host/probe-orbit-load.mjs` en GPU real (`mode` = `timing`) y Albuera,
-  4 ejecuciones por esquema en orden alterno. Se mide el tiempo hasta el objetivo de px en modo RGB (lee `rgb` en las
-  hojas) y en modo `gps_time` (lee una columna fría), y el rendimiento de render de la órbita (intervalo de frame
-  p50/p95).
+  Albuera y Majadas se repiten 2 veces con `lz4` y con `all` para conocer el ruido. Se guardan (en el `target/` del
+  worktree, ~40 GB) las cuatro salidas de Albuera que usa el paso 2. Tiempo del conversor web en Belvedere con `lz4`
+  y `all` (sonda de conversión existente).
+- [ ] **Step 2: navegador.** Opción de modo de color en `examples/web-host/probe-orbit-load.mjs` (hoy no la tiene).
+  Con GPU real (`mode` = `timing`) y Albuera, ≥ 8 ejecuciones por esquema en orden alterno, en modo RGB (el render
+  lee `rgb` en las hojas; no lee columnas frías) y en modo `gps_time` (lee una columna fría). Métrica principal:
+  `decodeMs` (`async_format_reader.rs:161`); además el tiempo hasta el objetivo de px y el intervalo de frame p50/p95
+  de la órbita. Control A/A: `cold` frente a `lz4` en modo RGB (no deberían diferir). Si la dispersión A/A es ≥ que la
+  diferencia `lz4`/`all`, la diferencia de carga se declara no medible.
 - [ ] **Step 3:** registro fechado con las series, la orden exacta y el equipo. Sin recomendación de esquema: la
   decisión es del propietario (D3). Se completa `FORMAT_V8_PRE2.md` y se actualizan los documentos;
   `check_docs_links.py` y `check_docs_index.py` → OK.
