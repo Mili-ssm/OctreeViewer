@@ -2,7 +2,7 @@ use std::{fs, process::Command};
 
 use las::{Builder, Point, Writer, point::Format};
 use viewer_core::HierarchySemantics;
-use viewer_format::FormatReader;
+use viewer_format::{FormatReader, OctreeReader};
 
 #[test]
 fn ept_cli_preserves_implicit_workers_and_rejects_explicit_repartitioning() {
@@ -230,6 +230,17 @@ fn cli_accepts_v8_pre1() {
     assert!(run.status.success(), "{}", stderr(&run));
     let primary = fs::read(&output).unwrap();
     assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVE81P");
+    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    assert_eq!(
+        reader.format_version(),
+        viewer_format::FormatVersion::V8_PRE1
+    );
+    let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
+        .arg("verify")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(verify.status.success(), "{}", stderr(&verify));
 }
 
 #[test]

@@ -22,6 +22,6 @@ sigue siendo [v7](FORMAT_V7.md). Decisiones en el [ADR 0058](../../adr/0058-form
 
 | Área | Cambio | Decisión |
 | --- | --- | --- |
-| Color de dibujo | se deriva de los datos guardados en lugar de guardarse dos veces (`derives_display_attribute`) | D2 |
+| Color de dibujo | se deriva de los datos guardados en lugar de guardarse dos veces (`derives_display_attribute`) | Decisión técnica del diseño (no es D2) |
 | Puntos LOD | los nodos interiores omiten los atributos que el visor no dibuja (`omits_lod_attributes`) | D2 |
 | Distancia mínima | cuantiles de la distancia al vecino más cercano por nodo (`stores_distance_quantiles`) | D5 |

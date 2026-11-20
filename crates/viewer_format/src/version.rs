@@ -110,9 +110,13 @@ impl FormatVersion {
 
     /// Row order the format fixes: `v7` and `v8.N-pre` always write hybrid (ADR 0044); every other revision
     /// leaves the choice to the caller (`Source` by default).
-    pub const fn fixed_row_order(self) -> Option<crate::RowOrder> {
+    pub fn fixed_row_order(self) -> Option<crate::RowOrder> {
         match self {
-            Self::V7 | Self::V8Pre(_) => Some(crate::RowOrder::Hybrid),
+            Self::V7 | Self::V8Pre(_)
+                if crate::layout::StorageLayout::from_version(self).is_ok() =>
+            {
+                Some(crate::RowOrder::Hybrid)
+            }
             _ => None,
         }
     }
@@ -182,7 +186,7 @@ impl std::str::FromStr for FormatVersion {
                         .and_then(|v| v.parse::<NonZeroU32>().ok())
                         .map(Self::V8Pre)
                 })
-                .ok_or("expected v5, v6, v7 or a positive pre-release revision"),
+                .ok_or("expected v5, v6, v7 or a positive pre-release revision (v6.N-pre, v7.N-pre, v8.N-pre)"),
         }
     }
 }
@@ -337,6 +341,17 @@ mod tests {
             FormatVersion::V8Pre(NonZeroU32::new(2).unwrap())
                 .ensure_writable()
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn unimplemented_v8_revision_fixes_no_row_order() {
+        let unknown = FormatVersion::V8Pre(NonZeroU32::new(2).unwrap());
+        assert_eq!(unknown.fixed_row_order(), None);
+        assert!(!unknown.supports_hybrid_rows());
+        assert_eq!(
+            FormatVersion::V8_PRE1.fixed_row_order(),
+            Some(crate::RowOrder::Hybrid)
         );
     }
 

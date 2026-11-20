@@ -233,8 +233,8 @@ The converter writes final v7 by default. Callers may select another revision wi
 option `formatVersion`, for example `converter.convert(file, { options: { formatVersion: "v7.3-pre" } })`.
 Opening a Blob automatically selects final v5, final v7 or an implemented experimental identity: `v6.1-pre`–`v6.4-pre`
 and `v7.1-pre`–`v7.3-pre`. The option accepts these exact strings;
-paired files must have the exact same identity. Final `v6` and revisions after final `v7` remain unsupported; final `v7` is supported and the default.
-The demo converter panel defaults to `v7` and lists the other writable revisions in its format selector; for global-frame formats (`v7`, `v7.4-pre`, `v7.5-pre`) it disables **Points per block** and **Spatial divisions** (fixed by the format) and does not send them.
+paired files must have the exact same identity. Final `v6`, v7 revisions after `v7.5-pre` and v8 revisions other than the experimental `v8.1-pre` remain unsupported; final `v7` is supported and the default.
+The demo converter panel defaults to `v7` and lists the other writable revisions in its format selector; for global-frame formats (`v7`, `v7.4-pre`, `v7.5-pre`, `v8.1-pre`) it disables **Points per block** and **Spatial divisions** (fixed by the format) and does not send them.
 
 For the storage probe, pass `expectedVersion: "v7.3-pre"` with the converted Blobs and check the
 returned `formatVersion`. Use fresh bindings and reload worker scripts after rebuilding (a cache

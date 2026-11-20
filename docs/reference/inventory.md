@@ -72,8 +72,8 @@ Qué no demuestra lo implementado; consultar antes de afirmar capacidades. Los r
 
 ### Entrada, checkpoints y formato
 
-Los formatos de marco global (`v7.4-pre`, `v7.5-pre`, `v7`) rechazan la entrada EPT; los
-paginados (`v7.5-pre`, `v7`) rechazan además `--checkpoint` y `--resume`. Para EPT o
+Los formatos de marco global (`v7.4-pre`, `v7.5-pre`, `v7`, `v8.1-pre`) rechazan la entrada EPT; los
+paginados (`v7.5-pre`, `v7`, `v8.1-pre`) rechazan además `--checkpoint` y `--resume`. Para EPT o
 checkpoints se usa `--format-version v5`; EPT con checkpoints admite `v7.1-pre`–`v7.3-pre`.
 Código: `las_source.rs` y `ept.rs` de `viewer_convert`; la ayuda del CLI repite la regla.
 
