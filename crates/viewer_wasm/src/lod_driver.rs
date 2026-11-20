@@ -372,7 +372,7 @@ pub(crate) fn resolve_color_selection(
 }
 
 /// The column a block is painted with when `requested` is the selected attribute. A block that
-/// omits it (`v8.1-pre` LOD blocks keep only the columns the viewer draws) is painted with
+/// omits it (v8 pre-revision LOD blocks keep only the columns the viewer draws) is painted with
 /// intensity, whose global range `assemble_async_block` then applies; with no intensity either
 /// the block keeps its display colours (`None`). Intensity and classification are never
 /// replaced: they are mode columns, not generic attributes. A failing lookup is an error.

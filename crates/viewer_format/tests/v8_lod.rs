@@ -118,7 +118,7 @@ fn dataset() -> (FormatMetadata, Vec<SourcePointBlock>) {
         blocks.push(SourcePointBlock::new(
             BlockId::new(i as u64 + 1),
             vec![at(0.25), at(0.75)],
-            vec![ColorRgb::new(1, 2, 3); 2],
+            vec![ColorRgb::new(3, 3, 3), ColorRgb::new(7, 7, 7)],
             columns,
         ));
     }
@@ -140,15 +140,26 @@ fn dataset() -> (FormatMetadata, Vec<SourcePointBlock>) {
 }
 
 fn write_with(lod_columns: Option<Vec<u32>>) -> Result<(Vec<u8>, Vec<u8>), FormatError> {
+    write_as(
+        V8_PRE1,
+        lod_columns,
+        viewer_format::DisplayColourSource::None,
+    )
+}
+
+fn write_as(
+    version: FormatVersion,
+    lod_columns: Option<Vec<u32>>,
+    display: viewer_format::DisplayColourSource,
+) -> Result<(Vec<u8>, Vec<u8>), FormatError> {
     let (metadata, blocks) = dataset();
     let metadata = match lod_columns {
         Some(columns) => metadata.with_lod_attribute_columns(columns),
         None => metadata,
     }
-    // The fixture's leaf colours (1, 2, 3) are not derivable from its intensity column.
-    .with_display_colour_source(viewer_format::DisplayColourSource::None);
+    .with_display_colour_source(display);
     let mut writer = FormatWriter::new_split_for_version(
-        V8_PRE1,
+        version,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
@@ -395,4 +406,51 @@ fn corrupt_lod_set_is_rejected() {
             "{cut}"
         );
     }
+}
+
+/// Rewrites the identity of a `v8.2-pre` pair as `v8.1-pre`: header revisions and checksums, footer
+/// magics, the primary file's index magic, and the index and footer checksums. The attributes
+/// file's footer repeats the primary file's index location and checksum.
+fn as_v8_pre1(primary: &mut [u8], attributes: &mut [u8]) {
+    for bytes in [&mut *primary, &mut *attributes] {
+        bytes[16..20].copy_from_slice(&1_u32.to_le_bytes());
+        let crc = viewer_format::crc32(&bytes[..20]);
+        bytes[20..24].copy_from_slice(&crc.to_le_bytes());
+        let footer = bytes.len() - 40;
+        assert_eq!(&bytes[footer..footer + 8], b"OCTVE82P");
+        bytes[footer..footer + 8].copy_from_slice(b"OCTVE81P");
+    }
+    let footer = primary.len() - 40;
+    let index = u64::from_le_bytes(primary[footer + 8..footer + 16].try_into().unwrap()) as usize;
+    assert_eq!(&primary[index..index + 8], b"OCTVI82P");
+    primary[index..index + 8].copy_from_slice(b"OCTVI81P");
+    repair_index_and_footer(primary);
+    let index_crc = primary[footer + 32..footer + 36].to_vec();
+    let footer = attributes.len() - 40;
+    attributes[footer + 32..footer + 36].copy_from_slice(&index_crc);
+    let crc = viewer_format::crc32(&attributes[footer..footer + 36]);
+    attributes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
+}
+
+#[test]
+fn v8_pre2_without_zstd_differs_from_v8_pre1_only_in_identity() {
+    // LOD omission, derived display colour (the leaves' colour is intensity >> 8, not stored)
+    // and quantiles: every v8.1-pre feature at once.
+    let pre1 = write_as(
+        V8_PRE1,
+        Some(vec![0, 2]),
+        viewer_format::DisplayColourSource::Intensity(0),
+    )
+    .unwrap();
+    let mut pre2 = write_as(
+        FormatVersion::V8_PRE2,
+        Some(vec![0, 2]),
+        viewer_format::DisplayColourSource::Intensity(0),
+    )
+    .unwrap();
+    assert_ne!(pre1.0, pre2.0);
+    assert_ne!(pre1.1, pre2.1);
+    as_v8_pre1(&mut pre2.0, &mut pre2.1);
+    assert!(pre1.0 == pre2.0, "primary files differ beyond identity");
+    assert!(pre1.1 == pre2.1, "attribute files differ beyond identity");
 }

@@ -3,7 +3,7 @@ use viewer_format::OctreeReader;
 use viewer_render_wgpu::ColorMode;
 
 /// Schema index of the `intensity` column, the one a block without the selected column is
-/// painted with (`v8.1-pre` LOD rows keep only what the viewer draws).
+/// painted with (v8 pre-revision LOD rows keep only what the viewer draws).
 pub(crate) fn intensity_index(schema: &[viewer_core::AttributeDescriptor]) -> Option<u32> {
     schema
         .iter()

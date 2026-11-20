@@ -119,7 +119,7 @@ pub(super) fn attribute_availability(
 }
 
 /// The range intensity is painted with when an attribute mode meets a block that omits the
-/// selected column (`v8.1-pre` LOD blocks): intensity's global range. `None` when no attribute is
+/// selected column (v8 pre-revision LOD blocks): intensity's global range. `None` when no attribute is
 /// selected or the file has no intensity range.
 pub(super) fn intensity_fallback_range(
     selected_attribute: Option<(u32, u32)>,
