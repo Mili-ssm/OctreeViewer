@@ -108,14 +108,14 @@ fija un esquema y la opción desaparece (D4).
   cuenta el contexto de decodificación de zstd; la validación de códecs del índice (`index_codec.rs:562-595`,
   `:969-970`) acepta 5 y 6 solo en v8.2-pre.
 
-- [ ] **Step 1: failing tests:** `zstd_payload_round_trips` (raw, planos de bytes y diccionario con
+- [x] **Step 1: failing tests:** `zstd_payload_round_trips` (raw, planos de bytes y diccionario con
   `EntropyCoder::Zstd`, cada disposición); `zstd_is_rejected_before_v8_pre2` (un directorio v8.1-pre con códec 5 es error);
   `corrupt_zstd_payload_is_an_error` (bytes cambiados, truncado y `raw_length` menor que lo que descomprime: error, sin
   pánico); `lz4_coder_keeps_v8_pre1_bytes` (con `EntropyCoder::Lz4` los payloads son los de hoy).
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar; la decodificación escribe en un búfer de `raw_length` y falla si sobra o falta.
-- [ ] **Step 4:** tests del workspace, clippy nativo y wasm32, paridad sintética de `format_parity` → OK.
-- [ ] **Step 5:** commit `feat(format): zstd entropy stage for v8.2-pre payloads`.
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar; la decodificación escribe en un búfer de `raw_length` y falla si sobra o falta.
+- [x] **Step 4:** tests del workspace, clippy nativo y wasm32, paridad sintética de `format_parity` → OK.
+- [x] **Step 5:** commit `feat(format): zstd entropy stage for v8.2-pre payloads`.
 
 ### Task 3: `--attr-codec` scheme in the converter (CLI and web)
 
