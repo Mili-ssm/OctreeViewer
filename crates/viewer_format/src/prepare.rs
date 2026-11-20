@@ -6,8 +6,7 @@ use viewer_core::{
 
 use crate::geometry::{GeometryEncoding, encode_delta, encode_delta_iter};
 use crate::layout::{
-    ColumnRules, PayloadDirectoryEntry, StorageLayout, StoredColumn, attribute_payload_size,
-    block_payload_size,
+    PayloadDirectoryEntry, StorageLayout, StoredColumn, attribute_payload_size, block_payload_size,
 };
 use crate::{
     FormatError, FormatMetadata, FormatVersion, SourcePointBlock, compress_block, crc32,
@@ -75,7 +74,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
     collect_codec_diagnostics: bool,
 ) -> Result<(PreparedPointBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
     let layout = StorageLayout::from_version(version)?;
-    let rules = ColumnRules;
+    let rules = metadata.column_rules();
     let column_rule = |column: usize| layout.stored_column(block_is_lod, column, rules);
     let row_order = options.resolved_row_order(version)?;
     let point_count = block.positions_local().len();

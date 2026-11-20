@@ -16,6 +16,7 @@ pub struct FormatMetadata {
     global_frame: Option<GlobalFrame>,
     las_extra_bytes: Vec<LasExtraByte>,
     point_distance_quantiles: Option<PointDistanceQuantiles>,
+    lod_attribute_columns: Option<Vec<u32>>,
 }
 
 impl FormatMetadata {
@@ -40,6 +41,7 @@ impl FormatMetadata {
             global_frame: None,
             las_extra_bytes: Vec::new(),
             point_distance_quantiles: None,
+            lod_attribute_columns: None,
         })
     }
 
@@ -175,6 +177,28 @@ impl FormatMetadata {
         self.point_distance_quantiles
     }
 
+    /// Sets the schema columns blocks of nodes with children keep (`v8.N-pre` only; other versions
+    /// store every column everywhere, and the writer rejects a list there). Geometry and the display
+    /// colour are always kept. The list must be strictly increasing and inside the schema; an empty
+    /// list is valid. The writer and the reader reject any other list.
+    #[must_use]
+    pub fn with_lod_attribute_columns(mut self, columns: Vec<u32>) -> Self {
+        self.lod_attribute_columns = Some(columns);
+        self
+    }
+
+    /// The LOD column set, when set; see [`Self::with_lod_attribute_columns`].
+    pub fn lod_attribute_columns(&self) -> Option<&[u32]> {
+        self.lod_attribute_columns.as_deref()
+    }
+
+    /// Rules for [`crate::layout::StorageLayout::stored_column`]; empty without a LOD set.
+    pub(crate) fn column_rules(&self) -> crate::layout::ColumnRules<'_> {
+        crate::layout::ColumnRules {
+            lod_columns: self.lod_attribute_columns.as_deref().unwrap_or(&[]),
+        }
+    }
+
     pub fn node_attribute_ranges(&self, node_id: NodeId) -> &[NodeAttributeRange] {
         self.node_attribute_ranges
             .get(&node_id)
@@ -203,6 +227,7 @@ impl FormatMetadata {
             global_frame: self.global_frame.clone(),
             las_extra_bytes: self.las_extra_bytes.clone(),
             point_distance_quantiles: self.point_distance_quantiles,
+            lod_attribute_columns: self.lod_attribute_columns.clone(),
         }
     }
 }
@@ -322,7 +347,29 @@ pub enum MetadataError {
     InvalidGlobalFrame(&'static str),
 }
 
+/// A LOD column list names schema columns in strictly increasing order: no index outside the
+/// schema, no repeat. One order means one byte form per set.
+pub(crate) fn validate_lod_columns(columns: &[u32], schema_len: usize) -> Result<(), &'static str> {
+    if columns.len() > schema_len {
+        return Err("LOD column list is longer than the schema");
+    }
+    if columns.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err("LOD column list is not strictly increasing");
+    }
+    if columns
+        .last()
+        .is_some_and(|&last| last as usize >= schema_len)
+    {
+        return Err("LOD column index is outside the schema");
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
+    if let Some(columns) = metadata.lod_attribute_columns() {
+        validate_lod_columns(columns, metadata.dataset().hierarchy().attributes().len())
+            .map_err(FormatError::InvalidMetadata)?;
+    }
     if !metadata.visual_scale().is_finite() || metadata.visual_scale() <= 0.0 {
         return Err(FormatError::InvalidVisualScale);
     }

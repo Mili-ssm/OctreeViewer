@@ -55,6 +55,8 @@ pub struct PagedHeader {
     reference_spacing: f64,
     /// Present only when the layout stores them (`v8.N-pre`).
     distance_quantiles: Option<PointDistanceQuantiles>,
+    /// Present only when the layout omits columns from LOD blocks (`v8.N-pre`).
+    lod_attribute_columns: Option<Vec<u32>>,
     /// Range over every node of the file, per attribute and component; `None` when no node has a
     /// finite value. Stored here because a lazy reader never holds every page.
     attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
@@ -151,6 +153,12 @@ impl PagedHeader {
     /// Nearest-neighbour distance quantiles; `None` when the revision does not store them.
     pub fn distance_quantiles(&self) -> Option<PointDistanceQuantiles> {
         self.distance_quantiles
+    }
+
+    /// Schema columns LOD blocks keep (strictly increasing, inside the schema); `None` when the
+    /// revision stores every column in every block.
+    pub fn lod_attribute_columns(&self) -> Option<&[u32]> {
+        self.lod_attribute_columns.as_deref()
     }
 
     /// File offset where the block payloads end and the child pages begin.
@@ -317,6 +325,23 @@ fn parse_header_block(
     } else {
         None
     };
+    let lod_attribute_columns = if layout.omits_lod_attributes() {
+        let count = cursor.u32()? as usize;
+        if count > schema.len() {
+            return Err(FormatError::MalformedIndex(
+                "LOD column list is longer than the schema",
+            ));
+        }
+        let mut columns = Vec::with_capacity(count);
+        for _ in 0..count {
+            columns.push(cursor.u32()?);
+        }
+        crate::metadata::validate_lod_columns(&columns, schema.len())
+            .map_err(FormatError::MalformedIndex)?;
+        Some(columns)
+    } else {
+        None
+    };
     let mut attribute_ranges = Vec::with_capacity(schema.len());
     for attribute in &schema {
         let mut row = Vec::with_capacity(attribute.component_count() as usize);
@@ -387,6 +412,7 @@ fn parse_header_block(
         pages_start,
         reference_spacing,
         distance_quantiles,
+        lod_attribute_columns,
         attribute_ranges,
     })
 }
@@ -474,6 +500,7 @@ impl PagedCore {
                 pages_start: header.pages_start,
                 index_offset: location.offset,
                 layout: location.layout,
+                lod_columns: header.lod_attribute_columns.as_deref().unwrap_or(&[]),
             },
             PageExpect::Root,
         )?;
@@ -550,6 +577,7 @@ impl PagedCore {
                 pages_start: self.header.pages_start,
                 index_offset: self.index_offset,
                 layout: self.layout,
+                lod_columns: self.header.lod_attribute_columns.as_deref().unwrap_or(&[]),
             },
             PageExpect::Child {
                 anchor,
@@ -1015,6 +1043,10 @@ pub(crate) fn assemble_with(
         Some(quantiles) => metadata.with_point_distance_quantiles(quantiles),
         None => metadata,
     };
+    let metadata = match &header.lod_attribute_columns {
+        Some(columns) => metadata.with_lod_attribute_columns(columns.clone()),
+        None => metadata,
+    };
     validate_metadata(&metadata)?;
     Ok((metadata, blocks, block_bounds))
 }
@@ -1375,6 +1407,22 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
             out.f64(quantiles.p1)?;
             out.f64(quantiles.p5)?;
             out.f64(quantiles.p50)?;
+        }
+        if layout.omits_lod_attributes() {
+            let columns = metadata
+                .lod_attribute_columns()
+                .ok_or(FormatError::InvalidMetadata(
+                    "this format revision needs a LOD column set in the metadata",
+                ))?;
+            out.u32(
+                u32::try_from(columns.len()).map_err(|_| FormatError::TooManyAttributes {
+                    count: columns.len(),
+                    limit: crate::MAX_SCHEMA_ATTRIBUTES,
+                })?,
+            )?;
+            for &column in columns {
+                out.u32(column)?;
+            }
         }
         for row in global_attribute_ranges(
             hierarchy.attributes(),

@@ -221,7 +221,7 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[test]
-fn cli_accepts_v8_pre1() {
+fn cli_converts_and_verifies_v8_pre1() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
     small_las(&input);
@@ -234,6 +234,11 @@ fn cli_accepts_v8_pre1() {
     assert_eq!(
         reader.format_version(),
         viewer_format::FormatVersion::V8_PRE1
+    );
+    // The LAS schema starts with intensity and classification: those are the LOD set.
+    assert_eq!(
+        reader.format_metadata().lod_attribute_columns(),
+        Some(&[0, 1][..])
     );
     let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
         .arg("verify")

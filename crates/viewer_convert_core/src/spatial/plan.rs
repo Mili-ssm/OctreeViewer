@@ -345,6 +345,10 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         metadata =
             metadata.with_point_distance_quantiles(distance_quantiles(&builder.node_records)?);
     }
+    if options.format_version().omits_lod_attributes() {
+        let columns = lod_attribute_columns(&metadata);
+        metadata = metadata.with_lod_attribute_columns(columns);
+    }
     Ok(SpatialPlan {
         metadata,
         blocks: builder.output_blocks,
@@ -354,6 +358,20 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         spool_diagnostics: builder.spool_diagnostics,
         spatial_phases: builder.spatial_phases,
     })
+}
+
+/// Schema columns the viewer draws from LOD points besides the display colour: intensity and
+/// classification, found by their LAS schema names. A source without them gets a shorter list.
+fn lod_attribute_columns(metadata: &FormatMetadata) -> Vec<u32> {
+    metadata
+        .dataset()
+        .hierarchy()
+        .attributes()
+        .iter()
+        .enumerate()
+        .filter(|(_, attribute)| matches!(attribute.name(), "intensity" | "classification"))
+        .map(|(index, _)| index as u32)
+        .collect()
 }
 
 /// Dataset distance quantiles from the leaves' samples, pooled in node-id order.

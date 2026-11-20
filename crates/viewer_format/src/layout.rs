@@ -172,13 +172,20 @@ impl StorageLayout {
     /// (0 geometry, 1 display colour, then the schema); `block_is_lod` is true for the blocks of
     /// nodes with children. Writers, codecs, readers and verification all ask this and never
     /// assume that every column is stored.
-    pub(crate) const fn stored_column(
+    pub(crate) fn stored_column(
         self,
         block_is_lod: bool,
         column: usize,
-        rules: ColumnRules,
+        rules: ColumnRules<'_>,
     ) -> StoredColumn {
-        let _ = (self, block_is_lod, column, rules);
+        // Geometry (0) and the display colour (1) are always stored; schema column `s` is payload `s + 2`.
+        if self.omits_lod_attributes()
+            && block_is_lod
+            && column >= 2
+            && !u32::try_from(column - 2).is_ok_and(|schema| rules.lod_columns.contains(&schema))
+        {
+            return StoredColumn::Absent;
+        }
         StoredColumn::Present
     }
 
@@ -242,15 +249,19 @@ impl StorageLayout {
     }
 }
 
-/// Per-file inputs of [`StorageLayout::stored_column`]; later revisions carry the header's LOD column list.
+/// Per-file inputs of [`StorageLayout::stored_column`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct ColumnRules;
+pub(crate) struct ColumnRules<'a> {
+    /// Schema indices a LOD block keeps (the header's `lod_attribute_columns`); empty on revisions that
+    /// store every column in every block.
+    pub(crate) lod_columns: &'a [u32],
+}
 
 /// How a block holds one payload column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "later revisions construct the variants")
+    expect(dead_code, reason = "a later revision constructs `Derived`")
 )]
 pub(crate) enum StoredColumn {
     /// The column has a payload in the file.
@@ -355,16 +366,40 @@ mod tests {
     fn stored_column_is_present_for_v7() {
         for version in crate::FormatVersion::WRITABLE {
             let layout = StorageLayout::from_version(version).unwrap();
+            if layout.omits_lod_attributes() {
+                continue;
+            }
             for block_is_lod in [false, true] {
                 for column in 0..12 {
                     assert_eq!(
-                        layout.stored_column(block_is_lod, column, ColumnRules),
+                        layout.stored_column(block_is_lod, column, ColumnRules::default()),
                         StoredColumn::Present,
                         "{version} lod={block_is_lod} column={column}"
                     );
                 }
             }
         }
+    }
+
+    #[test]
+    fn v8_lod_blocks_store_geometry_colour_and_the_lod_set() {
+        use StoredColumn::{Absent, Present};
+        let layout = StorageLayout::V8Pre1;
+        let rules = ColumnRules {
+            lod_columns: &[0, 2],
+        };
+        for column in 0..6 {
+            assert_eq!(
+                layout.stored_column(false, column, rules),
+                StoredColumn::Present,
+                "leaf column {column}"
+            );
+        }
+        let lod: Vec<_> = (0..6)
+            .map(|column| layout.stored_column(true, column, rules))
+            .collect();
+        // Geometry, display colour, schema 0, (schema 1 absent), schema 2, (schema 3 absent).
+        assert_eq!(lod, [Present, Present, Present, Absent, Present, Absent]);
     }
 
     #[test]

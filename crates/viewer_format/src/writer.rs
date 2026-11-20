@@ -6,7 +6,7 @@ use std::{
 use viewer_core::{BlockId, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode};
 
 use crate::MAX_SCHEMA_ATTRIBUTES;
-use crate::layout::{ColumnRules, FOOTER_SIZE, HEADER_SIZE, StorageLayout};
+use crate::layout::{FOOTER_SIZE, HEADER_SIZE, StorageLayout};
 use crate::metadata::validate_metadata;
 use crate::version::FileRole;
 use crate::{FormatError, FormatMetadata, FormatVersion, SourcePointBlock};
@@ -76,6 +76,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         }
         ensure_global_frame_matches(layout, &metadata)?;
         ensure_distance_quantiles_match(layout, &metadata)?;
+        ensure_lod_columns_match(layout, &metadata)?;
         validate_metadata(&metadata)?;
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
         let lod_blocks = lod_block_ids(metadata.dataset().hierarchy())?;
@@ -259,6 +260,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         ensure_distance_quantiles_match(layout, &metadata)?;
         validate_metadata(&metadata)?;
         ensure_schema_within_limit(&metadata)?;
+        ensure_lod_columns_match(layout, &metadata)?;
         if layout.uses_pages()
             && metadata.dataset().hierarchy().semantics()
                 != viewer_core::HierarchySemantics::Replacement
@@ -400,7 +402,12 @@ impl<W: Write + Seek> FormatWriter<W> {
                 .iter()
                 .enumerate()
                 .all(|(column, payload)| {
-                    payload.stored == self.layout.stored_column(block_is_lod, column, ColumnRules)
+                    payload.stored
+                        == self.layout.stored_column(
+                            block_is_lod,
+                            column,
+                            self.metadata.column_rules(),
+                        )
                 });
         if follows {
             Ok(())
@@ -655,6 +662,26 @@ fn ensure_distance_quantiles_match(
         ));
     }
     Ok(())
+}
+
+/// The LOD set decides which columns blocks store, so a revision that omits columns needs it and
+/// the others must not carry one. The list itself is checked by `validate_metadata`.
+fn ensure_lod_columns_match(
+    layout: StorageLayout,
+    metadata: &FormatMetadata,
+) -> Result<(), FormatError> {
+    match (
+        layout.omits_lod_attributes(),
+        metadata.lod_attribute_columns().is_some(),
+    ) {
+        (true, false) => Err(FormatError::InvalidMetadata(
+            "this format revision needs a LOD column set in the metadata",
+        )),
+        (false, true) => Err(FormatError::InvalidMetadata(
+            "this format revision does not store a LOD column set",
+        )),
+        _ => Ok(()),
+    }
 }
 
 fn ensure_schema_within_limit(metadata: &FormatMetadata) -> Result<(), FormatError> {

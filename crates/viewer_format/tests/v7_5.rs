@@ -213,6 +213,21 @@ fn quantiles() -> viewer_format::PointDistanceQuantiles {
     viewer_format::PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap()
 }
 
+/// The metadata the revision requires: distance quantiles, and the LOD column set (the one
+/// intensity column) for the revisions that omit columns in LOD blocks.
+fn with_revision_extras(version: FormatVersion, metadata: FormatMetadata) -> FormatMetadata {
+    let metadata = if version.stores_distance_quantiles() {
+        metadata.with_point_distance_quantiles(quantiles())
+    } else {
+        metadata
+    };
+    if version.omits_lod_attributes() {
+        metadata.with_lod_attribute_columns(vec![0])
+    } else {
+        metadata
+    }
+}
+
 /// The `.oct` / `.octattrs` pair.
 fn write_pair(
     version: FormatVersion,
@@ -220,11 +235,7 @@ fn write_pair(
     page_target: Option<usize>,
 ) -> (Vec<u8>, Vec<u8>) {
     let (metadata, blocks) = dataset(tree);
-    let metadata = if version.stores_distance_quantiles() {
-        metadata.with_point_distance_quantiles(quantiles())
-    } else {
-        metadata
-    };
+    let metadata = with_revision_extras(version, metadata);
     let mut options = FormatWriterOptions::new(0.01, 1 << 24).unwrap();
     if let Some(target) = page_target {
         options = options.with_page_target_bytes(target);
@@ -1264,7 +1275,8 @@ fn v8_pre1_without_quantiles_is_rejected() {
     )
     .unwrap()
     .with_global_frame(metadata.global_frame().unwrap().clone())
-    .unwrap();
+    .unwrap()
+    .with_lod_attribute_columns(vec![0]);
     assert_eq!(bare.point_distance_quantiles(), None);
     // Construction succeeds; `finish` is where the missing quantiles are caught.
     let mut writer = FormatWriter::new_split_for_version(
@@ -1344,7 +1356,7 @@ fn write_with_quantiles(
         version,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
-        metadata.with_point_distance_quantiles(quantiles),
+        with_revision_extras(version, metadata).with_point_distance_quantiles(quantiles),
         FormatWriterOptions::new(0.01, 1 << 24).unwrap(),
     )?;
     for block in blocks {
