@@ -120,12 +120,12 @@ la búsqueda del vecino es acotada; la comprobación de los cuantiles se hace en
   que V8Pre1 los trae; los helpers de test que recorren `WRITABLE` los aportan. La verificación es `verify_paged`
   (`paged_index.rs`), no un `verify.rs`.
 
-- [ ] **Step 1: failing tests**: `distance_quantiles_round_trip` (escribir y leer con los lectores eager y lazy);
+- [x] **Step 1: failing tests**: `distance_quantiles_round_trip` (escribir y leer con los lectores eager y lazy);
   `v8_pre1_without_quantiles_is_rejected`; `corrupt_quantiles_are_rejected` (NaN, negativo, desordenados, truncado).
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar.
-- [ ] **Step 4:** tests del workspace, clippy, SHA de v7 intactos → OK.
-- [ ] **Step 5:** commit `feat(format): v8.1-pre stores nearest-neighbour distance quantiles`.
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar.
+- [x] **Step 4:** tests del workspace, clippy, SHA de v7 intactos → OK.
+- [x] **Step 5:** commit `feat(format): v8.1-pre stores nearest-neighbour distance quantiles`.
 
 ### Task 3: Converter computes the quantiles
 
