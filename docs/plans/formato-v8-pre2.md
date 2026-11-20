@@ -1,6 +1,6 @@
 # Formato V8, revisión v8.2-pre: zstd en columnas de `.octattrs` (plan de implementación)
 
-Estado: aprobado · 20-11-2026 · experimento de D3; el propietario aprueba el plan («hagamos la prueba, pero creo que al final nos quedaremos con LZ4»); tarea 0 en marcha
+Estado: medido · 20-11-2026 · experimento de D3; el propietario aprobó el plan («hagamos la prueba, pero creo que al final nos quedaremos con LZ4»); tareas 0–4 hechas ([registro](../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); falta la decisión del propietario sobre D3
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -147,12 +147,14 @@ fija un esquema y la opción desaparece (D4).
 `docs/records/benchmarks/data/formato-v8-pre2-<dd-mm-aaaa>/`; completar `docs/reference/format/FORMAT_V8_PRE2.md`;
 actualizar el `Estado:` de este plan y de `formato-v8.md`, `docs/estado.md`.
 
-- [ ] **Step 1: CLI.** Belvedere, Albuera y Majadas con `v8.2-pre` y los cuatro esquemas, una conversión cada vez,
+- [x] **Step 1: CLI.** Belvedere, Albuera y Majadas con `v8.2-pre` y los cuatro esquemas, una conversión cada vez,
   con `scripts/measure_temp_disk.sh`. Se mide el tamaño de `.oct` y de `.octattrs`, el tiempo, el RSS y `verify`.
   Albuera y Majadas se repiten 2 veces con `lz4` y con `all` para conocer el ruido. Se guardan (en el `target/` del
   worktree, ~40 GB) las cuatro salidas de Albuera que usa el paso 2. Tiempo del conversor web en Belvedere con `lz4`
   y `all` (sonda de conversión existente).
-- [ ] **Step 2: navegador.** Opción de modo de color en `examples/web-host/probe-orbit-load.mjs` (hoy no la tiene).
+  Hecho el 20-11-2026 (2a81060). El tiempo del conversor web no se midió: no existe sonda de conversión en
+  navegador (la referencia del 29-10 es nativa).
+- [x] **Step 2: navegador.** Opción de modo de color en `examples/web-host/probe-orbit-load.mjs` (hoy no la tiene).
   Con GPU real (`mode` = `timing`) y Albuera, ≥ 8 ejecuciones por esquema en orden alterno, en modo RGB (el render
   lee `rgb` en las hojas; no lee columnas frías) y en modo `gps_time` (lee una columna fría). Métrica principal:
   `decodeMs` (`async_format_reader.rs:161`); además el tiempo hasta el objetivo de px y el intervalo de frame p50/p95
@@ -161,10 +163,12 @@ actualizar el `Estado:` de este plan y de `formato-v8.md`, `docs/estado.md`.
   Cautela (investigación del 20-11-2026): las velocidades de decodificación en wasm de la tarea 0 (LZ4 ~5 GB/s y zstd
   ~2 GB/s por flujo) superan todo lo publicado para wasm en navegador (LZ4 0,35–1,4 GB/s, sin cifras fiables de zstd
   ni meshopt en wasm); seguramente son de caché caliente. Solo cuentan las cifras de este paso, con datos reales servidos por red.
-- [ ] **Step 3:** registro fechado con las series, la orden exacta y el equipo. Sin recomendación de esquema: la
+  Además de la carga local, un brazo por red (`--remote`, servidor RED-REF por defecto) con `lz4` y `all` en modo
+  RGB, 8 ejecuciones cada uno: mide si leer menos bytes compensa la decodificación más lenta.
+- [x] **Step 3:** registro fechado con las series, la orden exacta y el equipo. Sin recomendación de esquema: la
   decisión es del propietario (D3). Se completa `FORMAT_V8_PRE2.md` y se actualizan los documentos;
   `check_docs_links.py` y `check_docs_index.py` → OK.
-- [ ] **Step 4:** commit `docs: measure v8.2-pre compression schemes`.
+- [x] **Step 4:** commit `docs: measure v8.2-pre compression schemes`.
 
 ## Codificador
 
