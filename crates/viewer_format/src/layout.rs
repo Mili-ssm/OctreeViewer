@@ -33,7 +33,7 @@ pub(crate) enum StorageLayout {
     V7Pre5,
     /// Final v7: the v7.5-pre byte layout under its own identity.
     V7,
-    /// Experimental v8.1-pre: the v7 byte layout under its own identity; later tasks change the payload.
+    /// Experimental v8.1-pre: the v7 byte layout plus the v8 header fields and per-block column rules.
     V8Pre1,
 }
 

@@ -43,7 +43,7 @@ impl FormatVersion {
     /// Paged hierarchy: root page next to the footer, child pages on demand (R5).
     pub const V7_PRE5: Self = Self::V7Pre(NonZeroU32::new(5).expect("nonzero revision"));
 
-    /// First experimental v8 revision: the v7 layout plus the planned v8 payload changes.
+    /// First experimental v8 revision: the v7 layout plus the v8 header fields and column rules.
     pub const V8_PRE1: Self = Self::V8Pre(NonZeroU32::new(1).expect("nonzero revision"));
 
     /// Revision written when the caller does not choose one.

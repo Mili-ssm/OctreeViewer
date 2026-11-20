@@ -4,7 +4,8 @@ Identidad de desarrollo: cabecera mayor **8**, revisión **1**, texto `v8.1-pre`
 (`viewer_convert --format-version v8.1-pre`). La salida predeterminada sigue siendo [v7](FORMAT_V7.md). Decisiones
 en el [ADR 0058](../../adr/0058-formato-v8-experimental.md); diseño en [formato-v8](../../plans/formato-v8.md), plan en
 [formato-v8-pre1](../../plans/formato-v8-pre1.md) y medida en el
-[registro](../../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md).
+[registro](../../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md). Es experimental y **no está congelada** (ADR 0058,
+D6): puede cambiar en revisiones previas posteriores sin compatibilidad.
 
 Es la disposición de v7 (páginas, marco global, códecs, planos de bytes, CRC) con tres cambios: tres campos nuevos en
 la cabecera del índice y dos reglas de qué columnas guarda cada bloque. Todo número es little-endian, como en v7.
@@ -25,17 +26,18 @@ la cabecera del índice y dos reglas de qué columnas guarda cada bloque. Todo n
 ## Campos nuevos de la cabecera del índice
 
 Van en este orden, justo después del espaciado de referencia (`f64`) y antes de los rangos globales de atributos
-(`parse_header_block` y su escritor en `crates/viewer_format/src/paged_index.rs`).
+(`parse_header_block` y su escritor en `crates/viewer_format/src/paged_index.rs`). Los tres campos son obligatorios en
+v8.1-pre y están prohibidos en las demás revisiones: el escritor rechaza unos metadatos que no lo cumplan.
 
 | Campo | Bytes | Contenido | Validación |
 | --- | --- | --- | --- |
 | Cuantiles de distancia (D5) | 3 × `f64` | `p1`, `p5`, `p50` de la distancia al vecino más cercano, en unidades del dataset | finitos, no negativos y `p1 ≤ p5 ≤ p50`. Todo ceros significa «sin medida»: no hay tamaño mínimo recomendado (`p5 == 0`) |
 | Columnas LOD (D2) | `u32` n + n × `u32` | índices del esquema de atributos que conservan los bloques LOD | n ≤ tamaño del esquema; índices estrictamente crecientes y dentro del esquema (una sola forma de bytes por conjunto) |
-| Origen del color de pantalla | `u8` tipo + `u32` índice | `0, 0` ninguno; `1, i` RGB de 16 bits en la columna `i`; `2, i` intensidad de 16 bits en la columna `i` | la columna `i` debe ser `u16` de 3 componentes (tipo 1) o de 1 (tipo 2) |
+| Origen del color de pantalla | `u8` tipo + `u32` índice | `0, 0` ninguno; `1, i` RGB de 16 bits en la columna `i`; `2, i` intensidad de 16 bits en la columna `i`; cualquier otro par es un error de formato | la columna `i` debe ser `u16` de 3 componentes (tipo 1) o de 1 (tipo 2) |
 
 Qué escribe el conversor:
 
-- **Cuantiles:** de una muestra con semilla fija (`SAMPLE_SEED`, unos 2¹⁶ puntos como máximo) tomada en las hojas; cada
+- **Cuantiles:** de una muestra con semilla fija (`SAMPLE_SEED`, unos 2¹⁶ puntos: es un objetivo de la tasa de muestreo, no un tope) tomada en las hojas; cada
   hoja busca el vecino en su propia hoja, y las muestras se juntan en orden de nodo. El borde de hoja sobreestima algo.
 - **Columnas LOD:** las columnas del esquema llamadas `intensity` y `classification`, las que existan (el color de
   pantalla de los LOD no es una columna del esquema: es el flujo 1 y se guarda siempre).

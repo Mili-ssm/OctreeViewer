@@ -6,10 +6,10 @@
 [reparto de bytes de v7](TAMANO_SALIDA_V7_20-11-2026.md).
 
 **Conclusión:** con el mismo binario, `--format-version v8.1-pre` reduce la salida a **−40,6 % (Albuera), −40,5 %
-(Majadas) y −34,8 % (Belvedere)** respecto a v7, igual que la proyección (diferencia ≤ 0,01 puntos), de modo que el
-criterio V2 (Albuera ≥ 35 % más pequeña) se cumple. El tiempo de conversión no sube (−3,3 % / −4,7 % / +3,6 %), la
-carga en el navegador de Belvedere tampoco empeora (mediana del objetivo de 4 px 798 ms frente a 918 ms, con 4
-ejecuciones por formato y mucha dispersión) y las tres salidas pasan `viewer_convert verify`. Ningún umbral de parada
+(Majadas) y −34,8 % (Belvedere)** respecto a v7, igual que la proyección (diferencia ≤ 0,012 puntos), de modo que el
+criterio V2 (Albuera ≥ 35 % más pequeña) se cumple. El tiempo de conversión no cambia de forma apreciable (−3,3 % / −4,7 % / +3,6 %, una sola ejecución por caso,
+dentro del ruido), la carga en el navegador de Belvedere no empeora de forma apreciable (mediana del objetivo de 4 px
+798 ms frente a 918 ms, con 4 ejecuciones por formato y una serie v8.1-pre bimodal; no se afirma una mejora) y las tres salidas pasan `viewer_convert verify`. Ningún umbral de parada
 de la tarea 8 se activa. Las cifras valen solo para esta revisión, el perfil `release`, estos datasets y este equipo.
 
 ## Condiciones

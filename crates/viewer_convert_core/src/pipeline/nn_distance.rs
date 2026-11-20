@@ -1,6 +1,7 @@
 //! Nearest-neighbour distance samples of a `v8.1-pre` leaf, aggregated by the planner into the
-//! dataset's p1/p5/p50 quantiles. Everything here is integer arithmetic on quantized positions
-//! (1 quantum = 2^-15 units), so the result depends neither on the order points arrive in nor on
+//! dataset's p1/p5/p50 quantiles. The sampling and search are integer arithmetic on quantized
+//! positions (1 quantum = 2^-15 units), with one conversion to units at the end, so the result
+//! depends neither on the order points arrive in nor on
 //! the number of workers or the executor.
 
 use super::node_job::spread_bits;

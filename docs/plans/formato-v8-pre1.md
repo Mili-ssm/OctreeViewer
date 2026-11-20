@@ -1,6 +1,6 @@
 # Formato V8, revisión v8.1-pre (plan de implementación)
 
-Estado: medido · 20-11-2026 · tareas 0 a 8 hechas; v8.1-pre frente a v7 con el mismo binario: Albuera −40,6 % (V2 cumplido), Majadas −40,5 %, Belvedere −34,8 %, sin subir el tiempo de conversión ni empeorar la carga en el navegador ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md)); la decisión sobre D3 y sobre pasar a una v8 final queda para el propietario
+Estado: medido · 20-11-2026 · tareas 0 a 8 hechas; v8.1-pre frente a v7 con el mismo binario: Albuera −40,6 % (V2 cumplido), Majadas −40,5 %, Belvedere −34,8 %, sin cambio apreciable en el tiempo de conversión (una ejecución por caso) ni en la carga en el navegador (Belvedere, 4 ejecuciones por formato, serie bimodal) ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md)); la decisión sobre D3 y sobre pasar a una v8 final queda para el propietario
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
