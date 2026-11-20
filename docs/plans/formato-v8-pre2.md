@@ -1,6 +1,6 @@
 # Formato V8, revisión v8.2-pre: zstd en columnas de `.octattrs` (plan de implementación)
 
-Estado: propuesto · 20-11-2026 · experimento de D3 decidido por el propietario tras medir v8.1-pre
+Estado: aprobado · 20-11-2026 · experimento de D3; el propietario aprueba el plan («hagamos la prueba, pero creo que al final nos quedaremos con LZ4»); tarea 0 en marcha
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
