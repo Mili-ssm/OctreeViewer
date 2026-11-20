@@ -289,6 +289,8 @@ impl PointBlock {
         &self.points
     }
 
+    /// The columns the block carries, in schema order. A format revision may omit some, so
+    /// identify a column by its descriptor, not by its position.
     pub fn attributes(&self) -> &[AttributeColumn] {
         &self.attributes
     }

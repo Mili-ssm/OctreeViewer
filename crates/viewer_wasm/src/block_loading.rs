@@ -19,7 +19,9 @@ pub(crate) fn load_render_block<E: std::fmt::Display>(
     // A block may omit the column (revisions that drop what the viewer does not draw from
     // interior nodes): it then keeps the colours it has instead of failing the load.
     if let Some((index, component)) = selected_attribute
-        && reader.attribute_present(id, index)
+        && reader
+            .attribute_present(id, index)
+            .map_err(|e| e.to_string())?
     {
         let column = reader
             .read_attribute(id, index)
@@ -44,7 +46,10 @@ pub(crate) fn load_render_block<E: std::fmt::Display>(
             .position(|descriptor| descriptor.name() == name)
     {
         let index = u32::try_from(index).map_err(|_| "attribute schema is too large".to_owned())?;
-        if reader.attribute_present(id, index) {
+        if reader
+            .attribute_present(id, index)
+            .map_err(|e| e.to_string())?
+        {
             attributes.push(
                 reader
                     .read_attribute(id, index)
@@ -68,7 +73,9 @@ pub(crate) fn load_cell_block<E: std::fmt::Display>(
         .map_err(|error| error.to_string())?;
     // An attribute colour mode paints the points before the cells are built from them (R3-Q33).
     if let Some(((index, component), range)) = paint
-        && reader.attribute_present(id, index)
+        && reader
+            .attribute_present(id, index)
+            .map_err(|e| e.to_string())?
     {
         let column = reader
             .read_attribute(id, index)
@@ -90,7 +97,10 @@ pub(crate) fn load_cell_block<E: std::fmt::Display>(
             };
             let index =
                 u32::try_from(index).map_err(|_| "attribute schema is too large".to_owned())?;
-            if reader.attribute_present(id, index) {
+            if reader
+                .attribute_present(id, index)
+                .map_err(|e| e.to_string())?
+            {
                 attributes.push(
                     reader
                         .read_attribute(id, index)
@@ -116,6 +126,9 @@ mod tests {
         calls: Vec<&'static str>,
         attributes_available: bool,
         fail: Option<&'static str>,
+        /// Columns the block omits (`attribute_present` is false for them).
+        absent: Vec<u32>,
+        present_error: bool,
     }
 
     impl MemoryReader {
@@ -149,6 +162,8 @@ mod tests {
                 calls: vec![],
                 attributes_available: true,
                 fail: None,
+                absent: vec![],
+                present_error: false,
             }
         }
     }
@@ -171,8 +186,11 @@ mod tests {
         fn has_attributes(&self) -> bool {
             self.attributes_available
         }
-        fn attribute_present(&self, _: BlockId, _: u32) -> bool {
-            true
+        fn attribute_present(&self, _: BlockId, index: u32) -> Result<bool, Self::Error> {
+            if self.present_error {
+                return Err("index failed");
+            }
+            Ok(!self.absent.contains(&index))
         }
         fn read_positions(&mut self, _: BlockId) -> Result<PointBatch, Self::Error> {
             self.calls.push("xyz");
@@ -498,5 +516,52 @@ mod tests {
         )
         .unwrap();
         assert!(block.attributes().is_empty());
+    }
+
+    #[test]
+    fn absent_columns_are_skipped_and_lookup_errors_propagate() {
+        let id = BlockId::new(7);
+        // Paint column and mode column both omitted: own colours, no column, no error.
+        let mut reader = MemoryReader::new();
+        reader.absent = vec![0, 1, 2];
+        let block = load_render_block(
+            &mut reader,
+            id,
+            Some(ColorMode::Intensity),
+            Some((2, 1)),
+            Some([-1.0, 1.0]),
+        )
+        .unwrap();
+        assert_eq!(reader.calls, ["xyz"]);
+        assert!(block.attributes().is_empty());
+        assert_eq!(
+            block.points().points()[0].color,
+            ColorRgb::new(160, 160, 160)
+        );
+        // Cells: geometry with its own RGB, and no intensity/classification columns.
+        let mut reader = MemoryReader::new();
+        reader.absent = vec![0, 1, 2];
+        let block = load_cell_block(&mut reader, id, Some(((2, 1), Some([-1.0, 1.0])))).unwrap();
+        assert_eq!(reader.calls, ["xyz", "rgb"]);
+        assert!(block.attributes().is_empty());
+        assert_eq!(block.points().points()[0].color, ColorRgb::new(10, 20, 30));
+        // Only one of the two cell columns omitted: the other still loads.
+        let mut reader = MemoryReader::new();
+        reader.absent = vec![0];
+        let block = load_cell_block(&mut reader, id, None).unwrap();
+        let names: Vec<_> = block
+            .attributes()
+            .iter()
+            .map(|column| column.descriptor().name())
+            .collect();
+        assert_eq!(names, ["classification"]);
+        // A failing presence lookup is an error, not a silent skip.
+        let mut reader = MemoryReader::new();
+        reader.present_error = true;
+        assert_eq!(
+            load_render_block(&mut reader, id, Some(ColorMode::Intensity), None, None).unwrap_err(),
+            "index failed"
+        );
+        assert!(load_cell_block(&mut reader, id, None).is_err());
     }
 }

@@ -1663,12 +1663,16 @@ fn reading_an_absent_column_is_an_error_not_a_panic() {
         crate::layout::StoredColumn::Absent,
         offset,
     );
-    assert!(reader.attribute_present(id, 0));
-    assert!(!reader.attribute_present(id, 1));
-    assert!(!reader.attribute_present(id, 2), "unknown index");
+    assert!(reader.attribute_present(id, 0).unwrap());
+    assert!(!reader.attribute_present(id, 1).unwrap());
+    assert!(!reader.attribute_present(id, 2).unwrap(), "unknown index");
     assert!(
-        !reader.attribute_present(BlockId::new(999), 0),
-        "unknown block"
+        !reader.attribute_present(id, u32::MAX).unwrap(),
+        "huge index"
+    );
+    assert!(
+        reader.attribute_present(BlockId::new(999), 0).is_err(),
+        "unknown block is an error, not an absent column"
     );
     assert!(matches!(
         reader.read_attribute(id, 1),

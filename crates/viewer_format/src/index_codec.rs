@@ -596,6 +596,25 @@ pub(crate) fn validate_column_codec(
     Ok(())
 }
 
+/// Range a block occupies in the split companion: from its display payload to the furthest end
+/// of a stored column (a column that is not stored has no bytes, whatever its offset).
+fn companion_range(block: &BlockDirectoryEntry) -> Result<(u64, u64), FormatError> {
+    let start = block.payloads[1].offset;
+    let end = block
+        .payloads
+        .iter()
+        .skip(1)
+        .filter(|payload| payload.stored.is_present())
+        .try_fold(start, |end, payload| {
+            payload
+                .offset
+                .checked_add(payload.stored_length)
+                .map(|next| end.max(next))
+                .ok_or(FormatError::FileSizeOverflow)
+        })?;
+    Ok((start, end))
+}
+
 pub(crate) fn parse_index(
     bytes: &[u8],
     limits: &FormatReaderLimits,
@@ -999,16 +1018,7 @@ pub(crate) fn parse_index(
     if split {
         let mut ranges = blocks
             .values()
-            .map(|block| {
-                let first = &block.payloads[1];
-                let last = block.payloads.last().expect("display payload exists");
-                Ok((
-                    first.offset,
-                    last.offset
-                        .checked_add(last.stored_length)
-                        .ok_or(FormatError::FileSizeOverflow)?,
-                ))
-            })
+            .map(companion_range)
             .collect::<Result<Vec<_>, FormatError>>()?;
         ranges.sort_unstable();
         let mut end = HEADER_SIZE;
@@ -1189,4 +1199,40 @@ pub(crate) fn validate_node_error_bounds(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod companion_range_tests {
+    use super::*;
+
+    fn payload(offset: u64, length: u64, stored: StoredColumn) -> PayloadDirectoryEntry {
+        PayloadDirectoryEntry {
+            stored_length: length,
+            raw_length: length,
+            ..PayloadDirectoryEntry::not_stored(stored, offset)
+        }
+    }
+
+    #[test]
+    fn an_absent_last_column_does_not_move_the_range_end() {
+        let block = BlockDirectoryEntry {
+            offset: 0,
+            payload_length: 12,
+            point_count: 1,
+            quantization_error: 0.0,
+            origin: [0.0; 3],
+            scale: [1.0; 3],
+            origin_quanta: [0; 3],
+            node_cell: None,
+            geometry_encoding: GeometryEncoding::RawU32,
+            payloads: vec![
+                payload(0, 12, StoredColumn::Present),
+                payload(100, 3, StoredColumn::Present),
+                payload(103, 5, StoredColumn::Present),
+                // Absent last column with a stale offset: ignored.
+                PayloadDirectoryEntry::not_stored(StoredColumn::Absent, 5000),
+            ],
+        };
+        assert_eq!(companion_range(&block).unwrap(), (100, 108));
+    }
 }

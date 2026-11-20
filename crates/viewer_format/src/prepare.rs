@@ -24,7 +24,9 @@ pub fn prepare_point_block(
 }
 
 /// Whether `block` belongs to a node with children, found by scanning the hierarchy. Callers that
-/// prepare many blocks build [`lod_block_ids`] once instead.
+/// prepare many blocks build [`lod_block_ids`] once instead. Only the single-block entry points
+/// (V5 and tests) use it; the writer's `write_block` path takes the set built once in its
+/// constructor.
 fn block_is_lod_by_scan(
     version: FormatVersion,
     block: BlockId,

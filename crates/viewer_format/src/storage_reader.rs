@@ -114,7 +114,7 @@ impl<R: Read + Seek> FormatReader<R> {
     }
 
     /// Whether `id` stores schema column `index`; see [`IndexedReader::attribute_present`].
-    pub fn attribute_present(&self, id: BlockId, index: u32) -> bool {
+    pub fn attribute_present(&self, id: BlockId, index: u32) -> Result<bool, FormatError> {
         self.backend().attribute_present(id, index)
     }
 
@@ -316,7 +316,7 @@ impl<R: Read + Seek> OctreeReader for FormatReader<R> {
         FormatReader::has_attributes(self)
     }
 
-    fn attribute_present(&self, id: BlockId, index: u32) -> bool {
+    fn attribute_present(&self, id: BlockId, index: u32) -> Result<bool, Self::Error> {
         FormatReader::attribute_present(self, id, index)
     }
 

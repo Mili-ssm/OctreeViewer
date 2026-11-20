@@ -20,8 +20,9 @@ pub trait OctreeReader: DatasetSource {
     fn has_attributes(&self) -> bool;
 
     /// Whether `block` stores schema column `index`: a revision may omit columns from some blocks
-    /// (reading one then fails with `AttributeAbsent`). False for an unknown block or index.
-    fn attribute_present(&self, id: BlockId, index: u32) -> bool;
+    /// (reading one then fails with `AttributeAbsent`). `Ok(false)` for an index beyond the schema;
+    /// an unknown block or a failing index lookup is an error.
+    fn attribute_present(&self, id: BlockId, index: u32) -> Result<bool, Self::Error>;
 
     /// XYZ only, with neutral gray colors. Does not access color/attribute payloads.
     fn read_positions(&mut self, id: BlockId) -> Result<PointBatch, Self::Error>;
@@ -106,7 +107,7 @@ impl<R: Read + Seek> OctreeReader for IndexedReader<R> {
         IndexedReader::has_attributes(self)
     }
 
-    fn attribute_present(&self, id: BlockId, index: u32) -> bool {
+    fn attribute_present(&self, id: BlockId, index: u32) -> Result<bool, Self::Error> {
         IndexedReader::attribute_present(self, id, index)
     }
 

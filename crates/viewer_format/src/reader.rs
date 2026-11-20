@@ -458,15 +458,15 @@ impl<R: Read + Seek> IndexedReader<R> {
         !self.split || self.attributes_attached
     }
 
-    /// Whether `block` stores schema column `index`. False for an unknown block or index, and for
-    /// a column the format omits from that block (read it with the other columns instead).
-    pub fn attribute_present(&self, id: BlockId, index: u32) -> bool {
-        self.entry(id).is_ok_and(|entry| {
-            entry
-                .payloads
-                .get(index as usize + 2)
-                .is_some_and(|payload| payload.stored.is_present())
-        })
+    /// Whether `id` stores schema column `index`: `Ok(false)` for an index beyond the schema and
+    /// for a column the format omits from that block. An unknown block or a failing index lookup
+    /// is an error, never `false`, so callers cannot skip a column on a real failure.
+    pub fn attribute_present(&self, id: BlockId, index: u32) -> Result<bool, FormatError> {
+        let entry = self.entry(id)?;
+        Ok((index as usize)
+            .checked_add(2)
+            .and_then(|slot| entry.payloads.get(slot))
+            .is_some_and(|payload| payload.stored.is_present()))
     }
 
     /// Nearest-neighbour distance quantiles stored in the header (`v8.N-pre`); `None` for
@@ -1155,11 +1155,14 @@ impl<R: Read + Seek> IndexedReader<R> {
             .get(schema_index as usize)
             .ok_or(FormatError::UnknownAttribute(schema_index))?
             .clone();
+        let payload_index = (schema_index as usize)
+            .checked_add(2)
+            .ok_or(FormatError::UnknownAttribute(schema_index))?;
         let width = crate::layout::attribute_tuple_width(&descriptor)?;
         let raw = self.read_payload(
             id,
             &entry,
-            stored_payload(&entry, id, schema_index as usize + 2)?,
+            stored_payload(&entry, id, payload_index)?,
             Some(width),
         )?;
         let count =
@@ -1263,6 +1266,8 @@ impl<R: Read + Seek> IndexedReader<R> {
         }
     }
 
+    /// Geometry plus the attribute columns the block stores, in schema order. A format revision
+    /// may omit some columns from a block, so identify a column by its descriptor, not by position.
     pub(crate) fn read_point_block(&mut self, id: BlockId) -> Result<PointBlock, FormatError> {
         let points = self.read_geometry(id)?;
         let schema_count = if self.has_attributes() {
@@ -1277,7 +1282,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         for schema_index in 0..schema_count {
             let schema_index = schema_index as u32;
             // A block may omit columns; the points are counted by the geometry, not by them.
-            if self.attribute_present(id, schema_index) {
+            if self.attribute_present(id, schema_index)? {
                 attributes.push(self.read_attribute(id, schema_index)?);
             }
         }

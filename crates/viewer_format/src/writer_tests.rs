@@ -762,6 +762,18 @@ fn lod_set_matches_has_children() {
             .flat_map(|(_, _, blocks)| blocks.iter().map(|&block| BlockId::new(block)))
             .collect();
         assert_eq!(lod, expected, "{nodes:?}");
+        // Per node: a block is LOD exactly when its node has children, which is what the page's
+        // `has_children` flag records.
+        for (id, _, blocks) in nodes {
+            let has_children = !hierarchy.is_leaf(NodeId::new(*id));
+            for &block in *blocks {
+                assert_eq!(
+                    lod.contains(&BlockId::new(block)),
+                    has_children,
+                    "node {id} block {block} in {nodes:?}"
+                );
+            }
+        }
         assert_eq!(lod.is_empty(), nodes.len() == 1 || nodes[0].2.len() > 1);
     }
 }
