@@ -63,7 +63,7 @@ Hecho (19-11-2026, tarde): #95 (respuestas del propietario, ADR 0057), #97 (unid
 
 Pendiente (el detalle vive en issues y PR; los huecos transitorios del conjunto activo que cuenta el oráculo se aceptan, ver el [cierre](records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)):
 
-- Temporales del CLI ([diseño](plans/temporales-del-conversor.md), RQ-06): la fase B (spools comprimidos) está hecha en la rama `feat/temporales-fase-b` y espera la fusión ([registro](records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md): Albuera 11,1 × → 3,5 × el LAZ, salida idéntica, +24 % de tiempo); falta la fase A (escritura por subárbol) y, después, la carga de varias nubes (RF-01).
+- Temporales del CLI ([diseño](plans/temporales-del-conversor.md), RQ-06): la fase B (spools comprimidos) está fusionada ([PR #108](https://github.com/Mili-ssm/OctreeViewer/pull/108), [registro](records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md): Albuera 11,1 × → 3,5 × el LAZ, salida idéntica, +24 % de tiempo); falta la fase A (escritura por subárbol) y, después, la carga de varias nubes (RF-01).
 - [OQ-17](https://github.com/Mili-ssm/OctreeViewer/issues/99): aceptar las puertas espacial y temporal de la fase 2c o investigar antes de cerrar el plan del LOD por celda.
 - Siguiente trabajo: el resto del [proyecto API pública](https://github.com/Mili-ssm/OctreeViewer/issues/27) (RF-10 a RF-15; la demo todavía no usa solo la API, RF-11), la retirada de V5/V6 ([#28](https://github.com/Mili-ssm/OctreeViewer/issues/28)) y el p95 de la fase 1 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)).
 - [PR #88](https://github.com/Mili-ssm/OctreeViewer/pull/88): experimento en borrador y aparcado (tramo único como fuente de la emisión y borrado de la maquinaria por octante).

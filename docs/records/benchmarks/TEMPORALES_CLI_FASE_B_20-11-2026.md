@@ -1,7 +1,7 @@
 # Temporales del CLI, fase B: spools comprimidos — 20-11-2026
 
 **Estado: medido.** Es la comprobación de la tarea 5 del
-[plan de la fase B](../../plans/temporales-del-conversor-fase-b.md), dentro del
+[plan de la fase B](../archive/temporales-del-conversor-fase-b.md), dentro del
 [diseño de temporales del conversor](../../plans/temporales-del-conversor.md) (RQ-06, OQ-04, #24).
 
 **Conclusión:** guardar los spools nativos como tramas comprimidas (planos de bytes por registro + LZ4) divide el pico

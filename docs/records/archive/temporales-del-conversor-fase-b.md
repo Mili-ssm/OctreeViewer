@@ -1,6 +1,6 @@
 # Temporales del conversor, fase B: spools comprimidos (plan de implementación)
 
-Estado: completado · 20-11-2026 · tareas 1–5 hechas en `feat/temporales-fase-b`; medida en el [registro](../records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md); la fusión espera al propietario
+Estado: completado · 20-11-2026 · tareas 1–5 hechas y fusionadas en la [PR #108](https://github.com/Mili-ssm/OctreeViewer/pull/108); medida en el [registro](../benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -15,7 +15,7 @@ completos; cada trama se transpone a planos de bytes, se comprime con `lz4_flex`
 **Tech Stack:** Rust (nightly fijado), `lz4_flex` 0.14 (ya en el workspace, parcheado en `vendor/lz4_flex`), bash
 para la medida.
 
-**Spec:** [temporales-del-conversor.md](temporales-del-conversor.md) (diseño aprobado el 19-11-2026). La fase A
+**Spec:** [temporales-del-conversor.md](../../plans/temporales-del-conversor.md) (diseño aprobado el 19-11-2026). La fase A
 (escritura por subárbol) tendrá su propio plan cuando esta fase esté medida.
 
 ## Global Constraints
