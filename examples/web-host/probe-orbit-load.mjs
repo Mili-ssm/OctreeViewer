@@ -51,6 +51,7 @@ const withAttrs = args.includes("--attrs");
 const pixelsMode = args.includes("--pixels") ? "orbit" : (option("pixels", null) === "final" ? "final" : null);
 const restFirst = args.includes("--rest-first");
 const colorRequest = option("color", "rgb");
+if (args.includes("--color")) throw new Error("--color needs a value: --color=MODE");
 const jumpAfterMs = args.some(arg => arg.startsWith("--jump-after-ms=")) ? Number(option("jump-after-ms", "0")) : null;
 const psssOut = option("pss-out", null); const buildWorker = !args.includes("--no-build-worker");
 const url = (() => {
@@ -415,7 +416,8 @@ try {
         await backend.setDatasetFile(datasetPath);
     }
     const loadStartedMs = Date.now();
-    // Colour mode: the Color options (sidecar columns) exist only after the dataset event, so wait for them.
+    // Colour mode: options are enabled and sidecar columns added only on the dataset event, so wait for the open
+    // dataset (metadata) before choosing; the static intensity/classification options exist earlier.
     // The worker confirms the mode in sceneInputs().colorMode; a mode that never shows there fails the run.
     const colorState = async () => ({
         select: (await evaluate('document.querySelector("#color-mode").value')).value,
@@ -427,8 +429,9 @@ try {
         const find = `(() => { const o = [...document.querySelector("#color-mode").options].find(o => !o.disabled
             && (o.dataset.attribute ? o.textContent === ${wanted} : o.value === ${wanted})); return o ? o.value : null; })()`;
         let value = null;
-        while (value === null && Date.now() - loadStartedMs < 120_000) {
-            value = await evalJson(find);
+        while (value === null && Date.now() - loadStartedMs < maxLoadMs) {
+            const opened = (await evalJson("window.__renderBench.apiCall('getMetadata')").catch(() => null))?.nodeCount;
+            value = opened ? await evalJson(find) : null;
             if (value === null) await sleep(100);
         }
         if (value === null) throw new Error(`colour mode ${colorRequest} is not offered by the demo (columns missing or --attrs not set)`);
@@ -566,7 +569,7 @@ try {
     {
         const end = await colorState();
         Object.assign(result.colorMode, end, { verified: end.select === result.colorMode.value && end.worker === result.colorMode.value });
-        if (!result.colorMode.verified) throw new Error(`colour mode ${colorRequest} not active: ${JSON.stringify(end)}`);
+        if (colorRequest !== "rgb" && !result.colorMode.verified) throw new Error(`colour mode ${colorRequest} not active: ${JSON.stringify(end)}`);
     }
     fs.writeFileSync(`${output}.png`, await backend.screenshot());
     if (pixelsMode) result.finalEmptyPixels = await captureEmptyPixels();

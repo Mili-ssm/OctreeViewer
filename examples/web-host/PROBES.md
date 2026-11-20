@@ -44,7 +44,9 @@ node examples/web-host/probe-orbit-load.mjs data/samples/fs_e430_n4008_18.oct ta
 
 `--color` picks the demo's Color control once the dataset is open (default `rgb`, unchanged); `attribute:COLUMN` needs
 `--attrs` and a single-component sidecar column. OUTPUT.json `colorMode` records the request and the value read back
-from the select and the render worker; a mode that is not active fails the run.
+from the select and the render worker; a requested mode other than `rgb` that is not active fails the run (`rgb` is
+only recorded). Changing the colour after open resets the demo's benchmark window, so `openTimings.targetLodMs` is
+null in those runs: use `timeToReachedMs`. `elevation` and multi-component columns are not supported.
 
 `--browser=chrome` (default) launches `/usr/bin/google-chrome` (`CHROME_BIN`) through playwright-core
 (`PLAYWRIGHT_CORE` = its directory) with `--headless=new --enable-unsafe-webgpu
