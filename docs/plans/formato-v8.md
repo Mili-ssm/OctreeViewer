@@ -22,6 +22,14 @@ aparcada ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)).
 | D6 | V8 está en desarrollo y en pruebas: no se fija nada todavía (propietario, 20-11-2026). Se trabaja en revisiones previas (`v8.1-pre`, `v8.2-pre`…), como v7, y se congela cuando las pruebas lo justifiquen. |
 | D5 | V8 guarda una estimación estocástica de la distancia mínima entre puntos, como tamaño mínimo de vóxel recomendado. Que la demo la use en lugar de los 0,1 mm por defecto se decide más adelante (hoy lo fija la resolución de OQ-13 del 18-11-2026, RQ-09 y el [ADR 0054](../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md)). |
 
+### Resoluciones tras medir v8.1-pre (propietario, 20-11-2026)
+
+| Id | Resolución |
+| --- | --- |
+| D3 | Sigue abierta como experimento: `v8.2-pre` mide cuatro esquemas fijos — LZ4 en todo (v8.1-pre, la base), todo `.octattrs` con zstd, zstd solo en las columnas frías (las que el render no lee: tiempo GPS, ángulo, retornos, id de fuente, datos de usuario, extra bytes) y frías más el RGB de 16 bits — en tamaño, tiempo de conversión, tiempo de carga y rendimiento de render en el navegador. «Quizá sea mejor quedarse solo con LZ4». |
+| D4 | La V8 se congela (y se retiran v5, v6 y v7) después de medir `v8.2-pre`, con el esquema que salga de D3. |
+| D5 | La demo usa el p5 del fichero como mínimo en longitud por defecto cuando lo trae; si no, 0,1 mm ([ADR 0059](../adr/0059-minimo-por-defecto-desde-p5.md)). |
+
 ## Requisitos
 
 | Id | Requisito |
@@ -121,4 +129,4 @@ hoja; checkpoints en el formato paginado (RF-26); cambiar el mínimo por defecto
 
 | Id | Pregunta |
 | --- | --- |
-| P1 | Esquema de compresión de V8: LZ4 en todo, o fijo por fichero (`.oct` LZ4, `.octattrs` zstd), con o sin el RGB de 16 bits partido por planos. Se decide con las pruebas de las revisiones previas (D3, D6). |
+| P1 | Esquema de compresión de V8: se decide con las cuatro variantes de `v8.2-pre` (resolución de D3 del 20-11-2026, arriba). |
