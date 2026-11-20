@@ -1365,20 +1365,38 @@ mod spacing_tests {
             state ^= state << 17;
             state
         };
-        // Spread over a node of side 2^40 quanta, with duplicates, so the measured depth is below
-        // the code depth.
+        // Spread over a node of side 2^30 quanta, with duplicates, so the measured depth is below
+        // the code depth; squared distances (~2^52) stay far from the u64 saturation.
         let mut cells = (0..3_000)
-            .map(|_| std::array::from_fn(|_| i128::from(next() >> 24)))
+            .map(|_| std::array::from_fn(|_| i128::from(next() >> 34)))
             .collect::<Vec<[i128; 3]>>();
         cells.extend_from_within(..300);
-        let (depth, order) = morton_spacing_order(&cells, 40, 32).unwrap();
-        assert_eq!(Some(depth), morton_spacing_depth(&cells, 40, 32));
+        let (depth, order) = morton_spacing_order(&cells, 30, 24).unwrap();
+        assert_eq!(Some(depth), morton_spacing_depth(&cells, 30, 24));
         assert!(depth < order.code_depth);
-        let mut own = nearest_distance_samples(&cells, [0; 3], 40, depth, u64::MAX, None);
-        let mut reused = nearest_distance_samples(&cells, [0; 3], 40, depth, u64::MAX, Some(order));
+        let mut own = nearest_distance_samples(&cells, [0; 3], 30, depth, u64::MAX, None);
+        let mut reused = nearest_distance_samples(&cells, [0; 3], 30, depth, u64::MAX, Some(order));
+        // Brute-force oracle: nearest non-zero squared distance of every point.
+        let mut oracle: Vec<u64> = cells
+            .iter()
+            .map(|a| {
+                let nearest = cells
+                    .iter()
+                    .map(|b| {
+                        (0..3)
+                            .map(|axis| a[axis].abs_diff(b[axis]).pow(2))
+                            .sum::<u128>()
+                    })
+                    .filter(|&squared| squared != 0)
+                    .min()
+                    .unwrap();
+                u64::try_from(nearest).unwrap()
+            })
+            .collect();
         own.sort_unstable();
         reused.sort_unstable();
-        assert!(!own.is_empty());
-        assert_eq!(reused, own);
+        oracle.sort_unstable();
+        assert_eq!(own, oracle);
+        assert_eq!(reused, oracle);
     }
 }

@@ -95,8 +95,8 @@ pub fn nearest_distance_samples(
         cells[index].map(|value| (value >> shift).clamp(0, limit - 1))
     };
     let mut samples = Vec::new();
-    if let Some(order) = order {
-        debug_assert!(depth <= order.code_depth);
+    // An order coarser than the search grid cannot list its cells: use the own sort instead.
+    if let Some(order) = order.filter(|order| depth <= order.code_depth) {
         let below = 3 * (order.code_depth - depth);
         let sorted = &order.sorted;
         search(
@@ -256,10 +256,12 @@ mod tests {
 
     #[test]
     fn a_neighbour_several_rings_away_is_found_exactly() {
-        // Step 700 quanta over cells of 256: the neighbour is in ring 3, and the search stops
-        // there because 700 <= 3 * 256.
-        let measured = quantiles(&grid(4, 700));
-        assert_eq!(measured, [700.0 / QUANTA_PER_UNIT; 3]);
+        // Step 700 quanta over cells of 256: the nearest neighbour lies two cells away (ring 2),
+        // and the search only stops after ring 3, the first whose radius reaches 700.
+        let cells = grid(4, 700);
+        let samples =
+            nearest_distance_samples(&cells, [0; 3], SIDE_EXPONENT, DEPTH, u64::MAX, None);
+        assert_eq!(samples, vec![700 * 700; cells.len()]);
     }
 
     #[test]
