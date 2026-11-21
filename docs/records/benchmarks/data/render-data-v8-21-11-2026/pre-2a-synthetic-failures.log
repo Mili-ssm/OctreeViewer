@@ -51,7 +51,7 @@
    Compiling wayland-sys v0.31.11
    Compiling glam v0.34.1
    Compiling twox-hash v2.1.5
-   Compiling lz4_flex v0.14.0 (/tmp/claude-1000/wt-pre/vendor/lz4_flex)
+   Compiling lz4_flex v0.14.0 (<scratch-worktree>/vendor/lz4_flex)
    Compiling syn v3.0.9
    Compiling syn v2.0.119
    Compiling hashbrown v0.16.1
@@ -69,17 +69,17 @@
    Compiling naga-types v30.0.1
    Compiling bytemuck v1.25.2
    Compiling wgpu-types v30.0.1
-   Compiling viewer_core v0.1.0 (/tmp/claude-1000/wt-pre/crates/viewer_core)
+   Compiling viewer_core v0.1.0 (<scratch-worktree>/crates/viewer_core)
    Compiling half v2.7.1
    Compiling gpu-allocator v0.28.0
    Compiling zstd v0.13.5
-   Compiling viewer_format v0.1.0 (/tmp/claude-1000/wt-pre/crates/viewer_format)
+   Compiling viewer_format v0.1.0 (<scratch-worktree>/crates/viewer_format)
    Compiling wgpu-naga-bridge v30.0.1
    Compiling wgpu-core-deps-windows-linux-android v30.0.1
-   Compiling viewer_render_wgpu v0.1.0 (/tmp/claude-1000/wt-pre/crates/viewer_render_wgpu)
-   Compiling viewer_wasm v0.1.0 (/tmp/claude-1000/wt-pre/crates/viewer_wasm)
+   Compiling viewer_render_wgpu v0.1.0 (<scratch-worktree>/crates/viewer_render_wgpu)
+   Compiling viewer_wasm v0.1.0 (<scratch-worktree>/crates/viewer_wasm)
     Finished `perf` profile [optimized] target(s) in 35.12s
-     Running unittests src/lib.rs (/tmp/claude-1000/wt-pre-target/perf/build/viewer_wasm/4ae8ee132732725b/out/viewer_wasm-4ae8ee132732725b)
+     Running unittests src/lib.rs (<scratch-worktree>-target/perf/build/viewer_wasm/4ae8ee132732725b/out/viewer_wasm-4ae8ee132732725b)
 
 running 2 tests
 test lod_dataset::cells_stream_tests::synthetic_zoom_in_lag ... FAILED
