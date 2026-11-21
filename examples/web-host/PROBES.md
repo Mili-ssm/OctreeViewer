@@ -91,7 +91,7 @@ the repository root on a free port and run it on one file:
 
 ```bash
 PORT=8791 scripts/serve-demo.sh --no-build &
-node examples/web-host/probe-cells-parity.mjs target/render-data/belvedere-v7.oct target/cells-parity.json \
+node examples/web-host/probe-cells-parity.mjs target/render-data/belvedere-v8.oct target/cells-parity.json \
   --url=http://127.0.0.1:8791/examples/web-host/index.html --rest-timeout-s=120
 ```
 

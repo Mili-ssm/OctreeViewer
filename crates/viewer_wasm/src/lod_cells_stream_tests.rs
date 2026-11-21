@@ -2307,9 +2307,11 @@ fn region_views(real: &Real) -> (ViewProjection, ViewProjection) {
     (look(anchors[0]), look(*anchors.last().unwrap()))
 }
 
-/// Resident page budget for the regraft tests: a little above what region A needs (A needs 47 398 bytes in 8 pages;
-/// see the printout of `real_regraft_belvedere`), so region B must evict A's pages.
-const REGRAFT_PAGE_BUDGET: usize = 60_000;
+/// Resident page budget for the regraft tests: a little above what region A needs, so region B must evict A's pages.
+/// V8 pages are smaller than v7's (no attribute directory entries for LOD columns): A needs 41 934 bytes with
+/// `belvedere-v8` against 47 398 with v7 (see the printout of `real_regraft_belvedere`), so the v7 budget of 60 000
+/// scales by the same ratio to 53 000 and keeps the same headroom (record `RENDER_DATA_V8_21-11-2026.md`).
+const REGRAFT_PAGE_BUDGET: usize = 53_000;
 
 #[test]
 fn real_regraft_belvedere() {

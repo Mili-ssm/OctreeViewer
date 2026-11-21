@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# RENDER_DATA_DIR (default target/render-data) holds belvedere-v8.oct and majadas-v8.oct.
+# RENDER_DATA_DIR (default target/render-data; use an absolute path from elsewhere) holds belvedere-v8.oct and majadas-v8.oct.
 # R3 Task 17 (B6) measurement matrix: CPU path (cells=0) vs cells path (cells=1), both with the build
-# worker, on Belvedere and Majadas v7.5, local file and RED-REF HTTP Range. Run from the repository
+# worker, on Belvedere and Majadas (V8), local file and RED-REF HTTP Range. Run from the repository
 # root with pkg/ built and Chrome with WebGPU. Outputs go to target/r3-b6/ (JSON per run, one log).
 #   timing   : R0 harness, 10 s orbit during load and after the target (RQ-01, RQ-05, GTT, GPU time)
 #   pixels   : same with orbit screenshots and stats samples (RQ-02 empty pixels; perturbs RQ-01 on purpose)

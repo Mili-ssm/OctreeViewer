@@ -18,8 +18,10 @@ use viewer_render_wgpu::{
 pub(super) const SIDE: f64 = 64.0;
 
 /// Directory of the real datasets the ignored tests read (`belvedere-v8.oct`, `majadas-v8.oct` and
-/// their `.octattrs`). It lives only in the main checkout, so a worktree sets `RENDER_DATA_DIR`;
-/// without it, `target/render-data` of this checkout.
+/// their `.octattrs`). It lives only in the main checkout, so a worktree sets `RENDER_DATA_DIR` to an
+/// absolute path (cargo runs tests from the crate directory, so a relative one would not resolve);
+/// without it, `target/render-data` of this checkout. Without the data the real-data tests print SKIP and
+/// pass, so a worktree run without `RENDER_DATA_DIR` does not exercise them.
 pub(super) fn render_data_dir() -> std::path::PathBuf {
     std::env::var_os("RENDER_DATA_DIR").map_or_else(
         || std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/render-data"),

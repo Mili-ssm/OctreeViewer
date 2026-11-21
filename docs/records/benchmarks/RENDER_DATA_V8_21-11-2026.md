@@ -18,10 +18,10 @@ reales (usan la muestra incorporada); fallaban ya antes de la tarea 2a (ver más
 | Entradas | `data/datasets/belv_2009_digital-aerial_pcd_copc.laz` y `data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz` (las de `MANIFEST.txt`) |
 | Orden V8 | `viewer_convert ENTRADA.laz $RENDER_DATA_DIR/<nube>-v8.oct` (V8 por defecto) → ficheros nuevos en `target/render-data` del checkout principal, anotados al final de su `MANIFEST.txt` |
 | Orden v7 | `viewer_convert ENTRADA.laz target/render-data-check/<nube>-v7.oct --format-version v7` |
-| (a) | `RENDER_DATA_DIR` con enlaces `<nube>-v8.*` → los `*-v7.*` antiguos de `target/render-data` (enlazados a otro worktree) |
-| (b) | `RENDER_DATA_DIR` con enlaces `<nube>-v8.*` → los v7 recién convertidos |
+| (a) | `RENDER_DATA_DIR` con enlaces `<nube>-v8.*` → los `*-v7.*` antiguos de `target/render-data`, que a su vez son enlaces a `~/.cache/codex-worktrees/octree-r3-v75/target/render-data/` |
+| (b) | `RENDER_DATA_DIR` con enlaces `<nube>-v8.*` → los v7 recién convertidos en `target/render-data-check/` del worktree (borrados después de la prueba) |
 | (c) | `RENDER_DATA_DIR=<checkout principal>/target/render-data` (los V8 nuevos) |
-| Tests | binario `perf` de `viewer_wasm`, `R3_REQUIRE_REAL_DATA=1`, un test por invocación con `--ignored --nocapture --test-threads=1` ([`run.sh`](data/render-data-v8-21-11-2026/run.sh)); (a), (b) y (c) se lanzaron a la vez, así que los tiempos no valen |
+| Tests | binario `perf` de `viewer_wasm`, `R3_REQUIRE_REAL_DATA=1`, una invocación por módulo o filtro de [`run.sh`](data/render-data-v8-21-11-2026/run.sh) con `--ignored --nocapture --test-threads=1` ([`run.sh`](data/render-data-v8-21-11-2026/run.sh)); (a), (b) y (c) se lanzaron a la vez, así que los tiempos no valen |
 | Equipo | El del propietario (AMD Ryzen AI 9 365, 20 hilos, 30 GiB de RAM) |
 | Datos | [`data/render-data-v8-21-11-2026/`](data/render-data-v8-21-11-2026/): registros de conversión, SHA-256, `test-{a,b,c}/` con la salida íntegra de cada test |
 
@@ -56,7 +56,17 @@ bytes retenidos y digests, así que la igualdad no es solo de veredicto.
 
 ## Re-baseline
 
-Ningún valor fijado cambia: ninguna aserción se ha tocado ni relajado. `run-r3-b6-matrix.sh` y los tests leen ahora
+Ningún valor fijado de los tests ignorados cambia: ninguna aserción se ha tocado ni relajado.
+
+**Tests no ignorados con datos reales (añadido tras la revisión):** `real_streaming_ladder_belvedere`,
+`real_regraft_belvedere` y `real_pages_with_drawn_nodes_are_not_evicted` (`lod_cells_stream_tests.rs`) también leen
+`belvedere-v8.oct`, pero sin datos imprimen SKIP y pasan, así que en el worktree no se habían ejecutado. Con
+`RENDER_DATA_DIR` apuntando a los datos reales, `real_pages_with_drawn_nodes_are_not_evicted` fallaba en V8 y pasaba en v7
+(`assert!(refused > 0)`). La causa son las páginas de índice de V8, que ocupan menos porque los bloques LOD no llevan
+entradas de directorio para las columnas que D2 retira: la región A usa 41 934 bytes de páginas con V8 frente a 47 398 con
+v7, y el presupuesto de 60 000 bytes ya no obliga a rechazar injertos. El presupuesto `REGRAFT_PAGE_BUDGET` se escala en la
+misma proporción (60 000 × 41 934 / 47 398 ≈ 53 000). Con él, V8 rechaza 30 injertos, igual que v7, y los tres tests pasan.
+El digest del dibujo es el mismo en v7 y en V8 (`1880d5816fd50ea5`). `run-r3-b6-matrix.sh` y los tests leen ahora
 `*-v8.oct` de `RENDER_DATA_DIR` (por defecto `target/render-data`).
 
 ## Lo que no se midió
