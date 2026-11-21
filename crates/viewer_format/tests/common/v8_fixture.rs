@@ -42,7 +42,7 @@ pub fn v8_metadata_at(
     schema: Vec<AttributeDescriptor>,
 ) -> FormatMetadata {
     let prefix = [prefix_of(anchor, V8_LEVEL); 3];
-    global_metadata(
+    with_v8_extras(global_metadata(
         V8_LEVEL,
         prefix,
         blocks,
@@ -50,10 +50,16 @@ pub fn v8_metadata_at(
         schema,
         v8_crs(),
         None,
-    )
-    .with_point_distance_quantiles(PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap())
-    .with_lod_attribute_columns(Vec::new())
-    .with_display_colour_source(DisplayColourSource::None)
+    ))
+}
+
+/// What every `v8` file stores besides the v7 fields: distance quantiles, an empty LOD column set
+/// and no derivable display colour.
+pub fn with_v8_extras(metadata: FormatMetadata) -> FormatMetadata {
+    metadata
+        .with_point_distance_quantiles(PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap())
+        .with_lod_attribute_columns(Vec::new())
+        .with_display_colour_source(DisplayColourSource::None)
 }
 
 pub fn v8_metadata(point_count: u64, schema: Vec<AttributeDescriptor>) -> FormatMetadata {
