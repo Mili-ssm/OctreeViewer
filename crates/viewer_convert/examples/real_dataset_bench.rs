@@ -135,14 +135,9 @@ fn convert(
     let mut metrics = ConversionMetrics::new(process_io)?;
     let mut metrics_error = None;
     // Same options as the CLI: V8 fixes the format, points per block and spatial divisions.
-    let options = ConvertOptions::with_requested_points_per_block(
-        None,
-        ConvertOptions::default().max_quantization_error(),
-        ConvertOptions::default().max_memory_budget_bytes(),
-    )?
-    .validate()?
-    .with_spatial_workers(workers)?
-    .with_root_partition_ranges(root_ranges)?;
+    let options = ConvertOptions::default()
+        .with_spatial_workers(workers)?
+        .with_root_partition_ranges(root_ranges)?;
     let mut on_progress = |progress: ConversionProgress| {
         if let Err(error) = metrics.observe(progress.stage) {
             metrics_error = Some(error);

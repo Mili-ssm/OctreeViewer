@@ -85,14 +85,13 @@ fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
         .map_or(Ok(defaults.max_memory_budget_bytes()), |bytes| {
             bytes.ok_or_else(|| JsValue::from_str("option maxMemoryMiB overflows bytes"))
         })?;
-    let mut converted = ConvertOptions::with_requested_points_per_block(None, max_error, memory)
-        .map_err(invalid)?;
+    let mut converted = ConvertOptions::with_memory_budget(max_error, memory).map_err(invalid)?;
     if let Some(workers) = number(options, "spatialWorkers")? {
         converted = converted
             .with_spatial_workers(workers as usize)
             .map_err(invalid)?;
     }
-    converted.validate().map_err(invalid)
+    Ok(converted)
 }
 
 /// Converts a LAS/LAZ Blob into the `.oct` / `.octattrs` pair behind two OPFS sync access handles.

@@ -170,7 +170,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         next_block_id: 0,
         on_progress,
         source_point_count: source.point_count,
-        collect_distance_quantiles: options.format_version().stores_distance_quantiles(),
+        collect_distance_quantiles: true,
         nn_sample_threshold: crate::pipeline::nn_distance::sample_threshold(source.point_count),
         parallel_workers: options.spatial_workers(),
         root_ranges: options.root_partition_ranges(),
@@ -272,7 +272,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         format!(
             "sample-grid:{};leaf:{}",
             options.sample_grid(),
-            crate::options::GLOBAL_LEAF_POINT_LIMIT
+            options.points_per_block()
         )
     } else {
         format!(
@@ -298,18 +298,11 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     if let Some(frame) = global_frame {
         metadata = metadata.with_global_frame(frame)?;
     }
-    if options.format_version().stores_distance_quantiles() {
-        metadata =
-            metadata.with_point_distance_quantiles(distance_quantiles(&builder.node_records)?);
-    }
-    if options.format_version().omits_lod_attributes() {
-        let columns = lod_attribute_columns(&metadata);
-        metadata = metadata.with_lod_attribute_columns(columns);
-    }
-    if options.format_version().derives_display_attribute() {
-        let source = display_colour_source(metadata.dataset().hierarchy().attributes());
-        metadata = metadata.with_display_colour_source(source);
-    }
+    metadata = metadata.with_point_distance_quantiles(distance_quantiles(&builder.node_records)?);
+    let columns = lod_attribute_columns(&metadata);
+    metadata = metadata.with_lod_attribute_columns(columns);
+    let display = display_colour_source(metadata.dataset().hierarchy().attributes());
+    metadata = metadata.with_display_colour_source(display);
     Ok(SpatialPlan {
         metadata,
         blocks: builder.output_blocks,

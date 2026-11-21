@@ -86,7 +86,7 @@ fn generate(output: &Path, scratch: &Path) -> Result<(), Box<dyn Error>> {
         }
     }
     let points = write_las(&input, SIDE)?;
-    convert_file(&input, output, ConvertOptions::default().validate()?)?;
+    convert_file(&input, output, ConvertOptions::default())?;
     let size = fs::metadata(output)?.len() + fs::metadata(&attributes)?.len();
     eprintln!("side {SIDE}: {points} points, {size} bytes");
     if size > MAX_BYTES {

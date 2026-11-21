@@ -1,4 +1,4 @@
-//! The viewer on a converted `v7.4-pre` file: world-space bounds, spacing-derived representative
+//! The viewer on a converted V8 file: world-space bounds, spacing-derived representative
 //! depth and a pinned scene digest (the golden for the global octree).
 
 use std::{fs, path::Path};
@@ -8,7 +8,7 @@ use viewer_core::{
     BlockId, DecodedBlockCache, FrustumPlane, LodSelectionConfig, NodeId, PointBlock,
     SpatialBounds, SpatialFrustum,
 };
-use viewer_format::{FormatReader, FormatVersion};
+use viewer_format::FormatReader;
 use viewer_render_wgpu::{
     CellGrid, OrbitCamera, SceneBounds, VoxelBuildLimits, build_voxel_scene_with_limits,
 };
@@ -51,14 +51,11 @@ fn write_las(path: &Path, count: usize) {
 }
 
 #[test]
-fn the_viewer_dataset_of_a_v7_4_file_is_world_space_with_stored_spacing() {
+fn the_viewer_dataset_of_a_v8_file_is_world_space_with_stored_spacing() {
     let dir = tempfile::tempdir().unwrap();
     write_las(&dir.path().join("a.las"), 140_000);
     let output = dir.path().join("a.oct");
-    let options = ConvertOptions::new(262_144, 0.01)
-        .unwrap()
-        .with_format_version(FormatVersion::V7_PRE4)
-        .unwrap();
+    let options = ConvertOptions::default();
     convert_file(&dir.path().join("a.las"), &output, options).unwrap();
     let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
     reader
@@ -206,10 +203,7 @@ fn a_local_cloud_near_zero_has_a_tight_root_and_every_point_is_reachable() {
     let dir = tempfile::tempdir().unwrap();
     write_small_local_las(&dir.path().join("a.las"), COUNT);
     let output = dir.path().join("a.oct");
-    let options = ConvertOptions::new(262_144, 0.01)
-        .unwrap()
-        .with_format_version(FormatVersion::V7_PRE4)
-        .unwrap();
+    let options = ConvertOptions::default();
     convert_file(&dir.path().join("a.las"), &output, options).unwrap();
     let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
     let metadata = reader.format_metadata();

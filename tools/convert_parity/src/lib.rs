@@ -39,9 +39,7 @@ pub extern "C" fn convert_parity_alloc(len: usize) -> *mut u8 {
 }
 
 fn run(input: &[u8], workers: usize) -> Result<Outcome, String> {
-    let mut options = ConvertOptions::default()
-        .validate()
-        .map_err(|error| error.to_string())?;
+    let mut options = ConvertOptions::default();
     if workers != 0 {
         options = options
             .with_spatial_workers(workers)

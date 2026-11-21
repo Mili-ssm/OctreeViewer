@@ -60,20 +60,13 @@ const MAX_GLOBAL_COORDINATE: f64 = (1_u64 << 35) as f64;
 
 impl GlobalRoot {
     /// Smallest node containing both header corners, and the minimum quantized corner as origin.
-    fn from_bounds(
-        bounds: SpatialBounds,
-        local: bool,
-        version: FormatVersion,
-    ) -> Result<Self, ConvertError> {
+    fn from_bounds(bounds: SpatialBounds, local: bool) -> Result<Self, ConvertError> {
         let mut low = [0_i64; 3];
         let mut high = [0_i64; 3];
         for axis in 0..3 {
             for coordinate in [bounds.min()[axis], bounds.max()[axis]] {
                 if coordinate.is_nan() || coordinate.abs() >= MAX_GLOBAL_COORDINATE {
-                    return Err(ConvertError::GlobalCoordinateRange {
-                        coordinate,
-                        version,
-                    });
+                    return Err(ConvertError::GlobalCoordinateRange { coordinate });
                 }
             }
             let min =
@@ -145,32 +138,25 @@ impl SourceInfo {
         dimensions
     }
 
-    /// Adapts the source to the output format: for `v7.4-pre` the frame origin becomes the
-    /// minimum quantized corner and the root the smallest global node containing the header box.
-    pub fn for_options(mut self, options: ConvertOptions) -> Result<Self, ConvertError> {
-        let options = options.validate()?;
-        if options.format_version().uses_pages() {
-            let version = options.format_version();
-            let wrap = |source| ConvertError::LasExtraBytesForFormat { version, source };
-            let extras = parse_extra_byte_descriptors(&self.extra_byte_vlrs).map_err(wrap)?;
-            // Without any descriptor the bytes cannot be typed: they are dropped (and reported
-            // in `omitted_dimensions`); descriptors that do not cover the record are an error.
-            if !self.extra_byte_vlrs.is_empty() {
-                validate_extra_bytes(&extras, usize::from(self.point_format.extra_bytes))
-                    .map_err(wrap)?;
-            }
-            self.las_extra_bytes = Some(extras.into());
-            // Fails here, before any point is read, when the schema does not fit.
-            self.schema().map_err(|error| match error {
-                ConvertError::LasExtraBytes(source) => wrap(source),
-                other => other,
-            })?;
+    /// Adapts the source to V8: the frame origin becomes the minimum quantized corner and the
+    /// root the smallest global node containing the header box.
+    pub fn for_options(mut self, _options: ConvertOptions) -> Result<Self, ConvertError> {
+        let version = FormatVersion::DEFAULT_OUTPUT;
+        let wrap = |source| ConvertError::LasExtraBytesForFormat { version, source };
+        let extras = parse_extra_byte_descriptors(&self.extra_byte_vlrs).map_err(wrap)?;
+        // Without any descriptor the bytes cannot be typed: they are dropped (and reported
+        // in `omitted_dimensions`); descriptors that do not cover the record are an error.
+        if !self.extra_byte_vlrs.is_empty() {
+            validate_extra_bytes(&extras, usize::from(self.point_format.extra_bytes))
+                .map_err(wrap)?;
         }
-        if !options.format_version().uses_global_frame() {
-            return Ok(self);
-        }
-        let root =
-            GlobalRoot::from_bounds(self.bounds, self.crs.is_local(), options.format_version())?;
+        self.las_extra_bytes = Some(extras.into());
+        // Fails here, before any point is read, when the schema does not fit.
+        self.schema().map_err(|error| match error {
+            ConvertError::LasExtraBytes(source) => wrap(source),
+            other => other,
+        })?;
+        let root = GlobalRoot::from_bounds(self.bounds, self.crs.is_local())?;
         let origin = root.frame_origin_quanta.map(quanta_to_units);
         self.frame = CoordinateFrame::new(origin)?;
         self.global = Some(root);

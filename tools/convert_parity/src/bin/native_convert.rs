@@ -11,7 +11,7 @@ fn main() {
         eprintln!("usage: native_convert INPUT OUTPUT.oct [--workers N]");
         std::process::exit(2);
     };
-    let mut options = ConvertOptions::default().validate().expect("valid options");
+    let mut options = ConvertOptions::default();
     match tail {
         [] => {}
         [flag, workers] if flag == "--workers" => {

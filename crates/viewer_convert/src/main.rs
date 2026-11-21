@@ -90,9 +90,8 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     }
 
     // V8 fixes the format, points per block, spatial divisions and row order.
-    let mut options =
-        ConvertOptions::with_requested_points_per_block(None, max_error, max_memory_bytes)?;
-    options = options.validate()?.with_pipelined_writes(pipelined_writes);
+    let mut options = ConvertOptions::with_memory_budget(max_error, max_memory_bytes)?;
+    options = options.with_pipelined_writes(pipelined_writes);
     if let Some(bytes) = page_target_bytes {
         options = options.with_page_target_bytes(bytes);
     }

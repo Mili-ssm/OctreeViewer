@@ -137,7 +137,6 @@ pub(crate) fn convert_file_inner(
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
-    let options = options.validate()?;
     crate::allocator::limit_retention();
     if output_path == output_attributes_path(output_path) {
         return Err(ConvertError::ConflictingOutputPaths);
@@ -254,14 +253,7 @@ pub(crate) fn convert_file_inner(
     let attributes_path = temporary.attributes.path.clone();
     let attributes_length = fs::metadata(&attributes_path)?.len();
     // `v7.5-pre` numbers blocks by page when it writes them, so read the ids back from the file.
-    let (output_block_ids, source_block_ids) = if options.format_version().uses_pages() {
-        crate::publish::output_block_ids(&temporary_path)?
-    } else {
-        (
-            plan.blocks.iter().map(|block| block.id).collect::<Vec<_>>(),
-            plan.source_block_ids.clone(),
-        )
-    };
+    let (output_block_ids, source_block_ids) = crate::publish::output_block_ids(&temporary_path)?;
     let validation = OutputValidation {
         total_points: plan.point_count,
         block_ids: &output_block_ids,

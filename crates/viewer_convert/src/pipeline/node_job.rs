@@ -42,7 +42,7 @@ mod tests {
         JobContext {
             point_limit: LIMIT,
             spatial_divisions: divisions,
-            sample_grid: viewer_convert_core::options::DEFAULT_SAMPLE_GRID,
+            sample_grid: 8,
             frame: info.frame,
             layout: SpoolLayout::source(info),
             collect_diagnostics: true,

@@ -1,5 +1,5 @@
-//! `--format-version v7.5-pre`: the paged hierarchy keeps the global-octree semantics of v7.4-pre and
-//! the `.oct` / `.octattrs` pair.
+//! The paged hierarchy of the V8 `.oct` / `.octattrs` pair: global-octree semantics, lazy pages,
+//! deep chains and distance quantiles.
 
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -10,11 +10,8 @@ use super::{ConvertError, ConvertOptions, convert_file};
 
 const WKT: &str = "PROJCS[\"WGS 84 / UTM zone 32N\",GEOGCS[\"WGS 84\",AUTHORITY[\"EPSG\",\"4326\"]],AUTHORITY[\"EPSG\",\"32632\"]]";
 
-fn options(version: FormatVersion) -> ConvertOptions {
-    ConvertOptions::new(262_144, 0.01)
-        .unwrap()
-        .with_format_version(version)
-        .unwrap()
+fn options() -> ConvertOptions {
+    ConvertOptions::default()
 }
 
 fn write_las(path: &Path, points: &[[f64; 3]], vlrs: Vec<Vlr>) {
@@ -92,7 +89,7 @@ fn cells(reader: &FormatReader<fs::File>) -> BTreeMap<(u32, [u64; 3]), u64> {
 }
 
 #[test]
-fn paged_output_has_the_node_set_and_frame_of_v7_4() {
+fn paged_output_has_a_multi_level_node_set_and_a_global_frame() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in.las");
     // Several thousand nodes' worth would be slow; 300k points give a multi-level tree.
@@ -101,31 +98,16 @@ fn paged_output_has_the_node_set_and_frame_of_v7_4() {
         &cloud(300_000, [500_000.0, 4_400_000.0, 100.0], 80.0, 11),
         vlr_wkt(),
     );
-    let mut readers = Vec::new();
-    for (name, version) in [("a", FormatVersion::V7_PRE4), ("b", FormatVersion::V7_PRE5)] {
-        let output = dir.path().join(format!("{name}.oct"));
-        convert_file(&input, &output, options(version)).unwrap();
-        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
-        reader
-            .attach_attributes(
-                fs::File::open(crate::publish::output_attributes_path(&output)).unwrap(),
-            )
-            .unwrap();
-        readers.push(reader);
-    }
-    assert_eq!(readers[1].format_version(), FormatVersion::V7_PRE5);
-    let (flat, paged) = (&readers[0], &readers[1]);
-    assert!(cells(flat).len() > 8);
-    assert_eq!(cells(flat), cells(paged));
-    let (a, b) = (
-        flat.format_metadata().global_frame().unwrap(),
-        paged.format_metadata().global_frame().unwrap(),
-    );
-    assert_eq!(a.root_level(), b.root_level());
-    assert_eq!(a.root_prefix(), b.root_prefix());
-    assert_eq!(a.data_bounds(), b.data_bounds());
-    assert_eq!(a.crs(), b.crs());
-    assert!(paged.index_size_bytes() < flat.index_size_bytes());
+    let output = dir.path().join("a.oct");
+    convert_file(&input, &output, options()).unwrap();
+    let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    reader
+        .attach_attributes(fs::File::open(crate::publish::output_attributes_path(&output)).unwrap())
+        .unwrap();
+    assert_eq!(reader.format_version(), FormatVersion::DEFAULT_OUTPUT);
+    assert!(cells(&reader).len() > 8);
+    let frame = reader.format_metadata().global_frame().unwrap();
+    assert_eq!(frame.crs().identity(), Some(("EPSG", 32632)));
 }
 
 #[test]
@@ -134,12 +116,7 @@ fn paged_output_is_byte_identical_and_opens_lazily() {
     let input = dir.path().join("in.las");
     write_las(&input, &cloud(3000, [10.0, 20.0, 1.0], 50.0, 1), Vec::new());
     for name in ["x", "y"] {
-        convert_file(
-            &input,
-            &dir.path().join(format!("{name}.oct")),
-            options(FormatVersion::V7_PRE5),
-        )
-        .unwrap();
+        convert_file(&input, &dir.path().join(format!("{name}.oct")), options()).unwrap();
     }
     for extension in ["oct", "octattrs"] {
         assert_eq!(
@@ -152,29 +129,16 @@ fn paged_output_is_byte_identical_and_opens_lazily() {
 }
 
 #[test]
-fn paged_format_keeps_fixed_parameters_and_ept_input_is_removed() {
+fn ept_input_is_removed() {
     let ept = tempfile::tempdir().unwrap();
     fs::write(ept.path().join("ept.json"), "{}").unwrap();
     let out = tempfile::tempdir().unwrap();
-    let result = convert_file(
-        ept.path(),
-        &out.path().join("o.oct"),
-        options(FormatVersion::V7_PRE5),
-    );
+    let result = convert_file(ept.path(), &out.path().join("o.oct"), options());
     assert!(matches!(result, Err(ConvertError::EptRemoved)));
-    assert!(matches!(
-        ConvertOptions::new(1000, 0.01)
-            .unwrap()
-            .with_format_version(FormatVersion::V7_PRE5)
-            .unwrap()
-            .validate(),
-        Err(ConvertError::FixedByFormat(_))
-    ));
-    assert_eq!(options(FormatVersion::V7_PRE5).points_per_block(), 64_000);
 }
 
 /// A cloud around the origin has a level-0 root and chains far deeper than the 21 levels of the
-/// first v7.5-pre draft; it must convert, verify and read back.
+/// first paged-format draft; it must convert, verify and read back.
 #[test]
 fn cloud_straddling_the_lattice_origin_converts_with_a_deep_chain() {
     let dir = tempfile::tempdir().unwrap();
@@ -185,7 +149,7 @@ fn cloud_straddling_the_lattice_origin_converts_with_a_deep_chain() {
         vlr_wkt(),
     );
     let output = dir.path().join("deep.oct");
-    let report = convert_file(&input, &output, options(FormatVersion::V7_PRE5)).unwrap();
+    let report = convert_file(&input, &output, options()).unwrap();
     assert_eq!(report.point_count, 150_000);
     let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
     reader
@@ -216,7 +180,7 @@ fn a_page_target_splits_a_small_cloud_into_more_pages() {
     let mut pages = Vec::new();
     for (name, target) in [("a", None), ("b", Some(2_000))] {
         let output = dir.path().join(format!("{name}.oct"));
-        let mut options = options(FormatVersion::V7_PRE5);
+        let mut options = options();
         if let Some(bytes) = target {
             options = options.with_page_target_bytes(bytes);
         }
@@ -232,7 +196,6 @@ fn planned_quantiles(
     input: &Path,
     workers: usize,
     serial: bool,
-    version: FormatVersion,
 ) -> Option<viewer_format::PointDistanceQuantiles> {
     use crate::{
         las_source::{FileBytes, inspect_source, open_las_reader},
@@ -247,7 +210,7 @@ fn planned_quantiles(
     };
 
     let reader = open_las_reader(input).unwrap();
-    let options = options(version).with_spatial_workers(workers).unwrap();
+    let options = options().with_spatial_workers(workers).unwrap();
     let source = inspect_source(&reader)
         .unwrap()
         .for_options(options)
@@ -296,7 +259,7 @@ fn quantiles_do_not_depend_on_workers() {
         &cloud(150_000, [-40.0, -40.0, -40.0], 80.0, 5),
         vlr_wkt(),
     );
-    let reference = planned_quantiles(&input, 1, false, FormatVersion::V8_PRE1).unwrap();
+    let reference = planned_quantiles(&input, 1, false).unwrap();
     // Uniform random points in 80^3 with 150 000 points: the mean nearest-neighbour distance is
     // about 0.83, so the quantiles are of that order and ordered.
     assert!(
@@ -307,14 +270,12 @@ fn quantiles_do_not_depend_on_workers() {
     for workers in [1, 2, 8] {
         for serial in [false, true] {
             assert_eq!(
-                planned_quantiles(&input, workers, serial, FormatVersion::V8_PRE1),
+                planned_quantiles(&input, workers, serial),
                 Some(reference),
                 "workers {workers}, serial {serial}"
             );
         }
     }
-    // v7 stores none, so it has nothing to compute.
-    assert_eq!(planned_quantiles(&input, 2, false, FormatVersion::V7), None);
 }
 
 #[test]
@@ -322,6 +283,6 @@ fn a_cloud_of_duplicates_stores_the_not_measured_value() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in.las");
     write_las(&input, &vec![[3.0, 4.0, 5.0]; 100], vlr_wkt());
-    let quantiles = planned_quantiles(&input, 1, false, FormatVersion::V8_PRE1).unwrap();
+    let quantiles = planned_quantiles(&input, 1, false).unwrap();
     assert_eq!((quantiles.p1, quantiles.p5, quantiles.p50), (0.0, 0.0, 0.0));
 }

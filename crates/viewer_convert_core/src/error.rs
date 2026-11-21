@@ -3,7 +3,7 @@ use std::{io, path::PathBuf};
 use thiserror::Error;
 use viewer_format::FormatVersion;
 
-use crate::options::{MAX_BLOCKS, MAX_POINTS_PER_BLOCK, MAX_SPATIAL_WORKERS};
+use crate::options::{MAX_BLOCKS, MAX_SPATIAL_WORKERS};
 
 #[derive(Debug, Error)]
 pub enum ConvertError {
@@ -47,8 +47,6 @@ pub enum ConvertError {
     Dataset(#[from] viewer_core::DatasetError),
     #[error(transparent)]
     Metadata(#[from] viewer_format::MetadataError),
-    #[error("points per block must be between 1 and {MAX_POINTS_PER_BLOCK}, got {0}")]
-    InvalidBlockPointLimit(u64),
     #[error("maximum quantization error must be finite and non-negative, got {0}")]
     InvalidQuantizationError(f64),
     #[error("visual scale is outside the supported range: {0}")]
@@ -57,12 +55,8 @@ pub enum ConvertError {
     InvalidMemoryBudget,
     #[error("spatial worker count must be between 1 and {MAX_SPATIAL_WORKERS}, got {0}")]
     InvalidSpatialWorkerCount(usize),
-    #[error("spatial divisions per axis must be 2, 4, or 8, got {0}")]
-    InvalidSpatialDivisions(u8),
     #[error("root partition ranges must be between 0 and 8, got {0}")]
     InvalidRootRanges(usize),
-    #[error("sample grid per axis must be between 1 and 256, got {0}")]
-    InvalidSampleGrid(usize),
     #[error("LAS dimensions do not match the planned output attribute schema")]
     InvalidAttributeSchema,
     #[error("estimated controlled memory is {requested} bytes, exceeding budget {limit} bytes")]
@@ -84,23 +78,14 @@ pub enum ConvertError {
     },
     #[error("LAS/LAZ point data ended after {actual} points; header declared {expected}")]
     PointCountMismatch { expected: u64, actual: u64 },
-    #[error("{0} is fixed by the output format version and cannot be overridden")]
-    FixedByFormat(&'static str),
     #[error(
         "EPT input was removed with V8 (ADR 0061); convert the LAS/LAZ files of the dataset instead"
     )]
     EptRemoved,
     #[error("input {0:?} is a directory; pass a LAS/LAZ/COPC file")]
     InputIsDirectory(std::path::PathBuf),
-    #[error("row order hybrid needs a v7 or v8 output format")]
-    HybridRowOrderUnsupported,
-    #[error(
-        "coordinate magnitude {coordinate} exceeds the converter limit of 2^35 CRS units for {version}"
-    )]
-    GlobalCoordinateRange {
-        coordinate: f64,
-        version: FormatVersion,
-    },
+    #[error("coordinate magnitude {coordinate} exceeds the converter limit of 2^35 CRS units")]
+    GlobalCoordinateRange { coordinate: f64 },
     #[error("conversion size or identifier count overflowed")]
     SizeOverflow,
     #[error("point {point_index} at {position:?} is outside the LAS/LAZ header bounds")]

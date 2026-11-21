@@ -304,9 +304,7 @@ fn estimate_json(estimate: &SpoolEstimate) -> String {
 }
 
 fn run(args: &Args) -> Result<String, Box<dyn std::error::Error>> {
-    let options = ConvertOptions::default()
-        .validate()?
-        .with_spatial_workers(1)?;
+    let options = ConvertOptions::default().with_spatial_workers(1)?;
     let factory = LasFactory::new(FileBytes {
         path: args.input.clone(),
         len: std::fs::metadata(&args.input)?.len(),

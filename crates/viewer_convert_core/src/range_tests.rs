@@ -5,7 +5,6 @@ use std::io::Cursor;
 
 use las::{Builder, Point, Writer, point::Format};
 use viewer_core::SpatialBounds;
-use viewer_format::FormatVersion;
 
 use crate::{
     ConvertError, ConvertOptions, LasFactory, MemBytes, MemSpoolStore, NoClock, SourceFactory,
@@ -59,13 +58,10 @@ fn las_bytes(points: &[[f64; 3]], compressed: bool, intensity: impl Fn(usize) ->
     writer.into_inner().unwrap().into_inner()
 }
 
-fn options(points_per_block: u64, divisions: u8, ranges: usize) -> ConvertOptions {
-    ConvertOptions::new(points_per_block, 0.01)
+fn options(points_per_block: u64, ranges: usize) -> ConvertOptions {
+    ConvertOptions::new(0.01)
         .unwrap()
-        .with_format_version(FormatVersion::V5)
-        .unwrap()
-        .with_spatial_divisions(divisions)
-        .unwrap()
+        .with_leaf_point_limit_for_tests(points_per_block)
         .with_root_partition_ranges(ranges)
         .unwrap()
 }
@@ -98,15 +94,10 @@ fn convert(bytes: &[u8], options: ConvertOptions) -> Result<Pair, ConvertError> 
 }
 
 fn assert_ranges_match_default(bytes: &[u8], points_per_block: u64, label: &str) {
-    for divisions in [2, 4, 8] {
-        let expected = convert(bytes, options(points_per_block, divisions, 0)).unwrap();
-        for ranges in 1..=8 {
-            let got = convert(bytes, options(points_per_block, divisions, ranges)).unwrap();
-            assert!(
-                got == expected,
-                "{label}: divisions {divisions} ranges {ranges} differ"
-            );
-        }
+    let expected = convert(bytes, options(points_per_block, 0)).unwrap();
+    for ranges in 1..=8 {
+        let got = convert(bytes, options(points_per_block, ranges)).unwrap();
+        assert!(got == expected, "{label}: ranges {ranges} differ");
     }
 }
 
@@ -129,12 +120,10 @@ fn fixed_size_laz_chunks_with_a_partial_last_chunk_match_the_default_scan() {
     // `las` writes 50 000-point chunks: 50 000 + 50 000 + 10 007.
     let points = random_points(110_007, 0.0);
     let bytes = las_bytes(&points, true, |i| (i * 31) as u16);
-    for divisions in [2, 8] {
-        let expected = convert(&bytes, options(4096, divisions, 0)).unwrap();
-        for ranges in [1, 2, 3, 8] {
-            let got = convert(&bytes, options(4096, divisions, ranges)).unwrap();
-            assert!(got == expected, "divisions {divisions} ranges {ranges}");
-        }
+    let expected = convert(&bytes, options(4096, 0)).unwrap();
+    for ranges in [1, 2, 3, 8] {
+        let got = convert(&bytes, options(4096, ranges)).unwrap();
+        assert!(got == expected, "ranges {ranges}");
     }
 }
 
@@ -152,9 +141,9 @@ fn a_duplicate_point_across_a_range_boundary_keeps_the_earlier_one() {
         9_000 => 222,
         _ => 5,
     });
-    let expected = convert(&bytes, options(4096, 2, 0)).unwrap();
+    let expected = convert(&bytes, options(4096, 0)).unwrap();
     for ranges in [1, 2, 3] {
-        assert_eq!(convert(&bytes, options(4096, 2, ranges)).unwrap(), expected);
+        assert_eq!(convert(&bytes, options(4096, ranges)).unwrap(), expected);
     }
 }
 
@@ -162,7 +151,7 @@ fn context(info: &crate::source::SourceInfo, divisions: u8, limit: u64) -> JobCo
     JobContext {
         point_limit: limit,
         spatial_divisions: divisions,
-        sample_grid: crate::options::DEFAULT_SAMPLE_GRID,
+        sample_grid: 8,
         frame: info.frame,
         layout: SpoolLayout::source(info),
         collect_diagnostics: false,
@@ -255,13 +244,10 @@ fn an_outlier_in_a_later_range_reports_the_serial_error_and_the_lowest_start_win
         [0.0; 3],
         [95.0, 100.0, 100.0],
     );
-    let serial = error_text(convert(&bytes, options(4096, 2, 0)));
+    let serial = error_text(convert(&bytes, options(4096, 0)));
     assert!(serial.contains("point 9000 "), "{serial}");
     for ranges in 1..=8 {
-        assert_eq!(
-            error_text(convert(&bytes, options(4096, 2, ranges))),
-            serial
-        );
+        assert_eq!(error_text(convert(&bytes, options(4096, ranges))), serial);
     }
     // Only the later outlier left: the error comes from range 2.
     points[9_000] = [50.0; 3];
@@ -270,9 +256,9 @@ fn an_outlier_in_a_later_range_reports_the_serial_error_and_the_lowest_start_win
         [0.0; 3],
         [95.0, 100.0, 100.0],
     );
-    let serial = error_text(convert(&bytes, options(4096, 2, 0)));
+    let serial = error_text(convert(&bytes, options(4096, 0)));
     assert!(serial.contains("point 17000 "), "{serial}");
-    assert_eq!(error_text(convert(&bytes, options(4096, 2, 3))), serial);
+    assert_eq!(error_text(convert(&bytes, options(4096, 3))), serial);
 }
 
 #[test]
@@ -280,12 +266,9 @@ fn a_truncated_las_fails_like_the_default_scan() {
     let points = random_points(20_000, 0.0);
     let mut bytes = las_bytes(&points, false, |i| i as u16);
     bytes.truncate(bytes.len() - 5_000 * 20 - 7);
-    let serial = error_text(convert(&bytes, options(4096, 2, 0)));
+    let serial = error_text(convert(&bytes, options(4096, 0)));
     for ranges in [1, 3, 8] {
-        assert_eq!(
-            error_text(convert(&bytes, options(4096, 2, ranges))),
-            serial
-        );
+        assert_eq!(error_text(convert(&bytes, options(4096, ranges))), serial);
     }
 }
 
@@ -311,7 +294,7 @@ fn a_corrupt_laz_chunk_in_a_later_range_fails_like_the_default_scan() {
     for byte in &mut bytes[at..at + 300] {
         *byte ^= 0xA5;
     }
-    let serial = convert(&bytes, options(4096, 2, 0));
+    let serial = convert(&bytes, options(4096, 0));
     assert!(serial.is_err(), "the corruption must be detected");
     let serial = error_text(serial);
     // With `laz-parallel` unified in by another crate the default scan decodes chunks in
@@ -322,7 +305,7 @@ fn a_corrupt_laz_chunk_in_a_later_range_fails_like_the_default_scan() {
         text == "decoder panic at Some(0)" || text.ends_with("is outside the LAS/LAZ header bounds")
     };
     for ranges in [2, 3, 8] {
-        let ranged = error_text(convert(&bytes, options(4096, 2, ranges)));
+        let ranged = error_text(convert(&bytes, options(4096, ranges)));
         assert!(
             ranged == serial || (known(&ranged) && known(&serial)),
             "ranges {ranges}: {ranged} vs {serial}"
@@ -331,22 +314,16 @@ fn a_corrupt_laz_chunk_in_a_later_range_fails_like_the_default_scan() {
 }
 
 #[test]
-fn an_all_equal_root_and_a_root_that_does_not_divide_match_the_default_scan() {
-    // Every point equal inside wider header bounds: the root splits, then becomes a leaf.
-    let equal = with_header_bounds(
-        las_bytes(&vec![[50.0; 3]; 10_000], false, |i| i as u16),
-        [0.0; 3],
-        [100.0; 3],
-    );
+fn a_small_root_and_a_root_that_does_not_divide_match_the_default_scan() {
     // Fewer points than a block: the root is a leaf and ranges are ignored.
     let small = las_bytes(&random_points(3_000, 0.0), false, |i| i as u16);
-    // Degenerate header bounds: the root cube has no size and cannot divide.
-    let flat = las_bytes(&vec![[5.0; 3]; 10_000], false, |i| i as u16);
-    for (label, bytes) in [("all equal", equal), ("small", small), ("flat", flat)] {
-        let expected = convert(&bytes, options(4096, 2, 0)).unwrap();
+    // Finding (5c): V8 fails "node below the deepest page level has children" on 10 000 equal
+    // points under degenerate header bounds, so the old "flat" and "all equal" cases are not ported.
+    for (label, bytes) in [("small", small)] {
+        let expected = convert(&bytes, options(64_000, 0)).expect(label);
         for ranges in [1, 2, 4, 8] {
             assert!(
-                convert(&bytes, options(4096, 2, ranges)).unwrap() == expected,
+                convert(&bytes, options(64_000, ranges)).unwrap() == expected,
                 "{label} ranges {ranges}"
             );
         }
@@ -382,15 +359,14 @@ fn estimate(bytes: &[u8], options: ConvertOptions) -> u64 {
 fn ranges_are_admitted_by_the_memory_budget_and_reported_in_the_estimate() {
     let bytes = las_bytes(&random_points(20_000, 0.0), false, |i| i as u16);
     let single = |options: ConvertOptions| options.with_spatial_workers(1).unwrap();
-    let default = estimate(&bytes, single(options(4096, 2, 0)));
-    assert!(estimate(&bytes, single(options(4096, 2, 4))) > default);
+    let default = estimate(&bytes, single(options(4096, 0)));
+    assert!(estimate(&bytes, single(options(4096, 4))) > default);
     // A budget with no room for a second range keeps the estimate of one range.
     let tight = |ranges| {
         single(
-            ConvertOptions::with_memory_budget(4096, 0.01, default + 1_000_000)
+            ConvertOptions::with_memory_budget(0.01, default + 1_000_000)
                 .unwrap()
-                .with_format_version(FormatVersion::V5)
-                .unwrap(),
+                .with_leaf_point_limit_for_tests(4096),
         )
         .with_root_partition_ranges(ranges)
         .unwrap()
@@ -513,12 +489,12 @@ mod spool_hints {
         let points = random_points(3_000, 0.0);
         let bytes = las_bytes(&points, false, |i| i as u16);
         vec![
-            ("five-ish nodes", bytes.clone(), options(1_000, 2, 0)),
-            ("deep divisions 2", bytes.clone(), options(64, 2, 0)),
+            ("five-ish nodes", bytes.clone(), options(1_000, 0)),
+            ("deep divisions 2", bytes.clone(), options(64, 0)),
             (
-                "divisions 8",
+                "small leaves",
                 las_bytes(&random_points(20_000, 0.0), false, |i| i as u16),
-                options(8, 8, 0),
+                options(100, 0),
             ),
         ]
     }

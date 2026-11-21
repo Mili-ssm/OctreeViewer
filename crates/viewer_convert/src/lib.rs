@@ -95,14 +95,14 @@ where
 mod tests;
 
 #[cfg(test)]
+#[path = "global_frame_tests.rs"]
+mod global_frame_tests;
+#[cfg(test)]
 #[path = "las_extra_tests.rs"]
 mod las_extra_tests;
 #[cfg(test)]
-#[path = "v7_4_tests.rs"]
-mod v7_4_tests;
+#[path = "paged_tests.rs"]
+mod paged_tests;
 #[cfg(test)]
-#[path = "v7_4_viewer_tests.rs"]
-mod v7_4_viewer_tests;
-#[cfg(test)]
-#[path = "v7_5_tests.rs"]
-mod v7_5_tests;
+#[path = "viewer_scene_tests.rs"]
+mod viewer_scene_tests;

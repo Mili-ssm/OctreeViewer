@@ -1,27 +1,23 @@
-//! Test-only constructors that pin `v5`, so tests of V5 behavior do not
-//! depend on `FormatVersion::DEFAULT_OUTPUT`.
+//! Test-only constructors: small leaves, so small fixtures still build multi-level trees. V8
+//! fixes the leaf limit at 64 000 points; production paths cannot lower it.
 
 use crate::{ConvertError, ConvertOptions};
 
-pub(crate) fn v5_default() -> ConvertOptions {
-    ConvertOptions::default()
-        .with_format_version("v5".parse().unwrap())
-        .unwrap()
-}
-
-pub(crate) fn v5_new(
+pub(crate) fn leaf_new(
     points_per_block: u64,
     max_quantization_error: f64,
 ) -> Result<ConvertOptions, ConvertError> {
-    ConvertOptions::new(points_per_block, max_quantization_error)?
-        .with_format_version("v5".parse().unwrap())
+    Ok(ConvertOptions::new(max_quantization_error)?
+        .with_leaf_point_limit_for_tests(points_per_block))
 }
 
-pub(crate) fn v5_budget(
+pub(crate) fn leaf_budget(
     points_per_block: u64,
     max_quantization_error: f64,
     max_memory_bytes: u64,
 ) -> Result<ConvertOptions, ConvertError> {
-    ConvertOptions::with_memory_budget(points_per_block, max_quantization_error, max_memory_bytes)?
-        .with_format_version("v5".parse().unwrap())
+    Ok(
+        ConvertOptions::with_memory_budget(max_quantization_error, max_memory_bytes)?
+            .with_leaf_point_limit_for_tests(points_per_block),
+    )
 }
