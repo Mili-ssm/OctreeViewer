@@ -26,7 +26,8 @@ self.onmessage = async ({ data = {} }) => {
         const major = header.getUint16(8, true);
         const revision = header.getUint32(16, true);
         const formatVersion = `v${major}${revision ? `.${revision}-pre` : ""}`;
-        if (data.expectedVersion) assert(formatVersion === data.expectedVersion, "unexpected output version");
+        // The default fixture (`sample-small`) is V8; callers with another input pass their own version.
+        assert(formatVersion === (data.expectedVersion ?? "v8"), "unexpected output version");
         viewer = new WasmVoxelViewer(0.6);
         const geometry = viewer.openFormatDataset(new Blob([bytes]), 64 * 1024 * 1024, undefined);
         assert(!geometry.hasAttributes, "primary unexpectedly requires attributes");

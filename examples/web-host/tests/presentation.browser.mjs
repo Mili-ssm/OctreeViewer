@@ -70,7 +70,8 @@ async function viewerProbe(canvas) {
     checkResourceStats(gpuBeforePick, width, height);
     const hit = await viewer.pick(width / 2, height / 2);
     assert(hit && hit.voxelCenter.every(Number.isFinite), "center pick missed the sample");
-    // Center voxel of `sample-small` (V8) at the default camera; regenerating the fixture can move it.
+    // Observed output, not derived: center voxel of `sample-small` (V8) at the default camera, for the
+    // fixture with SHA-256 prefix 7b4863b1392b. Regenerating the fixture can move it: re-pin the value then.
     const expectedCenter = [31.25, 31.25, 1.69500732421875];
     assert(hit.voxelCenter.every((value, index) => Math.abs(value - expectedCenter[index]) < 1e-5),
         "center pick returned incorrect dataset coordinates");

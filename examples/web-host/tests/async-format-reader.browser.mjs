@@ -189,15 +189,24 @@ self.onmessage = async ({ data = {} }) => {
             // for the small fixture. The default sample is larger, so it proves the payload reads
             // stay ranged.
             const tailWindowBytes = 1024 * 1024;
-            const largeOpened = ranges.length;
             const largePrimary = await fetch(new URL("../sample.oct", import.meta.url)).then(r => r.blob());
             const largeAttributes = await fetch(new URL("../sample.octattrs", import.meta.url)).then(r => r.blob());
             assert(largePrimary.size > tailWindowBytes, "default sample no longer exceeds the tail window");
             const largeReader = await WasmAsyncFormatReader.open(largePrimary, largeAttributes);
-            largeReader.planRead(0n, "geometry");
-            await largeReader.read();
+            const largePlan = largeReader.planRead(0n, "positions");
+            const plannedOffsets = new Set(largePlan.ranges.map(range => Number(range.offset)));
+            const readsBefore = ranges.length; // taken after `open`, so only the payload read counts
+            const largeResult = await largeReader.read();
             largeReader.free();
-            assert(ranges.length > largeOpened, "default sample read no ranges");
+            const largeReads = ranges.slice(readsBefore);
+            assert(largeResult.kind === "positions" && largeResult.values instanceof Float32Array
+                && largeResult.values.length > 0 && largeResult.values.length % 3 === 0,
+            "large sample positions result is invalid");
+            assert(largeReads.length > 0, "large sample payload read issued no ranged reads");
+            assert(largeReads.every(({ size, start }) => size === largePrimary.size && plannedOffsets.has(start)),
+                "large sample read a range the read plan did not announce");
+            assert(largeReads.reduce((sum, { start, end }) => sum + end - start, 0) < largePrimary.size,
+                "large sample payload read covered the whole Blob in pieces");
             assert(ranges.every(({ size, start, end }) => start !== 0 || end !== size || size <= tailWindowBytes),
                 "reader requested an entire Blob beyond the open-time tail window");
             assert(arrayBufferCalls === ranges.length, "each range must resolve through Blob.arrayBuffer");

@@ -17,6 +17,8 @@ use viewer_format::{FormatReader, FormatVersion, OctreeReader};
 
 /// Grid side of the default demo sample; the browser tests pass a smaller one (`sample-small`).
 const DEFAULT_SIDE: u32 = 768;
+/// Upper bound on SIDE: the demo is meant to stay small (side^2 points).
+const MAX_SIDE: u32 = 2048;
 const MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 fn write_las(path: &std::path::Path, side: u32) -> Result<u64, Box<dyn Error>> {
@@ -74,6 +76,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(text) => text.parse::<u32>()?,
         None => DEFAULT_SIDE,
     };
+    if !(1..=MAX_SIDE).contains(&side) {
+        return Err(format!("SIDE must be between 1 and {MAX_SIDE}, got {side}").into());
+    }
     let scratch = env::temp_dir().join(format!("create_web_sample_{}", std::process::id()));
     let result = generate(&output, &scratch, side);
     let _ = fs::remove_dir_all(&scratch);
