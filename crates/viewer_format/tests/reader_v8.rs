@@ -9,8 +9,13 @@ mod v8_fixture;
 
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
-use common::{COLORS, POINTS, descriptors, fixture_attributes, repair_index_and_footer};
-use v8_fixture::{V8_BLOCK, v8_fixture_block, v8_metadata, v8_options, write_v8_split};
+use common::{
+    COLORS, POINTS, descriptors, fixture_attributes, global_metadata, prefix_of,
+    repair_index_and_footer,
+};
+use v8_fixture::{
+    V8_BLOCK, v8_crs, v8_fixture_block, v8_metadata, v8_options, with_v8_extras, write_v8_split,
+};
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
     DatasetSource,
@@ -22,6 +27,7 @@ use viewer_format::{
     FormatMetadata, FormatReader, FormatVersion, FormatWriter, OctreeReader, ReadSelection,
     ReadSource, SelectedRead, SourcePointBlock,
 };
+use viewer_format::{GeometryEncoding, quanta_to_units, quantize_coordinate};
 #[cfg(feature = "experimental")]
 use viewer_format::{QuantizedOccupancy, quantize_local_positions};
 
@@ -1307,26 +1313,57 @@ fn v8_preserves_every_row_of_a_large_block_up_to_leaf_order() {
             >= geometry_payload.raw_bytes + geometry_plan.memory().output_bytes()
     );
     // v8 re-sorts the rows of a leaf: the colour is unique per input row, so it names the row.
+    // v8 stores positions on the global 2^-15 grid: the expected value is the grid point.
+    let quanta: Vec<[i64; 3]> = positions
+        .iter()
+        .map(|p| p.map(|c| quantize_coordinate(c).unwrap()))
+        .collect();
+    let expected_positions: Vec<[f32; 3]> = quanta
+        .iter()
+        .map(|q| q.map(|v| quanta_to_units(v) as f32))
+        .collect();
     let block = reader.read_block(BLOCK_ID).unwrap();
     assert_eq!(block.points().len(), count);
     let AttributeValues::U64(read_values) = block.attributes()[0].values() else {
         panic!("attribute type changed")
     };
     let mut seen = vec![false; count];
+    let mut order = Vec::with_capacity(count);
     for (row, point) in block.points().points().iter().enumerate() {
         let input = usize::from(point.color.r) | usize::from(point.color.g) << 8;
         assert!(!std::mem::replace(&mut seen[input], true), "row repeated");
         assert_eq!(point.color, colors[input]);
         assert_eq!(read_values[row], 9_007_199_254_740_993 + input as u64);
-        // The position is the input one up to the quantisation step.
-        for axis in 0..3 {
-            assert!(
-                (f64::from(point.position[axis]) - positions[input][axis]).abs() <= 0.001,
-                "row {input} axis {axis}"
-            );
-        }
+        // Bit-exact: the stored position is the quantised input one.
+        assert_eq!(
+            point.position.map(f32::to_bits),
+            expected_positions[input].map(f32::to_bits),
+            "row {input}"
+        );
+        order.push(input);
     }
     assert!(seen.into_iter().all(|row| row));
+    // The hybrid row order: when the block is stored as Morton-sorted delta, rows are ordered by
+    // (Morton key of the quantised cell, input row).
+    assert_eq!(
+        reader.block_storage_stats().unwrap()[0].geometry_encoding,
+        GeometryEncoding::DeltaVarint
+    );
+    let mut sorted: Vec<usize> = (0..count).collect();
+    // Blocks are 2^32 quanta wide, so the low 32 bits of a coordinate are its block-local one.
+    sorted.sort_by_key(|&row| (morton_key(quanta[row].map(|v| v as u32)), row));
+    assert_eq!(order, sorted);
+}
+
+/// 96-bit Morton key, x in the high bit of each triple (the writer's hybrid sort key).
+fn morton_key(coordinate: [u32; 3]) -> u128 {
+    let mut key = 0_u128;
+    for bit in 0..32 {
+        for (axis, value) in coordinate.iter().enumerate() {
+            key |= u128::from((value >> bit) & 1) << (3 * bit + (2 - axis));
+        }
+    }
+    key
 }
 
 /// 4096 rows drawn from the four fixture rows, so every column has few distinct values (Dictionary
@@ -1421,6 +1458,8 @@ fn attribute_codecs_preserve_typed_bits_and_read_only_the_requested_column() {
     let stats = reader.block_payload_storage_stats().unwrap();
     assert!(stats.iter().any(|p| p.codec == BlockCodec::Dictionary));
     assert_eq!(stats.last().unwrap().codec, BlockCodec::Constant);
+    // The display colour is a plain LZ4 payload in v8 (v6.pre3 stored it as a dictionary).
+    assert_eq!(stats[1].codec, BlockCodec::Lz4);
     let (dictionary_index, dictionary_stats) = stats
         .iter()
         .find_map(|payload| match &payload.kind {
@@ -1477,6 +1516,29 @@ fn attribute_codecs_preserve_typed_bits_and_read_only_the_requested_column() {
         assert_eq!(a_count.get() as u64, payload.stored_bytes);
     }
     assert_eq!(reader.read_display_colors(BLOCK_ID).unwrap().len(), 4096);
+
+    // A companion of another revision (v8.1-pre) is refused at attach by identity, as v6.pre2 was
+    // for a pre3 sidecar.
+    let (primary, mut attributes) = fixture_pair();
+    attributes_as_pre1(&mut attributes);
+    let mut wrong = FormatReader::new(Cursor::new(primary)).unwrap();
+    assert!(matches!(
+        wrong.attach_attributes(Cursor::new(attributes)),
+        Err(FormatError::InvalidHeader)
+    ));
+}
+
+/// Relabels a final `v8` attributes file as `v8.1-pre`: header revision and checksum, footer magic
+/// and footer checksum (see `v8_lod.rs` for the full pair retag).
+fn attributes_as_pre1(attributes: &mut [u8]) {
+    attributes[16..20].copy_from_slice(&1_u32.to_le_bytes());
+    let crc = viewer_format::crc32(&attributes[..20]);
+    attributes[20..24].copy_from_slice(&crc.to_le_bytes());
+    let footer = attributes.len() - 40;
+    assert_eq!(&attributes[footer..footer + 8], b"OCTVEND8");
+    attributes[footer..footer + 8].copy_from_slice(b"OCTVE81P");
+    let crc = viewer_format::crc32(&attributes[footer..footer + 36]);
+    attributes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
 }
 
 #[test]
@@ -1544,7 +1606,8 @@ fn byte_planes_are_selective_and_exact() {
         vec![ColorRgb::new(1, 2, 3); rows],
         vec![column],
     );
-    let (primary, attrs) = write_v8_split(block, v8_metadata(rows as u64, vec![descriptor]));
+    let (primary, attrs) =
+        write_v8_split(block, v8_metadata(rows as u64, vec![descriptor.clone()]));
     let p = CountingReader::new(primary);
     let a = CountingReader::new(attrs);
     let pc = p.bytes_read.clone();
@@ -1574,6 +1637,48 @@ fn byte_planes_are_selective_and_exact() {
     );
     assert_eq!(pc.get(), 0);
     assert_eq!(ac.get() as u64, payload.stored_bytes);
+
+    // A byte-plane companion of another file: a different shape is refused at attach; the same
+    // shape attaches and fails at the first read through the payload checksum (issue #115).
+    let nan_column = |seed: u32| {
+        let mut state = seed;
+        let values = AttributeValues::F64(
+            (0..rows)
+                .map(|_| {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    f64::from_bits(0x7ff8_0000_0000_0000 | u64::from(state))
+                })
+                .collect(),
+        );
+        AttributeColumn::new(descriptor.clone(), values, rows).unwrap()
+    };
+    let other_block = |column| {
+        SourcePointBlock::new(
+            V8_BLOCK,
+            (0..rows).map(|i| [i as f64 / 8192.0, 0.5, 0.25]).collect(),
+            vec![ColorRgb::new(1, 2, 3); rows],
+            vec![column],
+        )
+    };
+    let (primary, _) = write_v8_split(
+        other_block(nan_column(1234)),
+        v8_metadata(rows as u64, vec![descriptor.clone()]),
+    );
+    let (_, same_shape) = write_v8_split(
+        other_block(nan_column(99)),
+        v8_metadata(rows as u64, vec![descriptor.clone()]),
+    );
+    let (_, other_shape) = fixture_pair();
+    let mut reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+    assert!(reader.attach_attributes(Cursor::new(other_shape)).is_err());
+    let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
+    reader
+        .attach_attributes(Cursor::new(same_shape))
+        .expect("issue #115: a same-shape companion attaches today");
+    assert!(matches!(
+        reader.read_attribute(BLOCK_ID, 0),
+        Err(FormatError::InvalidBlockChecksum(_))
+    ));
 }
 
 #[test]
@@ -1623,5 +1728,158 @@ fn invalid_dictionary_is_rejected_even_with_valid_checksums() {
     assert!(matches!(
         reader.read_attribute(BLOCK_ID, schema_index),
         Err(FormatError::MalformedBlock(_))
+    ));
+}
+
+/// Writes `positions` as one single-node `v8` block (no attributes) whose root cell is 2^32 quanta
+/// (131072 units) wide, so positions may span the whole block.
+fn geometry_only_pair(positions: Vec<[f64; 3]>) -> (Vec<u8>, Vec<u8>) {
+    let count = positions.len();
+    let block = SourcePointBlock::new(
+        V8_BLOCK,
+        positions,
+        vec![ColorRgb::new(1, 2, 3); count],
+        Vec::new(),
+    );
+    let level = 32;
+    let meta = with_v8_extras(global_metadata(
+        level,
+        [prefix_of(0.5, level); 3],
+        vec![V8_BLOCK],
+        count as u64,
+        Vec::new(),
+        v8_crs(),
+        None,
+    ));
+    write_v8_split(block, meta)
+}
+
+fn open_geometry_only(positions: Vec<[f64; 3]>) -> FormatReader<Cursor<Vec<u8>>> {
+    let (primary, attributes) = geometry_only_pair(positions);
+    open_pair(primary, attributes)
+}
+
+fn lcg_positions(count: usize, mut state: u32, span: f64) -> Vec<[f64; 3]> {
+    (0..count)
+        .map(|_| {
+            std::array::from_fn(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                f64::from(state) / f64::from(u32::MAX) * span
+            })
+        })
+        .collect()
+}
+
+/// The `f32` positions a `v8` reader returns for `positions`: the global 2^-15 grid points.
+fn grid_positions(positions: &[[f64; 3]]) -> Vec<[u32; 3]> {
+    positions
+        .iter()
+        .map(|p| p.map(|c| (quanta_to_units(quantize_coordinate(c).unwrap()) as f32).to_bits()))
+        .collect()
+}
+
+fn read_position_bits(reader: &mut FormatReader<Cursor<Vec<u8>>>) -> Vec<[u32; 3]> {
+    reader
+        .read_block(BLOCK_ID)
+        .unwrap()
+        .points()
+        .points()
+        .iter()
+        .map(|p| p.position.map(f32::to_bits))
+        .collect()
+}
+
+#[test]
+fn v8_selects_delta_for_monotonic_data_and_raw_for_deterministic_random_data() {
+    let count = 128usize;
+    let monotonic: Vec<_> = (0..count)
+        .map(|i| [i as f64 / count as f64, 0.5, 0.25])
+        .collect();
+    // Four points spread over the block: too few for delta or occupancy to beat 4-byte coordinates.
+    let random = lcg_positions(4, 0x1234_5678, 4000.0);
+    for (positions, expected_encoding) in [
+        (monotonic, GeometryEncoding::DeltaVarint),
+        (random, GeometryEncoding::RawU32),
+    ] {
+        let mut reader = open_geometry_only(positions.clone());
+        assert_eq!(
+            reader.block_storage_stats().unwrap()[0].geometry_encoding,
+            expected_encoding
+        );
+        let mut expected = grid_positions(&positions);
+        let mut actual = read_position_bits(&mut reader);
+        expected.sort_unstable();
+        actual.sort_unstable();
+        assert_eq!(actual, expected, "{expected_encoding:?}");
+    }
+}
+
+#[test]
+fn v8_compact_occupancy_roundtrips_and_the_read_plan_counts_the_bitset() {
+    for count in [128usize, 4096] {
+        let positions = lcg_positions(count, 0x1234_5678, 4000.0);
+        let mut reader = open_geometry_only(positions.clone());
+        assert_eq!(
+            reader.block_storage_stats().unwrap()[0].geometry_encoding,
+            GeometryEncoding::CompactOccupied
+        );
+        let plan = reader
+            .plan_read(BLOCK_ID, ReadSelection::Positions)
+            .unwrap();
+        let payload = reader.block_payload_storage_stats().unwrap()[0].clone();
+        assert_eq!(plan.ranges().len(), 1);
+        assert_eq!(plan.ranges()[0].decoded_bytes(), payload.raw_bytes);
+        assert_eq!(
+            plan.memory().output_bytes(),
+            count as u64 * std::mem::size_of::<viewer_core::Point>() as u64
+        );
+        assert!(
+            plan.memory().peak_bytes()
+                >= payload.raw_bytes
+                    + plan.memory().output_bytes()
+                    + count as u64 * 12
+                    + count.div_ceil(8) as u64
+        );
+        // A block that stays compact keeps its source row order.
+        assert_eq!(read_position_bits(&mut reader), grid_positions(&positions));
+    }
+}
+
+/// Replaces bytes of the root page of a `v8` primary file and repairs the page, index and footer
+/// checksums. `edit` receives the root page without its trailing checksum.
+fn patch_root_page(primary: &mut [u8], edit: impl FnOnce(&mut [u8])) {
+    let footer = primary.len() - 40;
+    let root_length = viewer_format::PagedReader::open(Cursor::new(primary.to_vec()))
+        .unwrap()
+        .root_page()
+        .encoded_len();
+    let root_start = footer - root_length;
+    edit(&mut primary[root_start..footer - 4]);
+    let page_crc = viewer_format::crc32(&primary[root_start..footer - 4]);
+    primary[footer - 4..footer].copy_from_slice(&page_crc.to_le_bytes());
+    repair_index_and_footer(primary);
+}
+
+#[test]
+fn v8_refuses_a_plain_occupied_geometry_tag_even_with_repaired_checksums() {
+    let count = 128usize;
+    let positions = lcg_positions(count, 0x1234_5678, 4000.0);
+    let (mut primary, attributes) = geometry_only_pair(positions);
+    // A block entry is offset, attribute offset, point count (u64 each), then the geometry tag.
+    let mut needle = (count as u64).to_le_bytes().to_vec();
+    needle.push(GeometryEncoding::CompactOccupied as u8);
+    patch_root_page(&mut primary, |page| {
+        let hits: Vec<usize> = (0..page.len() - needle.len())
+            .filter(|&at| page[at..at + needle.len()] == needle[..])
+            .collect();
+        assert_eq!(hits.len(), 1, "block entry not found uniquely");
+        page[hits[0] + 8] = GeometryEncoding::Occupied as u8;
+    });
+    // The index accepts the tag (v8 shares the occupancy layout rules); the occupied decoder refuses
+    // a payload written with the compact layout.
+    let mut reader = open_pair(primary, attributes);
+    assert!(matches!(
+        reader.read_block(BLOCK_ID),
+        Err(FormatError::MalformedBlock("invalid occupied geometry"))
     ));
 }
