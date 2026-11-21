@@ -37,8 +37,7 @@ pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) (lis
 - **wgpu/naga 30 y glam 0.34** compilan en nativo/WASM y pasan checks nativos y readback por
   software; la validación de navegador sigue parcial por pérdida de dispositivo
   ([límites](records/archive/RENDERER_DEPENDENCIES.md)).
-- `createViewer` libera worker y recursos si falla la inicialización; EPT rechaza presupuestos
-  estimados inviables antes de reservar planificación. No certifican GPU ni un límite RSS.
+- `createViewer` libera worker y recursos si falla la inicialización (el rechazo de presupuestos EPT es histórico: EPT se retiró, [ADR 0061](adr/0061-ept-y-checkpoints-se-retiran-con-la-v8.md)). No certifican GPU ni un límite RSS.
 - Límites de lectura por defecto (p. ej. 256 atributos; mayores requieren
   `FormatReader::with_limits`): [inventario](reference/inventory.md#límites). Las métricas
   son resultados de ejecuciones concretas, no límites garantizados ni objetivos cumplidos.

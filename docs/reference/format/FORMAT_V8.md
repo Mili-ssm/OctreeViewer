@@ -71,7 +71,7 @@ little-endian; los CRC son CRC-32 IEEE reflejado (detectan corrupción accidenta
 
 Campos en orden: magic `OCTVIDX8`; origen del marco; nivel `a0`, prefijo de la raíz, origen en cuantos y máximo de los
 datos; recuento de puntos de la fuente; registro del CRS; escala y desplazamiento; política de muestreo (texto
-descriptivo `sample-grid:256;leaf:64000`); semántica (0 reemplazo); escala visual; esquema de atributos; después:
+descriptivo `sample-grid:256;leaf:64000`); semántica (`0` reemplazo; el lector también admite `1` aditiva, pero el escritor la rechaza en los diseños paginados); escala visual; esquema de atributos; después:
 
 | Campo | Tipo | Regla |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ descriptivo `sample-grid:256;leaf:64000`); semántica (0 reemplazo); escala visu
 | Extensión | `u32` longitud | `0` o `2 + 108 × n` (Extra Bytes de LAS, [abajo](#flags-las-y-extra-bytes)) |
 
 Esquema: como máximo 256 atributos (`TooManyAttributes`, RF-27). Los cuantiles se calculan de una muestra con semilla
-fija en las hojas (`SAMPLE_SEED`); las columnas LOD son `intensity` y `classification` si existen; el origen del color es
+fija en las hojas (`SAMPLE_SEED`, en `crates/viewer_convert_core/src/pipeline/nn_distance.rs`); las columnas LOD son `intensity` y `classification` si existen; el origen del color es
 `rgb` de 16 bits si existe, si no `intensity` de 16 bits, si no ninguno.
 
 ### Páginas y nodos
@@ -143,7 +143,7 @@ pantalla (RGB de 8 bits) y `2 + i` por columna del esquema (`.octattrs`). La reg
   color de pantalla, intensidad y clasificación.
 - **Color derivado:** `valor >> 8` por canal de la columna de origen (RGB, o intensidad repetida en r, g y b); el escritor
   comprueba cada hoja contra esa derivación y falla si difiere.
-- **Orden de filas:** el escritor usa siempre el híbrido ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md));
+- **Orden de filas:** el conversor fija siempre el híbrido (`FormatVersion::fixed_row_order`; la API del escritor usa por defecto el orden de la fuente) ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md));
   el lector admite cualquier orden ([ADR 0041](../../adr/0041-orden-de-filas-libre-por-bloque.md)).
 - **Tamaños:** 64 000 puntos por hoja y 2 divisiones por eje, fijos; un bloque por encima de `--max-error` se rechaza.
 

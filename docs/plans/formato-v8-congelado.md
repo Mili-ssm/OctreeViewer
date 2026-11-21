@@ -183,7 +183,7 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
     `v7_4*.rs`, `v7_5*.rs`, `v7_final.rs`, los de v8.1/v8.2), `create_legacy_sample.rs` y `sample-v5.*`/`sample-v7.*`.
 - [x] El conversor escribe V8 sin opción de versión. Se retiran `--format-version`, `--row-order`,
   `--points-per-block` y `--spatial-divisions` (V8 los fija), con sus equivalentes JS y la lista `FORMAT_VERSIONS`.
-- [x] Test (Review Focus 1 y 5; A4): `retired_version_name(major, rev)` en `viewer_format` nombra cada familia retirada.
+- [x] Test (Review Focus 1 y 5; A4): `retired_format_name` y `explain_retired` (`viewer_format/src/retired.rs`) nombran cada familia retirada.
   Cuando el pie no es V8, `open()` del wasm lee y valida la cabecera; solo en la ruta de error, así que una apertura
   correcta no hace otra petición Range. Con los fixtures de la tarea 2 se prueba el lector síncrono, el wasm desde node,
   `verify` y la lectura por HTTP Range: todos dan «versión N: reconvierte a V8», nunca `unknown(7, 0)` ni
@@ -196,7 +196,7 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
 - [x] Se regeneran la muestra y el recorte de Belvedere (`scripts/make-demo-belvedere.sh`) en V8, con nombres
   versionados (`sample-v8.oct`, `belvedere-crop-v8.oct`) y el wasm con `?v=<sha>`, para que una caché antigua no mezcle
   ficheros (A10). El README de la demo y `PROBES.md` se actualizan.
-- [x] Se ejecuta la suite `*.browser.mjs` sobre la muestra V8 (A5).
+- [x] Se ejecuta la suite `*.browser.mjs` sobre la muestra V8 (A5) (excepto `lod-regions`, que ya fallaba antes de D4: #117).
 - [x] Playwright (`ui-verifier`) con la demo servida en local, en escritorio y móvil:
   - abrir la muestra;
   - los modos de color;
@@ -204,6 +204,8 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
   - abrir un fichero v7, que debe dar el error claro;
   - el caso de un wasm antiguo en caché;
   - la consola.
+
+  (La caché de un wasm antiguo solo se comprobó sobre una copia local del sitio; se verifica al publicar.)
 - [ ] **No se publica:** se pregunta al propietario antes de `scripts/publish-demo.sh`.
 - [x] Commit `chore(web): V8 demo sample`.
 
@@ -216,7 +218,7 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
 - [x] Se actualizan inventario, requisitos (RF-26, fila D3c), `estado.md`, el `README.md` raíz y el del
   conversor/demo.
 - [x] Estados de los ADR: 0004 y 0047 cumplidos o sustituidos por 0058 y 0061; nota en 0044 y 0058.
-- [x] Este plan y `formato-v8.md` pasan a «hecho».
+- [x] Este plan y `formato-v8.md` pasan a «hecho» (completado salvo la publicación de la demo).
 - [ ] Issues: se cierran #28 y #13 con enlace, se reescribe #12 para V8, y se anota en #16 lo que queda resuelto.
 - [x] `check_docs_links.py` y `check_docs_index.py` en verde; commit `docs: V8 is the only format (D4)`.
 

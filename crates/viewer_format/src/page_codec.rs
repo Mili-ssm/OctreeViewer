@@ -1,4 +1,4 @@
-//! Page codec of the paged layouts (`v7.5-pre` and `v7`) ([spec](../../../docs/reference/format/FORMAT_V7_PRE5.md)): node
+//! Page codec of the paged V8 layout ([spec](../../../docs/reference/format/FORMAT_V8.md)): node
 //! identity as `(page number, index in the page)`, and encode/decode/validation of one page.
 
 use viewer_core::{AttributeDescriptor, BlockId, NodeId};
@@ -56,7 +56,7 @@ pub const fn page_node_id(page: u32, index: u32) -> NodeId {
     NodeId::new(((page as u64) << 32) | index as u64)
 }
 
-/// `(page number, index in the page)` of a `v7.5-pre` node id.
+/// `(page number, index in the page)` of a V8 node id.
 pub const fn split_node_id(id: NodeId) -> (u32, u32) {
     let value = id.get();
     ((value >> 32) as u32, value as u32)

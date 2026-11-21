@@ -139,7 +139,7 @@ one request (default `0`: only touching ranges; the over-read is counted as `gap
 and `&remoteReads=N` sets the concurrent LOD reads for that source: up to N block reads plus up to N
 hierarchy page reads, each counted apart (default `8`; values below 1 or not a finite number use the
 default, values above 64 are capped; local `Blob`s always use `4`). D2 measurements on RED-REF
-(Majadas and Belvedere v7.5, CPU path): 8 reads cut the median time to reached by 15-30 % against 4
+(Majadas and Belvedere v7.5, CPU path; historical evidence for a retired format): 8 reads cut the median time to reached by 15-30 % against 4
 with no frame regression, 16 gives no further gain (and more bytes on Belvedere), and gap merging
 (16-256 KiB) saved at most 3 of 31 requests for up to 6 % more bytes without changing the time, so
 `maxGap` stays `0` (record `docs/records/benchmarks/D2_GAP_CONCURRENCY_14-11-2026.md`).
@@ -191,8 +191,8 @@ are the target; Firefox, best effort; Safari and mobile, out of scope. Planned (
 implemented): the UI will announce "validated up to Majadas (~6 GB of LAZ)"; larger inputs are
 converted with the CLI.
 
-The target browsers support WebGPU and `OffscreenCanvas`. Firefox 157.0.1 has current v5
-XYZ/RGB/typed-attribute and visual evidence. Chrome 155 passes the small functional flows;
+The target browsers support WebGPU and `OffscreenCanvas`. Firefox 157.0.1 has v5
+XYZ/RGB/typed-attribute and visual evidence (historical, for a retired format). Chrome 155 passes the small functional flows;
 current headless captures still require investigation. Older Bunny/Outer Banks Chrome captures
 do not certify the current build. See [web measurements](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md).
 For a small independent presentation/picking diagnostic, serve the repository and open

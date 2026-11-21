@@ -65,7 +65,7 @@ El formato retirado, la entrada EPT y `--checkpoint`/`--resume` se retiraron con
 el conversor acepta LAS/LAZ/COPC y rechaza EPT y esas opciones con un error que lo explica. Código: `las_source.rs` de
 `viewer_convert`; la ayuda del CLI repite la regla.
 
-Muestras de la demo (`examples/web-host/`): `sample-v8`, `sample-small` y `belvedere-crop-v8`, versionadas por nombre. Ambos archivos deben tener identidad exacta y asociación de dataset compatibles. Abrir solo
+Muestras de la demo (`examples/web-host/`): `sample-v8`, `sample-small` y `belvedere-crop-v8`, versionadas por nombre; `belvedere-crop-v8` no está en `examples/web-host/`: lo genera `scripts/make-demo-belvedere.sh` en `target/demo-data` y se publica en gh-pages. Un `.oct` y su `.octattrs` deben tener identidad exacta y asociación de dataset compatibles. Abrir solo
 `.oct` permite gris. Los codecs conservan filas y bits cuantizados, no el LAS original entero.
 Se preservan intensidad, clasificación, retornos, ángulo, user data, point source ID y, cuando
 existen, GPS time, RGB16 y NIR. También flags LAS y Extra Bytes; para el CRS

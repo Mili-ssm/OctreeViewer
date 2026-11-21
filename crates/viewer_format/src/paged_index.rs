@@ -1,5 +1,5 @@
-//! `v7.5-pre` index: metadata block, root page and child pages
-//! ([spec](../../../docs/reference/format/FORMAT_V7_PRE5.md)). Holds the writer path that plans and
+//! V8 index: metadata block, root page and child pages
+//! ([spec](../../../docs/reference/format/FORMAT_V8.md)). Holds the writer path that plans and
 //! emits pages, the page-granular [`PagedReader`], and the eager loader used by `FormatReader`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -451,7 +451,7 @@ pub struct IndexLocation {
     pub(crate) layout: StorageLayout,
 }
 
-/// I/O-free state of a lazily read paged file (`v7.5-pre` or `v7`): the metadata block, the
+/// I/O-free state of a lazily read paged file (V8): the metadata block, the
 /// root page and the ids of the pages currently held. Callers fetch the bytes (sync or async)
 /// and feed them in.
 pub struct PagedCore {
@@ -874,7 +874,7 @@ pub(crate) fn load_all<R: Read + Seek>(
     Ok((parsed, all.index_identity, all.header.reference_spacing))
 }
 
-/// Sizes of a fully verified `v7.5-pre` index.
+/// Sizes of a fully verified V8 index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PagedStats {
     /// Root page included.

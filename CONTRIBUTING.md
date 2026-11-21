@@ -74,7 +74,7 @@ Fuente única de las reglas.
   API de capacidades (`DEFAULT_OUTPUT`, `WRITABLE`, `supports_block_checkpoint()`), así añadir una
   revisión no toca otros crates. Lo vigila `scripts/check_version_literals.sh`.
 - **Registros inmutables**: lo de `docs/records/` no se edita (salvo corregir enlaces rotos);
-  nueva evidencia va en un registro nuevo o en `format-v7-evidence.md`, que se amplía.
+  nueva evidencia va en un registro nuevo y fechado (`format-v7-evidence.md` es histórico y ya no se amplía).
 - **Fechas** `dd-mm-aaaa`; documentación en español salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md` y `PROBES.md` (inglés).
 - **Decisiones**: las de diseño duraderas se registran en [docs/adr/](docs/adr/README.md); una aceptada se sustituye con un ADR nuevo, no se edita.
 - **Un hecho, un documento**: el resto enlaza; dónde va cada tipo de documento, en el

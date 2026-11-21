@@ -73,10 +73,10 @@ Para medir la conversión se puede ejecutar, con un destino `.oct` nuevo por arc
 ```sh
 cargo run --release -p viewer_convert --example real_dataset_bench -- convert \
   data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz \
-  /tmp/albuera-uav-v5.oct
+  /tmp/albuera-uav-v8.oct
 cargo run --release -p viewer_convert --example real_dataset_bench -- convert \
   data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz \
-  /tmp/majadas-tls-v5.oct
+  /tmp/majadas-tls-v8.oct
 ```
 
 Se hizo una conversión release exploratoria por archivo el 10 de octubre de 2026: Albuera tardó
