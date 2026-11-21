@@ -1,0 +1,66 @@
+
+running 1 test
+test lod_dataset::cells_stream_tests::synthetic_zoom_in_lag ... LAG zoom f=0 gen=0 judged=2202 off=71526 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2170
+LAG zoom f=1 gen=1 judged=1197 off=72531 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2170
+LAG zoom f=2 gen=1 judged=1197 off=72531 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2242
+LAG zoom f=3 gen=2 judged=646 off=73082 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2242
+LAG zoom f=4 gen=2 judged=646 off=73082 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2242
+LAG zoom f=5 gen=3 judged=345 off=73383 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2386
+LAG zoom f=6 gen=3 judged=345 off=73383 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2386
+LAG zoom f=7 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2386
+LAG zoom f=8 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2386
+LAG zoom f=9 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=10 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=11 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=12 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=13 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=14 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=15 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=16 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=17 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=18 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=19 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=20 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=21 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=22 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=23 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=24 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=25 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=26 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=27 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=28 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=29 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=30 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=31 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=32 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=33 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=34 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=35 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=36 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=37 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=38 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=39 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=40 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=41 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=42 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=43 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=44 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=45 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=46 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=47 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=48 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAGSUM zoom | frames=49 judged_sum=14264 | settle_b=0 settle_r=0 | sample_frames_b1=0 b2=0 b3=0 | sample_frames_r1=0 r2=0 r3=0 | worst_b=0 at f=0 worst_r=0 at f=0 | over_bound_sample_frames=0 over_max=0 | requests min=0 med=0 max=0 | pages_end=2530
+LAGSPLIT zoom | in_clip: judged=14264 b1=0 b2=0 b3=0 r1=0 r2=0 r3=0 | out_clip: judged=0 b1=0 b2=0 b3=0 r1=0 r2=0 r3=0
+
+thread 'lod_dataset::cells_stream_tests::synthetic_zoom_in_lag' (2142997) panicked at crates/viewer_wasm/src/lod_cells_stream_tests.rs:5124:49:
+argument of integer logarithm must be positive
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    lod_dataset::cells_stream_tests::synthetic_zoom_in_lag
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 201 filtered out; finished in 5.75s
+

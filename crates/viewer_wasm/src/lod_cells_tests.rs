@@ -17,6 +17,16 @@ use viewer_render_wgpu::{
 
 pub(super) const SIDE: f64 = 64.0;
 
+/// Directory of the real datasets the ignored tests read (`belvedere-v8.oct`, `majadas-v8.oct` and
+/// their `.octattrs`). It lives only in the main checkout, so a worktree sets `RENDER_DATA_DIR`;
+/// without it, `target/render-data` of this checkout.
+pub(super) fn render_data_dir() -> std::path::PathBuf {
+    std::env::var_os("RENDER_DATA_DIR").map_or_else(
+        || std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/render-data"),
+        std::path::PathBuf::from,
+    )
+}
+
 /// Root (1) over its eight octants (2..=9); node 2 also has eight children (10..=17).
 pub(super) fn octree_nodes() -> Vec<SpatialNode> {
     let cube = |min: [f64; 3], side: f64| SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
@@ -1307,13 +1317,13 @@ fn the_dataset_takes_its_recommended_min_size_from_the_file_header() {
     assert_eq!(open(unmeasured).recommended_min_size(), None);
 }
 
-/// Counts the blocks owned by more than one node in the v7.5 files of `target/render-data`
+/// Counts the blocks owned by more than one node in the V8 files of `RENDER_DATA_DIR`
 /// (`cargo test -p viewer_wasm --offline -- --ignored multi_owner --nocapture`).
 #[test]
-#[ignore = "needs the datasets of target/render-data"]
-fn multi_owner_blocks_in_the_v7_datasets() {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/render-data");
-    for name in ["majadas-v7.oct", "belvedere-v7.oct"] {
+#[ignore = "needs the datasets of RENDER_DATA_DIR (default target/render-data)"]
+fn multi_owner_blocks_in_the_v8_datasets() {
+    let dir = render_data_dir();
+    for name in ["majadas-v8.oct", "belvedere-v8.oct"] {
         let path = dir.join(name);
         let Ok(file) = std::fs::File::open(&path) else {
             eprintln!("SKIP {name}: {} is missing", path.display());

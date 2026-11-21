@@ -1,0 +1,21 @@
+
+running 1 test
+test lod_dataset::cells_stream_tests::eye_node_residency_at_poses ... EYE pose=P1 relay=1 node=14 | resident=[5, 8, 9] active=[8, 9] range=Some((8, 9)) wish_max=Some(9) data_bound=Some(9) | pages_by_depth=[(5, 1), (8, 11), (9, 38)] pages=50 | levels_over_bound=0 pages_over_bound=0
+EYE pose=P1 relay=1 node=17 | resident=[5, 8, 9] active=[8, 9] range=Some((8, 9)) wish_max=Some(9) data_bound=Some(9) | pages_by_depth=[(5, 1), (8, 11), (9, 38)] pages=50 | levels_over_bound=0 pages_over_bound=0
+EYE pose=P1 relay=1 node=ALL | cut_nodes=16 pool_pages=1193 | levels_over_bound=4 pages_over_bound=220
+EYE pose=P2 relay=1 node=14 | resident=[5, 7, 8, 9, 10, 11, 12, 13] active=[11, 12, 13] range=Some((11, 11)) wish_max=Some(13) data_bound=Some(13) | pages_by_depth=[(5, 1), (7, 3), (8, 11), (9, 38), (10, 72), (11, 72), (12, 72), (13, 72)] pages=341 | levels_over_bound=0 pages_over_bound=0
+EYE pose=P2 relay=1 node=17 | resident=[5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] active=[11, 12, 13, 14, 15, 16, 17] range=Some((11, 11)) wish_max=Some(17) data_bound=Some(13) | pages_by_depth=[(5, 1), (7, 3), (8, 11), (9, 38), (10, 72), (11, 72), (12, 72), (13, 72), (14, 72), (15, 72), (16, 72), (17, 72)] pages=629 | levels_over_bound=4 pages_over_bound=288
+EYE pose=P2 relay=1 node=ALL | cut_nodes=10 pool_pages=2170 | levels_over_bound=5 pages_over_bound=325
+EYE pose=P3 relay=1 node=14 | resident=[5, 7, 8, 9, 10, 11, 12, 13, 14, 15] active=[12, 13, 14] range=Some((12, 12)) wish_max=Some(14) data_bound=Some(14) | pages_by_depth=[(5, 1), (7, 3), (8, 11), (9, 38), (10, 72), (11, 72), (12, 72), (13, 72), (14, 72), (15, 72)] pages=485 | levels_over_bound=1 pages_over_bound=72
+EYE pose=P3 relay=1 node=17 | resident=[5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] active=[12, 13, 14, 15, 16, 17] range=Some((12, 12)) wish_max=Some(17) data_bound=Some(14) | pages_by_depth=[(5, 1), (7, 3), (8, 11), (9, 38), (10, 72), (11, 72), (12, 72), (13, 72), (14, 72), (15, 72), (16, 72), (17, 72)] pages=629 | levels_over_bound=3 pages_over_bound=216
+EYE pose=P3 relay=1 node=ALL | cut_nodes=10 pool_pages=2602 | levels_over_bound=5 pages_over_bound=325
+EYE pose=P4 relay=1 node=14 | resident=[5, 7, 8, 9, 10, 11] active=[10, 11] range=Some((10, 11)) wish_max=Some(11) data_bound=Some(11) | pages_by_depth=[(5, 1), (7, 3), (8, 11), (9, 38), (10, 72), (11, 72)] pages=197 | levels_over_bound=0 pages_over_bound=0
+EYE pose=P4 relay=1 node=17 | resident=[5, 9, 10, 11, 12] active=[10, 11, 12] range=Some((10, 12)) wish_max=Some(12) data_bound=Some(11) | pages_by_depth=[(5, 1), (9, 38), (10, 72), (11, 72), (12, 72)] pages=255 | levels_over_bound=1 pages_over_bound=72
+EYE pose=P4 relay=1 node=ALL | cut_nodes=12 pool_pages=1860 | levels_over_bound=1 pages_over_bound=72
+EYE pose=P5 relay=1 node=14 | resident=[5, 7, 8, 9, 10, 11, 12, 13, 14] active=[12, 13, 14] range=Some((12, 12)) wish_max=Some(14) data_bound=Some(14) | pages_by_depth=[(5, 1), (7, 3), (8, 11), (9, 38), (10, 72), (11, 72), (12, 72), (13, 72), (14, 72)] pages=413 | levels_over_bound=0 pages_over_bound=0
+EYE pose=P5 relay=1 node=17 | resident=[5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] active=[12, 13, 14, 15, 16, 17] range=Some((12, 12)) wish_max=Some(17) data_bound=Some(14) | pages_by_depth=[(5, 1), (7, 3), (8, 11), (9, 38), (10, 72), (11, 72), (12, 72), (13, 72), (14, 72), (15, 72), (16, 72), (17, 72)] pages=629 | levels_over_bound=3 pages_over_bound=216
+EYE pose=P5 relay=1 node=ALL | cut_nodes=10 pool_pages=2386 | levels_over_bound=4 pages_over_bound=253
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 201 filtered out; finished in 6.42s
+

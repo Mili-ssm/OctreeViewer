@@ -1,10 +1,13 @@
 //! R3 Task 9b2a: the px ladder of the cells path, streamed block by block (R3-Q19), with a
 //! strict recording `CellTarget` and a cell-level coverage oracle. The real-data tests need
-//! `target/render-data/belvedere-v7.oct` and skip with a message without it, unless
+//! `belvedere-v8.oct` in `RENDER_DATA_DIR` (default `target/render-data`, see
+//! `cells_tests::render_data_dir`) and skip with a message without it, unless
 //! `R3_REQUIRE_REAL_DATA=1` makes the missing file a failure.
 
 use super::cells::MAX_CELL_CUT_GAP;
-use super::cells_tests::{SIDE, driver_for, node_block, octree_dataset, octree_nodes};
+use super::cells_tests::{
+    SIDE, driver_for, node_block, octree_dataset, octree_nodes, render_data_dir,
+};
 use super::*;
 use crate::lod_driver::{CellStep, update_cells_staged};
 use std::fmt::Write as _;
@@ -2066,9 +2069,7 @@ struct Real {
 }
 
 fn real_path(name: &str) -> Option<std::path::PathBuf> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/render-data")
-        .join(name);
+    let path = render_data_dir().join(name);
     if path.exists() {
         Some(path)
     } else {
@@ -2217,7 +2218,7 @@ impl Real {
 
 #[test]
 fn real_streaming_ladder_belvedere() {
-    let Some(mut real) = open_real("belvedere-v7.oct", 4.0, 256 << 20) else {
+    let Some(mut real) = open_real("belvedere-v8.oct", 4.0, 256 << 20) else {
         return;
     };
     let anchors = real.anchors_near([0.5, 0.5, 0.5]);
@@ -2254,7 +2255,7 @@ fn real_streaming_ladder_belvedere() {
 /// for the cut, the pool for the depths), after a dolly toward the data. Returns the number of
 /// drawn octants not drawn by the root and the smallest cell side among them (dataset units).
 fn drawn_cubes_after_dolly(min_side: Option<f64>) -> (usize, f64) {
-    let mut real = open_real("belvedere-v7.oct", 1.0, 256 << 20).expect("real data required");
+    let mut real = open_real("belvedere-v8.oct", 1.0, 256 << 20).expect("real data required");
     real.harness.dataset.set_min_side(min_side);
     real.harness.driver.set_min_side(min_side);
     let (centre, side) = real.anchors_near([0.5, 0.5, 0.5])[0];
@@ -2312,7 +2313,7 @@ const REGRAFT_PAGE_BUDGET: usize = 60_000;
 
 #[test]
 fn real_regraft_belvedere() {
-    let Some(mut real) = open_real("belvedere-v7.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
+    let Some(mut real) = open_real("belvedere-v8.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
         return;
     };
     let (a, b) = region_views(&real);
@@ -2371,7 +2372,7 @@ fn real_regraft_belvedere() {
 
 #[test]
 fn real_pages_with_drawn_nodes_are_not_evicted() {
-    let Some(mut real) = open_real("belvedere-v7.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
+    let Some(mut real) = open_real("belvedere-v8.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
         return;
     };
     let (a, b) = region_views(&real);
