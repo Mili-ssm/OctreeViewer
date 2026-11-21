@@ -1447,7 +1447,7 @@ fn planner_snapshot(output: &std::path::Path) -> (Vec<String>, String) {
     // order and describe parents and children by that number.
     let order: Vec<_> = hierarchy.query(hierarchy.stats().root_bounds).collect();
     let number = |id: NodeId| order.iter().position(|node| node.id() == id).unwrap();
-    assert_eq!(order.len(), hierarchy.stats().node_count as usize);
+    assert_eq!(order.len(), hierarchy.stats().node_count);
     let nodes = order
         .iter()
         .enumerate()
@@ -2043,7 +2043,9 @@ fn assert_preorder_structure(output: &std::path::Path) {
     assert_eq!(blocks, (0..blocks.len() as u64).collect::<Vec<_>>());
 }
 
-fn assert_jobs_commit_in_preorder(fixtures: &[(&str, fn(&std::path::Path))]) {
+type WriteFixture = fn(&std::path::Path);
+
+fn assert_jobs_commit_in_preorder(fixtures: &[(&str, WriteFixture)]) {
     let tmp = test_dir();
     let dir = tmp.path();
     for (name, write) in fixtures {
@@ -2679,11 +2681,11 @@ fn hybrid_store_matches_mem_store_on_the_small_las_and_the_variable_chunk_laz() 
         let input = workspace_path(relative);
         let options = leaf_new(4096, 0.01).unwrap();
         let label = relative;
-        let stats = assert_hybrid_matches_mem(&input, options, u64::MAX, &label);
+        let stats = assert_hybrid_matches_mem(&input, options, u64::MAX, label);
         assert_eq!(stats.spilled_spools, 0, "{label}");
         // A tiny budget and none at all both spill and still give the same bytes.
         for budget in [64 * 1024, 0] {
-            let stats = assert_hybrid_matches_mem(&input, options, budget, &label);
+            let stats = assert_hybrid_matches_mem(&input, options, budget, label);
             assert!(stats.spilled_spools > 0, "{label}/{budget}");
         }
     }
