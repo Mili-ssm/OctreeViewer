@@ -922,6 +922,26 @@ mod payloads {
         assert!(refused > 4);
     }
 
+    /// `append_payload` stores exactly the direct LZ4 encoding and records its decoded length.
+    /// (The pre-V8 revision this once compared against is gone; the V8 side keeps the property.)
+    #[test]
+    fn v8_payload_is_the_direct_encoding_and_decodes_to_the_raw_bytes() {
+        for (width, raw) in corpus() {
+            let mut bytes = Vec::new();
+            let mut payloads = Vec::new();
+            crate::prepare::append_payload(&raw, &mut bytes, &mut payloads, width).unwrap();
+            assert_eq!(payloads.len(), 1, "width {width}");
+            assert_eq!(payloads[0].raw_length, raw.len() as u64);
+            assert_eq!(payloads[0].stored_length, bytes.len() as u64);
+            assert_eq!(
+                decode(payloads[0].codec, &bytes, raw.len(), width, raw.len()).unwrap(),
+                raw
+            );
+            let direct = encode_v7_pre3(&raw, width).unwrap();
+            assert_eq!(direct.bytes(), bytes, "width {width}");
+        }
+    }
+
     #[test]
     fn corrupt_payload_is_an_error() {
         for (width, raw, encoded) in lz4_payloads() {

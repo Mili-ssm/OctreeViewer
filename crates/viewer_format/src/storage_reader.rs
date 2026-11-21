@@ -339,3 +339,62 @@ impl FormatReader<std::io::Cursor<Vec<u8>>> {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use viewer_core::BlockId;
+
+    use super::*;
+    use crate::test_support::{COLORS, V8_BLOCK, v8_pair};
+
+    const ID: BlockId = V8_BLOCK;
+
+    #[test]
+    fn facade_opens_v8_and_forks_the_validated_backend() {
+        let (primary, _) = v8_pair();
+        let mut reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+        assert_eq!(reader.format_version(), FormatVersion::V8);
+        assert_eq!(
+            reader
+                .format_metadata()
+                .dataset()
+                .hierarchy()
+                .stats()
+                .node_count,
+            1
+        );
+        assert_eq!(reader.read_positions(ID).unwrap().len(), 4);
+
+        let mut fork = reader.fork_reader(Cursor::new(primary));
+        assert!(reader.shares_index_with(&fork));
+        assert_eq!(fork.read_positions(ID).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn rejects_an_unknown_revision_before_looking_for_a_payload_or_index() {
+        let (primary, _) = v8_pair();
+        let mut header = primary[..24].to_vec();
+        header[16..20].copy_from_slice(&99_u32.to_le_bytes());
+        let crc = crate::crc32(&header[..20]);
+        header[20..24].copy_from_slice(&crc.to_le_bytes());
+        assert!(matches!(
+            FormatReader::new(Cursor::new(header)),
+            Err(FormatError::UnsupportedFormatVersion(version))
+                if version.major() == 8 && version.revision() == 99
+        ));
+    }
+
+    #[test]
+    fn fork_can_attach_the_matching_split_sidecar_independently() {
+        let (primary, attributes) = v8_pair();
+        let reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+        let mut fork = reader.fork_reader(Cursor::new(primary));
+        assert!(!reader.has_attributes());
+        fork.attach_attributes(Cursor::new(attributes)).unwrap();
+        assert!(fork.has_attributes());
+        assert!(!reader.has_attributes());
+        assert_eq!(fork.read_display_colors(ID).unwrap(), COLORS.to_vec());
+    }
+}
