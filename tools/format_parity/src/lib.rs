@@ -1,26 +1,26 @@
 //! Encoding digest used to compare `viewer_format` output across targets.
 //!
-//! The same deterministic input is encoded for every writable format version and the resulting
+//! The same deterministic blocks are written as V8 (the only format) and the resulting
 //! primary/attributes pair is hashed. Native and `wasm32-unknown-unknown` builds must agree.
 
 use std::io::Cursor;
 
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
-    CoordinateFrame, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
+    CoordinateFrame, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode,
 };
 use viewer_format::{
-    FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions, OctreeWriter,
-    SourcePointBlock,
+    CrsRaw, CrsRecord, FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions,
+    GlobalFrame, NodeCell, OctreeWriter, SourcePointBlock,
 };
 
 const SEED: u64 = 0x5eed;
-const BLOCKS: u64 = 6;
+/// Leaf blocks of the synthetic fixture; the LOD block comes in addition.
+const LEAVES: u64 = 6;
 // Geometry above 64 KiB selects lz4_flex's large hash table, where the 32/64-bit hashes differ.
 const POINTS_PER_BLOCK: usize = 16384;
 const BLOCK_LIMIT_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_QUANTIZATION_ERROR: f64 = 0.01;
-const ORIGIN: [f64; 3] = [1_000.5, 2_000.25, 10.0];
 const EXTENT: f64 = 64.0;
 
 /// Fixed-seed LCG (Knuth MMIX constants); identical on every target.
@@ -52,46 +52,6 @@ fn descriptors() -> Vec<AttributeDescriptor> {
         AttributeDescriptor::new(name, data_type, components).expect("valid descriptor")
     })
     .collect()
-}
-
-/// Single-root metadata covering `blocks`; shared by the synthetic and real-block fixtures.
-fn metadata_for(
-    origin: [f64; 3],
-    bounds: SpatialBounds,
-    blocks: Vec<BlockId>,
-    total: u64,
-    schema: Vec<AttributeDescriptor>,
-) -> FormatMetadata {
-    let root =
-        SpatialNode::new(NodeId::new(0), None, 0, bounds, total, 0.25, blocks).expect("valid root");
-    let hierarchy =
-        SpatialHierarchy::new(vec![root], schema, Some(total)).expect("valid hierarchy");
-    FormatMetadata::new(
-        DatasetMetadata::new(
-            CoordinateFrame::new(origin).expect("valid frame"),
-            hierarchy,
-        ),
-        Some("EPSG:25830".to_owned()),
-        Some("parity fixture".to_owned()),
-        Vec::new(),
-    )
-    .expect("valid metadata")
-}
-
-fn metadata() -> FormatMetadata {
-    let bounds = SpatialBounds::new(
-        ORIGIN,
-        [ORIGIN[0] + EXTENT, ORIGIN[1] + EXTENT, ORIGIN[2] + EXTENT],
-    )
-    .expect("valid bounds");
-    let blocks = (0..BLOCKS).map(BlockId::new).collect();
-    metadata_for(
-        ORIGIN,
-        bounds,
-        blocks,
-        BLOCKS * POINTS_PER_BLOCK as u64,
-        descriptors(),
-    )
 }
 
 /// Block `index % 3`: 0 = regular grid with constant attributes (highly compressible),
@@ -161,15 +121,158 @@ fn block(index: u64, rng: &mut Lcg) -> SourcePointBlock {
     SourcePointBlock::new(BlockId::new(index), positions, colors, attributes)
 }
 
-fn encode_with(
-    version: FormatVersion,
-    metadata: FormatMetadata,
-    blocks: impl IntoIterator<Item = SourcePointBlock>,
-) -> (Vec<u8>, Vec<u8>) {
+/// Margin kept between a translated block and the faces of its node cell, in dataset units.
+const CELL_MARGIN: f64 = 1.0;
+/// Children of the root: one octant each, so at most eight leaves.
+const MAX_LEAVES: usize = 8;
+
+fn crs() -> CrsRecord {
+    CrsRecord::new(
+        "EPSG".to_owned(),
+        25830,
+        CrsRaw::Wkt("PROJCS[\"ETRS89 / UTM zone 30N\",AUTHORITY[\"EPSG\",\"25830\"]]".into()),
+    )
+    .expect("valid CRS")
+}
+
+/// Rebuilds `blocks` as a two-level V8 dataset: `blocks[0]` is the LOD block of the root node and
+/// every later block is the only block of one child octant. Each block is translated (never
+/// scaled) so its bounding box sits inside its cell, which keeps its point pattern; the root
+/// level is the deepest one whose child cells still hold the largest block. Only the written
+/// bytes matter here, so the metadata is whatever the writer accepts.
+fn v8_dataset(blocks: &[SourcePointBlock]) -> (FormatMetadata, Vec<SourcePointBlock>) {
+    assert!(
+        (2..=MAX_LEAVES + 1).contains(&blocks.len()),
+        "need a LOD block and 1..={MAX_LEAVES} leaves"
+    );
+    let extents = blocks.iter().map(|block| {
+        let mut min = [f64::INFINITY; 3];
+        let mut max = [f64::NEG_INFINITY; 3];
+        for position in block.positions_local() {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(position[axis]);
+                max[axis] = max[axis].max(position[axis]);
+            }
+        }
+        (min, max)
+    });
+    let extents = extents.collect::<Vec<_>>();
+    let widest = extents
+        .iter()
+        .flat_map(|(min, max)| (0..3).map(|axis| max[axis] - min[axis]))
+        .fold(0.0, f64::max);
+    // A cell at absolute level `l` is 2^(49 - l) units wide; the children must hold the widest
+    // block plus both margins.
+    let mut level = 48_u32;
+    while level > 3 && 2.0_f64.powi(48 - level as i32) < widest + 2.0 * CELL_MARGIN {
+        level -= 1;
+    }
+    let root_prefix: [u64; 3] = [
+        (1 << (level - 1)) + 3,
+        (1 << (level - 1)) + 4,
+        (1 << (level - 1)) + 5,
+    ];
+    let origin = root_prefix.map(|p| viewer_format::cell_origin_quanta(level, p));
+    let child_prefix = |i: usize| -> [u64; 3] {
+        std::array::from_fn(|axis| (root_prefix[axis] << 1) | ((i >> axis) & 1) as u64)
+    };
+    let cells = (0..blocks.len())
+        .map(|i| {
+            let (prefix, spacing) = if i == 0 {
+                (root_prefix, 2.0_f64.powi(41 - level as i32))
+            } else {
+                (child_prefix(i - 1), 2.0_f64.powi(-5))
+            };
+            (NodeId::new(i as u64), NodeCell::new(prefix, spacing))
+        })
+        .collect::<Vec<_>>();
+    let root_side = (1_i64 << (64 - level)) - 1;
+    let frame = GlobalFrame::new(
+        level,
+        root_prefix,
+        origin,
+        origin.map(|q| q + root_side),
+        crs(),
+        None,
+        cells,
+    )
+    .expect("valid global frame");
+
+    let schema = blocks[0]
+        .attributes()
+        .iter()
+        .map(|column| column.descriptor().clone())
+        .collect::<Vec<_>>();
+    let mut nodes = Vec::new();
+    let mut translated = Vec::new();
+    let mut total = 0_u64;
+    for (i, (block, (min, _))) in blocks.iter().zip(&extents).enumerate() {
+        let (depth, prefix) = if i == 0 {
+            (0, root_prefix)
+        } else {
+            (1, child_prefix(i - 1))
+        };
+        let bounds = frame.node_bounds(depth, prefix).expect("node bounds");
+        let shift: [f64; 3] =
+            std::array::from_fn(|axis| bounds.min()[axis] + CELL_MARGIN - min[axis]);
+        let positions = block
+            .positions_local()
+            .iter()
+            .map(|p| std::array::from_fn(|axis| p[axis] + shift[axis]))
+            .collect::<Vec<[f64; 3]>>();
+        let count = positions.len() as u64;
+        total += count;
+        let id = BlockId::new(i as u64 + 1);
+        nodes.push(
+            SpatialNode::new(
+                NodeId::new(i as u64),
+                (i > 0).then(|| NodeId::new(0)),
+                depth,
+                bounds,
+                count,
+                0.0,
+                vec![id],
+            )
+            .expect("valid node"),
+        );
+        translated.push(SourcePointBlock::new(
+            id,
+            positions,
+            block.colors().to_vec(),
+            block.attributes().to_vec(),
+        ));
+    }
+    let hierarchy = SpatialHierarchy::new(nodes, schema, Some(total)).expect("valid hierarchy");
+    // Whatever the LOD set is, it has to be a strictly increasing list inside the schema.
+    let lod_columns = (0..hierarchy.attributes().len() as u32)
+        .step_by(2)
+        .collect::<Vec<_>>();
+    let metadata = FormatMetadata::new(
+        DatasetMetadata::new(
+            CoordinateFrame::new(frame.frame_origin()).expect("valid frame"),
+            hierarchy,
+        ),
+        None,
+        Some("parity fixture".to_owned()),
+        Vec::new(),
+    )
+    .expect("valid metadata")
+    .with_global_frame(frame)
+    .expect("global frame matches the hierarchy")
+    .with_lod_attribute_columns(lod_columns)
+    .with_display_colour_source(viewer_format::DisplayColourSource::None)
+    .with_point_distance_quantiles(
+        viewer_format::PointDistanceQuantiles::new(0.25, 0.5, 1.5).expect("valid quantiles"),
+    );
+    (metadata, translated)
+}
+
+fn encode(blocks: &[SourcePointBlock]) -> (Vec<u8>, Vec<u8>) {
+    let (metadata, blocks) = v8_dataset(blocks);
     let options =
         FormatWriterOptions::new(MAX_QUANTIZATION_ERROR, BLOCK_LIMIT_BYTES).expect("valid options");
     let mut writer = FormatWriter::new_split_for_version(
-        version,
+        FormatVersion::V8,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
@@ -186,14 +289,6 @@ fn encode_with(
     )
 }
 
-fn encode(version: FormatVersion) -> (Vec<u8>, Vec<u8>) {
-    let mut rng = Lcg(SEED);
-    let blocks = (0..BLOCKS)
-        .map(|index| block(index, &mut rng))
-        .collect::<Vec<_>>();
-    encode_with(version, metadata(), blocks)
-}
-
 fn fnv1a(hash: &mut u64, bytes: &[u8]) {
     for byte in bytes {
         *hash ^= u64::from(*byte);
@@ -201,59 +296,30 @@ fn fnv1a(hash: &mut u64, bytes: &[u8]) {
     }
 }
 
-fn digest_versions(mut encode_version: impl FnMut(FormatVersion) -> (Vec<u8>, Vec<u8>)) -> u64 {
+/// FNV-1a 64 over `len || bytes` of the V8 primary file and its attributes companion.
+fn digest(blocks: &[SourcePointBlock]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325;
-    // v7.4-pre needs a global-frame fixture of its own; it is not covered by this digest yet.
-    for version in FormatVersion::WRITABLE
-        .into_iter()
-        .filter(|version| !version.uses_global_frame())
-    {
-        let (primary, attributes) = encode_version(version);
-        for file in [primary, attributes] {
-            fnv1a(&mut hash, format!("{version:?}").as_bytes());
-            fnv1a(&mut hash, &(file.len() as u64).to_le_bytes());
-            fnv1a(&mut hash, &file);
-        }
+    let (primary, attributes) = encode(blocks);
+    for file in [primary, attributes] {
+        fnv1a(&mut hash, &(file.len() as u64).to_le_bytes());
+        fnv1a(&mut hash, &file);
     }
     hash
 }
 
-/// FNV-1a 64 over `version || len || bytes` of both files per writable version, in `WRITABLE` order.
+/// Digest of the synthetic fixture: a LOD block and six leaf blocks of three point patterns.
 pub fn parity_digest() -> u64 {
-    digest_versions(encode)
+    let mut rng = Lcg(SEED);
+    let blocks = (0..=LEAVES)
+        .map(|index| block(index, &mut rng))
+        .collect::<Vec<_>>();
+    digest(&blocks)
 }
 
-/// Same digest as [`parity_digest`] for blocks produced by [`serialize_blocks`]. The metadata is
-/// derived from the blocks (one root node over all of them, frame origin zero, bounds = their
-/// extent plus 1), so the result depends only on the serialized bytes.
+/// Same digest for blocks produced by [`serialize_blocks`] (LOD block first, then the leaves).
+/// The metadata is derived from the blocks, so the result depends only on the serialized bytes.
 pub fn parity_digest_of_blocks(serialized: &[u8]) -> u64 {
-    let blocks = deserialize_blocks(serialized);
-    let mut min = [f64::INFINITY; 3];
-    let mut max = [f64::NEG_INFINITY; 3];
-    let mut total = 0_u64;
-    for block in &blocks {
-        total += block.positions_local().len() as u64;
-        for position in block.positions_local() {
-            for axis in 0..3 {
-                min[axis] = min[axis].min(position[axis]);
-                max[axis] = max[axis].max(position[axis]);
-            }
-        }
-    }
-    let bounds = SpatialBounds::new(min.map(|v| v - 1.0), max.map(|v| v + 1.0)).expect("bounds");
-    let schema = blocks[0]
-        .attributes()
-        .iter()
-        .map(|column| column.descriptor().clone())
-        .collect::<Vec<_>>();
-    let ids = blocks
-        .iter()
-        .map(viewer_format::SourcePointBlock::id)
-        .collect::<Vec<_>>();
-    let metadata = metadata_for([0.0; 3], bounds, ids, total, schema);
-    digest_versions(|version| {
-        encode_with(version, metadata.clone(), deserialize_blocks(serialized))
-    })
+    digest(&deserialize_blocks(serialized))
 }
 
 const BLOCKS_MAGIC: &[u8; 4] = b"FPB1";

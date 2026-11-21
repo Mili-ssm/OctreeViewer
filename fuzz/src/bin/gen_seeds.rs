@@ -1,6 +1,6 @@
 //! Writes tiny seeds into `corpus/`. Run from `fuzz/`: `cargo run --bin gen_seeds`.
-//! Format seeds: copies of small `.oct` files (monolithic) plus `.oct`+`.octattrs` pairs in the
-//! split layout of the target (u32 LE primary length, primary, attributes).
+//! Format seeds (V8 only): small `.oct` files, and `.oct`+`.octattrs` pairs in the split layout of
+//! the target (u32 LE primary length, primary, attributes). Seeds are named by content.
 //! LAS seeds: tiny LAS/LAZ files written by `las::Writer`.
 
 use std::fs;
@@ -15,6 +15,8 @@ use viewer_core::{
 use viewer_format::{
     FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions, SourcePointBlock,
 };
+
+const VERSION: FormatVersion = FormatVersion::V8;
 
 const MAX_SEED: u64 = 1024 * 1024;
 
@@ -69,119 +71,79 @@ fn write_las_version(
     writer.into_inner().unwrap().into_inner()
 }
 
-/// V8-family revisions omit LOD columns and need their LOD set and distance quantiles.
-fn with_v8_fields(metadata: FormatMetadata, version: FormatVersion) -> FormatMetadata {
-    if matches!(version, FormatVersion::V8 | FormatVersion::V8Pre(_)) {
-        metadata
-            .with_point_distance_quantiles(
-                viewer_format::PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap(),
-            )
-            .with_lod_attribute_columns(vec![0])
-            .with_display_colour_source(viewer_format::DisplayColourSource::None)
-    } else {
-        metadata
-    }
+/// V8 omits LOD columns and needs their LOD set and the distance quantiles.
+fn with_v8_fields(metadata: FormatMetadata) -> FormatMetadata {
+    metadata
+        .with_point_distance_quantiles(
+            viewer_format::PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap(),
+        )
+        .with_lod_attribute_columns(vec![0])
+        .with_display_colour_source(viewer_format::DisplayColourSource::None)
 }
 
-/// One tiny two-point block written with the real writer for `version`: monolithic and split.
-fn write_revision(version: FormatVersion) -> (Vec<u8>, Option<(Vec<u8>, Vec<u8>)>) {
-    let mut origin = [1_000.0, -2_000.0, 10.0];
-    let mut bounds =
-        SpatialBounds::new(origin, [origin[0] + 2.0, origin[1] + 1.0, origin[2] + 1.0]).unwrap();
-    let global = version.uses_global_frame().then(|| {
-        // Root at level 48 (side 2 m); its origin is the frame origin and the bounds are derived.
-        let prefix = [5, 7, 9].map(|k| (1_u64 << 47) + k);
-        let crs = viewer_format::CrsRecord::new(
-            "EPSG".to_owned(),
-            4978,
-            viewer_format::CrsRaw::Wkt("GEODCRS[\"WGS 84\",ID[\"EPSG\",4978]]".to_owned()),
-        )
-        .unwrap();
-        let source = viewer_format::SourceScaleOffset::new([0.001; 3], [0.0; 3]).unwrap();
-        let cells = vec![(NodeId::new(0), viewer_format::NodeCell::new(prefix, 0.0625))];
-        viewer_format::GlobalFrame::new(
-            48,
-            prefix,
-            prefix.map(|p| viewer_format::cell_origin_quanta(48, p)),
-            prefix.map(|p| viewer_format::cell_origin_quanta(48, p) + 1_000),
-            crs,
-            Some(source),
-            cells,
-        )
-        .unwrap()
-    });
-    if let Some(frame) = &global {
-        origin = frame.frame_origin();
-        bounds = frame.node_bounds(0, frame.root_prefix()).unwrap();
-    }
+/// One tiny two-point block written with the real writer: primary and attributes companion.
+fn write_sample() -> (Vec<u8>, Vec<u8>) {
+    // Root at level 48 (side 2 m); its origin is the frame origin and the bounds are derived.
+    let prefix = [5, 7, 9].map(|k| (1_u64 << 47) + k);
+    let crs = viewer_format::CrsRecord::new(
+        "EPSG".to_owned(),
+        4978,
+        viewer_format::CrsRaw::Wkt("GEODCRS[\"WGS 84\",ID[\"EPSG\",4978]]".to_owned()),
+    )
+    .unwrap();
+    let source = viewer_format::SourceScaleOffset::new([0.001; 3], [0.0; 3]).unwrap();
+    let cells = vec![(NodeId::new(0), viewer_format::NodeCell::new(prefix, 0.0625))];
+    let frame = viewer_format::GlobalFrame::new(
+        48,
+        prefix,
+        prefix.map(|p| viewer_format::cell_origin_quanta(48, p)),
+        prefix.map(|p| viewer_format::cell_origin_quanta(48, p) + 1_000),
+        crs,
+        Some(source),
+        cells,
+    )
+    .unwrap();
+    let origin = frame.frame_origin();
+    let bounds = frame.node_bounds(0, frame.root_prefix()).unwrap();
     let block_id = BlockId::new(7);
     let root = SpatialNode::new(NodeId::new(0), None, 0, bounds, 2, 0.25, vec![block_id]).unwrap();
     let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
     let hierarchy = SpatialHierarchy::new(vec![root], vec![descriptor.clone()], Some(2)).unwrap();
-    let mut metadata = FormatMetadata::new(
+    let metadata = FormatMetadata::new(
         DatasetMetadata::new(CoordinateFrame::new(origin).unwrap(), hierarchy),
         Some("EPSG:4978".to_owned()),
         Some("uniform voxel sampling".to_owned()),
         Vec::new(),
     )
+    .unwrap()
+    .with_global_frame(frame)
     .unwrap();
-    if let Some(frame) = global {
-        metadata = metadata.with_global_frame(frame).unwrap();
-    }
-    let metadata = with_v8_fields(metadata, version);
-    let block = || {
-        let attribute =
-            AttributeColumn::new(descriptor.clone(), AttributeValues::U16(vec![100, 200]), 2)
-                .unwrap();
-        SourcePointBlock::new(
-            block_id,
-            vec![[0.25, 0.5, 0.0], [1.5, 0.75, 1.0]],
-            vec![ColorRgb::new(10, 20, 30), ColorRgb::new(40, 50, 60)],
-            vec![attribute],
-        )
-    };
-    let options = || FormatWriterOptions::new(0.001, 1024).unwrap();
-
-    // The paged revision is only written as a pair, so its monolithic seed is the primary alone.
-    let monolithic = if version.uses_pages() {
-        Vec::new()
-    } else {
-        let mut writer = FormatWriter::new_for_version(
-            version,
-            Cursor::new(Vec::new()),
-            metadata.clone(),
-            options(),
-        )
-        .unwrap();
-        writer.write_block(block()).unwrap();
-        writer.finish().unwrap().into_inner()
-    };
-
+    let metadata = with_v8_fields(metadata);
+    let attribute =
+        AttributeColumn::new(descriptor, AttributeValues::U16(vec![100, 200]), 2).unwrap();
+    let block = SourcePointBlock::new(
+        block_id,
+        vec![[0.25, 0.5, 0.0], [1.5, 0.75, 1.0]],
+        vec![ColorRgb::new(10, 20, 30), ColorRgb::new(40, 50, 60)],
+        vec![attribute],
+    );
     let mut writer = FormatWriter::new_split_for_version(
-        version,
+        VERSION,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
-        options(),
+        FormatWriterOptions::new(0.001, 1024).unwrap(),
     )
     .unwrap();
-    writer.write_block(block()).unwrap();
+    writer.write_block(block).unwrap();
     let (primary, attributes) = writer.finish_pair().unwrap();
-    let monolithic = if monolithic.is_empty() {
-        primary.get_ref().clone()
-    } else {
-        monolithic
-    };
-    (
-        monolithic,
-        Some((primary.into_inner(), attributes.unwrap().into_inner())),
-    )
+    (primary.into_inner(), attributes.unwrap().into_inner())
 }
 
-/// Paged chain (V8 and the legacy `v7.5-pre`; Task 5 of the V8 freeze drops the latter): four nested nodes written with one level per page (`k` = 1), so the file has
-/// a root page and three chained child pages. `levels` picks the page target: 1 byte forces
+/// Paged chain: four nested nodes written with one level per page (`k` = 1), so the file has a
+/// root page and three chained child pages. `page_target` picks the page size: 1 byte forces
 /// `k` = 1 everywhere, the default keeps the whole chain in the root page.
-fn write_paged_chain(version: FormatVersion, page_target: Option<usize>) -> (Vec<u8>, Vec<u8>) {
+fn write_paged_chain(page_target: Option<usize>) -> (Vec<u8>, Vec<u8>) {
     use viewer_format::{CrsRecord, GlobalFrame, NodeCell};
     let root_prefix = [5, 7, 9].map(|k| (1_u64 << 39) + k);
     let level = 40;
@@ -246,13 +208,13 @@ fn write_paged_chain(version: FormatVersion, page_target: Option<usize>) -> (Vec
     .unwrap()
     .with_global_frame(frame)
     .unwrap();
-    let metadata = with_v8_fields(metadata, version);
+    let metadata = with_v8_fields(metadata);
     let mut options = FormatWriterOptions::new(0.001, 1024).unwrap();
     if let Some(target) = page_target {
         options = options.with_page_target_bytes(target);
     }
     let mut writer = FormatWriter::new_split_for_version(
-        version,
+        VERSION,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
@@ -301,22 +263,8 @@ fn main() {
     fs::create_dir_all(format_dir).unwrap();
     fs::create_dir_all(las_dir).unwrap();
 
+    // Real V8 files, when present and small enough.
     let pairs = [
-        (
-            "sample",
-            "examples/web-host/sample-v5.oct",
-            "examples/web-host/sample-v5.octattrs",
-        ),
-        (
-            "sample-v7",
-            "examples/web-host/sample-v7.oct",
-            "examples/web-host/sample-v7.octattrs",
-        ),
-        (
-            "bunny",
-            "data/samples/stanford_bunny_bun000_unstructured.oct",
-            "data/samples/stanford_bunny_bun000_unstructured.octattrs",
-        ),
         (
             "fs-e430",
             "data/samples/fs_e430_n4008_18.oct",
@@ -343,60 +291,34 @@ fn main() {
         }
     }
 
-    for (index, version) in FormatVersion::WRITABLE.into_iter().enumerate() {
-        let (monolithic, split) = write_revision(version);
-        fs::write(
-            format_dir.join(format!("seed-sample-rev{index}")),
-            monolithic,
-        )
-        .unwrap();
-        if let Some((primary, attributes)) = split {
-            fs::write(
-                format_dir.join(format!("seed-sample-rev{index}-split")),
-                join_split(&primary, &attributes),
-            )
-            .unwrap();
-        }
-    }
-
     // Chained pages for the paged-reader target; the format-reader target gets them too.
     let paged_dir = Path::new("corpus/fuzz_paged_reader");
     fs::create_dir_all(paged_dir).unwrap();
     // Only `seed-sample*` files are tracked (see `fuzz/.gitignore`).
-    let sample = write_revision(FormatVersion::V8);
-    let (sample_primary, sample_attributes) = sample.1.unwrap();
-    for (name, primary, attributes) in [
-        (
-            "seed-sample-chain-k5",
-            write_paged_chain(FormatVersion::V8, None),
-        ),
-        (
-            "seed-sample-chain-k1",
-            write_paged_chain(FormatVersion::V8, Some(1)),
-        ),
-        (
-            "seed-sample-chain-v7-k5",
-            write_paged_chain(FormatVersion::V7_PRE5, None),
-        ),
-        (
-            "seed-sample-chain-v7-k1",
-            write_paged_chain(FormatVersion::V7_PRE5, Some(1)),
-        ),
-    ]
-    .map(|(name, (primary, attributes))| (name, primary, attributes))
-    .into_iter()
-    .chain([("seed-sample", sample_primary, sample_attributes)])
-    {
-        fs::write(paged_dir.join(name), &primary).unwrap();
-        if name != "seed-sample" {
-            let target = name.replace("seed-sample", "seed-sample-paged");
-            fs::write(format_dir.join(&target), &primary).unwrap();
-            fs::write(
-                format_dir.join(format!("{target}-split")),
-                join_split(&primary, &attributes),
-            )
-            .unwrap();
-        }
+    let (sample_primary, sample_attributes) = write_sample();
+    fs::write(paged_dir.join("seed-sample"), &sample_primary).unwrap();
+    fs::write(format_dir.join("seed-sample"), &sample_primary).unwrap();
+    fs::write(
+        format_dir.join("seed-sample-split"),
+        join_split(&sample_primary, &sample_attributes),
+    )
+    .unwrap();
+    for (name, (primary, attributes)) in [
+        ("k5", write_paged_chain(None)),
+        ("k1", write_paged_chain(Some(1))),
+    ] {
+        fs::write(
+            paged_dir.join(format!("seed-sample-chain-{name}")),
+            &primary,
+        )
+        .unwrap();
+        let target = format!("seed-sample-paged-chain-{name}");
+        fs::write(format_dir.join(&target), &primary).unwrap();
+        fs::write(
+            format_dir.join(format!("{target}-split")),
+            join_split(&primary, &attributes),
+        )
+        .unwrap();
     }
 
     for format in [6, 7, 8] {
