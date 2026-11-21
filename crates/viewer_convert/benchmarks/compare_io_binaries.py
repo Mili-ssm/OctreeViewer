@@ -77,7 +77,7 @@ def main():
         for build in (['before', 'after'] if repetition % 2 else ['after', 'before']):
             output = (args.output / f'{build}-{repetition}.oct').resolve()
             run = execute('convert', build, repetition, [builds[build][0], args.source.resolve(),
-                          output, '--format-version', 'v6.4-pre', '--spatial-workers',
+                          output, '--spatial-workers',
                           args.workers, '--max-memory-mib', 512, '--pipeline-writes'])
             pair = [output, output.with_suffix('.octattrs')]
             run['outputs'] = [fingerprint(p) for p in pair]

@@ -15,7 +15,9 @@ import sys
 from typing import Any, Sequence
 
 
-FORMAT_VERSIONS = ("v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v7.1-pre", "v7.2-pre", "v7.3-pre")
+# V8 is the only format and fixes divisions, points per block and format; `real_dataset_bench
+# convert-profile` still takes them positionally (after the worker count), so they are passed here.
+V8_BENCH_ARGUMENTS = ("2", "64000", "v8")
 MODES = ("hierarchy", "reconstruct", "progressive")
 KEY_VALUE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)")
 
@@ -95,11 +97,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("run_dir", type=Path, help="new directory for outputs, logs, and report")
     parser.add_argument("--convert-binary", type=Path, required=True)
     parser.add_argument("--read-binary", type=Path, required=True)
-    parser.add_argument("--format-version", choices=FORMAT_VERSIONS, default="v5")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--divisions", type=int, default=2)
-    parser.add_argument("--points-per-block", type=int, default=262144)
     parser.add_argument("--max-decoded-mib", type=int, default=512)
     parser.add_argument("--cache-state", required=True, help="free-form cache-state description")
     parser.add_argument("--profile", default="perf", help="profile label recorded in the report (default: perf)")
@@ -110,10 +109,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     args.modes = [mode for mode in MODES if mode in set(args.modes)]
     if args.repetitions <= 0:
         parser.error("--repetitions must be positive")
-    if args.workers <= 0 or args.divisions <= 0 or args.points_per_block <= 0 or args.max_decoded_mib <= 0:
-        parser.error("--workers, --divisions, --points-per-block, and --max-decoded-mib must be positive")
-    if args.points_per_block > 1_000_000:
-        parser.error("--points-per-block must not exceed 1000000")
+    if args.workers <= 0 or args.max_decoded_mib <= 0:
+        parser.error("--workers and --max-decoded-mib must be positive")
     return args
 
 
@@ -187,10 +184,8 @@ def run_suite(args: argparse.Namespace) -> int:
             raise ValueError(f"{label} is not executable: {path}")
     if args.repetitions <= 0:
         raise ValueError("repetitions must be positive")
-    if args.workers <= 0 or args.divisions <= 0 or args.points_per_block <= 0 or args.max_decoded_mib <= 0:
-        raise ValueError("workers, divisions, points per block, and decoded budget must be positive")
-    if args.points_per_block > 1_000_000:
-        raise ValueError("points per block must not exceed 1000000")
+    if args.workers <= 0 or args.max_decoded_mib <= 0:
+        raise ValueError("workers and decoded budget must be positive")
     if args.measure_rss and not Path("/usr/bin/time").is_file():
         raise ValueError("--measure-rss requires /usr/bin/time")
     if run_dir.exists():
@@ -214,11 +209,9 @@ def run_suite(args: argparse.Namespace) -> int:
         "binaries": binary_metadata,
         "environment": repository_metadata(root),
         "options": {
-            "format_version": args.format_version,
+            "format_version": "v8",
             "repetitions": args.repetitions,
             "workers": args.workers,
-            "divisions": args.divisions,
-            "points_per_block": args.points_per_block,
             "max_decoded_mib": args.max_decoded_mib,
             "cache_state": args.cache_state,
             "profile": args.profile,
@@ -241,7 +234,7 @@ def run_suite(args: argparse.Namespace) -> int:
             conversion = run_operation(
                 [
                     str(convert_binary), "convert-profile", str(input_path), str(output_path),
-                    str(args.workers), str(args.divisions), str(args.points_per_block), args.format_version,
+                    str(args.workers), *V8_BENCH_ARGUMENTS,
                 ],
                 run_dir,
                 f"convert-{repetition:03d}",
