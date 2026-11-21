@@ -106,7 +106,8 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 `fuzz/src/bin/gen_seeds.rs`, y los tests que leen fixtures.
 - [x] Se reconvierten los fixtures con el binario de la tarea 1 y se pasan a V8 los tests que los leen, de modo que
   ninguno dependa de un formato que se vaya a retirar. `sample-v5.*` y `sample-v7.*` quedan hasta la tarea 5, porque
-  prueban la lectura antigua.
+  prueban la lectura antigua. Excepción: los tests `*.browser.mjs` que leen `sample-v5` se portan en la
+  tarea 5 (ver el inventario).
 - [x] **Fixtures de error (A4):** mientras los escritores aún existen, se guarda la cabecera real (24 bytes) y el pie
   (40 bytes) de un fichero de cada familia que se retira, como fixtures del test de la tarea 5.
 - [x] **Datos ignorados (A6):** los tests ignorados leen `target/render-data` desde una variable de entorno (o un enlace
@@ -130,7 +131,7 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
   | --- | --- | --- |
   | `web_sample.rs` (`sample.*`) | Portado: ahora afirma V8 | Mismos recuentos y rangos; solo cambia la identidad |
   | `*.browser.mjs` con `sample-v5` (`lod-attributes`, `lod-reuse`, `lod-session`, `presentation`, `storage-format`, `surface-memory`) | Decidir en la tarea 5 | Prueban la ruta CPU sobre la rejilla de 4.096 puntos en V5; portarlos exige un fixture V8 de esa rejilla y comprobar que la ruta CPU lo admite. No se ejecutaron (`check.sh` no las cubre) |
-  | `async-format-reader.browser.mjs` (`sample-v7`) | Borrar en la tarea 5 | Prueba lectura de `v7.1-pre`, que se retira; antes de borrarlo, comprobar si el lector V8 tiene cobertura Blob equivalente |
+  | `async-format-reader.browser.mjs` (`sample-v7`) | Portar a V8 en la tarea 5 | Prueba la lectura asíncrona por Blob, que V8 conserva (A1: portar, no borrar); hoy usa un fichero `v7.1-pre` |
   | Tests `*.browser.mjs` que piden `sample.oct` | Ninguno | `sample.oct` solo lo usan `main.js`, `package-local.py` y `viewer_wasm` (`lod_cells_stream_tests.rs`), que siguen igual |
   | `storage_suite.py`, `profile_conversion.py` | Portar en la tarea 5 | Defecto `v5` y lista `v5…v7.3-pre`; V8 fija 64.000 puntos por bloque y rechaza lo demás, así que cambiar el defecto cambia lo que miden y hay que decidir qué se compara |
   | `compare_storage_revisions.py` | Portar en la tarea 5 | Compara `v5` y `v7.2-pre` (ambos se retiran); decidir contra qué V8 se compara |

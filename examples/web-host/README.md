@@ -19,7 +19,7 @@ photogrammetric RGB cloud (a 600 × 600 m crop, 1.32 M points, 21 MB; Ioli et al
 `scripts/make-demo-belvedere.sh` into `target/demo-data/`, which `scripts/publish-demo.sh` copies to
 the site's `datasets/`; the button stays hidden where neither location answers. To try your own cloud, use **Convert a local LAS/LAZ file**
 in the side panel, press **Convert to .oct**, then open the result. Converted files default to the
-`v7` format.
+`v8` format.
 
 The built-in sample button opens `sample.oct`, a final `V8` file drawn by the cells path. The demo
 sample always uses the latest stable format ([ADR 0047](../../docs/adr/0047-v5-heredado-hasta-v8.md)).
