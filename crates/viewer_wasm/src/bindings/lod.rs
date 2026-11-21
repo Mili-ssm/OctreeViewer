@@ -30,9 +30,7 @@ use crate::{
     lod_session::LodSession,
 };
 use viewer_core::NodeId;
-use viewer_format::{
-    FormatReader, FormatReaderLimits, OctreeReader, PageGraft, PageSource, probe_format,
-};
+use viewer_format::{FormatReader, FormatReaderLimits, PageGraft, PageSource, probe_format};
 use viewer_render_wgpu::{ColorMode, SurfaceRenderer, ViewProjection};
 
 /// Uploads each rebuilt scene to the viewer's own GPU renderer.
