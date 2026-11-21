@@ -11,7 +11,7 @@ use crate::{
 
 /// Binary compatibility identity, independent of crate/build versions and checksums.
 /// V8 is the only format this crate reads or writes; every other header identity is `Unknown`
-/// (the retired families are named by [`crate::retired`], not here).
+/// (the retired families are named by `crate::retired`, not here).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FormatVersion {
     V8,
