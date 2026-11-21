@@ -279,7 +279,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         point_count: u64,
         input_is_child_spool: bool,
     ) -> NodeJob {
-        let first_output = if self.job_context().splits(point_count, level, bounds) {
+        let first_output = if self.job_context().splits(point_count, bounds) {
             SpoolId(self.reserve_node_spools())
         } else {
             SpoolId::SOURCE
@@ -391,7 +391,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         let ctx = self.job_context();
         let root_path = NodePath(Vec::new());
         let store = self.store;
-        if !ctx.splits(source.point_count, 0, bounds) {
+        if !ctx.splits(source.point_count, bounds) {
             let bytes = spool_source(
                 &mut *first,
                 source,
@@ -486,7 +486,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                 level: 0,
                 bounds,
                 point_count: sample_count as u64,
-                geometric_error: lod_sample_error(bounds, self.sample_grid, self.layout)
+                geometric_error: lod_sample_error(bounds, self.sample_grid)
                     + center_rounding_error(bounds, self.frame),
                 blocks: Vec::new(),
             },

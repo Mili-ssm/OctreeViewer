@@ -98,7 +98,11 @@ mod tests {
             has_crs: false,
             crs: viewer_format::CrsRecord::local(),
             scale_offset: None,
-            global: None,
+            global: crate::source::GlobalRoot::from_bounds(
+                SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                true,
+            )
+            .unwrap(),
             extra_byte_vlrs: Vec::new(),
             las_extra_bytes: None,
         }

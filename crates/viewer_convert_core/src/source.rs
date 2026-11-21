@@ -32,8 +32,8 @@ pub struct SourceInfo {
     pub crs: CrsRecord,
     /// LAS scale and offset, kept for the exact export of `v7.4-pre`.
     pub scale_offset: Option<SourceScaleOffset>,
-    /// Set by [`SourceInfo::for_options`] when the output is a global-octree format.
-    pub global: Option<GlobalRoot>,
+    /// Root node and lattice of the global octree, from the header box.
+    pub global: GlobalRoot,
     /// Payload of the Extra Bytes VLRs (`LASF_Spec`, record 4), concatenated; parsed only for a
     /// format that keeps them, so other formats never fail on exotic descriptors.
     pub extra_byte_vlrs: Vec<u8>,
@@ -60,7 +60,7 @@ const MAX_GLOBAL_COORDINATE: f64 = (1_u64 << 35) as f64;
 
 impl GlobalRoot {
     /// Smallest node containing both header corners, and the minimum quantized corner as origin.
-    fn from_bounds(bounds: SpatialBounds, local: bool) -> Result<Self, ConvertError> {
+    pub(crate) fn from_bounds(bounds: SpatialBounds, local: bool) -> Result<Self, ConvertError> {
         let mut low = [0_i64; 3];
         let mut high = [0_i64; 3];
         for axis in 0..3 {
@@ -156,10 +156,8 @@ impl SourceInfo {
             ConvertError::LasExtraBytes(source) => wrap(source),
             other => other,
         })?;
-        let root = GlobalRoot::from_bounds(self.bounds, self.crs.is_local())?;
-        let origin = root.frame_origin_quanta.map(quanta_to_units);
+        let origin = self.global.frame_origin_quanta.map(quanta_to_units);
         self.frame = CoordinateFrame::new(origin)?;
-        self.global = Some(root);
         // Stored in the global frame, unless the projection records were unreadable and the CRS
         // fell back to local: then it is still lost and stays reported.
         self.has_crs &= self.crs.is_local();
@@ -269,6 +267,8 @@ pub fn inspect_header(header: &las::Header) -> Result<SourceInfo, ConvertError> 
         source_bounds.max.z,
     ];
     let bounds = SpatialBounds::new(min, max).map_err(|_| ConvertError::InvalidHeaderBounds)?;
+    let crs = crate::crs::read_crs(header);
+    let global = GlobalRoot::from_bounds(bounds, crs.is_local())?;
     Ok(SourceInfo {
         bounds,
         frame: CoordinateFrame::new(min)?,
@@ -277,9 +277,9 @@ pub fn inspect_header(header: &las::Header) -> Result<SourceInfo, ConvertError> 
         point_format: *header.point_format(),
         transforms: *header.transforms(),
         has_crs: header.has_crs_vlrs(),
-        crs: crate::crs::read_crs(header),
+        crs,
         scale_offset: scale_offset(header),
-        global: None,
+        global,
         extra_byte_vlrs: header
             .all_vlrs()
             .filter(|vlr| vlr.user_id == "LASF_Spec" && vlr.record_id == 4)

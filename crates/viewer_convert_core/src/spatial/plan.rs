@@ -7,7 +7,7 @@ use viewer_format::FormatMetadata;
 
 use super::block::PlannedBlock;
 use super::builder::SpatialBuilder;
-use super::geometry::{cube_bounds, quanta};
+use super::geometry::quanta;
 use super::memory::{
     SPATIAL_WORKER_OVERHEAD_BYTES, check_memory_budget, child_spool_buffer_bytes, estimate_memory,
     range_memory_bytes,
@@ -66,7 +66,6 @@ where
         |builder, bounds| builder.build_root_from_source(first, factory, source, bounds),
         on_progress,
         collect_spool_diagnostics,
-        0,
     )
 }
 
@@ -84,7 +83,6 @@ fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     build_root: impl FnOnce(&mut SpatialBuilder<'_, S, C, X>, SpatialBounds) -> Result<(), ConvertError>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
-    source_spool_bytes_written: u64,
 ) -> Result<SpatialPlan, ConvertError> {
     let point_limit =
         crate::options::input_batch_point_limit(options.points_per_block(), source.record_length);
@@ -109,7 +107,6 @@ fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         build_root,
         on_progress,
         collect_spool_diagnostics,
-        source_spool_bytes_written,
         point_limit,
         &spool_ids,
     );
@@ -142,14 +139,10 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     build_root: impl FnOnce(&mut SpatialBuilder<'_, S, C, X>, SpatialBounds) -> Result<(), ConvertError>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
-    source_spool_bytes_written: u64,
     point_limit: u64,
     spool_ids: &AtomicU64,
 ) -> Result<SpatialPlan, ConvertError> {
-    let root_bounds = match &source.global {
-        Some(root) => root.bounds()?,
-        None => cube_bounds(source.bounds),
-    };
+    let root_bounds = source.global.bounds()?;
     let mut builder = SpatialBuilder {
         store,
         clock,
@@ -177,7 +170,6 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         ranges_used: 0,
         workers_used: 1,
         spool_diagnostics: collect_spool_diagnostics.then(|| SpatialSpoolDiagnostics {
-            source_payload_written_bytes: source_spool_bytes_written,
             ..SpatialSpoolDiagnostics::default()
         }),
         spatial_phases: collect_spool_diagnostics.then(SpatialPhaseDiagnostics::default),
@@ -240,22 +232,15 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
 
     let schema = source.schema()?;
     crate::limits::check_reader_attribute_ranges(builder.node_records.len(), schema.len())?;
-    let global_frame = source
-        .global
-        .as_ref()
-        .map(|root| global_frame(source, root, &builder.node_records))
-        .transpose()?;
+    let global_frame = global_frame(source, &source.global, &builder.node_records)?;
     let nodes = builder
         .node_records
         .iter()
         .map(|node| {
-            let bounds = match &global_frame {
-                Some(frame) => frame.node_bounds(
-                    node.level,
-                    global_prefix(frame.root_level(), frame.lattice_base(), node),
-                )?,
-                None => node.bounds,
-            };
+            let bounds = global_frame.node_bounds(
+                node.level,
+                global_prefix(global_frame.root_level(), global_frame.lattice_base(), node),
+            )?;
             Ok(SpatialNode::new(
                 node.id,
                 node.parent,
@@ -268,23 +253,11 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         })
         .collect::<Result<Vec<_>, ConvertError>>()?;
     let hierarchy = SpatialHierarchy::new(nodes, schema, Some(source.point_count))?;
-    let sampling_policy = if global_frame.is_some() {
-        format!(
-            "sample-grid:{};leaf:{}",
-            options.sample_grid(),
-            options.points_per_block()
-        )
-    } else {
-        format!(
-            "adaptive {}x{}x{} spatial partition; full-resolution leaves; {}x{}x{} voxel-center LOD samples; color averaged per voxel; other attributes from nearest source point",
-            options.spatial_divisions(),
-            options.spatial_divisions(),
-            options.spatial_divisions(),
-            options.sample_grid(),
-            options.sample_grid(),
-            options.sample_grid()
-        )
-    };
+    let sampling_policy = format!(
+        "sample-grid:{};leaf:{}",
+        options.sample_grid(),
+        options.points_per_block()
+    );
     let mut metadata = FormatMetadata::new(
         DatasetMetadata::new(source.frame, hierarchy),
         None,
@@ -295,9 +268,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     if let Some(extras) = &source.las_extra_bytes {
         metadata = metadata.with_las_extra_bytes(extras.to_vec());
     }
-    if let Some(frame) = global_frame {
-        metadata = metadata.with_global_frame(frame)?;
-    }
+    metadata = metadata.with_global_frame(global_frame)?;
     metadata = metadata.with_point_distance_quantiles(distance_quantiles(&builder.node_records)?);
     let columns = lod_attribute_columns(&metadata);
     metadata = metadata.with_lod_attribute_columns(columns);

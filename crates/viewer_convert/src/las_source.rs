@@ -287,7 +287,7 @@ pub(crate) fn convert_file_inner(
         output_bytes,
         estimated_peak_memory_bytes: plan.estimated_peak_memory_bytes,
         omitted_dimensions: plan.omitted_dimensions,
-        block_preparation: Some(block_preparation),
+        block_preparation,
         output_validation,
     })
 }

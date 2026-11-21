@@ -10,8 +10,8 @@ mod spool;
 pub use block::PlannedBlock;
 pub use builder::{BranchOutput, OpenNodeEvent, SpatialBuilder};
 pub use geometry::{
-    GlobalCellFrame, center_rounding_error, cube_side, global_level, lod_sample_error, sample_cell,
-    sample_cell_global, sample_index, voxel_center, voxel_center_global,
+    GlobalCellFrame, center_rounding_error, cube_side, global_level, lod_sample_error,
+    sample_cell_global, voxel_center_global,
 };
 pub use plan::{SpatialPlan, build_spatial_plan_from_source};
 pub use sample::{NearestRecords, SampleAccumulator};
@@ -88,7 +88,13 @@ mod partition_tests {
             has_crs: false,
             crs: viewer_format::CrsRecord::local(),
             scale_offset: None,
-            global: None,
+            global: crate::source::GlobalRoot {
+                level: 0,
+                prefix: [0; 3],
+                frame_origin_quanta: [0; 3],
+                data_max_quanta: [0; 3],
+                lattice_base: [0; 3],
+            },
             extra_byte_vlrs: Vec::new(),
             las_extra_bytes: None,
         };

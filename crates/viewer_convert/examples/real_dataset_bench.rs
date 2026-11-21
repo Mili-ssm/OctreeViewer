@@ -347,19 +347,16 @@ fn convert(
     }
     println!("spatial_workers={workers}");
     println!("rayon_pool_threads={}", rayon::current_num_threads());
-    if let Some(preparation) = report.block_preparation {
-        println!("preparation_batch_blocks={}", preparation.worker_limit);
-        println!(
-            "preparation_thread_limit={}",
-            preparation.worker_limit.min(rayon::current_num_threads())
-        );
-        println!(
-            "preparation_estimated_bytes_per_worker={}",
-            preparation.estimated_bytes_per_worker
-        );
-    } else {
-        println!("preparation_batch_blocks=not_batched_this_invocation");
-    }
+    let preparation = report.block_preparation;
+    println!("preparation_batch_blocks={}", preparation.worker_limit);
+    println!(
+        "preparation_thread_limit={}",
+        preparation.worker_limit.min(rayon::current_num_threads())
+    );
+    println!(
+        "preparation_estimated_bytes_per_worker={}",
+        preparation.estimated_bytes_per_worker
+    );
     println!(
         "validation_workers={}",
         report.output_validation.worker_limit

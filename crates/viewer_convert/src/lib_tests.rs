@@ -518,17 +518,11 @@ fn bounded_spatial_workers_preserve_the_serial_output() {
     let serial = convert_file(&input, &serial_output, serial_options).unwrap();
     let parallel = convert_file(&input, &parallel_output, parallel_options).unwrap();
 
-    assert_eq!(serial.block_preparation.unwrap().worker_limit, 1);
+    assert_eq!(serial.block_preparation.worker_limit, 1);
     assert_eq!(serial.output_validation.worker_limit, 1);
-    assert_eq!(parallel.block_preparation.unwrap().worker_limit, 2);
+    assert_eq!(parallel.block_preparation.worker_limit, 2);
     assert_eq!(parallel.output_validation.worker_limit, 2);
-    assert!(
-        parallel
-            .block_preparation
-            .unwrap()
-            .estimated_bytes_per_worker
-            > 0
-    );
+    assert!(parallel.block_preparation.estimated_bytes_per_worker > 0);
     assert!(parallel.output_validation.estimated_bytes_per_worker > 0);
     let attributes_path = output_attributes_path(&parallel_output);
     let (block_ids, source_block_ids) = output_block_ids(&parallel_output).unwrap();
@@ -742,7 +736,7 @@ fn pipeline_with_no_memory_margin_preserves_serial_output() {
         .unwrap()
         .with_pipelined_writes(true);
     let report = convert_file(&input, &output, tight).unwrap();
-    assert_eq!(report.block_preparation.unwrap().worker_limit, 1);
+    assert_eq!(report.block_preparation.worker_limit, 1);
     assert_eq!(
         fs::read(&output).unwrap(),
         fs::read(&serial_output).unwrap()

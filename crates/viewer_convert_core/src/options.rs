@@ -1,4 +1,4 @@
-use viewer_format::{FormatVersion, RowOrder};
+use viewer_format::FormatVersion;
 
 use crate::error::ConvertError;
 
@@ -62,11 +62,6 @@ impl ConvertOptions {
     pub const fn with_leaf_point_limit_for_tests(mut self, limit: u64) -> Self {
         self.leaf_point_limit = Some(if limit == 0 { 1 } else { limit });
         self
-    }
-
-    /// V8 always writes hybrid rows (ADR 0044).
-    pub const fn row_order(self) -> RowOrder {
-        RowOrder::Hybrid
     }
 
     pub const fn format_version(self) -> FormatVersion {
@@ -193,7 +188,6 @@ pub fn input_batch_point_limit(points_per_block: u64, record_length: usize) -> u
 
 #[cfg(test)]
 mod tests {
-    use viewer_format::RowOrder;
 
     use super::{ConvertOptions, LEAF_POINT_LIMIT, SAMPLE_GRID, SPATIAL_DIVISIONS};
     use crate::ConvertError;
@@ -205,7 +199,6 @@ mod tests {
             options.format_version(),
             viewer_format::FormatVersion::DEFAULT_OUTPUT
         );
-        assert_eq!(options.row_order(), RowOrder::Hybrid);
         assert_eq!(options.points_per_block(), LEAF_POINT_LIMIT);
         assert_eq!(options.points_per_block(), 64_000);
         assert_eq!(options.sample_grid(), SAMPLE_GRID);

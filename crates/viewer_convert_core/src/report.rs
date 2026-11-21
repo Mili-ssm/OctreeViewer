@@ -52,8 +52,7 @@ pub struct ConversionReport {
     pub output_bytes: u64,
     pub estimated_peak_memory_bytes: u64,
     pub omitted_dimensions: Vec<String>,
-    /// Always `Some` since checkpoint resume was removed (ADR 0061); kept optional for API stability.
-    pub block_preparation: Option<ConversionWorkerStats>,
+    pub block_preparation: ConversionWorkerStats,
     pub output_validation: ConversionWorkerStats,
 }
 
