@@ -550,6 +550,19 @@ mod tests {
     }
 
     #[test]
+    fn source_spool_id_cannot_be_reused_and_delete_removes_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileSpoolStore::new(dir.path(), true);
+        store.create(SpoolId::SOURCE, 1).unwrap();
+        store.append(SpoolId::SOURCE, b"source").unwrap();
+        store.close(SpoolId::SOURCE).unwrap();
+        assert!(dir.path().join("source.spool").exists());
+        store.delete(SpoolId::SOURCE).unwrap();
+        assert!(!dir.path().join("source.spool").exists());
+        assert!(message(store.create(SpoolId::SOURCE, 1)).contains("already used"));
+    }
+
+    #[test]
     fn file_store_matches_the_lifecycle_and_native_names() {
         let dir = tempfile::tempdir().unwrap();
         let store = FileSpoolStore::new(dir.path(), true);

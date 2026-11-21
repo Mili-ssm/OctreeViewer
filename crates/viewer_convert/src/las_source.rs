@@ -120,9 +120,14 @@ pub(crate) fn plan_sample_blocks(
         .collect()
 }
 
-/// An EPT dataset is a directory or its `ept.json`; its input was removed with V8 (ADR 0061).
+/// An EPT dataset is its `ept.json` or a directory containing it; its input was removed with V8
+/// (ADR 0061). Any other directory is not EPT and fails like any non-LAS/LAZ input.
 fn is_ept_input(path: &Path) -> bool {
-    path.is_dir() || path.file_name().is_some_and(|name| name == "ept.json")
+    if path.is_dir() {
+        path.join("ept.json").is_file()
+    } else {
+        path.file_name().is_some_and(|name| name == "ept.json")
+    }
 }
 
 pub(crate) fn convert_file_inner(

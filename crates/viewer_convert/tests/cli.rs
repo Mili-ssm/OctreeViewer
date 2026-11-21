@@ -330,6 +330,19 @@ fn cli_refuses_ept_input_before_any_work() {
 }
 
 #[test]
+fn cli_does_not_call_a_plain_directory_an_ept_input() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plain = tmp.path().join("plain");
+    fs::create_dir_all(&plain).unwrap();
+    let output = tmp.path().join("plain.oct");
+    let run = run_cli(&[&plain, &output], &[]);
+    assert!(!run.status.success());
+    let message = stderr(&run);
+    assert!(!message.contains("EPT"), "{message}");
+    assert!(!output.exists());
+}
+
+#[test]
 fn cli_refuses_checkpoint_and_resume_before_any_work() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
