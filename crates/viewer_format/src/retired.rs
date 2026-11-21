@@ -54,10 +54,15 @@ pub fn retired_format_name(footer: &[u8]) -> Option<&'static str> {
         .map(|(_, name)| *name)
 }
 
-/// The retired family a header (the first 24 bytes of a file) declares, if any. Checks the magic,
-/// major and revision only; a damaged checksum does not hide the family.
+/// The retired family a header (the first 24 bytes of a file) declares, if any. The header must be
+/// intact (magic and checksum): a damaged header of a current file is not named after a family
+/// its corrupted bytes happen to spell.
 pub fn retired_header_name(header: &[u8]) -> Option<&'static str> {
-    if header.get(..8)? != HEADER_MAGIC.as_slice() || header.len() < 20 {
+    if header.get(..8)? != HEADER_MAGIC.as_slice() || header.len() < HEADER_SIZE as usize {
+        return None;
+    }
+    let checksum = u32::from_le_bytes(header[20..24].try_into().ok()?);
+    if !crate::crc32::checksum_matches(&header[..20], checksum) {
         return None;
     }
     let major = u16::from_le_bytes(header[8..10].try_into().ok()?);

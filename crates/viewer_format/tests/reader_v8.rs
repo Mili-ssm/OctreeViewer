@@ -13,9 +13,7 @@ use common::{
     COLORS, POINTS, descriptors, fixture_attributes, global_metadata, prefix_of,
     repair_index_and_footer,
 };
-use v8_fixture::{
-    V8_BLOCK, v8_crs, v8_fixture_block, v8_metadata, v8_options, with_v8_extras, write_v8_split,
-};
+use v8_fixture::{V8_BLOCK, v8_crs, v8_fixture_block, v8_metadata, with_v8_extras, write_v8_split};
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
     DatasetSource,
@@ -23,9 +21,8 @@ use viewer_core::{
 #[cfg(feature = "experimental")]
 use viewer_core::{OccupiedOctreeRoot, OccupiedPointBlock, VoxelCoord};
 use viewer_format::{
-    BlockCodec, BlockPayloadKind, FileRole, FormatBlockEncoder, FormatError, FormatIdentity,
-    FormatMetadata, FormatReader, FormatVersion, FormatWriter, OctreeReader, ReadSelection,
-    ReadSource, SelectedRead, SourcePointBlock,
+    BlockCodec, BlockPayloadKind, FormatError, FormatMetadata, FormatReader, FormatVersion,
+    OctreeReader, ReadSelection, ReadSource, SelectedRead, SourcePointBlock,
 };
 use viewer_format::{GeometryEncoding, quanta_to_units, quantize_coordinate};
 #[cfg(feature = "experimental")]
@@ -1232,35 +1229,6 @@ fn quantized_occupancy_preserves_row_identity_for_geometry_rgb_and_all_attribute
         }
         seen.sort_unstable();
         assert_eq!(seen, vec![0, 1, 2, 3]);
-    }
-}
-#[test]
-fn unsupported_v8_revisions_are_rejected_by_writer_encoder_and_reader() {
-    let meta = v8_metadata(POINTS.len() as u64, descriptors());
-    let options = v8_options();
-    let versions = [
-        FormatVersion::V8Pre(std::num::NonZeroU32::new(3).unwrap()),
-        FormatVersion::V8Pre(std::num::NonZeroU32::new(99).unwrap()),
-    ];
-    for version in versions {
-        assert!(matches!(
-            FormatWriter::new_for_version(version, Cursor::new(Vec::new()), meta.clone(), options),
-            Err(FormatError::UnsupportedFormatVersion(actual)) if actual == version
-        ));
-        assert!(matches!(
-            FormatBlockEncoder::new(version, &meta, options),
-            Err(FormatError::UnsupportedFormatVersion(actual)) if actual == version
-        ));
-        let header = FormatIdentity {
-            version,
-            role: FileRole::Monolithic,
-        }
-        .to_header_bytes()
-        .unwrap();
-        assert!(matches!(
-            FormatReader::new(Cursor::new(header)),
-            Err(FormatError::UnsupportedFormatVersion(actual)) if actual == version
-        ));
     }
 }
 

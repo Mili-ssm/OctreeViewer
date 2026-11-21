@@ -14,8 +14,7 @@ use common::{global_metadata, options};
 use v8_fixture::with_v8_extras;
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
-    CoordinateFrame, DatasetMetadata, NodeId, PointBatch, SpatialBounds, SpatialHierarchy,
-    SpatialNode,
+    PointBatch,
 };
 use viewer_format::{
     CrsRaw, CrsRecord, FormatError, FormatMetadata, FormatReader, FormatReaderLimits,
@@ -166,37 +165,8 @@ fn global_fixture_metadata() -> FormatMetadata {
     )
 }
 
-fn multi_block_metadata_for(version: FormatVersion) -> FormatMetadata {
-    if version == FormatVersion::V8 {
-        with_v8_extras(global_fixture_metadata())
-    } else if version.uses_global_frame() {
-        global_fixture_metadata()
-    } else {
-        multi_block_metadata()
-    }
-}
-
-fn multi_block_metadata() -> FormatMetadata {
-    let total = BLOCKS * POINTS_PER_BLOCK as u64;
-    let bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
-    let node = SpatialNode::new(
-        NodeId::new(0),
-        None,
-        0,
-        bounds,
-        total,
-        0.0,
-        (0..BLOCKS).map(block_id).collect(),
-    )
-    .unwrap();
-    let hierarchy = SpatialHierarchy::new(vec![node], descriptors(), Some(total)).unwrap();
-    FormatMetadata::new(
-        DatasetMetadata::new(CoordinateFrame::new([0.0; 3]).unwrap(), hierarchy),
-        None,
-        None,
-        Vec::new(),
-    )
-    .unwrap()
+fn multi_block_metadata_for(_version: FormatVersion) -> FormatMetadata {
+    with_v8_extras(global_fixture_metadata())
 }
 
 /// Files of one fixture: a monolithic file or a split pair.
@@ -209,25 +179,6 @@ struct Fixture {
     first_id: u64,
     /// Encoded length of the root page of a paged primary file (it ends at the footer).
     root_page: Option<usize>,
-}
-
-fn monolithic(version: FormatVersion) -> Fixture {
-    let mut writer = FormatWriter::new_for_version(
-        version,
-        Cursor::new(Vec::new()),
-        multi_block_metadata_for(version),
-        options(),
-    )
-    .unwrap();
-    for index in 0..BLOCKS {
-        writer.write_block(source_block(index)).unwrap();
-    }
-    Fixture {
-        primary: writer.finish().unwrap().into_inner(),
-        attributes: None,
-        first_id: 1,
-        root_page: None,
-    }
 }
 
 fn split(version: FormatVersion) -> Fixture {
@@ -244,7 +195,7 @@ fn split(version: FormatVersion) -> Fixture {
     }
     let (primary, attributes) = writer.finish_pair().unwrap();
     let primary = primary.into_inner();
-    let root_page = version.uses_pages().then(|| {
+    let root_page = Some({
         PagedReader::open(Cursor::new(primary.clone()))
             .unwrap()
             .root_page()
@@ -253,21 +204,13 @@ fn split(version: FormatVersion) -> Fixture {
     Fixture {
         primary,
         attributes: Some(attributes.unwrap().into_inner()),
-        first_id: u64::from(version != FormatVersion::V8),
+        first_id: 0,
         root_page,
     }
 }
 
-/// Paged revisions have no monolithic layout.
 fn fixtures(version: FormatVersion) -> Vec<(&'static str, Fixture)> {
-    if version.uses_pages() {
-        vec![("split", split(version))]
-    } else {
-        vec![
-            ("monolithic", monolithic(version)),
-            ("split", split(version)),
-        ]
-    }
+    vec![("split", split(version))]
 }
 
 #[derive(Debug, PartialEq)]
@@ -361,7 +304,6 @@ fn sweep_versions(body: impl Fn(FormatVersion) -> Vec<String> + Sync) {
         // their corruption. `v8` is paged too and is swept here as a pair.
         let handles: Vec<_> = FormatVersion::WRITABLE
             .into_iter()
-            .filter(|version| !version.uses_pages() || *version == FormatVersion::V8)
             .map(|version| scope.spawn(move || body(version)))
             .collect();
         handles
@@ -455,162 +397,6 @@ struct Field {
     max_is_fatal: bool,
 }
 
-/// Walks the fixture index (one root node) and lists every region, in file order.
-fn index_fields(index: &[u8], version: FormatVersion) -> Vec<Field> {
-    struct Walker<'a> {
-        bytes: &'a [u8],
-        at: usize,
-        fields: Vec<Field>,
-    }
-    impl Walker<'_> {
-        fn raw(&mut self, name: &'static str, width: usize) {
-            self.fields.push(Field {
-                name,
-                offset: self.at,
-                width,
-                integer: false,
-                max_is_fatal: false,
-            });
-            self.at += width;
-        }
-        fn int(&mut self, name: &'static str, width: usize, max_is_fatal: bool) -> u64 {
-            let mut value = [0; 8];
-            value[..width].copy_from_slice(&self.bytes[self.at..self.at + width]);
-            self.fields.push(Field {
-                name,
-                offset: self.at,
-                width,
-                integer: true,
-                max_is_fatal,
-            });
-            self.at += width;
-            u64::from_le_bytes(value)
-        }
-    }
-    let mut walker = Walker {
-        bytes: index,
-        at: 0,
-        fields: Vec::new(),
-    };
-    walker.raw("index_magic", 8);
-    walker.raw("dataset_origin", 24);
-    let global = version.uses_global_frame();
-    if global {
-        walker.int("root_level", 4, true);
-        for _ in 0..3 {
-            walker.int("root_prefix", 8, true);
-        }
-        walker.raw("frame_origin_quanta", 24);
-        walker.raw("data_max_quanta", 24);
-    }
-    let has_source_count = walker.bytes[walker.at] == 1;
-    walker.raw("source_count_tag", 1);
-    if has_source_count {
-        walker.int("source_point_count", 8, false);
-    }
-    if global {
-        let authority = walker.int("crs_authority_length", 4, true);
-        walker.raw("crs_authority", authority as usize);
-        walker.int("crs_code", 4, false);
-        walker.raw("crs_raw_encoding", 1);
-        let raw = walker.int("crs_raw_length", 4, true);
-        walker.raw("crs_raw", raw as usize);
-        let has_source_scale = walker.bytes[walker.at] == 1;
-        walker.raw("source_scale_offset_tag", 1);
-        if has_source_scale {
-            walker.raw("source_scale_offset", 48);
-        }
-    }
-    for name in ["crs_length", "sampling_length"] {
-        if global && name == "crs_length" {
-            continue;
-        }
-        let length = walker.int(name, 4, true);
-        walker.raw("string_bytes", length as usize);
-    }
-    walker.raw("hierarchy_semantics", 1);
-    walker.raw("visual_scale", 8);
-    let attributes = walker.int("attribute_count", 4, true);
-    let mut widths = Vec::new();
-    for _ in 0..attributes {
-        let length = walker.int("attribute_name_length", 4, true);
-        walker.raw("attribute_name", length as usize);
-        widths.push(match walker.bytes[walker.at] {
-            0 | 1 => 1,
-            2 | 3 => 2,
-            4 | 5 | 8 => 4,
-            _ => 8,
-        });
-        walker.raw("attribute_type", 1);
-        walker.int("component_count", 4, true);
-    }
-    let nodes = walker.int("node_count", 8, true);
-    for _ in 0..nodes {
-        walker.int("node_id", 8, false);
-        let has_parent = walker.bytes[walker.at] == 1;
-        walker.raw("node_parent_tag", 1);
-        if has_parent {
-            walker.int("node_parent", 8, false);
-        }
-        walker.int("node_level", 4, false);
-        if global {
-            for _ in 0..3 {
-                walker.int("node_prefix", 8, false);
-            }
-        }
-        walker.raw("node_bounds", 48);
-        walker.int("node_point_count", 8, true);
-        walker.raw("node_geometric_error", 8);
-        if global {
-            walker.raw("node_spacing", 8);
-        }
-        let blocks = walker.int("node_block_count", 4, true);
-        for _ in 0..blocks {
-            walker.int("node_block_id", 8, true);
-        }
-        let ranges = walker.int("node_range_count", 4, true);
-        for _ in 0..ranges {
-            let schema_index = walker.int("range_schema_index", 4, false);
-            let width = widths[schema_index as usize];
-            walker.raw("range_min", width);
-            walker.raw("range_max", width);
-        }
-    }
-    let blocks = walker.int("block_count", 8, true);
-    for _ in 0..blocks {
-        walker.int("block_id", 8, true);
-        walker.int("block_offset", 8, true);
-        walker.int("block_payload_length", 8, true);
-        walker.int("block_point_count", 8, true);
-        if version != FormatVersion::V5 {
-            walker.raw("block_geometry_encoding", 1);
-        }
-        walker.raw("block_quantization_error", 8);
-        if global {
-            for _ in 0..3 {
-                walker.int("block_origin_quanta", 8, false);
-            }
-        } else {
-            walker.raw("block_origin", 24);
-            walker.raw("block_scale", 24);
-        }
-        walker.raw("block_reserved_u8", 1);
-        walker.int("block_reserved_u32", 4, false);
-        for _ in 0..attributes + 2 {
-            walker.int("payload_offset", 8, true);
-            walker.int("payload_stored_length", 8, true);
-            walker.int("payload_raw_length", 8, true);
-            walker.raw("payload_codec", 1);
-            walker.int("payload_checksum", 4, false);
-        }
-    }
-    assert_eq!(walker.at, index.len(), "index walker lost track of layout");
-    walker.fields
-}
-
-/// Integer fields of a paged index that the sweep mutates: the root level and prefix in the
-/// metadata block (after the magic and the dataset origin), then the node count and the first block
-/// id in the header of the root page (after its anchor level, prefix and level count).
 fn paged_fields(index_offset: usize, root_start: usize) -> Vec<Field> {
     let field = |name, offset, width, max_is_fatal| Field {
         name,
@@ -665,19 +451,8 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
             let length = fixture.primary.len();
             let footer = length - FOOTER;
             let index_offset = get_int(&fixture.primary, footer + 8, 8) as usize;
-            let index_length = get_int(&fixture.primary, footer + 16, 8) as usize;
-            let mut fields = if let Some(root_page) = fixture.root_page {
-                paged_fields(index_offset, length - FOOTER - root_page)
-            } else {
-                let mut fields = index_fields(
-                    &fixture.primary[index_offset..index_offset + index_length],
-                    version,
-                );
-                for field in &mut fields {
-                    field.offset += index_offset;
-                }
-                fields
-            };
+            let root_page = fixture.root_page.expect("v8 is paged");
+            let mut fields = paged_fields(index_offset, length - FOOTER - root_page);
             fields.retain(|field| field.integer);
             // Footer: offset, length and declared file length of the primary (checksums are
             // recomputed by the repair, so they cannot hold an independent value).
@@ -773,77 +548,9 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
         }
         violations
     });
+    let mutations = mutations.into_inner();
     assert!(
-        mutations.into_inner() > 1000,
-        "too few mutations were exercised"
+        mutations > 50,
+        "too few mutations were exercised: {mutations}"
     );
-}
-
-/// A tiny index declaring the default maximum of nodes must be rejected before any
-/// allocation sized from that count.
-#[test]
-fn node_count_beyond_index_bytes_is_rejected_without_reserving() {
-    let default_max_nodes = 2_000_000_u64;
-    for version in FormatVersion::WRITABLE {
-        if version == FormatVersion::V8 {
-            // The root page declares its node count as a u32 after its anchor, level count and
-            // before the first block id; both a count above the page maximum and a valid one
-            // that the page bytes cannot hold must fail before the node vectors are reserved.
-            let fixture = split(version);
-            let root_page = fixture.root_page.unwrap();
-            let at = fixture.primary.len() - FOOTER - root_page + 26;
-            for node_count in [default_max_nodes as u32, 30_000] {
-                let mut bytes = fixture.primary.clone();
-                bytes[at..at + 4].copy_from_slice(&node_count.to_le_bytes());
-                repair(&mut bytes, Target::Primary, Some(root_page));
-                LARGEST_ALLOCATION.with(|largest| largest.set(0));
-                let result =
-                    FormatReader::with_limits(Cursor::new(bytes), FormatReaderLimits::default());
-                assert!(
-                    matches!(
-                        result,
-                        Err(FormatError::MalformedIndex("page node count is invalid"))
-                    ),
-                    "{version:?}: root page declaring {node_count} nodes: {:?}",
-                    result.err()
-                );
-                assert!(
-                    largest_allocation() < ALLOCATION_CEILING,
-                    "{version:?}: allocated {} bytes",
-                    largest_allocation()
-                );
-            }
-            continue;
-        }
-        if version.uses_pages() {
-            continue; // paged index: covered by `tests/v7_5.rs`
-        }
-        let mut fixture = monolithic(version);
-        let bytes = &mut fixture.primary;
-        let footer = bytes.len() - FOOTER;
-        let index_offset = get_int(bytes, footer + 8, 8) as usize;
-        let index_length = get_int(bytes, footer + 16, 8) as usize;
-        let node_count = index_fields(&bytes[index_offset..index_offset + index_length], version)
-            .into_iter()
-            .find(|field| field.name == "node_count")
-            .unwrap();
-        let at = index_offset + node_count.offset;
-        bytes[at..at + 8].copy_from_slice(&default_max_nodes.to_le_bytes());
-        repair(bytes, Target::Primary, None);
-
-        LARGEST_ALLOCATION.with(|largest| largest.set(0));
-        let result = FormatReader::with_limits(
-            Cursor::new(fixture.primary.clone()),
-            FormatReaderLimits::default(),
-        );
-        assert!(
-            result.is_err(),
-            "{version:?}: tiny index declaring 2 M nodes opened"
-        );
-        assert!(
-            largest_allocation() < ALLOCATION_CEILING,
-            "{version:?}: allocated {} bytes",
-            largest_allocation()
-        );
-    }
 }

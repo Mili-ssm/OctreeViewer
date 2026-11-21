@@ -157,14 +157,9 @@ fn main() {
     let options = FormatWriterOptions::new(0.01, 1 << 24).expect("writer options");
     let attributes_path = std::path::Path::new(&output).with_extension("octattrs");
     let attributes = BufWriter::new(File::create(&attributes_path).expect("create companion"));
-    let mut writer = FormatWriter::new_split_for_version(
-        FormatVersion::V7_PRE5,
-        file,
-        attributes,
-        metadata,
-        options,
-    )
-    .expect("writer");
+    let mut writer =
+        FormatWriter::new_split_for_version(FormatVersion::V8, file, attributes, metadata, options)
+            .expect("writer");
     // The writer needs `Seek` and `BufWriter<File>` has it; blocks are made one at a time.
     for (id, node) in tree.iter().enumerate() {
         let cell = bounds[id];

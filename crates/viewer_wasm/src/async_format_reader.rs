@@ -266,30 +266,13 @@ impl WasmAsyncFormatReader {
             (reader, metadata_reservation)
         } else {
             drop(tail);
+            // Not a V8 footer: the header, read now, may still name a retired family.
             let header = read_range(&primary, 0, SPLIT_HEADER_BYTES).await?;
-            let (offset, length) = Reader::split_index_range(
-                primary_len,
-                &header,
+            return Err(open_error(
+                viewer_format::FormatError::InvalidFooter,
+                Some(&header),
                 &footer,
-                FormatReaderLimits::default(),
-            )
-            .map_err(|error| open_error(error, Some(&header), &footer))?;
-            let metadata_reservation = budget
-                .try_reserve(length)
-                .map_err(format_error)?
-                .ok_or_else(|| {
-                    err("shared async read budget is unavailable for the resident format index")
-                })?;
-            let index = read_range(&primary, offset, length).await?;
-            let reader = Reader::from_split_buffers(
-                primary_len,
-                &header,
-                &footer,
-                &index,
-                FormatReaderLimits::default(),
-            )
-            .map_err(|error| open_error(error, Some(&header), &footer))?;
-            (reader, metadata_reservation)
+            ));
         };
         let mut reader = reader;
         if let Some(blob) = attributes.as_ref() {

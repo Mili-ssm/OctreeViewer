@@ -197,7 +197,9 @@ fn row_key(row: &[u8]) -> u64 {
     }
 }
 
-/// Pre4 keeps every pre3 candidate, adding a reversible independent byte-plane transform.
+/// Pre4 keeps every pre3 candidate, adding a reversible independent byte-plane transform. Retired
+/// with the writers that used it; the tests keep it as the reference the V8 encoder is compared to.
+#[cfg(test)]
 pub(crate) fn encode_pre4(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
     encode_byte_planes(raw, width, encode(raw, width)?)
 }

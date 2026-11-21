@@ -8,7 +8,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use viewer_core::las::{LasExtraByte, LasExtraByteFields};
 use viewer_core::{
     AttributeDescriptor, BlockId, CoordinateFrame, DatasetMetadata, HierarchySemantics, NodeId,
-    SpatialBounds, SpatialHierarchy, SpatialNode,
+    SpatialHierarchy, SpatialNode,
 };
 
 use crate::index_codec::{
@@ -290,14 +290,8 @@ pub(crate) fn paged_layout_of_footer(footer: &[u8]) -> Option<StorageLayout> {
     if footer.len() != FOOTER_SIZE as usize {
         return None;
     }
-    [
-        StorageLayout::V7Pre5,
-        StorageLayout::V7,
-        StorageLayout::V8,
-        StorageLayout::V8Pre1,
-    ]
-    .into_iter()
-    .find(|layout| footer[..8] == *layout.footer_magic())
+    let layout = StorageLayout::V8;
+    (footer[..8] == *layout.footer_magic()).then_some(layout)
 }
 
 fn parse_header_block(
@@ -323,7 +317,7 @@ fn parse_header_block(
         semantics,
         visual_scale,
         schema,
-    } = parse_index_prefix(cursor, limits, true)?;
+    } = parse_index_prefix(cursor, limits)?;
     let total_nodes = cursor.u64()?;
     let total_blocks = cursor.u64()?;
     let pages_start = cursor.u64()?;
@@ -331,16 +325,14 @@ fn parse_header_block(
     if !reference_spacing.is_finite() || reference_spacing <= 0.0 {
         return Err(FormatError::MalformedIndex("invalid reference spacing"));
     }
-    let distance_quantiles = if layout.stores_distance_quantiles() {
+    let distance_quantiles = {
         let (p1, p5, p50) = (cursor.f64()?, cursor.f64()?, cursor.f64()?);
         Some(
             PointDistanceQuantiles::new(p1, p5, p50)
                 .map_err(|_| FormatError::MalformedIndex("invalid distance quantiles"))?,
         )
-    } else {
-        None
     };
-    let lod_attribute_columns = if layout.omits_lod_attributes() {
+    let lod_attribute_columns = {
         let count = cursor.u32()? as usize;
         if count > schema.len() {
             return Err(FormatError::MalformedIndex(
@@ -354,10 +346,8 @@ fn parse_header_block(
         crate::metadata::validate_lod_columns(&columns, schema.len())
             .map_err(FormatError::MalformedIndex)?;
         Some(columns)
-    } else {
-        None
     };
-    let display_colour_source = if layout.derives_display_attribute() {
+    let display_colour_source = {
         let (kind, index) = (cursor.u8()?, cursor.u32()?);
         let source = match (kind, index) {
             (0, 0) => DisplayColourSource::None,
@@ -371,8 +361,6 @@ fn parse_header_block(
             .validate(&schema)
             .map_err(FormatError::MalformedIndex)?;
         Some(source)
-    } else {
-        None
     };
     let mut attribute_ranges = Vec::with_capacity(schema.len());
     for attribute in &schema {
@@ -771,7 +759,7 @@ pub(crate) fn open_core<R: Read + Seek>(
     reader.read_exact(&mut tail)?;
     let footer = &tail[tail.len() - FOOTER_SIZE as usize..];
     let location = PagedCore::locate_index(file_length, footer, &limits)
-        .map_err(|error| crate::retired::explain_retired(error, None, Some(footer)))?;
+        .map_err(|error| crate::explain_open_failure(reader, error))?;
     let index_size = usize::try_from(location.length)
         .map_err(|_| FormatError::SizeOutOfRange(location.length))?;
     let index = if location.length + FOOTER_SIZE <= tail_length {
@@ -787,10 +775,9 @@ pub(crate) fn open_core<R: Read + Seek>(
         reader.read_exact(&mut index)?;
         index
     };
-    let footer = tail[tail.len() - FOOTER_SIZE as usize..].to_vec();
     drop(tail);
     PagedCore::from_index(&index, location, limits)
-        .map_err(|error| crate::retired::explain_retired(error, None, Some(&footer)))
+        .map_err(|error| crate::explain_open_failure(reader, error))
 }
 
 /// Every page of a file in breadth-first order (root first) with the pointer each child page was
@@ -1048,15 +1035,6 @@ pub(crate) fn assemble_with(
     }
     validate_node_point_counts(&nodes, &blocks)?;
     validate_node_error_bounds(&nodes, &blocks)?;
-    let mut block_bounds = BTreeMap::<BlockId, Vec<SpatialBounds>>::new();
-    for node in &nodes {
-        for block_id in node.blocks() {
-            block_bounds
-                .entry(*block_id)
-                .or_default()
-                .push(node.bounds());
-        }
-    }
     let hierarchy = SpatialHierarchy::new_with_semantics(
         nodes,
         header.schema.clone(),
@@ -1085,7 +1063,7 @@ pub(crate) fn assemble_with(
         None => metadata,
     };
     validate_metadata(&metadata)?;
-    Ok((metadata, blocks, block_bounds))
+    Ok((metadata, blocks))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1121,8 +1099,6 @@ pub(crate) fn block_entry(
         payload_length: block.payload_length,
         point_count: block.point_count,
         quantization_error: block.quantization_error,
-        origin: [0.0; 3],
-        scale: [0.0; 3],
         origin_quanta: block.origin_quanta,
         node_cell,
         geometry_encoding: block.geometry_encoding,
@@ -1427,12 +1403,12 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
             length: 0,
         };
         out.write(layout.index_magic())?;
-        write_index_prefix(&mut out, metadata, Some(frame))?;
+        write_index_prefix(&mut out, metadata, frame)?;
         out.u64(plan.len() as u64)?;
         out.u64(blocks.len() as u64)?;
         out.u64(pages_start)?;
         out.f64(reference_spacing)?;
-        if layout.stores_distance_quantiles() {
+        {
             let quantiles =
                 metadata
                     .point_distance_quantiles()
@@ -1445,7 +1421,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
             out.f64(quantiles.p5)?;
             out.f64(quantiles.p50)?;
         }
-        if layout.omits_lod_attributes() {
+        {
             let columns = metadata
                 .lod_attribute_columns()
                 .ok_or(FormatError::InvalidMetadata(
@@ -1461,7 +1437,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
                 out.u32(column)?;
             }
         }
-        if layout.derives_display_attribute() {
+        {
             let source = metadata
                 .display_colour_source()
                 .ok_or(FormatError::InvalidMetadata(

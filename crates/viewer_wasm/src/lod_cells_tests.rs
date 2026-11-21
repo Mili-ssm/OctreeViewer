@@ -6,7 +6,7 @@ use viewer_core::{
 };
 use viewer_format::{
     CrsRecord, FormatMetadata, FormatReader, FormatReaderLimits, FormatVersion, FormatWriter,
-    FormatWriterOptions, GlobalFrame, NodeCell, OctreeReader, PagedReader, PointDistanceQuantiles,
+    FormatWriterOptions, GlobalFrame, NodeCell, PagedReader, PointDistanceQuantiles,
     SourcePointBlock,
 };
 use viewer_render_wgpu::PackedNode;
@@ -1230,13 +1230,12 @@ fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
     // Lazy open: only the root page is resident and its anchors are unloaded.
     let mut reader =
         FormatReader::open_lazy(Cursor::new(bytes), FormatReaderLimits::default()).unwrap();
-    assert!(reader.format_version().uses_global_frame());
     let source = reader.page_source().expect("paged").clone();
     let mut dataset = LodDataset::from_shared_metadata(
         reader.format_metadata().viewer_dataset().unwrap(),
         1 << 20,
     )
-    .with_global_frame(reader.format_version().uses_global_frame())
+    .with_global_frame(true)
     .with_pages(source.root_unloaded(), Box::new(|_| {}), 1 << 20)
     .unwrap();
     assert!(dataset.supports_cells());

@@ -8,9 +8,7 @@ use std::{
 };
 
 use viewer_convert_core::error::ConvertError;
-use viewer_format::{
-    FormatError, FormatReader, FormatReaderLimits, FormatVersion, PagedStats, probe_format,
-};
+use viewer_format::{FormatError, FormatReaderLimits, FormatVersion, PagedStats, probe_format};
 
 /// Verifying is an offline pass that holds every page, so it accepts far more nodes and blocks
 /// than the interactive reader's defaults (2 M each).
@@ -43,8 +41,7 @@ pub struct VerifyReport {
 /// Loads every page of `path` (a `.oct`) and runs the global checks: each page matches the node
 /// that points to it, child pages tile the page section, payloads leave no gaps, every block has
 /// one owner and the declared totals hold. If the `.octattrs` companion exists next to `path`,
-/// its footer must name the same index. Older revisions check their whole index at open, so
-/// verifying them is opening them. Payload bytes are not read.
+/// its footer must name the same index. Payload bytes are not read.
 pub fn verify_file(path: &Path) -> Result<VerifyReport, ConvertError> {
     let mut file = File::open(path)?;
     // A retired family fails somewhere in the checks below; the envelope then names it.
@@ -58,23 +55,15 @@ pub fn verify_file(path: &Path) -> Result<VerifyReport, ConvertError> {
 
 fn verify_open(path: &Path, file: &mut File) -> Result<VerifyReport, ConvertError> {
     let version = probe_format(file)?.version;
-    if version.uses_pages() {
-        let stats = viewer_format::verify_paged(file, &verify_limits()?)?;
-        let companion = crate::publish::output_attributes_path(path);
-        if companion.exists() {
-            check_companion_footer(file, &mut File::open(companion)?)?;
-        }
-        return Ok(VerifyReport {
-            version,
-            block_count: stats.blocks,
-            paged: Some(stats),
-        });
+    let stats = viewer_format::verify_paged(file, &verify_limits()?)?;
+    let companion = crate::publish::output_attributes_path(path);
+    if companion.exists() {
+        check_companion_footer(file, &mut File::open(companion)?)?;
     }
-    let reader = FormatReader::with_limits(file.try_clone()?, verify_limits()?)?;
     Ok(VerifyReport {
         version,
-        block_count: reader.block_storage_stats()?.len() as u64,
-        paged: None,
+        block_count: stats.blocks,
+        paged: Some(stats),
     })
 }
 

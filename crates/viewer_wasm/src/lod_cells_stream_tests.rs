@@ -21,7 +21,7 @@ use viewer_core::{
     BlockId, ColorRgb, HierarchySemantics, Point, PointBatch, PointBlock, SpatialBounds,
     SpatialHierarchy, SpatialNode,
 };
-use viewer_format::{FormatReader, FormatReaderLimits, OctreeReader};
+use viewer_format::{FormatReader, FormatReaderLimits};
 use viewer_render_wgpu::cell_lod::{
     LodView, MAX_NODE_SPAN, NodeLod, cell_lo, drawn_depth_at, edge_px, min_child_edge_px, refines,
 };
@@ -2108,7 +2108,6 @@ fn open_real_with_cache(
     let reader: RealReader =
         FormatReader::open_lazy(std::io::BufReader::new(file), FormatReaderLimits::default())
             .unwrap();
-    assert!(reader.format_version().uses_global_frame());
     let source = reader.page_source().expect("paged").clone();
     let scale = reader.format_metadata().visual_scale();
     let dataset = LodDataset::from_shared_metadata_and_visual_scale(
@@ -2623,7 +2622,7 @@ fn sample_harness() -> (Harness, [f64; 3], f64) {
         scale,
         256 << 20,
     )
-    .with_global_frame(reader.format_version().uses_global_frame());
+    .with_global_frame(true);
     if let Some(source) = reader.page_source().cloned() {
         dataset = dataset
             .with_pages(

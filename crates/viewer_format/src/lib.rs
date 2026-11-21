@@ -57,7 +57,7 @@ pub use global_frame::{
     cell_origin_from_base, cell_origin_quanta, quanta_to_units, quantize_coordinate,
     round_to_quanta,
 };
-pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
+pub use layout::{HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
 pub use lazy_pages::{PageGraft, PageRange, PageSource};
 pub use metadata::{
     DisplayColourSource, FormatMetadata, MetadataError, NodeAttributeRange, PointDistanceQuantiles,

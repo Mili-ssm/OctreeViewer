@@ -159,7 +159,7 @@ pub(super) fn open_paged(
     )
     .with_crs(crs)
     .with_crs_unit(crs_unit)
-    .with_global_frame(format.format_version().uses_global_frame())
+    .with_global_frame(true)
     .with_point_distance_quantiles(format.point_distance_quantiles());
     let dataset = with_page_source(dataset, &source)?;
     let context = AsyncFormatContext {
@@ -233,15 +233,14 @@ pub(super) fn open_format(
     let browser_read_stats = Arc::new(Mutex::new(BrowserReadStats::default()));
     let source = BrowserBlobReader::new_with_stats(file, true, Arc::clone(&browser_read_stats))?;
     let mut source = source;
-    let identity =
-        probe_format(&mut source).map_err(|error| JsValue::from_str(&error.to_string()))?;
-    // A paged file opens lazily: only its root page is resident, the rest is read on demand.
-    let mut reader = if identity.version.uses_pages() {
-        FormatReader::open_lazy(source, FormatReaderLimits::default())
-    } else {
-        FormatReader::new(source)
+    if let Err(error) = probe_format(&mut source) {
+        // A retired family fails the probe; its envelope names it ("reconvert it").
+        let error = viewer_format::explain_open_failure(&mut source, error);
+        return Err(JsValue::from_str(&error.to_string()));
     }
-    .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    // Only its root page is resident, the rest is read on demand.
+    let mut reader = FormatReader::open_lazy(source, FormatReaderLimits::default())
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
     if let Some(attributes) = attributes {
         let source =
             BrowserBlobReader::new_with_stats(attributes, false, Arc::clone(&browser_read_stats))?;
@@ -276,7 +275,7 @@ pub(super) fn open_format(
     )
     .with_crs(crs)
     .with_crs_unit(crs_unit)
-    .with_global_frame(reader.format_version().uses_global_frame())
+    .with_global_frame(true)
     .with_point_distance_quantiles(reader.point_distance_quantiles());
     let page_source = reader.page_source().cloned();
     let dataset = match &page_source {

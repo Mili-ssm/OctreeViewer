@@ -11,11 +11,9 @@ use crate::metadata::validate_metadata;
 use crate::version::FileRole;
 use crate::{FormatError, FormatMetadata, FormatVersion, SourcePointBlock};
 
-use crate::index_codec::{footer_bytes, header_for_role, write_index};
-#[cfg(test)]
-pub(crate) use crate::prepare::prepare_point_block_for_version;
+use crate::index_codec::{footer_bytes, header_for_role};
 pub(crate) use crate::prepare::{
-    BlockRecord, BoundsAccumulator, build_block_nodes, ensure_global_frame_matches, lod_block_ids,
+    BlockRecord, build_block_nodes, global_frame_of, lod_block_ids,
     prepare_point_block_for_version_impl,
 };
 pub use crate::prepare::{FormatWriterOptions, PreparedPointBlock, RowOrder, prepare_point_block};
@@ -40,61 +38,28 @@ impl<W: Write + Seek> FormatWriter<W> {
         self.layout.version()
     }
 
-    /// Select the output backend explicitly. Unsupported identities fail before I/O.
-    pub fn new_for_version(
-        version: crate::FormatVersion,
-        writer: W,
-        metadata: FormatMetadata,
-        options: FormatWriterOptions,
-    ) -> Result<Self, FormatError> {
-        let layout = StorageLayout::from_version(version)?;
-        if layout.uses_pages() {
-            return Err(FormatError::InvalidMetadata(
-                "paged layouts are written as a .oct / .octattrs pair",
-            ));
-        }
-        Self::new_with_layout(writer, metadata, options, layout)
-    }
-
-    /// Select a backend for a primary/companion pair before touching either sink.
+    /// Writes a `.oct` primary and its `.octattrs` companion. Unsupported identities fail before I/O.
     pub fn new_split_for_version(
         version: crate::FormatVersion,
-        writer: W,
-        attributes: W,
+        mut writer: W,
+        mut attributes: W,
         metadata: FormatMetadata,
         options: FormatWriterOptions,
     ) -> Result<Self, FormatError> {
         let layout = StorageLayout::from_version(version)?;
-        Self::new_split_with_layout(writer, attributes, metadata, options, layout)
-    }
-
-    pub fn new(
-        writer: W,
-        metadata: FormatMetadata,
-        options: FormatWriterOptions,
-    ) -> Result<Self, FormatError> {
-        Self::new_with_layout(writer, metadata, options, StorageLayout::V5)
-    }
-
-    fn new_with_layout(
-        mut writer: W,
-        metadata: FormatMetadata,
-        options: FormatWriterOptions,
-        layout: StorageLayout,
-    ) -> Result<Self, FormatError> {
-        if writer.stream_position()? != 0 || writer.seek(SeekFrom::End(0))? != 0 {
-            return Err(FormatError::OutputMustBeEmpty);
+        for sink in [&mut writer, &mut attributes] {
+            if sink.stream_position()? != 0 || sink.seek(SeekFrom::End(0))? != 0 {
+                return Err(FormatError::OutputMustBeEmpty);
+            }
+            sink.seek(SeekFrom::Start(0))?;
         }
-        writer.seek(SeekFrom::Start(0))?;
-        ensure_global_frame_matches(layout, &metadata)?;
-        ensure_distance_quantiles_match(layout, &metadata)?;
+        global_frame_of(&metadata)?;
         validate_metadata(&metadata)?;
         ensure_schema_within_limit(&metadata)?;
-        ensure_lod_columns_match(layout, &metadata)?;
-        ensure_display_source_match(layout, &metadata)?;
-        if layout.uses_pages()
-            && metadata.dataset().hierarchy().semantics()
-                != viewer_core::HierarchySemantics::Replacement
+        ensure_lod_columns_present(&metadata)?;
+        ensure_display_source_present(&metadata)?;
+        if metadata.dataset().hierarchy().semantics()
+            != viewer_core::HierarchySemantics::Replacement
         {
             return Err(FormatError::InvalidMetadata(
                 "paged layouts do not support additive hierarchies",
@@ -102,10 +67,11 @@ impl<W: Write + Seek> FormatWriter<W> {
         }
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
         let lod_blocks = lod_block_ids(metadata.dataset().hierarchy())?;
-        writer.write_all(&header_for_role(layout.version(), FileRole::Monolithic)?)?;
+        writer.write_all(&header_for_role(layout.version(), FileRole::SplitPrimary)?)?;
+        attributes.write_all(&header_for_role(layout.version(), FileRole::Attributes)?)?;
         Ok(Self {
             writer,
-            attributes: None,
+            attributes: Some(attributes),
             metadata,
             options,
             layout,
@@ -114,36 +80,6 @@ impl<W: Write + Seek> FormatWriter<W> {
             blocks: BTreeMap::new(),
             failed: false,
         })
-    }
-
-    /// Streams XYZ to the primary file and display color/columns to an optional companion.
-    pub fn new_split(
-        writer: W,
-        attributes: W,
-        metadata: FormatMetadata,
-        options: FormatWriterOptions,
-    ) -> Result<Self, FormatError> {
-        Self::new_split_with_layout(writer, attributes, metadata, options, StorageLayout::V5)
-    }
-
-    fn new_split_with_layout(
-        writer: W,
-        mut attributes: W,
-        metadata: FormatMetadata,
-        options: FormatWriterOptions,
-        layout: StorageLayout,
-    ) -> Result<Self, FormatError> {
-        if attributes.stream_position()? != 0 || attributes.seek(SeekFrom::End(0))? != 0 {
-            return Err(FormatError::OutputMustBeEmpty);
-        }
-        let mut result = Self::new_with_layout(writer, metadata, options, layout)?;
-        attributes.write_all(&header_for_role(layout.version(), FileRole::Attributes)?)?;
-        result.writer.seek(SeekFrom::Start(0))?;
-        result
-            .writer
-            .write_all(&header_for_role(layout.version(), FileRole::SplitPrimary)?)?;
-        result.attributes = Some(attributes);
-        Ok(result)
     }
 
     /// Encodes and appends one block while retaining only its directory metadata afterward.
@@ -166,12 +102,6 @@ impl<W: Write + Seek> FormatWriter<W> {
         &mut self,
         mut prepared: PreparedPointBlock,
     ) -> Result<(), FormatError> {
-        if prepared.layout != self.layout {
-            return Err(FormatError::PreparedVersionMismatch {
-                writer: self.layout.version(),
-                block: prepared.layout.version(),
-            });
-        }
         self.ensure_block_available(prepared.id)?;
         self.ensure_columns_follow_the_rule(&prepared)?;
         let offset = self.writer.stream_position()?;
@@ -207,10 +137,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 point_count: prepared.point_count,
                 geometry_encoding: prepared.geometry_encoding,
                 quantization_error: prepared.quantization_error,
-                origin: prepared.origin,
-                scale: prepared.scale,
                 origin_quanta: prepared.origin_quanta,
-                world_bounds: prepared.world_bounds,
                 payloads: prepared.payloads,
                 ranges: prepared.ranges,
             },
@@ -279,47 +206,17 @@ impl<W: Write + Seek> FormatWriter<W> {
 
         let metadata = self.adjusted_metadata()?;
         validate_metadata(&metadata)?;
-        if self.layout.uses_pages() {
-            let written = crate::paged_index::write_paged_index(
-                &mut self.writer,
-                &metadata,
-                &self.blocks,
-                &self.lod_blocks,
-                self.options.page_target_bytes(),
-                self.layout,
-            )?;
-            let file_length = written
-                .index_offset
-                .checked_add(written.index_length)
-                .and_then(|value| value.checked_add(FOOTER_SIZE))
-                .ok_or(FormatError::FileSizeOverflow)?;
-            if let Some(attributes) = self.attributes.as_mut() {
-                let length = attributes
-                    .stream_position()?
-                    .checked_add(FOOTER_SIZE)
-                    .ok_or(FormatError::FileSizeOverflow)?;
-                attributes.write_all(&footer_bytes(
-                    self.layout.footer_magic(),
-                    written.index_offset,
-                    written.index_length,
-                    length,
-                    written.index_crc,
-                ))?;
-                attributes.flush()?;
-            }
-            self.writer.write_all(&crate::paged_index::paged_footer(
-                self.layout,
-                &written,
-                file_length,
-            ))?;
-            self.writer.flush()?;
-            return Ok((self.writer, self.attributes));
-        }
-        let index_offset = self.writer.stream_position()?;
-        let (index_length, index_checksum) =
-            write_index(&mut self.writer, &metadata, &self.blocks, self.layout)?;
-        let file_length = index_offset
-            .checked_add(index_length)
+        let written = crate::paged_index::write_paged_index(
+            &mut self.writer,
+            &metadata,
+            &self.blocks,
+            &self.lod_blocks,
+            self.options.page_target_bytes(),
+            self.layout,
+        )?;
+        let file_length = written
+            .index_offset
+            .checked_add(written.index_length)
             .and_then(|value| value.checked_add(FOOTER_SIZE))
             .ok_or(FormatError::FileSizeOverflow)?;
         if let Some(attributes) = self.attributes.as_mut() {
@@ -329,21 +226,18 @@ impl<W: Write + Seek> FormatWriter<W> {
                 .ok_or(FormatError::FileSizeOverflow)?;
             attributes.write_all(&footer_bytes(
                 self.layout.footer_magic(),
-                index_offset,
-                index_length,
+                written.index_offset,
+                written.index_length,
                 length,
-                index_checksum,
+                written.index_crc,
             ))?;
             attributes.flush()?;
         }
-        let footer = footer_bytes(
-            self.layout.footer_magic(),
-            index_offset,
-            index_length,
+        self.writer.write_all(&crate::paged_index::paged_footer(
+            self.layout,
+            &written,
             file_length,
-            index_checksum,
-        );
-        self.writer.write_all(&footer)?;
+        ))?;
         self.writer.flush()?;
         Ok((self.writer, self.attributes))
     }
@@ -358,40 +252,7 @@ impl<W: Write + Seek> FormatWriter<W> {
             .query(root.bounds())
             .cloned()
             .collect::<Vec<_>>();
-        let mut bounds = nodes
-            .iter()
-            .map(|node| (node.id(), BoundsAccumulator::from_bounds(node.bounds())))
-            .collect::<BTreeMap<_, _>>();
-
-        // `v7.4-pre` bounds are derived from level and prefix; blocks never widen them.
-        let widens_bounds = !self.layout.uses_global_frame();
-        for (block_id, record) in &self.blocks {
-            if let Some(block_bounds) = record.world_bounds.filter(|_| widens_bounds) {
-                for node_id in &self.block_nodes[block_id] {
-                    bounds
-                        .get_mut(node_id)
-                        .expect("known node")
-                        .include_bounds(block_bounds);
-                }
-            }
-        }
-
-        let mut by_level = nodes
-            .iter()
-            .map(|node| (node.level(), node.id()))
-            .collect::<Vec<_>>();
-        by_level.sort_unstable_by(|left, right| right.cmp(left));
-        for (_, node_id) in by_level {
-            let node = source_hierarchy.node(node_id).expect("indexed node");
-            if let Some(parent_id) = node.parent().filter(|_| widens_bounds) {
-                let child_bounds = bounds[&node_id].to_bounds()?;
-                bounds
-                    .get_mut(&parent_id)
-                    .expect("validated parent")
-                    .include_bounds(child_bounds);
-            }
-        }
-
+        // Bounds are derived from level and prefix; blocks never widen them.
         let mut adjusted_nodes = Vec::with_capacity(nodes.len());
         for node in nodes.drain(..) {
             let block_ids = node.blocks();
@@ -422,7 +283,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 node.id(),
                 node.parent(),
                 node.level(),
-                bounds[&node.id()].to_bounds()?,
+                node.bounds(),
                 node.point_count(),
                 geometric_error,
                 node.blocks().to_vec(),
@@ -456,58 +317,26 @@ impl<W: Write + Seek> FormatWriter<W> {
     }
 }
 
-/// Quantiles on a revision that does not store them would be dropped silently: reject them.
-fn ensure_distance_quantiles_match(
-    layout: StorageLayout,
-    metadata: &FormatMetadata,
-) -> Result<(), FormatError> {
-    if !layout.stores_distance_quantiles() && metadata.point_distance_quantiles().is_some() {
+/// The LOD set decides which columns blocks store, so the writer needs it up front. The list
+/// itself is checked by `validate_metadata`.
+fn ensure_lod_columns_present(metadata: &FormatMetadata) -> Result<(), FormatError> {
+    if metadata.lod_attribute_columns().is_none() {
         return Err(FormatError::InvalidMetadata(
-            "this format revision does not store distance quantiles",
+            "this format revision needs a LOD column set in the metadata",
         ));
     }
     Ok(())
 }
 
-/// The LOD set decides which columns blocks store, so a revision that omits columns needs it and
-/// the others must not carry one. The list itself is checked by `validate_metadata`.
-fn ensure_lod_columns_match(
-    layout: StorageLayout,
-    metadata: &FormatMetadata,
-) -> Result<(), FormatError> {
-    match (
-        layout.omits_lod_attributes(),
-        metadata.lod_attribute_columns().is_some(),
-    ) {
-        (true, false) => Err(FormatError::InvalidMetadata(
-            "this format revision needs a LOD column set in the metadata",
-        )),
-        (false, true) => Err(FormatError::InvalidMetadata(
-            "this format revision does not store a LOD column set",
-        )),
-        _ => Ok(()),
-    }
-}
-
-/// A revision that derives the leaf display colour needs its source (`None` when nothing can be
-/// derived); the others store the colour and must not carry one. The source is checked by
-/// `validate_metadata`.
-fn ensure_display_source_match(
-    layout: StorageLayout,
-    metadata: &FormatMetadata,
-) -> Result<(), FormatError> {
-    match (
-        layout.derives_display_attribute(),
-        metadata.display_colour_source().is_some(),
-    ) {
-        (true, false) => Err(FormatError::InvalidMetadata(
+/// Leaf display colour is derived from its source (`None` when nothing can be derived), so the
+/// writer needs it up front. The source is checked by `validate_metadata`.
+fn ensure_display_source_present(metadata: &FormatMetadata) -> Result<(), FormatError> {
+    if metadata.display_colour_source().is_none() {
+        return Err(FormatError::InvalidMetadata(
             "this format revision needs a display colour source in the metadata",
-        )),
-        (false, true) => Err(FormatError::InvalidMetadata(
-            "this format revision does not store a display colour source",
-        )),
-        _ => Ok(()),
+        ));
     }
+    Ok(())
 }
 
 fn ensure_schema_within_limit(metadata: &FormatMetadata) -> Result<(), FormatError> {
@@ -520,7 +349,3 @@ fn ensure_schema_within_limit(metadata: &FormatMetadata) -> Result<(), FormatErr
     }
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "writer_tests.rs"]
-mod tests;

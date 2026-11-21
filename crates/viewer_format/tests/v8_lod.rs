@@ -15,7 +15,6 @@ use viewer_format::{
     PagedReader, SourcePointBlock,
 };
 
-const V8_PRE1: FormatVersion = FormatVersion::V8_PRE1;
 const ROOT_LEVEL: u32 = 40;
 const ROOT_PREFIX: [u64; 3] = [(1 << 39) + 3, (1 << 39) + 4, (1 << 39) + 5];
 /// Node 0 is the only LOD node; nodes 1 and 2 are its leaves. Source block id = node id + 1; the file
@@ -141,7 +140,7 @@ fn dataset() -> (FormatMetadata, Vec<SourcePointBlock>) {
 
 fn write_with(lod_columns: Option<Vec<u32>>) -> Result<(Vec<u8>, Vec<u8>), FormatError> {
     write_as(
-        V8_PRE1,
+        FormatVersion::V8,
         lod_columns,
         viewer_format::DisplayColourSource::None,
     )
@@ -326,20 +325,6 @@ fn the_writer_rejects_a_corrupt_or_missing_lod_set() {
     ));
 }
 
-#[test]
-fn revisions_without_a_lod_set_reject_one() {
-    let (metadata, _) = dataset();
-    let metadata = metadata.with_lod_attribute_columns(vec![0]);
-    let result = FormatWriter::new_split_for_version(
-        FormatVersion::V7,
-        Cursor::new(Vec::new()),
-        Cursor::new(Vec::new()),
-        metadata,
-        FormatWriterOptions::new(0.01, 1 << 24).unwrap(),
-    );
-    assert!(matches!(result, Err(FormatError::InvalidMetadata(_))));
-}
-
 /// Offset of the LOD list in the index: it follows the three f64 quantiles.
 fn lod_list_offset(bytes: &[u8]) -> usize {
     let footer = bytes.len() - 40;
@@ -405,128 +390,5 @@ fn corrupt_lod_set_is_rejected() {
             PagedReader::open(Cursor::new(primary[..cut].to_vec())).is_err(),
             "{cut}"
         );
-    }
-}
-
-/// Rewrites a pair's identity: header revisions and checksums, footer magics, the primary file's
-/// index magic, and the index and footer checksums. The attributes file's footer repeats the
-/// primary file's index location and checksum.
-fn retag(
-    primary: &mut [u8],
-    attributes: &mut [u8],
-    revision: u32,
-    (index_from, footer_from): (&[u8; 8], &[u8; 8]),
-    (index_to, footer_to): (&[u8; 8], &[u8; 8]),
-) {
-    for bytes in [&mut *primary, &mut *attributes] {
-        bytes[16..20].copy_from_slice(&revision.to_le_bytes());
-        let crc = viewer_format::crc32(&bytes[..20]);
-        bytes[20..24].copy_from_slice(&crc.to_le_bytes());
-        let footer = bytes.len() - 40;
-        assert_eq!(&bytes[footer..footer + 8], footer_from);
-        bytes[footer..footer + 8].copy_from_slice(footer_to);
-    }
-    let footer = primary.len() - 40;
-    let index = u64::from_le_bytes(primary[footer + 8..footer + 16].try_into().unwrap()) as usize;
-    assert_eq!(&primary[index..index + 8], index_from);
-    primary[index..index + 8].copy_from_slice(index_to);
-    repair_index_and_footer(primary);
-    let index_crc = primary[footer + 32..footer + 36].to_vec();
-    let footer = attributes.len() - 40;
-    attributes[footer + 32..footer + 36].copy_from_slice(&index_crc);
-    let crc = viewer_format::crc32(&attributes[footer..footer + 36]);
-    attributes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
-}
-
-/// Rewrites the identity of a final `v8` pair as `v8.1-pre`.
-fn v8_as_pre1(primary: &mut [u8], attributes: &mut [u8]) {
-    retag(
-        primary,
-        attributes,
-        1,
-        (b"OCTVIDX8", b"OCTVEND8"),
-        (b"OCTVI81P", b"OCTVE81P"),
-    );
-}
-
-/// Revision of a file's header and its magics: header bytes 16..20, the footer magic and, for the
-/// primary file, the index magic.
-fn identity_of(bytes: &[u8], primary: bool) -> (u16, u32, [u8; 8], Option<[u8; 8]>) {
-    let footer = bytes.len() - 40;
-    let index = primary.then(|| {
-        let at = u64::from_le_bytes(bytes[footer + 8..footer + 16].try_into().unwrap()) as usize;
-        bytes[at..at + 8].try_into().unwrap()
-    });
-    (
-        u16::from_le_bytes(bytes[8..10].try_into().unwrap()),
-        u32::from_le_bytes(bytes[16..20].try_into().unwrap()),
-        bytes[footer..footer + 8].try_into().unwrap(),
-        index,
-    )
-}
-
-#[test]
-fn v8_differs_from_v8_pre1_only_in_identity() {
-    use viewer_format::DisplayColourSource as Display;
-    // The test schema has no u16 x 3 column, so `Rgb` display colour cannot be exercised here.
-    let fixtures = [
-        (Some(vec![]), Display::None),
-        (Some(vec![0, 1, 2]), Display::None),
-        (Some(vec![0, 2]), Display::Intensity(0)),
-        (Some(vec![0]), Display::Intensity(0)),
-        (Some(vec![1, 2]), Display::None),
-    ];
-    for (columns, display) in fixtures {
-        let label = format!("{columns:?} {display:?}");
-        let pre1 = write_as(V8_PRE1, columns.clone(), display).unwrap();
-        let mut v8 = write_as(FormatVersion::V8, columns, display).unwrap();
-        assert_ne!(pre1.0, v8.0, "{label}");
-        assert_ne!(pre1.1, v8.1, "{label}");
-        for (bytes, primary) in [(&v8.0, true), (&v8.1, false)] {
-            let (version, revision, footer, index) = identity_of(bytes, primary);
-            assert_eq!((version, revision), (8, 0), "{label}");
-            assert_eq!(&footer, b"OCTVEND8", "{label}");
-            assert_eq!(
-                index.as_ref().map(|m| &m[..]),
-                primary.then_some(&b"OCTVIDX8"[..]),
-                "{label}"
-            );
-        }
-        v8_as_pre1(&mut v8.0, &mut v8.1);
-        assert!(
-            pre1.0 == v8.0,
-            "primary files differ beyond identity: {label}"
-        );
-        assert!(
-            pre1.1 == v8.1,
-            "attribute files differ beyond identity: {label}"
-        );
-    }
-}
-
-#[test]
-fn v8_has_the_v8_pre1_capabilities() {
-    let (a, b) = (FormatVersion::V8_PRE1, FormatVersion::V8);
-    assert_eq!(a.uses_global_frame(), b.uses_global_frame());
-    assert_eq!(a.uses_pages(), b.uses_pages());
-    assert_eq!(a.supports_hybrid_rows(), b.supports_hybrid_rows());
-    assert_eq!(a.fixed_row_order(), b.fixed_row_order());
-    assert_eq!(a.derives_display_attribute(), b.derives_display_attribute());
-    assert_eq!(a.omits_lod_attributes(), b.omits_lod_attributes());
-    assert_eq!(a.stores_distance_quantiles(), b.stores_distance_quantiles());
-    assert!(b.uses_global_frame() && b.uses_pages() && b.stores_distance_quantiles());
-}
-
-#[test]
-fn a_v8_file_with_a_v8_pre1_companion_is_rejected_by_identity() {
-    let display = viewer_format::DisplayColourSource::Intensity(0);
-    let pre1 = write_as(V8_PRE1, Some(vec![0, 2]), display).unwrap();
-    let v8 = write_as(FormatVersion::V8, Some(vec![0, 2]), display).unwrap();
-    for (primary, attributes) in [(&v8.0, &pre1.1), (&pre1.0, &v8.1)] {
-        let mut reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
-        assert!(matches!(
-            reader.attach_attributes(Cursor::new(attributes.clone())),
-            Err(FormatError::InvalidHeader)
-        ));
     }
 }

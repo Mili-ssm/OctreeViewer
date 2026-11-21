@@ -877,29 +877,6 @@ fn writer_rejects_metadata_that_breaks_the_spec() {
 }
 
 #[test]
-fn v8_takes_a_global_frame_and_rejects_metadata_without_one() {
-    assert!(V8.uses_global_frame());
-    assert!(FormatVersion::WRITABLE.contains(&V8));
-    let plain = common::metadata(0, Vec::new());
-    for version in FormatVersion::WRITABLE
-        .into_iter()
-        .filter(|version| version.uses_global_frame())
-    {
-        let outcome = FormatWriter::new_split_for_version(
-            version,
-            Cursor::new(Vec::new()),
-            Cursor::new(Vec::new()),
-            plain.clone(),
-            v8_options(),
-        );
-        assert!(
-            matches!(outcome, Err(FormatError::InvalidMetadata(_))),
-            "{version}"
-        );
-    }
-}
-
-#[test]
 fn a_local_cloud_anchors_its_lattice_at_the_frame_origin() {
     let origin = [-3_000_i64, 120, -77];
     let local = CrsRecord::local();

@@ -756,7 +756,7 @@ fn decode_block(
             checksum,
             stored,
         };
-        validate_column_codec(layout, ctx.schema, payload_index, point_count, &column)?;
+        validate_column_codec(ctx.schema, payload_index, point_count, &column)?;
         if (payload_index == 0
             && geometry_encoding
                 .validate_raw_length(point_count, raw_length)

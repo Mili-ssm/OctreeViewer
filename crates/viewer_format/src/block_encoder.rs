@@ -74,7 +74,7 @@ impl BlockEncoder for FormatBlockEncoder<'_> {
 mod tests {
     use super::*;
     use crate::FormatWriter;
-    use std::{io::Cursor, num::NonZeroU32};
+    use std::io::Cursor;
     use viewer_core::{
         CoordinateFrame, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
     };
@@ -107,9 +107,14 @@ mod tests {
         let metadata = metadata();
         let options = FormatWriterOptions::new(0.01, 1024).unwrap();
         for version in [
-            FormatVersion::V6,
-            FormatVersion::V6Pre(NonZeroU32::new(5).unwrap()),
-            FormatVersion::V7Pre(NonZeroU32::new(6).unwrap()),
+            FormatVersion::Unknown {
+                major: 6,
+                revision: 0,
+            },
+            FormatVersion::Unknown {
+                major: 8,
+                revision: 1,
+            },
             FormatVersion::Unknown {
                 major: 9,
                 revision: 7,

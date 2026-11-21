@@ -810,7 +810,6 @@ fn rejects_invalid_shapes_nested_codecs_ids_padding_and_limits() {
 
 mod payloads {
     use super::*;
-    use crate::layout::StorageLayout;
 
     /// Column shapes that make each candidate win for some width.
     fn corpus() -> Vec<(usize, Vec<u8>)> {
@@ -921,48 +920,6 @@ mod payloads {
             }
         }
         assert!(refused > 4);
-    }
-
-    /// The final layouts store LZ4 payloads identically; a v8 payload is the v8.1-pre payload.
-    #[test]
-    fn v8_and_v8_pre1_store_the_same_payload_bytes() {
-        for (width, raw) in corpus() {
-            let mut expected = (Vec::new(), Vec::new());
-            let mut actual = (Vec::new(), Vec::new());
-            crate::prepare::append_payload(
-                &raw,
-                &mut expected.0,
-                &mut expected.1,
-                StorageLayout::V8Pre1,
-                width,
-            )
-            .unwrap();
-            crate::prepare::append_payload(
-                &raw,
-                &mut actual.0,
-                &mut actual.1,
-                StorageLayout::V8,
-                width,
-            )
-            .unwrap();
-            assert_eq!(expected.0, actual.0, "width {width}");
-            let key = |column: &crate::layout::PayloadDirectoryEntry| {
-                (
-                    column.codec as u8,
-                    column.checksum,
-                    column.stored_length,
-                    column.raw_length,
-                )
-            };
-            assert_eq!(key(&expected.1[0]), key(&actual.1[0]), "width {width}");
-            assert_eq!(actual.1[0].raw_length, raw.len() as u64);
-            assert_eq!(
-                decode(actual.1[0].codec, &actual.0, raw.len(), width, raw.len()).unwrap(),
-                raw
-            );
-            let direct = encode_v7_pre3(&raw, width).unwrap();
-            assert_eq!(direct.bytes(), actual.0);
-        }
     }
 
     #[test]

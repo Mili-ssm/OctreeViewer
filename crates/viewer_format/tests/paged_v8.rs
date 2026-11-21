@@ -852,22 +852,6 @@ fn released_pages_can_be_read_again_but_resident_ones_keep_their_ids() {
 }
 
 #[test]
-fn v8_rejects_monolithic_output() {
-    let tree = random_tree(2, 2, 10);
-    let (metadata, _) = dataset(&tree);
-    let options = FormatWriterOptions::new(0.01, 1 << 24).unwrap();
-    assert!(
-        FormatWriter::new_for_version(
-            V8,
-            Cursor::new(Vec::new()),
-            with_v8_extras(metadata),
-            options
-        )
-        .is_err()
-    );
-}
-
-#[test]
 fn oct_opens_alone_and_companion_must_match_the_index() {
     let tree = random_tree(8, 5, 20);
     let (primary, attributes) = write_pair(&tree, Some(3_000));
@@ -999,9 +983,10 @@ fn header_and_footer_revisions_must_agree() {
     pre_header[16..20].copy_from_slice(&1_u32.to_le_bytes());
     let crc = viewer_format::crc32(&pre_header[..20]);
     pre_header[20..24].copy_from_slice(&crc.to_le_bytes());
+    // A v8 header over a retired footer is named by its footer.
     assert!(matches!(
         FormatReader::new(Cursor::new(pre_footer)),
-        Err(FormatError::InvalidFooter)
+        Err(FormatError::RetiredFormat("v8.1-pre"))
     ));
     // A v8.1-pre header is a retired family, which the reader names.
     assert!(matches!(
