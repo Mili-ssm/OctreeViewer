@@ -180,7 +180,7 @@ class StorageSuiteTests(unittest.TestCase):
             self.assertEqual(report["options"]["cache_state"], "warm after conversion")
             self.assertEqual(report["options"]["profile"], "release-perf")
             self.assertEqual(report["options"]["format_version"], "v8")
-            self.assertEqual(report["conversions"][0]["command"][-2:], ["64000", "v8"])
+            self.assertEqual(report["conversions"][0]["command"][-1:], ["1"])
             self.assertEqual(report["input"]["bytes"], len(b"fixture"))
             self.assertGreater(report["conversions"][0]["artifacts"]["oct"]["bytes"], 0)
             self.assertEqual(len(report["conversions"][0]["artifacts"]["octattrs"]["sha256"]), 64)

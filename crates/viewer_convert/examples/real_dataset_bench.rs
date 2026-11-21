@@ -28,38 +28,14 @@ use conversion_metrics::ConversionMetrics;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
     match arguments.first().and_then(|value| value.to_str()) {
-        Some(command @ ("convert" | "convert-profile")) if (3..=9).contains(&arguments.len()) => {
+        Some(command @ ("convert" | "convert-profile")) if (3..=5).contains(&arguments.len()) => {
             let workers = arguments
                 .get(3)
                 .map(|value| value.to_string_lossy().parse())
                 .transpose()?
                 .unwrap_or(1);
-            let divisions = arguments
-                .get(4)
-                .map(|value| value.to_string_lossy().parse())
-                .transpose()?
-                .unwrap_or(2);
-            let points_per_block = arguments
-                .get(5)
-                .map(|value| value.to_string_lossy().parse())
-                .transpose()?
-                .unwrap_or(
-                    // The bench defaults to V5, which resolves the non-global value.
-                    ConvertOptions::default()
-                        .with_format_version(viewer_format::FormatVersion::V5)?
-                        .points_per_block(),
-                );
-            let format_version = arguments
-                .get(6)
-                .map(|value| {
-                    value
-                        .to_string_lossy()
-                        .parse::<viewer_format::FormatVersion>()
-                })
-                .transpose()?
-                .unwrap_or(viewer_format::FormatVersion::V5);
             let root_ranges = arguments
-                .get(7)
+                .get(4)
                 .map(|value| value.to_string_lossy().parse())
                 .transpose()?
                 .unwrap_or(0);
@@ -67,9 +43,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Path::new(&arguments[1]),
                 Path::new(&arguments[2]),
                 workers,
-                divisions,
-                points_per_block,
-                format_version,
                 root_ranges,
                 command == "convert-profile",
             )
@@ -137,30 +110,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS [POINTS_PER_BLOCK [FORMAT_VERSION]]]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-geometry INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-attribute INPUT.oct SCHEMA_INDEX [SOURCE.laz]"
+                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [ROOT_RANGES]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-geometry INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-attribute INPUT.oct SCHEMA_INDEX [SOURCE.laz]"
             );
             eprintln!(
                 "  real_dataset_bench read-random INPUT.oct SEED all|geometry|attribute [SCHEMA_INDEX]\n  real_dataset_bench read-sample INPUT.oct SEED COUNT all|geometry|attribute [SCHEMA_INDEX]"
             );
             eprintln!(
-                "  real_dataset_bench convert-profile INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS [POINTS_PER_BLOCK [FORMAT_VERSION]]]] (Linux process I/O)"
+                "  real_dataset_bench convert-profile INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [ROOT_RANGES]] (Linux process I/O)"
             );
             Err("invalid arguments".into())
         }
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "distinct benchmark inputs; bundling them would add a single-use struct"
-)]
 fn convert(
     input: &Path,
     output: &Path,
     workers: usize,
-    divisions: u8,
-    points_per_block: u64,
-    format_version: viewer_format::FormatVersion,
     root_ranges: usize,
     process_io: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -168,13 +134,14 @@ fn convert(
     let started = Instant::now();
     let mut metrics = ConversionMetrics::new(process_io)?;
     let mut metrics_error = None;
-    let options = ConvertOptions::new(
-        points_per_block,
+    // Same options as the CLI: V8 fixes the format, points per block and spatial divisions.
+    let options = ConvertOptions::with_requested_points_per_block(
+        None,
         ConvertOptions::default().max_quantization_error(),
+        ConvertOptions::default().max_memory_budget_bytes(),
     )?
-    .with_format_version(format_version)?
+    .validate()?
     .with_spatial_workers(workers)?
-    .with_spatial_divisions(divisions)?
     .with_root_partition_ranges(root_ranges)?;
     let mut on_progress = |progress: ConversionProgress| {
         if let Err(error) = metrics.observe(progress.stage) {
@@ -406,8 +373,8 @@ fn convert(
         "validation_estimated_bytes_per_worker={}",
         report.output_validation.estimated_bytes_per_worker
     );
-    println!("spatial_divisions={divisions}");
-    println!("points_per_block={points_per_block}");
+    println!("spatial_divisions={}", options.spatial_divisions());
+    println!("points_per_block={}", options.points_per_block());
     println!("input_bytes={input_bytes}");
     println!("output_bytes={}", report.output_bytes);
     println!("source_points={}", report.point_count);

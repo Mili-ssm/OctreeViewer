@@ -23,7 +23,6 @@ class ProfileConversionTests(unittest.TestCase):
             with self.subTest(flag=flag), self.assertRaises(SystemExit), \
                     contextlib.redirect_stderr(io.StringIO()):
                 profile_conversion.parse_args(["input.laz", "run-dir", flag, "2"])
-        self.assertEqual(profile_conversion.V8_BENCH_ARGUMENTS, ("2", "64000", "v8"))
 
     def test_internal_phase_samples_require_complete_non_overlapping_windows(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

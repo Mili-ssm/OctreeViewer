@@ -137,9 +137,11 @@ export function createConverter(options = {}) {
                     if (engine === "legacy") throw new TypeError(LEGACY_REMOVED);
                     if (engine !== "core") throw new TypeError(`unknown engine: ${engine}`);
                     const converterOptions = request.options ?? options.converterOptions ?? {};
-                    for (const name of UNSUPPORTED_CONVERTER_OPTIONS) {
-                        if (converterOptions[name] !== undefined) {
-                            throw new TypeError(`option ${name} was removed: V8 is the only format and fixes it`);
+                    for (const candidate of [options.converterOptions, request.options]) {
+                        for (const name of UNSUPPORTED_CONVERTER_OPTIONS) {
+                            if (candidate?.[name] !== undefined) {
+                                throw new TypeError(`option ${name} was removed: V8 is the only format and fixes it`);
+                            }
                         }
                     }
                     partial = null;

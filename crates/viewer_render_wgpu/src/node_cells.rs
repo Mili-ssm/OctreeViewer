@@ -54,7 +54,7 @@ pub(crate) fn anchor_tolerance(scale: f64) -> f64 {
 }
 
 /// Depth at which a node's side spans 8 cells, derived from the node side so it holds for any
-/// `--spatial-divisions` of the converter (2, 4 or 8).
+/// spatial divisions of the converter (V8 fixes them at 2; older files used 2, 4 or 8).
 pub fn representative_depth(grid: &CellGrid, bounds: SpatialBounds) -> u8 {
     representative_depth_for_spacing(grid, side_of(bounds) / 8.0)
 }

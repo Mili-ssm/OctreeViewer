@@ -15,9 +15,6 @@ import sys
 from typing import Any, Sequence
 
 
-# V8 is the only format and fixes divisions, points per block and format; `real_dataset_bench
-# convert-profile` still takes them positionally (after the worker count), so they are passed here.
-V8_BENCH_ARGUMENTS = ("2", "64000", "v8")
 MODES = ("hierarchy", "reconstruct", "progressive")
 KEY_VALUE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)")
 
@@ -234,7 +231,7 @@ def run_suite(args: argparse.Namespace) -> int:
             conversion = run_operation(
                 [
                     str(convert_binary), "convert-profile", str(input_path), str(output_path),
-                    str(args.workers), *V8_BENCH_ARGUMENTS,
+                    str(args.workers),
                 ],
                 run_dir,
                 f"convert-{repetition:03d}",

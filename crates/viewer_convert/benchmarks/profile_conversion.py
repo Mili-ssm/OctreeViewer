@@ -14,7 +14,6 @@ import sys
 import time
 from typing import Any
 
-from storage_suite import V8_BENCH_ARGUMENTS
 
 
 DEFAULT_BINARY = Path("target/perf/examples/real_dataset_bench")
@@ -335,7 +334,7 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int,
     run_dir.mkdir(parents=True)
     output_path = run_dir / "output.oct"
     command = [str(binary.resolve()), "convert-profile", str(input_path), str(output_path),
-               str(workers), *V8_BENCH_ARGUMENTS]
+               str(workers)]
     input_metadata = {
         "path": str(input_path.resolve()),
         "bytes": input_path.stat().st_size,

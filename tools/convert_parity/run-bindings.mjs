@@ -188,7 +188,7 @@ for (const { name, input } of cases) {
 
 // V8 fixes the format, row order, points per block and divisions, and `attrCodec` was removed
 // (ADR 0060): the bindings refuse each of them with a message that names it, before any work.
-for (const [name, value] of [["formatVersion", "v8"], ["formatVersion", "v5"], ["rowOrder", "hybrid"], ["pointsPerBlock", 64000], ["spatialDivisions", 2], ["attrCodec", "lz4"]]) {
+for (const [name, value] of [["formatVersion", "v8"], ["formatVersion", "v5"], ["rowOrder", "hybrid"], ["pointsPerBlock", 64000], ["spatialDivisions", 2], ["attrCodec", "lz4"], ["rowOrder", null]]) {
   let message = "";
   try {
     bindingConvert(`refused-${name}`, small, { removed: { [name]: value } });

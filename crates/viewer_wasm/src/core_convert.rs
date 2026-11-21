@@ -70,7 +70,7 @@ fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
     if !options.is_undefined() && !options.is_null() {
         for key in REMOVED_OPTIONS {
             let value = js_sys::Reflect::get(options, &key.into())?;
-            if value.is_undefined() || value.is_null() {
+            if value.is_undefined() {
                 continue;
             }
             return Err(JsValue::from_str(&match key {

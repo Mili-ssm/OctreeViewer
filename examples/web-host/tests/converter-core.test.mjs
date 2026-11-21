@@ -217,8 +217,11 @@ test("options V8 fixes are refused before anything reaches the worker", { concur
         await assert.rejects(created.convert(lasFile()), { message: `option ${name} was removed: V8 is the only format and fixes it` });
         const perCall = createConverter();
         await assert.rejects(perCall.convert(lasFile(), { options: { [name]: "x" } }), /was removed: V8 is the only format/);
+        const both = createConverter({ converterOptions: { [name]: "v5" } });
+        await assert.rejects(both.convert(lasFile(), { options: { maxError: 0.01 } }), { message: `option ${name} was removed: V8 is the only format and fixes it` });
         created.dispose();
         perCall.dispose();
+        both.dispose();
     }
     assert.ok(workers.every((worker) => worker.messages.length === 0));
 });
