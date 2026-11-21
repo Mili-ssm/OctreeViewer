@@ -1073,9 +1073,10 @@ fn split_payload_reads_are_selective_for_geometry_and_one_attribute_column() {
 
 #[test]
 fn split_companions_never_serve_another_files_payloads_and_forks_keep_the_detected_version() {
-    // v6 bound a companion to its revision; v8 has one revision. The footer binds a companion to
-    // the primary index (offset, length, checksum) and the directory binds each payload to its
-    // checksum, so a companion of another file is refused at attach or at the first read.
+    // A companion of another revision (e.g. v8.1-pre) is refused at attach by identity (see
+    // `v8_lod.rs`). A companion of another V8 file with a different shape is refused at attach;
+    // one with the same shape attaches, because the paged footer CRC covers only the header and
+    // the root page, and fails at the first read through the per-payload checksum (issue #115).
     let (primary, attributes) = fixture_pair();
     let (other_block, other_meta, _) = codec_fixture();
     let (_, other_shape) = write_v8_split(other_block, other_meta);
@@ -1092,15 +1093,14 @@ fn split_companions_never_serve_another_files_payloads_and_forks_keep_the_detect
         write_v8_split(same_shape, v8_metadata(POINTS.len() as u64, descriptors()));
     assert_ne!(attributes, other_attributes);
     let mut reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
-    if reader
+    // Current behaviour pinned (issue #115): attach succeeds, the first read fails.
+    reader
         .attach_attributes(Cursor::new(other_attributes))
-        .is_ok()
-    {
-        assert!(matches!(
-            reader.read_display_colors(BLOCK_ID),
-            Err(FormatError::InvalidBlockChecksum(_))
-        ));
-    }
+        .expect("issue #115: a same-shape companion attaches today");
+    assert!(matches!(
+        reader.read_display_colors(BLOCK_ID),
+        Err(FormatError::InvalidBlockChecksum(_))
+    ));
 
     let reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
     let mut fork = reader.fork_reader(Cursor::new(primary));
