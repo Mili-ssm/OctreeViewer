@@ -30,7 +30,7 @@ use crate::{
     lod_session::LodSession,
 };
 use viewer_core::NodeId;
-use viewer_format::{FormatReader, FormatReaderLimits, PageGraft, PageSource, probe_format};
+use viewer_format::{FormatReader, FormatReaderLimits, PageGraft, PageSource};
 use viewer_render_wgpu::{ColorMode, SurfaceRenderer, ViewProjection};
 
 /// Uploads each rebuilt scene to the viewer's own GPU renderer.
@@ -230,12 +230,6 @@ pub(super) fn open_format(
 ) -> Result<OpenedFormat, JsValue> {
     let browser_read_stats = Arc::new(Mutex::new(BrowserReadStats::default()));
     let source = BrowserBlobReader::new_with_stats(file, true, Arc::clone(&browser_read_stats))?;
-    let mut source = source;
-    if let Err(error) = probe_format(&mut source) {
-        // A retired family fails the probe; its envelope names it ("reconvert it").
-        let error = viewer_format::explain_open_failure(&mut source, error);
-        return Err(JsValue::from_str(&error.to_string()));
-    }
     // Only its root page is resident, the rest is read on demand.
     let mut reader = FormatReader::open_lazy(source, FormatReaderLimits::default())
         .map_err(|error| JsValue::from_str(&error.to_string()))?;

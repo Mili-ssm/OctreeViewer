@@ -251,3 +251,33 @@ fn a_bit_flipped_v8_footer_is_corruption_not_a_retired_format() {
         .expect("damaged footer opened lazily");
     assert!(!matches!(error, FormatError::RetiredFormat(_)), "{error:?}");
 }
+
+/// The wasm async open passes no header: the footer's own checksum alone must still refuse to
+/// name a retired family for a bit-flipped V8 footer, while the real retired footers keep naming.
+#[test]
+fn a_footer_names_a_retired_family_only_with_its_own_checksum_even_without_a_header() {
+    let (primary, _) = write_v8_split(v8_fixture_block(), v8_metadata(4, common::descriptors()));
+    let mut footer = primary[primary.len() - 40..].to_vec();
+    footer[7] ^= 0x0F;
+    assert_eq!(&footer[..8], b"OCTVEND7");
+    let error = viewer_format::explain_retired(FormatError::InvalidFooter, None, Some(&footer));
+    assert!(matches!(error, FormatError::InvalidFooter), "{error:?}");
+    for (name, _, foot) in FAMILIES {
+        let error = viewer_format::explain_retired(FormatError::InvalidFooter, None, Some(foot));
+        assert!(
+            matches!(error, FormatError::RetiredFormat(found) if found == name),
+            "{name}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn opening_a_file_shorter_than_the_header_lazily_is_file_too_short() {
+    let error = FormatReader::open_lazy(
+        Cursor::new(vec![0_u8; 10]),
+        viewer_format::FormatReaderLimits::default(),
+    )
+    .err()
+    .expect("10 bytes opened");
+    assert!(matches!(error, FormatError::FileTooShort), "{error:?}");
+}

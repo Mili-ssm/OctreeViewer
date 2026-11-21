@@ -1,4 +1,4 @@
-use std::io::{Cursor, Read, Seek};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetMetadata, DatasetSource,
@@ -54,12 +54,16 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend().format_metadata()
     }
 
-    /// Opens a V8 primary file lazily: one tail read brings the footer, metadata block and
-    /// root page; child pages come from [`Self::read_page`]. `format_metadata()` then holds only
-    /// the root page's nodes.
+    /// Opens a V8 primary file lazily: a header read, then one tail read that brings the footer,
+    /// metadata block and root page; child pages come from [`Self::read_page`].
+    /// `format_metadata()` then holds only the root page's nodes.
     pub fn open_lazy(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
         // The paged core reads only the tail, never the header: check it here so a header that
         // names another version is refused like it is by `with_limits`.
+        let length = reader.seek(SeekFrom::End(0)).map_err(FormatError::Io)?;
+        if length < crate::layout::HEADER_SIZE {
+            return Err(FormatError::FileTooShort);
+        }
         let identity = probe_format(&mut reader)
             .map_err(|error| crate::explain_open_failure(&mut reader, error))?;
         validate_identity(identity)

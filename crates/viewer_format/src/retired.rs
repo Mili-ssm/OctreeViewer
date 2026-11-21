@@ -85,13 +85,10 @@ pub fn explain_retired(
     if !is_envelope_error(&error) {
         return error;
     }
-    // Behind an intact V8 header, only a footer that is itself intact names a retired family (a
-    // relabelled file). A footer whose own checksum fails is corruption of the V8 file, even when
-    // its magic happens to spell a retired one.
-    if header.is_some_and(is_current_header) && !footer.is_some_and(footer_checksum_holds) {
-        return error;
-    }
+    // A footer names a retired family only when its own checksum holds: a flipped bit of
+    // `OCTVEND8` reads as `OCTVEND7` but is corruption, whatever header (or none) came along.
     footer
+        .filter(|footer| footer_checksum_holds(footer))
         .and_then(retired_format_name)
         .or_else(|| header.and_then(retired_header_name))
         .map_or(error, FormatError::RetiredFormat)
@@ -103,19 +100,6 @@ fn footer_checksum_holds(footer: &[u8]) -> bool {
         && footer[36..].try_into().is_ok_and(|bytes| {
             crate::crc32::checksum_matches(&footer[..36], u32::from_le_bytes(bytes))
         })
-}
-
-/// Whether `header` is an intact header of the current format (V8 final). Such a file is never a
-/// retired one: a footer that does not match it (a single flipped bit of `OCTVEND8` reads as
-/// `OCTVEND7`) is corruption of the current file.
-fn is_current_header(header: &[u8]) -> bool {
-    let Ok(header) = <&[u8; HEADER_SIZE as usize]>::try_from(header) else {
-        return false;
-    };
-    matches!(
-        crate::version::parse_identity(header),
-        Ok(identity) if identity.version == crate::FormatVersion::V8
-    )
 }
 
 /// Errors an envelope that this reader does not accept produces: the header or footer is not one it
@@ -132,8 +116,8 @@ fn is_envelope_error(error: &FormatError) -> bool {
     )
 }
 
-/// Like [`explain_retired`] for a reader the caller still owns: reads its header and footer (best effort)
-/// to name a retired family behind `error`. For tools that open files through other entry points.
+/// Like [`explain_retired`] for a reader the caller still owns: reads its header and footer
+/// (best effort) to name a retired family behind `error`. For tools that open files through other entry points.
 pub fn explain_open_failure<R: Read + Seek>(reader: &mut R, error: FormatError) -> FormatError {
     if !is_envelope_error(&error) {
         return error;
