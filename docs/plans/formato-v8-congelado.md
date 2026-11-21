@@ -143,15 +143,15 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 
 ### Task 3: Retire zstd, v8.2-pre and --attr-codec (ADR 0060)
 
-- [ ] Fuera:
+- [x] Fuera:
   - la dependencia `zstd`;
   - los códecs 5 y 6 y la etiqueta interna 2 (el lector V8 los trata como mal formados);
   - `attribute_scheme.rs` y la parte zstd de `codec.rs`, `attribute_codec.rs` y `read_plan.rs`. Las rutas LZ4, planos de
     bytes y diccionario se quedan;
   - `--attr-codec`, `attrCodec` (core, wasm, `converter-ui.mjs`) y sus casos de paridad y tests.
-- [ ] Test: `--attr-codec` y `attrCodec` dan un error claro de opción retirada.
-- [ ] Se mantiene la paridad nativo = wasm de los bloques (el digest cambia; se anota el nuevo).
-- [ ] Commit `refactor(format)!: drop zstd and the attribute codec option (ADR 0060)`.
+- [x] Test: `--attr-codec` y `attrCodec` dan un error claro de opción retirada.
+- [x] Se mantiene la paridad nativo = wasm de los bloques (el digest cambia; se anota el nuevo).
+- [x] Commit `refactor(format)!: drop zstd and the attribute codec option (ADR 0060)`.
 
 ### Task 4: Retire EPT input and checkpoints (ADR 0061)
 
