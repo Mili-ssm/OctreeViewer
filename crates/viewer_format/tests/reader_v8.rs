@@ -1953,3 +1953,49 @@ fn finite_ranges_are_derived_per_node_and_combined_across_lod() {
         &AttributeValues::U16(vec![500])
     );
 }
+
+/// Ports the surviving part of `streamed_bounds_match_materialized_source_and_render_positions`
+/// (`BoundsAccumulator` is gone with the pre-V8 writer): the decoded render positions of a V8 file
+/// match the source within the declared quantisation bound, for repeated, single and scattered
+/// points off the lattice.
+#[test]
+fn decoded_v8_positions_match_the_source_within_the_quantisation_bound() {
+    const BOUND: f64 = 0.001;
+    let cases: [Vec<[f64; 3]>; 3] = [
+        vec![[0.0, 1.0, 0.25]; 3],
+        vec![[0.1, 0.7, 0.1]],
+        vec![[0.1, 0.7, 0.1], [0.9, 0.3, 0.19], [0.3, 0.0, 0.3]],
+    ];
+    for source in cases {
+        let count = source.len();
+        let block = SourcePointBlock::new(
+            BLOCK_ID,
+            source.clone(),
+            vec![ColorRgb::new(9, 9, 9); count],
+            Vec::new(),
+        );
+        let (primary, attributes) = write_v8_split(block, v8_metadata(count as u64, Vec::new()));
+        let mut reader = open_pair(primary, attributes);
+        let mut decoded: Vec<[f32; 3]> = reader
+            .read_geometry(BLOCK_ID)
+            .unwrap()
+            .points()
+            .iter()
+            .map(|point| point.position)
+            .collect();
+        assert_eq!(decoded.len(), count);
+        // Rows come back in leaf order: pair each source point with a distinct decoded one.
+        for expected in &source {
+            let found = decoded
+                .iter()
+                .position(|got| {
+                    (0..3).all(|axis| (f64::from(got[axis]) - expected[axis]).abs() <= BOUND)
+                })
+                .unwrap_or_else(|| panic!("{expected:?} not within {BOUND} of {decoded:?}"));
+            decoded.swap_remove(found);
+        }
+        // The quantiser itself honours the same bound.
+        let quantized = viewer_format::quantize_local_positions(&source, BOUND).unwrap();
+        assert!(quantized.max_error() <= BOUND);
+    }
+}

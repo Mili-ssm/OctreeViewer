@@ -267,7 +267,18 @@ mod tests {
     fn rejects_corrupt_and_truncated_headers_and_restores_cursor() {
         let mut corrupt = header(8, 0);
         corrupt[16] ^= 1;
-        for bytes in [corrupt, vec![0; 10]] {
+        // The reserved flag values and a header length other than 24 are refused even when the
+        // checksum is valid.
+        let resealed = |edit: fn(&mut Vec<u8>)| {
+            let mut bytes = header(8, 0);
+            edit(&mut bytes);
+            let checksum = crc32(&bytes[..20]);
+            bytes[20..24].copy_from_slice(&checksum.to_le_bytes());
+            bytes
+        };
+        let reserved_flags = resealed(|bytes| bytes[12..16].copy_from_slice(&3_u32.to_le_bytes()));
+        let wrong_length = resealed(|bytes| bytes[10..12].copy_from_slice(&32_u16.to_le_bytes()));
+        for bytes in [corrupt, reserved_flags, wrong_length, vec![0; 10]] {
             let mut input = Cursor::new(bytes);
             input.set_position(3);
             assert!(probe_format(&mut input).is_err());
