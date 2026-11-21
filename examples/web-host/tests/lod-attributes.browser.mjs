@@ -10,9 +10,9 @@ self.onmessage = async ({ data = {} }) => {
     try {
         await init();
         const coordinates = data.coordinates
-            ?? await fetch(new URL("../sample-v5.oct", import.meta.url)).then(r => r.blob());
+            ?? await fetch(new URL("../sample-small.oct", import.meta.url)).then(r => r.blob());
         const attributes = data.attributes
-            ?? await fetch(new URL("../sample-v5.octattrs", import.meta.url)).then(r => r.blob());
+            ?? await fetch(new URL("../sample-small.octattrs", import.meta.url)).then(r => r.blob());
         viewer = await WasmVoxelViewer.createOffscreen(new OffscreenCanvas(1280, 720), 0.6);
         const opened = viewer.openFormatDataset(coordinates, 256 * 1024 * 1024, attributes);
         assert(opened.hasAttributes && opened.attributeSchema.length > 0, "attributes were not attached");

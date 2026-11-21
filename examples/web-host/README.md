@@ -23,8 +23,8 @@ in the side panel, press **Convert to .oct**, then open the result. Converted fi
 
 The built-in sample button opens `sample.oct`, a final `V8` file drawn by the cells path. The demo
 sample always uses the latest stable format ([ADR 0047](../../docs/adr/0047-v5-heredado-hasta-v8.md)).
-`sample-v5.oct` (v5, legacy comparison) and `sample-v7.oct` (`v7.1-pre`, Blob-range probe) back
-older probes only.
+`sample-small.oct` (`V8`, 4,096 points) backs the `*.browser.mjs` tests; `sample-v5.oct` (v5, legacy
+comparison) and `sample-v7.oct` (`v7.1-pre`) are legacy files kept until their removal.
 
 `?url=FILE.oct` opens a file over HTTP and needs a server with **HTTP Range and CORS**; python's
 `http.server` does not support Range. Locally use
@@ -49,6 +49,13 @@ The example writes it as LAS and converts it with the converter defaults (`V8`).
 
 ```bash
 cargo run --offline --release -p viewer_convert --example create_web_sample
+```
+
+The browser tests use `sample-small.oct` / `sample-small.octattrs`: the same surface on a 64×64 grid
+(1 m spacing, 4,096 points, one block, about 22 KiB, paged `V8`). Regenerate it with:
+
+```bash
+cargo run --offline -p viewer_convert --example create_web_sample -- examples/web-host/sample-small.oct 64
 ```
 
 The legacy pairs keep the old 4,096-point grid (1 m spacing). `sample-v5.oct` / `sample-v5.octattrs`
@@ -492,7 +499,7 @@ classification (`u8`, 0–3). Regenerate it with
 the same columns (intensity 0–64,428).
 
 Majadas RGB pairing completed three Firefox runs with the same final geometry counters and a
-visibly colored capture. `tests/lod-attributes.browser.mjs` checks the typed legacy sample by default;
+visibly colored capture. `tests/lod-attributes.browser.mjs` checks the typed `sample-small` fixture by default;
 create it as a module Worker and post one message. Optionally supply coordinate/attribute Blobs,
 `modes` and an `incompatibleAttributes` Blob. It validates complete refinement, matching geometry
 counts, invalid-column rejection and retention after failed sidecar attachment. It requires

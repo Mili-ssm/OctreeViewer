@@ -11,9 +11,9 @@ self.onmessage = async ({ data = {} }) => {
     try {
         await init();
         const primary = data.primary
-            ?? await fetch(new URL("../sample-v7.oct", import.meta.url)).then(response => response.blob());
+            ?? await fetch(new URL("../sample-small.oct", import.meta.url)).then(response => response.blob());
         const attributes = data.attributes
-            ?? await fetch(new URL("../sample-v7.octattrs", import.meta.url)).then(response => response.blob());
+            ?? await fetch(new URL("../sample-small.octattrs", import.meta.url)).then(response => response.blob());
         const primaryBytes = new Uint8Array(await primary.arrayBuffer());
 
         const scheduler = new WasmBlockRequestScheduler(2);
@@ -54,32 +54,30 @@ self.onmessage = async ({ data = {} }) => {
                 primary, attributes, readBudget.clone(),
             );
             const descriptor = reader.lodDatasetDescriptor(64 * 1024 * 1024);
-            assert(descriptor.semantics === "replacement" && descriptor.nodes.length > 0
+            assert(descriptor.semantics === "replacement" && descriptor.paged && descriptor.nodeCount > 0
                 && descriptor.attributeSchema[0].name === "intensity"
                 && descriptor.attributeRanges[0][0][0] === 0
-                && descriptor.visualScale === 1 && descriptor.hasAttributes,
+                && descriptor.visualScale > 0 && descriptor.hasAttributes,
             "async reader did not export complete LOD metadata");
             const metadataViewer = new WasmVoxelViewer(0.6);
-            assert(metadataViewer.openLodDataset(descriptor).status === "metadata_ready",
+            assert(metadataViewer.openPagedLodDataset(reader, 64 * 1024 * 1024).status === "metadata_ready",
                 "viewer rejected async reader metadata");
             metadataViewer.free();
             const geometryOnlyReader = await WasmAsyncFormatReader.open(primary);
             const geometryOnlyViewer = new WasmVoxelViewer(0.6);
             assert(!geometryOnlyReader.lodDatasetDescriptor(64 * 1024 * 1024).hasAttributes,
                 "metadata-only reader claimed a missing companion");
-            geometryOnlyViewer.openLodDataset(
-                geometryOnlyReader.lodDatasetDescriptor(64 * 1024 * 1024),
-            );
+            geometryOnlyViewer.openPagedLodDataset(geometryOnlyReader, 64 * 1024 * 1024);
             geometryOnlyViewer.free();
             geometryOnlyReader.free();
 
-            const geometryPlan = reader.planRead(1n, "geometry");
+            const geometryPlan = reader.planRead(0n, "geometry");
             const geometryRanges = geometryPlan.ranges;
             assert(geometryRanges.length === 2, "geometry did not plan XYZ and RGB ranges");
             assert(BigInt(geometryPlan.peak_bytes) > 0n, "read plan omitted its memory estimate");
             let pendingPlanProtected = false;
             try {
-                reader.planRead(1n, "positions");
+                reader.planRead(0n, "positions");
             } catch {
                 pendingPlanProtected = true;
             }
@@ -95,7 +93,7 @@ self.onmessage = async ({ data = {} }) => {
             const corruptBytes = primaryBytes.slice();
             corruptBytes[Number(geometryRanges[0].offset)] ^= 1;
             const corruptReader = await WasmAsyncFormatReader.open(new Blob([corruptBytes]), attributes);
-            corruptReader.planRead(1n, "geometry");
+            corruptReader.planRead(0n, "geometry");
             let checksumRejected = false;
             try {
                 await corruptReader.read();
@@ -106,7 +104,7 @@ self.onmessage = async ({ data = {} }) => {
             }
             assert(checksumRejected, "corrupt payload was not rejected by its checksum");
 
-            const attrPlan = reader.planRead(1n, "attribute", 0);
+            const attrPlan = reader.planRead(0n, "attribute", 0);
             const attrRanges = attrPlan.ranges;
             assert(attrRanges.length === 1 && attrRanges[0].source === "attributes",
                 "attribute selection did not plan its companion range");
@@ -116,7 +114,7 @@ self.onmessage = async ({ data = {} }) => {
                 && column.values.length === 4096 && column.pointCount === 4096,
             "typed attribute result is invalid");
 
-            const positionPlan = reader.planRead(1n, "positions");
+            const positionPlan = reader.planRead(0n, "positions");
             const positionRanges = positionPlan.ranges;
             assert(positionRanges.length === 1 && positionRanges[0].source === "primary",
                 "position selection did not plan its primary range");
@@ -124,7 +122,7 @@ self.onmessage = async ({ data = {} }) => {
             assert(positions.kind === "positions" && positions.values instanceof Float32Array
                 && positions.values.length === 4096 * 3, "positions result is invalid");
 
-            const colorPlan = reader.planRead(1n, "displayColors");
+            const colorPlan = reader.planRead(0n, "displayColors");
             const colorRanges = colorPlan.ranges;
             assert(colorRanges.length === 1 && colorRanges[0].source === "attributes",
                 "RGB selection did not plan its companion range");
@@ -145,8 +143,8 @@ self.onmessage = async ({ data = {} }) => {
                 });
             };
             try {
-                const geometryRequest = reader.planLodRead(1n, "geometry");
-                const attributeRequest = reader.planLodRead(1n, "positionsAttribute", 0);
+                const geometryRequest = reader.planLodRead(0n, "geometry");
+                const attributeRequest = reader.planLodRead(0n, "positionsAttribute", 0);
                 assert(geometryRequest && attributeRequest,
                     "shared read quota rejected small concurrent requests");
                 assert(BigInt(readBudget.reservedBytes()) > metadataReservation,
@@ -187,8 +185,21 @@ self.onmessage = async ({ data = {} }) => {
                 Number.isSafeInteger(start) && Number.isSafeInteger(end)
                 && start >= 0 && end > start && end <= size
             )), "reader issued an invalid Blob range");
-            assert(ranges.every(({ size, start, end }) => start !== 0 || end !== size),
-                "reader requested an entire Blob");
+            // `open` reads one tail window of up to 1 MiB (`TAIL_READ_BYTES`), which is the whole Blob
+            // for the small fixture. The default sample is larger, so it proves the payload reads
+            // stay ranged.
+            const tailWindowBytes = 1024 * 1024;
+            const largeOpened = ranges.length;
+            const largePrimary = await fetch(new URL("../sample.oct", import.meta.url)).then(r => r.blob());
+            const largeAttributes = await fetch(new URL("../sample.octattrs", import.meta.url)).then(r => r.blob());
+            assert(largePrimary.size > tailWindowBytes, "default sample no longer exceeds the tail window");
+            const largeReader = await WasmAsyncFormatReader.open(largePrimary, largeAttributes);
+            largeReader.planRead(0n, "geometry");
+            await largeReader.read();
+            largeReader.free();
+            assert(ranges.length > largeOpened, "default sample read no ranges");
+            assert(ranges.every(({ size, start, end }) => start !== 0 || end !== size || size <= tailWindowBytes),
+                "reader requested an entire Blob beyond the open-time tail window");
             assert(arrayBufferCalls === ranges.length, "each range must resolve through Blob.arrayBuffer");
             self.postMessage({
                 type: "probeResult",

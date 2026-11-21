@@ -228,7 +228,7 @@ remaining presentation limitation are in [storage benchmarks](../../docs/records
 ### V7 asynchronous Blob range probe
 
 With fresh bindings, run `tests/async-format-reader.browser.mjs` as a module Worker and wait for
-`type === "probeResult"`. Against the V7.1-pre fixture it checks bounded metadata ranges,
+`type === "probeResult"`. Against `sample-small.oct` (V8) it checks bounded metadata ranges,
 asynchronous `Blob.arrayBuffer()` payload reads, XYZ/RGB and typed U16 materialization, companion
 identity and CRC rejection without a full-file read, plus shared read quota, concurrent calls
 and scheduler tickets/retry. Equivalent V7.3 fixtures passed with fresh bindings ([evidence](../../docs/records/benchmarks/data/storage-v7-v73-integration-2026-10-25.json)). Visual

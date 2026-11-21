@@ -1,5 +1,8 @@
 //! Builds the web demo sample: a deterministic wave surface written as LAS and converted with the
 //! converter's default options, so the output is the default format (V8) with `.octattrs`.
+//!
+//! Usage: `create_web_sample [OUTPUT [SIDE]]`. The browser-test fixture is
+//! `create_web_sample examples/web-host/sample-small.oct 64` (4096 points).
 
 use std::{
     env,
@@ -12,7 +15,8 @@ use las::{Builder, Color, Point, Writer, point::Format};
 use viewer_convert::{ConvertOptions, convert_file};
 use viewer_format::{FormatReader, FormatVersion, OctreeReader};
 
-const SIDE: u32 = 768;
+/// Grid side of the default demo sample; the browser tests pass a smaller one (`sample-small`).
+const DEFAULT_SIDE: u32 = 768;
 const MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 fn write_las(path: &std::path::Path, side: u32) -> Result<u64, Box<dyn Error>> {
@@ -66,13 +70,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         || PathBuf::from("examples/web-host/sample.oct"),
         PathBuf::from,
     );
+    let side = match env::args().nth(2) {
+        Some(text) => text.parse::<u32>()?,
+        None => DEFAULT_SIDE,
+    };
     let scratch = env::temp_dir().join(format!("create_web_sample_{}", std::process::id()));
-    let result = generate(&output, &scratch);
+    let result = generate(&output, &scratch, side);
     let _ = fs::remove_dir_all(&scratch);
     result
 }
 
-fn generate(output: &Path, scratch: &Path) -> Result<(), Box<dyn Error>> {
+fn generate(output: &Path, scratch: &Path, side: u32) -> Result<(), Box<dyn Error>> {
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -85,10 +93,10 @@ fn generate(output: &Path, scratch: &Path) -> Result<(), Box<dyn Error>> {
             fs::remove_file(stale)?;
         }
     }
-    let points = write_las(&input, SIDE)?;
+    let points = write_las(&input, side)?;
     convert_file(&input, output, ConvertOptions::default())?;
     let size = fs::metadata(output)?.len() + fs::metadata(&attributes)?.len();
-    eprintln!("side {SIDE}: {points} points, {size} bytes");
+    eprintln!("side {side}: {points} points, {size} bytes");
     if size > MAX_BYTES {
         return Err(format!("sample is {size} bytes, over the {MAX_BYTES} byte guard").into());
     }

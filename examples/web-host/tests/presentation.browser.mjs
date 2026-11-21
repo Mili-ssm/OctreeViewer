@@ -53,8 +53,8 @@ async function viewerProbe(canvas) {
     await init();
     const viewer = await WasmVoxelViewer.createOffscreen(canvas, 0.6);
     self.probeResources = viewer;
-    const coordinates = await fetch(new URL("../sample-v5.oct", import.meta.url)).then(response => response.blob());
-    const attributes = await fetch(new URL("../sample-v5.octattrs", import.meta.url)).then(response => response.blob());
+    const coordinates = await fetch(new URL("../sample-small.oct", import.meta.url)).then(response => response.blob());
+    const attributes = await fetch(new URL("../sample-small.octattrs", import.meta.url)).then(response => response.blob());
     viewer.openFormatDataset(coordinates, 256 * 1024 * 1024, attributes);
     viewer.fitScene();
     let lod;
@@ -70,7 +70,8 @@ async function viewerProbe(canvas) {
     checkResourceStats(gpuBeforePick, width, height);
     const hit = await viewer.pick(width / 2, height / 2);
     assert(hit && hit.voxelCenter.every(Number.isFinite), "center pick missed the sample");
-    const expectedCenter = [31.75390625, 31.75390625, 1.79296875];
+    // Center voxel of `sample-small` (V8) at the default camera; regenerating the fixture can move it.
+    const expectedCenter = [31.25, 31.25, 1.69500732421875];
     assert(hit.voxelCenter.every((value, index) => Math.abs(value - expectedCenter[index]) < 1e-5),
         "center pick returned incorrect dataset coordinates");
     assert(hit.position.every(Number.isFinite) && hit.voxelSize > 0 && hit.distance > 0,
