@@ -1,11 +1,10 @@
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{Cursor, Read, Seek};
 
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetMetadata, DatasetSource,
     PointBatch, PointBlock,
 };
 
-use crate::layout::{FOOTER_SIZE, HEADER_SIZE};
 use crate::reader::{
     BlockPayloadStorageStats, BlockStorageStats, FormatReaderLimits, IndexedReader,
 };
@@ -26,25 +25,15 @@ impl<R: Read + Seek> FormatReader<R> {
     pub fn with_limits(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
         let identity = probe_format(&mut reader)
             .map_err(|error| crate::explain_open_failure(&mut reader, error))?;
-        // The reader moves into the backend, so the envelope that may name a retired family is
-        // read first. Final V8 never needs it.
-        // The reader moves into the backend, so the envelope that may name a retired family is
-        // read first: a retired footer behind a V8 header is named by its footer, not by the header.
-        let header = crate::retired::read_at(&mut reader, SeekFrom::Start(0), HEADER_SIZE as usize);
-        let footer = crate::retired::read_at(
-            &mut reader,
-            SeekFrom::End(-(FOOTER_SIZE as i64)),
-            FOOTER_SIZE as usize,
-        );
-        let opened = validate_identity(identity)
-            .and_then(|()| IndexedReader::with_identity(reader, limits, identity));
-        match opened {
-            Ok(backend) => Ok(Self { backend }),
-            Err(error) => Err(crate::retired::explain_retired(
-                error,
-                header.as_deref(),
-                footer.as_deref(),
-            )),
+        // The reader stays borrowed while the index loads, so a failure can still read the envelope
+        // to name a retired family; a successful open never reads it again.
+        let loaded = validate_identity(identity)
+            .and_then(|()| IndexedReader::load_identity(&mut reader, &limits, identity));
+        match loaded {
+            Ok(loaded) => Ok(Self {
+                backend: IndexedReader::from_loaded(reader, limits, loaded),
+            }),
+            Err(error) => Err(crate::explain_open_failure(&mut reader, error)),
         }
     }
 
@@ -65,7 +54,7 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend().format_metadata()
     }
 
-    /// Opens a `v7.5-pre` primary file lazily: one tail read brings the footer, metadata block and
+    /// Opens a V8 primary file lazily: one tail read brings the footer, metadata block and
     /// root page; child pages come from [`Self::read_page`]. `format_metadata()` then holds only
     /// the root page's nodes.
     pub fn open_lazy(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {

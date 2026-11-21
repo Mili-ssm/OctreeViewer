@@ -231,3 +231,23 @@ fn a_v8_header_damaged_to_major_7_is_an_invalid_header() {
         .expect_err("damaged companion attached");
     assert!(matches!(error, FormatError::InvalidHeader), "{error:?}");
 }
+
+/// One flipped bit of the `OCTVEND8` footer magic spells `OCTVEND7`, but the header is an intact V8
+/// one: the file is a corrupt V8 file, never a retired `v7` one.
+#[test]
+fn a_bit_flipped_v8_footer_is_corruption_not_a_retired_format() {
+    let (primary, _) = write_v8_split(v8_fixture_block(), v8_metadata(4, common::descriptors()));
+    let magic = primary.len() - 40;
+    assert_eq!(&primary[magic..magic + 8], b"OCTVEND8");
+    let mut damaged = primary;
+    damaged[magic + 7] ^= 0x0F;
+    assert_eq!(&damaged[magic..magic + 8], b"OCTVEND7");
+    let error = FormatReader::new(Cursor::new(damaged.clone()))
+        .err()
+        .expect("damaged footer opened");
+    assert!(matches!(error, FormatError::InvalidFooter), "{error:?}");
+    let error = PagedReader::open(Cursor::new(damaged))
+        .err()
+        .expect("damaged footer opened lazily");
+    assert!(!matches!(error, FormatError::RetiredFormat(_)), "{error:?}");
+}

@@ -82,13 +82,26 @@ pub fn explain_retired(
     header: Option<&[u8]>,
     footer: Option<&[u8]>,
 ) -> FormatError {
-    if !is_envelope_error(&error) {
+    if !is_envelope_error(&error) || header.is_some_and(is_current_header) {
         return error;
     }
     footer
         .and_then(retired_format_name)
         .or_else(|| header.and_then(retired_header_name))
         .map_or(error, FormatError::RetiredFormat)
+}
+
+/// Whether `header` is an intact header of the current format (V8 final). Such a file is never a
+/// retired one: a footer that does not match it (a single flipped bit of `OCTVEND8` reads as
+/// `OCTVEND7`) is corruption of the current file.
+fn is_current_header(header: &[u8]) -> bool {
+    let Ok(header) = <&[u8; HEADER_SIZE as usize]>::try_from(header) else {
+        return false;
+    };
+    matches!(
+        crate::version::parse_identity(header),
+        Ok(identity) if identity.version == crate::FormatVersion::V8
+    )
 }
 
 /// Errors an envelope that this reader does not accept produces: the header or footer is not one it

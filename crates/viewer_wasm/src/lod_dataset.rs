@@ -532,7 +532,7 @@ impl LodDataset {
         self.state_epoch += 1;
     }
 
-    /// Declares that the format has the global integer frame ,
+    /// Declares that the format has the global integer frame,
     /// the precondition of the cell path together with replacement semantics.
     #[must_use]
     pub fn with_global_frame(mut self, global_frame: bool) -> Self {

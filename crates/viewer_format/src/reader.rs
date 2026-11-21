@@ -64,6 +64,16 @@ pub struct BlockPayloadStorageStats {
     pub raw_bytes: u64,
 }
 
+/// An index read and validated by [`IndexedReader::load_identity`], not yet bound to its reader.
+pub(crate) struct LoadedPrimary {
+    layout: StorageLayout,
+    index_identity: (u64, u64, u32),
+    attribute_file_length: u64,
+    metadata: FormatMetadata,
+    blocks: BTreeMap<BlockId, BlockDirectoryEntry>,
+    reference_spacing: f64,
+}
+
 /// Seekable reader that loads metadata at open and verifies only requested block payloads.
 pub(crate) struct IndexedReader<R> {
     reader: R,
@@ -226,11 +236,13 @@ impl<R: Read + Seek> IndexedReader<R> {
         source.accept_page(anchor, &bytes)
     }
 
-    pub(crate) fn with_identity(
-        mut reader: R,
-        limits: FormatReaderLimits,
+    /// Reads and validates the whole index of a monolithic-view primary file. Borrows the reader so
+    /// the caller still owns it on failure (see [`Self::from_loaded`]).
+    pub(crate) fn load_identity(
+        reader: &mut R,
+        limits: &FormatReaderLimits,
         identity: crate::FormatIdentity,
-    ) -> Result<Self, FormatError> {
+    ) -> Result<LoadedPrimary, FormatError> {
         let layout = validate_supported_primary(identity)?;
         let file_length = reader.seek(SeekFrom::End(0))?;
         if file_length < HEADER_SIZE + FOOTER_SIZE {
@@ -252,24 +264,49 @@ impl<R: Read + Seek> IndexedReader<R> {
             return Err(FormatError::InvalidFooter);
         }
         let ((metadata, blocks), index_identity, reference_spacing) =
-            crate::paged_index::load_all(&mut reader, &limits)?;
+            crate::paged_index::load_all(reader, limits)?;
         let attribute_file_length = split_attribute_file_length(&blocks)?;
-        Ok(Self {
+        Ok(LoadedPrimary {
+            layout,
+            index_identity,
+            attribute_file_length,
+            metadata,
+            blocks,
+            reference_spacing,
+        })
+    }
+
+    pub(crate) fn from_loaded(
+        reader: R,
+        limits: FormatReaderLimits,
+        loaded: LoadedPrimary,
+    ) -> Self {
+        Self {
             reader,
             attributes: None,
             attributes_attached: false,
             external_payloads_only: false,
-            layout,
-            index_identity,
-            attribute_file_length,
-            metadata: Arc::new(metadata),
-            blocks: Arc::new(blocks),
+            layout: loaded.layout,
+            index_identity: loaded.index_identity,
+            attribute_file_length: loaded.attribute_file_length,
+            metadata: Arc::new(loaded.metadata),
+            blocks: Arc::new(loaded.blocks),
             paged: None,
-            stored_reference_spacing: Some(reference_spacing),
+            stored_reference_spacing: Some(loaded.reference_spacing),
             plan_owner: Arc::new(()),
             attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
             limits,
-        })
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_identity(
+        mut reader: R,
+        limits: FormatReaderLimits,
+        identity: crate::FormatIdentity,
+    ) -> Result<Self, FormatError> {
+        let loaded = Self::load_identity(&mut reader, &limits, identity)?;
+        Ok(Self::from_loaded(reader, limits, loaded))
     }
 
     /// Attach a committed companion belonging to this primary index. Payload CRCs are
