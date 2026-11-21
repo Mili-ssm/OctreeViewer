@@ -674,12 +674,9 @@ fn reader_rejects_inconsistent_new_fields_even_with_valid_checksums() {
     let (metadata, blocks) = tree(wkt_crs(), None);
     let bytes = write(metadata, blocks, 0.01);
     FormatReader::new(Cursor::new(bytes.clone())).unwrap();
-    let malformed = |result: Result<(), FormatError>, what: &str| {
+    let malformed = |result: Result<(), FormatError>, what: &str, message: &str| {
         assert!(
-            matches!(
-                result,
-                Err(FormatError::MalformedIndex(_) | FormatError::InvalidUtf8)
-            ),
+            matches!(&result, Err(FormatError::MalformedIndex(actual)) if actual.contains(message)),
             "{what}: {result:?}"
         );
     };
@@ -724,12 +721,14 @@ fn reader_rejects_inconsistent_new_fields_even_with_valid_checksums() {
             put_quanta(bytes, index + FRAME_ORIGIN_AT, 0, origin[0] + 1);
         }),
         "frame origin moved off the derived f64 slot",
+        "frame origin does not match the root prefix",
     );
     malformed(
         patched(&bytes, |bytes, index, _| {
             put_quanta(bytes, index + FRAME_ORIGIN_AT, 0, origin[0] - 1);
         }),
         "frame origin below the root node",
+        "invalid root level, prefix, frame origin or data maximum",
     );
     // The data maximum (origin + 100 m) must not fall below the frame origin nor leave the root.
     malformed(
@@ -737,12 +736,14 @@ fn reader_rejects_inconsistent_new_fields_even_with_valid_checksums() {
             put_quanta(bytes, index + DATA_MAX_AT, 0, origin[0] - 1);
         }),
         "data maximum below origin",
+        "invalid root level, prefix, frame origin or data maximum",
     );
     malformed(
         patched(&bytes, |bytes, index, _| {
             put_quanta(bytes, index + DATA_MAX_AT, 0, origin[0] + (1 << 24));
         }),
         "data maximum outside root",
+        "invalid root level, prefix, frame origin or data maximum",
     );
     // Authority must be upper case, so a flipped letter is refused.
     malformed(
@@ -758,6 +759,60 @@ fn reader_rejects_inconsistent_new_fields_even_with_valid_checksums() {
             bytes[found[0] + 2] = b's';
         }),
         "authority case",
+        "invalid CRS record",
+    );
+}
+
+#[test]
+fn a_block_cell_outside_the_split_rule_is_refused_even_with_valid_checksums() {
+    // Level 31: two 2^32-quanta cells per axis, so a stored block cell above 1 leaves the node. The
+    // second block sits in cell (1, 0, 0), stored as three u32 right after its geometry tag and
+    // quantization error.
+    let level = 31;
+    let metadata = global_metadata(
+        level,
+        [1_u64 << 30; 3],
+        vec![BlockId::new(1), BlockId::new(2)],
+        4,
+        Vec::new(),
+        wkt_crs(),
+        None,
+    );
+    let cell = 131_072.0;
+    let bytes = write(
+        metadata,
+        vec![
+            block_of(1, vec![[1.0, 2.0, 3.0], [100.0, 50.0, 25.0]]),
+            block_of(
+                2,
+                vec![[cell + 0.5, 4.0, 8.0], [cell + 90_000.0, 5.0, 0.25]],
+            ),
+        ],
+        0.1,
+    );
+    FormatReader::new(Cursor::new(bytes.clone())).unwrap();
+    let cells: Vec<u8> = [1_u32, 0, 0].iter().flat_map(|c| c.to_le_bytes()).collect();
+    let result = patched(&bytes, |bytes, _, root_start| {
+        // A block entry is the point count (u64), the geometry tag (u8), the quantization error
+        // (f64) and the three cells.
+        let count = 2_u64.to_le_bytes();
+        let found: Vec<usize> = (root_start..bytes.len() - 17 - cells.len())
+            .filter(|&at| {
+                bytes[at..at + 8] == count && bytes[at + 17..at + 17 + cells.len()] == cells[..]
+            })
+            .map(|at| at + 17)
+            .collect();
+        assert_eq!(found.len(), 1, "block cell must be unique: {found:?}");
+        bytes[found[0]..found[0] + 4].copy_from_slice(&2_u32.to_le_bytes());
+    });
+    assert!(
+        matches!(
+            &result,
+            Err(FormatError::MalformedIndex(
+                "block origin does not follow the node origin or split rule"
+            ))
+        ),
+        "{result:?}"
     );
 }
 
