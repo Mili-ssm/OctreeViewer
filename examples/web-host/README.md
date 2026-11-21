@@ -358,18 +358,18 @@ The converter is separately embeddable from `converter-api.mjs`. It accepts a lo
 ```js
 import { createConverter } from "./converter-api.mjs";
 
-const converter = createConverter({ converterOptions: { pointsPerBlock: 4096 } });
+const converter = createConverter({ converterOptions: { maxMemoryMiB: 256 } });
 await converter.ready; // orphan `conversion-*.partial` files from earlier sessions are removed
 converter.on("progress", ({ processedPoints, totalPoints }) => console.log(processedPoints, totalPoints));
 converter.on("warning", ({ message }) => console.warn(message));
-const result = await converter.convert(lasFile, { options: { spatialDivisions: 8 } });
+const result = await converter.convert(lasFile, { options: { maxError: 0.05 } });
 console.log(result.name, result.points, result.file, result.timings);
 converter.dispose();
 ```
 
 | Item | Behaviour |
 | --- | --- |
-| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `formatVersion` (default `"v7"`, the final global-frame format), `rowOrder` (`"source"` or `"hybrid"`; the default depends on the format: v7 and v8.1-pre fix hybrid, v7.N-pre defaults to source, and hybrid is rejected for formats without hybrid rows; V7 is frozen by ADR 0044), `pointsPerBlock` and `spatialDivisions` (global-frame formats `v7`, `v7.4-pre`, `v7.5-pre` and `v8.1-pre` fix them at 64000 and 2, so omit them; values other than the fixed ones, except the legacy default 262144 points per block, which is treated as unset, are errors), `maxError`, `maxMemoryMiB`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS) |
+| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `maxError`, `maxMemoryMiB`, `spatialWorkers`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS). V8 is the only format and fixes the format, row order, points per block (64000) and spatial divisions (2): `formatVersion`, `rowOrder`, `pointsPerBlock` and `spatialDivisions` are refused with `option NAME was removed: V8 is the only format and fixes it` |
 | `ready` | Promise that settles once stale partial files are deleted; `convert()` waits for it on its own, so awaiting it is optional |
 | Events | `on("progress" \| "status" \| "warning" \| "complete" \| "cancelled" \| "error", callback)` returns an unsubscribe function |
 | `warning` | Emitted when OPFS is unavailable (Chrome `file://`): the conversion runs RAM-only and is limited by `ramBudget`; serve the page over `http://localhost` for large files |

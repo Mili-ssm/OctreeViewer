@@ -9,7 +9,6 @@ use viewer_convert_core::{
     HybridSpoolStore, HybridStats, LasFactory, NoClock, SpoolEstimate, convert_serial,
     estimate_spools, inspect_source, validate_output_serial,
 };
-use viewer_format::{FormatVersion, RowOrder};
 use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::Blob;
 
@@ -53,55 +52,45 @@ fn number(options: &JsValue, key: &str) -> Result<Option<f64>, JsValue> {
         .ok_or_else(|| JsValue::from_str(&format!("option {key} must be a non-negative number")))
 }
 
-/// Builds the options from a JS object; absent keys keep the CLI defaults (R2). Keys:
-/// `formatVersion`, `rowOrder` (`source`|`hybrid`; hybrid needs a v7 or v8 format; `v7`, `v8` and `v8.1-pre` fix hybrid and reject source; `v7.N-pre` default to source),
-/// `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB` and `spatialWorkers`. The
-/// format resolves and checks the values it fixes, whatever the key order.
+/// Options V8 fixes: passing any of them is an error, never ignored.
+const REMOVED_OPTIONS: [&str; 5] = [
+    "formatVersion",
+    "rowOrder",
+    "pointsPerBlock",
+    "spatialDivisions",
+    "attrCodec",
+];
+
+/// Builds the options from a JS object; absent keys keep the CLI defaults (R2). Keys: `maxError`,
+/// `maxMemoryMiB` and `spatialWorkers`. `formatVersion`, `rowOrder`, `pointsPerBlock` and
+/// `spatialDivisions` are refused: V8 is the only format and fixes them.
 fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
     let defaults = ConvertOptions::default();
     let invalid = |error: ConvertError| JsValue::from_str(&error.to_string());
-    // Absent stays unrequested: the format resolves it (64000 global-frame, else 262144).
-    let points = number(options, "pointsPerBlock")?.map(|v| v as u64);
+    if !options.is_undefined() && !options.is_null() {
+        for key in REMOVED_OPTIONS {
+            let value = js_sys::Reflect::get(options, &key.into())?;
+            if value.is_undefined() || value.is_null() {
+                continue;
+            }
+            return Err(JsValue::from_str(&match key {
+                "attrCodec" => "option attrCodec was removed (ADR 0060): attribute payloads are stored with LZ4 only".to_owned(),
+                _ => format!("option {key} was removed: V8 is the only format and fixes it"),
+            }));
+        }
+    }
     let max_error = number(options, "maxError")?.unwrap_or(defaults.max_quantization_error());
     let memory = number(options, "maxMemoryMiB")?
         .map(|mib| (mib as u64).checked_mul(1024 * 1024))
         .map_or(Ok(defaults.max_memory_budget_bytes()), |bytes| {
             bytes.ok_or_else(|| JsValue::from_str("option maxMemoryMiB overflows bytes"))
         })?;
-    let mut converted = ConvertOptions::with_requested_points_per_block(points, max_error, memory)
+    let mut converted = ConvertOptions::with_requested_points_per_block(None, max_error, memory)
         .map_err(invalid)?;
     if let Some(workers) = number(options, "spatialWorkers")? {
         converted = converted
             .with_spatial_workers(workers as usize)
             .map_err(invalid)?;
-    }
-    if !options.is_undefined() && !options.is_null() {
-        let version = js_sys::Reflect::get(options, &"formatVersion".into())?;
-        if let Some(version) = version.as_string() {
-            let version: FormatVersion = version.parse().map_err(JsValue::from_str)?;
-            converted = converted.with_format_version(version).map_err(invalid)?;
-        }
-        if let Some(divisions) = number(options, "spatialDivisions")? {
-            let divisions = u8::try_from(divisions as u64).unwrap_or(u8::MAX);
-            converted = converted
-                .with_spatial_divisions(divisions)
-                .map_err(invalid)?;
-        }
-        let order = js_sys::Reflect::get(options, &"rowOrder".into())?;
-        if !order.is_undefined() && !order.is_null() {
-            let order: RowOrder = order
-                .as_string()
-                .ok_or_else(|| JsValue::from_str("option rowOrder must be a string"))?
-                .parse()
-                .map_err(|error: String| JsValue::from_str(&error))?;
-            converted = converted.with_row_order(order).map_err(invalid)?;
-        }
-        let codec = js_sys::Reflect::get(options, &"attrCodec".into())?;
-        if !codec.is_undefined() && !codec.is_null() {
-            return Err(JsValue::from_str(
-                "option attrCodec was removed (ADR 0060): attribute payloads are stored with LZ4 only",
-            ));
-        }
     }
     converted.validate().map_err(invalid)
 }

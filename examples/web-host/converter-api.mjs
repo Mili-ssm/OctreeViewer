@@ -1,6 +1,8 @@
 import { removeWithRetry } from "./spool-tiers.mjs";
 
 const LEGACY_REMOVED = 'the legacy converter was removed; omit `engine` or use "core"';
+// V8 is the only format and fixes these options: refused before anything reaches the worker.
+const UNSUPPORTED_CONVERTER_OPTIONS = ["formatVersion", "rowOrder", "pointsPerBlock", "spatialDivisions"];
 const PARTIAL_PATTERN = /^conversion-.*\.partial$/;
 
 /**
@@ -134,12 +136,18 @@ export function createConverter(options = {}) {
                     const engine = request.engine ?? options.engine ?? "core";
                     if (engine === "legacy") throw new TypeError(LEGACY_REMOVED);
                     if (engine !== "core") throw new TypeError(`unknown engine: ${engine}`);
+                    const converterOptions = request.options ?? options.converterOptions ?? {};
+                    for (const name of UNSUPPORTED_CONVERTER_OPTIONS) {
+                        if (converterOptions[name] !== undefined) {
+                            throw new TypeError(`option ${name} was removed: V8 is the only format and fixes it`);
+                        }
+                    }
                     partial = null;
                     const message = {
                         type: "convert",
                         engine: "core",
                         file,
-                        options: request.options ?? options.converterOptions ?? {},
+                        options: converterOptions,
                     };
                     entry.posted = true;
                     ensureWorker().postMessage(message);

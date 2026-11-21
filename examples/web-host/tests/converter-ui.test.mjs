@@ -2,57 +2,39 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-    FORMAT_VERSIONS, OPTION_DEFAULTS, fixedFrameDisplayValue, fixedFrameHint, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
+    OPTION_DEFAULTS, progressText, spoolText, timingsText, validateConverterOptions,
 } from "../converter-ui.mjs";
 
 test("defaults are the CLI defaults and map to core options", () => {
     const { errors, options } = validateConverterOptions(OPTION_DEFAULTS);
     assert.deepEqual(errors, {});
     assert.deepEqual(options, {
-        formatVersion: "v8", maxError: 0.01, maxMemoryMiB: 512, ramBudget: 4e9,
+        maxError: 0.01, maxMemoryMiB: 512, ramBudget: 4e9,
     });
     assert.deepEqual(validateConverterOptions().options, options);
-    assert.equal(FORMAT_VERSIONS[0], "v8");
-    assert.equal(OPTION_DEFAULTS.formatVersion, "v8");
+    assert.deepEqual(Object.keys(OPTION_DEFAULTS), ["maxError", "plannerBudgetMiB", "ramBudgetGB"]);
 });
 
-test("v5 and v7.5-pre are accepted; only v5 sends leaf size and divisions", () => {
-    const v5 = validateConverterOptions({ formatVersion: "v5" });
-    assert.deepEqual(v5.errors, {});
-    assert.equal(v5.options.pointsPerBlock, 262144);
-    assert.equal(v5.options.spatialDivisions, 2);
-    assert.ok(FORMAT_VERSIONS.includes("v7.5-pre"));
-    assert.deepEqual(validateConverterOptions({ formatVersion: "v7.5-pre" }).errors, {});
-});
-
-test("global-frame formats send neither points per block nor divisions, even if invalid", () => {
-    for (const formatVersion of ["v8", "v7", "v7.4-pre", "v7.5-pre", "v8.1-pre"]) {
-        assert.ok(isGlobalFrameFormat(formatVersion));
-        const { errors, options } = validateConverterOptions({ formatVersion, pointsPerBlock: "0", spatialDivisions: "3" });
-        assert.deepEqual(errors, {});
-        assert.ok(!("pointsPerBlock" in options) && !("spatialDivisions" in options), formatVersion);
+test("the options V8 fixes are refused with a message that names them", () => {
+    for (const name of ["formatVersion", "rowOrder", "pointsPerBlock", "spatialDivisions"]) {
+        for (const value of ["v8", "v5", 64000, "", 0]) {
+            const { errors, options } = validateConverterOptions({ [name]: value });
+            assert.deepEqual(Object.keys(errors), [name], `${name}=${JSON.stringify(value)}`);
+            assert.equal(errors[name], `option ${name} was removed: V8 is the only format and fixes it`);
+            assert.ok(!(name in options));
+        }
     }
-    for (const formatVersion of ["v5", "v6.1-pre", "v7.3-pre"]) assert.ok(!isGlobalFrameFormat(formatVersion));
-});
-
-test("every listed format version is accepted and unknown ones are not", () => {
-    for (const formatVersion of FORMAT_VERSIONS) {
-        assert.deepEqual(validateConverterOptions({ formatVersion }).errors, {});
-    }
-    assert.ok("formatVersion" in validateConverterOptions({ formatVersion: "v6" }).errors);
 });
 
 test("out of range, fractional and empty values are rejected per field", () => {
     const cases = [
-        ["pointsPerBlock", ["0", "1000001", "1.5", "", "abc"]],
         ["maxError", ["-1", "", "x", "Infinity"]],
-        ["spatialDivisions", ["3", "16", ""]],
         ["plannerBudgetMiB", ["0", "4097", "2.5"]],
         ["ramBudgetGB", ["0", "9", "1.5", ""]],
     ];
     for (const [field, values] of cases) {
         for (const value of values) {
-            const { errors } = validateConverterOptions({ formatVersion: "v5", [field]: value });
+            const { errors } = validateConverterOptions({ [field]: value });
             assert.deepEqual(Object.keys(errors), [field], `${field}=${JSON.stringify(value)}`);
         }
     }
@@ -60,7 +42,7 @@ test("out of range, fractional and empty values are rejected per field", () => {
 
 test("boundaries are accepted and RAM budget is converted to bytes", () => {
     const { errors, options } = validateConverterOptions({
-        formatVersion: "v5", pointsPerBlock: "1000000", maxError: "0", spatialDivisions: "8", plannerBudgetMiB: "4096", ramBudgetGB: "8",
+        maxError: "0", plannerBudgetMiB: "4096", ramBudgetGB: "8",
     });
     assert.deepEqual(errors, {});
     assert.equal(options.ramBudget, 8e9);
@@ -83,31 +65,12 @@ test("timings and spool stats render only what is present", () => {
     assert.equal(spoolText(undefined), "");
 });
 
-test("fixed-frame fields show the fixed values for global-frame formats and restore the user's otherwise", () => {
-    assert.equal(fixedFrameDisplayValue("pointsPerBlock", "v7", "1000"), "64000");
-    assert.equal(fixedFrameDisplayValue("pointsPerBlock", "v8", "1000"), "64000");
-    assert.equal(fixedFrameDisplayValue("spatialDivisions", "v8", "4"), "2");
-    assert.equal(fixedFrameDisplayValue("spatialDivisions", "v7.5-pre", "4"), "2");
-    assert.equal(fixedFrameDisplayValue("pointsPerBlock", "v5", "1000"), "1000");
-    assert.equal(fixedFrameDisplayValue("spatialDivisions", "v5", undefined), OPTION_DEFAULTS.spatialDivisions);
-    assert.equal(fixedFrameHint("pointsPerBlock"), "Fixed by the selected format (64,000).");
-    assert.equal(fixedFrameHint("spatialDivisions"), "Fixed by the selected format (2).");
-});
-
 test("attr codec was removed (ADR 0060): any value is an error that names it", () => {
     assert.ok(!("attrCodec" in validateConverterOptions(OPTION_DEFAULTS).options));
-    for (const formatVersion of ["v8", "v5"]) {
-        for (const attrCodec of ["lz4", "cold", "cold-rgb", "all", "zstd"]) {
-            const { errors, options } = validateConverterOptions({ formatVersion, attrCodec });
-            assert.deepEqual(Object.keys(errors), ["attrCodec"]);
-            assert.match(errors.attrCodec, /attrCodec was removed \(ADR 0060\)/);
-            assert.ok(!("attrCodec" in options));
-        }
+    for (const attrCodec of ["lz4", "cold", "cold-rgb", "all", "zstd"]) {
+        const { errors, options } = validateConverterOptions({ attrCodec });
+        assert.deepEqual(Object.keys(errors), ["attrCodec"]);
+        assert.match(errors.attrCodec, /attrCodec was removed \(ADR 0060\)/);
+        assert.ok(!("attrCodec" in options));
     }
-});
-
-test("v8.2-pre is no longer a listed format version", () => {
-    assert.ok(!FORMAT_VERSIONS.includes("v8.2-pre"));
-    assert.deepEqual(Object.keys(validateConverterOptions({ formatVersion: "v8.2-pre" }).errors), ["formatVersion"]);
-    assert.ok(!isGlobalFrameFormat("v8.2-pre"));
 });

@@ -9,7 +9,7 @@ import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
 import {
-    FORMAT_VERSIONS, OPTION_DEFAULTS, fixedFrameDisplayValue, fixedFrameHint, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
+    progressText, spoolText, timingsText, validateConverterOptions,
 } from "./converter-ui.mjs";
 
 let canvas = document.getElementById("viewer-canvas");
@@ -34,10 +34,7 @@ const convertResult = document.getElementById("convert-result");
 const convertDetails = document.getElementById("convert-details");
 const convertOptionsFields = document.getElementById("convert-options-fields");
 const optionFields = {
-    formatVersion: document.getElementById("opt-format-version"),
-    pointsPerBlock: document.getElementById("opt-points-per-block"),
     maxError: document.getElementById("opt-max-error"),
-    spatialDivisions: document.getElementById("opt-spatial-divisions"),
     plannerBudgetMiB: document.getElementById("opt-planner-budget"),
     ramBudgetGB: document.getElementById("opt-ram-budget"),
 };
@@ -1033,28 +1030,6 @@ minLengthValue.addEventListener("input", () => {
     minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value, unitPolicy.metresPerUnit))));
 });
 syncMinLengthMode();
-for (const version of FORMAT_VERSIONS) {
-    optionFields.formatVersion.append(new Option(version, version, false, version === OPTION_DEFAULTS.formatVersion));
-}
-
-// Global-frame formats fix these two values: disable the controls and say why (aria-describedby).
-const savedFixedFrameValues = {};
-function syncFixedFrameControls() {
-    const fixed = isGlobalFrameFormat(optionFields.formatVersion.value);
-    for (const name of ["pointsPerBlock", "spatialDivisions"]) {
-        const field = optionFields[name];
-        // Rewrite the value only when the fixed state flips, so typing in an enabled field sticks.
-        if (fixed !== field.disabled) {
-            if (fixed) savedFixedFrameValues[name] = field.value;
-            field.value = fixedFrameDisplayValue(name, optionFields.formatVersion.value, savedFixedFrameValues[name]);
-            if (!fixed) delete savedFixedFrameValues[name];
-        }
-        field.disabled = fixed;
-        const hint = document.getElementById(`${field.id}-fixed`);
-        hint.textContent = fixedFrameHint(name);
-        hint.hidden = !fixed;
-    }
-}
 
 function readConverterOptions() {
     return validateConverterOptions(Object.fromEntries(
@@ -1064,7 +1039,6 @@ function readConverterOptions() {
 
 // Shows each field's message next to it (aria-describedby) and returns the options, or null if any is invalid.
 function refreshConverterOptions() {
-    syncFixedFrameControls();
     const { errors, options } = readConverterOptions();
     for (const [name, element] of Object.entries(optionFields)) {
         const message = document.getElementById(`${element.id}-error`);
