@@ -77,7 +77,7 @@ pub fn explain_retired(
     header: Option<&[u8]>,
     footer: Option<&[u8]>,
 ) -> FormatError {
-    if matches!(error, FormatError::Io(_) | FormatError::RetiredFormat(_)) {
+    if !is_envelope_error(&error) {
         return error;
     }
     footer
@@ -86,10 +86,24 @@ pub fn explain_retired(
         .map_or(error, FormatError::RetiredFormat)
 }
 
+/// Errors an envelope that this reader does not accept produces: the header or footer is not one it
+/// understands. Anything deeper (a checksum, a limit, a malformed index or block) means the file
+/// was read as its own family and is damaged or too large, and keeps its error.
+fn is_envelope_error(error: &FormatError) -> bool {
+    matches!(
+        error,
+        FormatError::FileTooShort
+            | FormatError::InvalidHeader
+            | FormatError::InvalidFooter
+            | FormatError::UnsupportedVersion(_)
+            | FormatError::UnsupportedFormatVersion(_)
+    )
+}
+
 /// Like [`explain_retired`] for a reader the caller still owns: reads its header and footer (best effort)
 /// to name a retired family behind `error`. For tools that open files through other entry points.
 pub fn explain_open_failure<R: Read + Seek>(reader: &mut R, error: FormatError) -> FormatError {
-    if matches!(error, FormatError::Io(_) | FormatError::RetiredFormat(_)) {
+    if !is_envelope_error(&error) {
         return error;
     }
     let header = read_at(reader, SeekFrom::Start(0), HEADER_SIZE as usize);

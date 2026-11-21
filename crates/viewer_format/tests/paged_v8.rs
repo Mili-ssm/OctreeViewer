@@ -999,12 +999,15 @@ fn header_and_footer_revisions_must_agree() {
     pre_header[16..20].copy_from_slice(&1_u32.to_le_bytes());
     let crc = viewer_format::crc32(&pre_header[..20]);
     pre_header[20..24].copy_from_slice(&crc.to_le_bytes());
-    for bytes in [pre_footer, pre_header] {
-        assert!(matches!(
-            FormatReader::new(Cursor::new(bytes)),
-            Err(FormatError::InvalidFooter)
-        ));
-    }
+    assert!(matches!(
+        FormatReader::new(Cursor::new(pre_footer)),
+        Err(FormatError::InvalidFooter)
+    ));
+    // A v8.1-pre header is a retired family, which the reader names.
+    assert!(matches!(
+        FormatReader::new(Cursor::new(pre_header)),
+        Err(FormatError::RetiredFormat("v8.1-pre"))
+    ));
 }
 
 /// Opens through both readers and walks every page; errors are fine, panics are not.

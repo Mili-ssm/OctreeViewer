@@ -196,7 +196,8 @@ fn eager_reader_rejects_mismatched_header_and_footer() {
     for bytes in [v7_header_pre_footer, pre_header_v7_footer] {
         assert!(matches!(
             FormatReader::new(Cursor::new(bytes)),
-            Err(FormatError::InvalidFooter)
+            // Mixed envelopes of two retired families: either may be the one named.
+            Err(FormatError::InvalidFooter | FormatError::RetiredFormat(_))
         ));
     }
     // A footer whose magic is swapped with the index left alone fails as well.
