@@ -928,6 +928,85 @@ fn attribute_columns_must_tile_the_companion() {
 
 // ---- Corruption sweeps -----------------------------------------------------------------------
 
+/// `global_frame.rs` also rejects "child prefix does not extend its parent prefix", but no v8 file
+/// reaches it: a page stores no prefix, only the (depth, path) key of each node, and the reader
+/// derives the prefix from the page anchor and the path, and the parent from `path >> 3`. A child
+/// prefix therefore extends its parent's by construction; a key whose parent is not in the page is
+/// caught earlier, by the page decoder. This test pins that earlier error.
+#[test]
+fn a_page_node_key_without_its_parent_is_refused_before_the_prefix_check() {
+    let bytes = write(&random_tree(21, 6, 0), None);
+    let reader = PagedReader::open(Cursor::new(bytes.clone())).unwrap();
+    let root_length = reader.root_page().encoded_len();
+    let keys: Vec<(u8, u16, bool)> = reader
+        .root_page()
+        .nodes()
+        .iter()
+        .map(|node| (node.depth(), node.path(), node.has_children()))
+        .collect();
+    let footer = bytes.len() - 40;
+    let root_start = footer - root_length;
+    // A node whose path can grow by one parent step (8) and stay sorted and in range, and whose
+    // record (key and flags) occurs once in the page bytes.
+    let (path, at) = keys
+        .iter()
+        .enumerate()
+        .filter(|&(index, &(depth, path, _))| {
+            depth >= 2
+                && u32::from(path) + 8 < 1 << (3 * u32::from(depth))
+                && keys
+                    .get(index + 1)
+                    .is_none_or(|&(d, p, _)| (d, p) > (depth, path + 8))
+        })
+        .find_map(|(_, &(depth, path, has_children))| {
+            let [low, high] = path.to_le_bytes();
+            let record = [depth, low, high, u8::from(has_children)];
+            let found: Vec<usize> = (root_start..footer - 4)
+                .filter(|&at| bytes[at..at + 4] == record)
+                .collect();
+            (found.len() == 1).then_some((path, found[0]))
+        })
+        .expect("a deep node that can move to another parent");
+    let mut moved = bytes;
+    let [low, high] = (path + 8).to_le_bytes();
+    moved[at + 1..at + 3].copy_from_slice(&[low, high]);
+    fix_page_crc(&mut moved, root_start, root_length);
+    repair_index_and_footer(&mut moved);
+    let result = FormatReader::new(Cursor::new(moved)).map(|_| ());
+    assert!(
+        matches!(
+            &result,
+            Err(FormatError::MalformedIndex(
+                "page node has no parent in the page"
+            ))
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn header_and_footer_revisions_must_agree() {
+    let (primary, _) = fixture_pair();
+    FormatReader::new(Cursor::new(primary.clone())).unwrap();
+    // A v8 header over a v8.1-pre footer (magic and its checksum rewritten).
+    let mut pre_footer = primary.clone();
+    let footer = pre_footer.len() - 40;
+    pre_footer[footer..footer + 8].copy_from_slice(b"OCTVE81P");
+    let crc = viewer_format::crc32(&pre_footer[footer..footer + 36]);
+    pre_footer[footer + 36..].copy_from_slice(&crc.to_le_bytes());
+    // A v8.1-pre header (revision and its checksum rewritten) over a v8 footer.
+    let mut pre_header = primary;
+    pre_header[16..20].copy_from_slice(&1_u32.to_le_bytes());
+    let crc = viewer_format::crc32(&pre_header[..20]);
+    pre_header[20..24].copy_from_slice(&crc.to_le_bytes());
+    for bytes in [pre_footer, pre_header] {
+        assert!(matches!(
+            FormatReader::new(Cursor::new(bytes)),
+            Err(FormatError::InvalidFooter)
+        ));
+    }
+}
+
 /// Opens through both readers and walks every page; errors are fine, panics are not.
 fn exercise(bytes: &[u8]) -> bool {
     let eager = FormatReader::new(Cursor::new(bytes.to_vec())).is_ok();
