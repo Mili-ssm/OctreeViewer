@@ -58,6 +58,12 @@ impl<R: Read + Seek> FormatReader<R> {
     /// root page; child pages come from [`Self::read_page`]. `format_metadata()` then holds only
     /// the root page's nodes.
     pub fn open_lazy(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
+        // The paged core reads only the tail, never the header: check it here so a header that
+        // names another version is refused like it is by `with_limits`.
+        let identity = probe_format(&mut reader)
+            .map_err(|error| crate::explain_open_failure(&mut reader, error))?;
+        validate_identity(identity)
+            .map_err(|error| crate::explain_open_failure(&mut reader, error))?;
         let core = crate::paged_index::open_core(&mut reader, limits)?;
         Ok(Self {
             backend: IndexedReader::from_paged_core(reader, core, false)?,
@@ -359,6 +365,31 @@ mod tests {
         let mut fork = reader.fork_reader(Cursor::new(primary));
         assert!(reader.shares_index_with(&fork));
         assert_eq!(fork.read_positions(ID).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn open_lazy_rejects_a_header_that_names_another_version() {
+        let (primary, _) = v8_pair();
+        let mut bytes = primary.clone();
+        bytes[8..10].copy_from_slice(&6_u16.to_le_bytes());
+        bytes[16..20].copy_from_slice(&5_u32.to_le_bytes());
+        let crc = crate::crc32(&bytes[..20]);
+        bytes[20..24].copy_from_slice(&crc.to_le_bytes());
+        assert!(matches!(
+            FormatReader::open_lazy(Cursor::new(bytes), FormatReaderLimits::default()),
+            Err(FormatError::UnsupportedFormatVersion(version))
+                if version.major() == 6 && version.revision() == 5
+        ));
+        // A retired family is still named with the reconvert hint.
+        let mut bytes = primary;
+        bytes[8..10].copy_from_slice(&7_u16.to_le_bytes());
+        bytes[16..20].copy_from_slice(&0_u32.to_le_bytes());
+        let crc = crate::crc32(&bytes[..20]);
+        bytes[20..24].copy_from_slice(&crc.to_le_bytes());
+        assert!(matches!(
+            FormatReader::open_lazy(Cursor::new(bytes), FormatReaderLimits::default()),
+            Err(FormatError::RetiredFormat("v7"))
+        ));
     }
 
     #[test]

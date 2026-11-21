@@ -45,15 +45,25 @@ self.onmessage = async ({ data = {} }) => {
         view.setUint16(8, 6, true);
         view.setUint32(16, 5, true);
         view.setUint32(20, crc32(prerelease.subarray(0, 20)), true);
+        // A retired family (v7 final) is named with its reconvert hint; a pair V8 never knew keeps
+        // its raw major/revision in the message.
+        const retired = new Uint8Array(bytes.slice(0));
+        new DataView(retired.buffer).setUint16(8, 7, true);
+        new DataView(retired.buffer).setUint32(16, 0, true);
+        new DataView(retired.buffer).setUint32(20, crc32(retired.subarray(0, 20)), true);
         const errors = [];
-        for (const [input, expected] of [[legacy, "provisional"], [prerelease, "v6.5-pre"]]) {
+        for (const [input, expected] of [
+            [legacy, "provisional"],
+            [prerelease, "unknown(6, 5)"],
+            [retired, "format v7, retired with V8: reconvert it"],
+        ]) {
             let error;
             try {
                 viewer.openFormatDataset(new Blob([input]), 64 * 1024 * 1024, attributes);
             } catch (caught) {
                 error = String(caught);
             }
-            assert(error?.includes(expected), `missing explicit rejection: ${expected}`);
+            assert(error?.includes(expected), `missing explicit rejection: ${expected} (got: ${error})`);
             errors.push(error);
 
         }
