@@ -82,13 +82,27 @@ pub fn explain_retired(
     header: Option<&[u8]>,
     footer: Option<&[u8]>,
 ) -> FormatError {
-    if !is_envelope_error(&error) || header.is_some_and(is_current_header) {
+    if !is_envelope_error(&error) {
+        return error;
+    }
+    // Behind an intact V8 header, only a footer that is itself intact names a retired family (a
+    // relabelled file). A footer whose own checksum fails is corruption of the V8 file, even when
+    // its magic happens to spell a retired one.
+    if header.is_some_and(is_current_header) && !footer.is_some_and(footer_checksum_holds) {
         return error;
     }
     footer
         .and_then(retired_format_name)
         .or_else(|| header.and_then(retired_header_name))
         .map_or(error, FormatError::RetiredFormat)
+}
+
+/// Whether the last 40 bytes of a file carry a valid footer checksum (over their first 36 bytes).
+fn footer_checksum_holds(footer: &[u8]) -> bool {
+    footer.len() == FOOTER_SIZE as usize
+        && footer[36..].try_into().is_ok_and(|bytes| {
+            crate::crc32::checksum_matches(&footer[..36], u32::from_le_bytes(bytes))
+        })
 }
 
 /// Whether `header` is an intact header of the current format (V8 final). Such a file is never a
