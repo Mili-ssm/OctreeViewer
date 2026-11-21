@@ -177,19 +177,19 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
 - 5c: rutas antiguas del conversor y del core, y los ayudantes `v5_*`.
 - 5d: portar los tests (A1).
 - 5e: por último, quitar las variantes y los lectores.
-- [ ] Fuera:
+- [x] Fuera:
   - `FormatVersion` y `StorageLayout` quedan solo con `V8`;
   - se borran los lectores y escritores de V5, de v6 y sus previas y de v7 y sus previas, sus tests (`tests/v6.rs`,
     `v7_4*.rs`, `v7_5*.rs`, `v7_final.rs`, los de v8.1/v8.2), `create_legacy_sample.rs` y `sample-v5.*`/`sample-v7.*`.
-- [ ] El conversor escribe V8 sin opción de versión. Se retiran `--format-version`, `--row-order`,
+- [x] El conversor escribe V8 sin opción de versión. Se retiran `--format-version`, `--row-order`,
   `--points-per-block` y `--spatial-divisions` (V8 los fija), con sus equivalentes JS y la lista `FORMAT_VERSIONS`.
-- [ ] Test (Review Focus 1 y 5; A4): `retired_version_name(major, rev)` en `viewer_format` nombra cada familia retirada.
+- [x] Test (Review Focus 1 y 5; A4): `retired_version_name(major, rev)` en `viewer_format` nombra cada familia retirada.
   Cuando el pie no es V8, `open()` del wasm lee y valida la cabecera; solo en la ruta de error, así que una apertura
   correcta no hace otra petición Range. Con los fixtures de la tarea 2 se prueba el lector síncrono, el wasm desde node,
   `verify` y la lectura por HTTP Range: todos dan «versión N: reconvierte a V8», nunca `unknown(7, 0)` ni
   `InvalidFooter`.
-- [ ] La paridad queda solo con V8, y `check_version_literals.sh` se adapta.
-- [ ] Commit(s) `refactor(format)!: V8 is the only format`.
+- [x] La paridad queda solo con V8, y `check_version_literals.sh` se adapta.
+- [x] Commit(s) `refactor(format)!: V8 is the only format`.
 
 ### Task 6: Demo and browser verification
 
