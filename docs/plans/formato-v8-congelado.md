@@ -104,23 +104,40 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 
 **Files:** `data/samples/*.oct{,attrs}` (hoy V5), `examples/web-host/sample.oct{,attrs}` (hoy V7), las semillas de
 `fuzz/src/bin/gen_seeds.rs`, y los tests que leen fixtures.
-- [ ] Se reconvierten los fixtures con el binario de la tarea 1 y se pasan a V8 los tests que los leen, de modo que
+- [x] Se reconvierten los fixtures con el binario de la tarea 1 y se pasan a V8 los tests que los leen, de modo que
   ninguno dependa de un formato que se vaya a retirar. `sample-v5.*` y `sample-v7.*` quedan hasta la tarea 5, porque
   prueban la lectura antigua.
-- [ ] **Fixtures de error (A4):** mientras los escritores aún existen, se guarda la cabecera real (24 bytes) y el pie
+- [x] **Fixtures de error (A4):** mientras los escritores aún existen, se guarda la cabecera real (24 bytes) y el pie
   (40 bytes) de un fichero de cada familia que se retira, como fixtures del test de la tarea 5.
 - [ ] **Datos ignorados (A6):** los tests ignorados leen `target/render-data` desde una variable de entorno (o un enlace
   documentado), así que se pueden ejecutar desde un worktree. Se reconvierten a V8 nuevos los ficheros que el propietario
   elija (`belvedere-v7.oct`, `majadas-v7.oct`, `data/datasets/*.oct`; `MANIFEST.txt` al día). Se **ejecutan** los tests
   ignorados, y sus valores fijados (p. ej. `lod_cells_sim_tests.rs:488-505`) se rehacen para V8 en un registro fechado,
   con el log.
-- [ ] **Inventario de consumidores (A5):** cada uno se porta a V8 o se borra, y la decisión queda anotada:
+- [x] **Inventario de consumidores (A5):** cada uno se porta a V8 o se borra, y la decisión queda anotada:
   - los tests `*.browser.mjs` que piden `sample-v5`/`sample-v7` (`check.sh` no los ejecuta);
   - `storage_suite.py`, `profile_conversion.py` (v5 por defecto), `compare_storage_revisions.py` y
     `run-r3-b6-matrix.sh`;
   - `lod_cells_*_tests.rs`;
   - `viewer_render_wgpu` (`cell_pool/plan.rs`, `examples/coverage_spike.rs`);
   - las órdenes de `PROBES.md` y de los README que pasan `--format-version` u opciones retiradas.
+
+  Decisiones (tarea 2a, 21-11-2026). Se ha regenerado `sample.*` y `data/samples/fs_*.*` como V8; la semilla de fuzz
+  `gen_seeds` escribe V8 (más `-v7-` heredadas); los fixtures de error están en
+  [`crates/viewer_format/tests/fixtures/retired/`](../../crates/viewer_format/tests/fixtures/retired/README.md).
+
+  | Consumidor | Decisión | Motivo |
+  | --- | --- | --- |
+  | `web_sample.rs` (`sample.*`) | Portado: ahora afirma V8 | Mismos recuentos y rangos; solo cambia la identidad |
+  | `*.browser.mjs` con `sample-v5` (`lod-attributes`, `lod-reuse`, `lod-session`, `presentation`, `storage-format`, `surface-memory`) | Decidir en la tarea 5 | Prueban la ruta CPU sobre la rejilla de 4.096 puntos en V5; portarlos exige un fixture V8 de esa rejilla y comprobar que la ruta CPU lo admite. No se ejecutaron (`check.sh` no las cubre) |
+  | `async-format-reader.browser.mjs` (`sample-v7`) | Borrar en la tarea 5 | Prueba lectura de `v7.1-pre`, que se retira; antes de borrarlo, comprobar si el lector V8 tiene cobertura Blob equivalente |
+  | Tests `*.browser.mjs` que piden `sample.oct` | Ninguno | `sample.oct` solo lo usan `main.js`, `package-local.py` y `viewer_wasm` (`lod_cells_stream_tests.rs`), que siguen igual |
+  | `storage_suite.py`, `profile_conversion.py` | Portar en la tarea 5 | Defecto `v5` y lista `v5…v7.3-pre`; V8 fija 64.000 puntos por bloque y rechaza lo demás, así que cambiar el defecto cambia lo que miden y hay que decidir qué se compara |
+  | `compare_storage_revisions.py` | Portar en la tarea 5 | Compara `v5` y `v7.2-pre` (ambos se retiran); decidir contra qué V8 se compara |
+  | `run-r3-b6-matrix.sh` | Portar en la tarea 2b | Lee `target/render-data/*-v7.oct`; se rehace con los ficheros reconvertidos |
+  | `lod_cells_*_tests.rs` | Portar en la tarea 2b | Leen `target/render-data/*-v7.oct` (ignorados); 2b reconvierte los datos y rehace los valores fijados |
+  | `viewer_render_wgpu` (`cell_pool/plan.rs`, `examples/coverage_spike.rs`) | Sin cambio | No fijan versión ni leen fixtures versionados; `coverage_spike` recibe el `.oct` por argumento (su texto cita «v7.5») |
+  | `PROBES.md` y READMEs | Portado en lo barato | Se corrigen las frases sobre `sample.oct` y los fixtures V5; quedan los comandos con `formatVersion`/`--attr-codec` (en `PROBES.md`, `web-host/README.md`, `converter-ui.mjs`, `tools/convert_parity`) para las tareas 3 a 5, cada una con su opción |
 - [ ] Commit `test: fixtures and seeds as V8`.
 
 ### Task 3: Retire zstd, v8.2-pre and --attr-codec (ADR 0060)
