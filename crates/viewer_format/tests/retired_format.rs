@@ -2,9 +2,16 @@
 //! V8 freeze). The 13 header/footer pairs in `fixtures/retired/` are the real envelopes the old
 //! writers produced; a minimal file is the header, padding and the footer.
 
+mod common;
+#[path = "common/v8_fixture.rs"]
+mod v8_fixture;
+
 use std::io::Cursor;
 
-use viewer_format::{FormatError, FormatReader, retired_format_name, retired_header_name};
+use v8_fixture::{v8_fixture_block, v8_metadata, write_v8_split};
+use viewer_format::{
+    FormatError, FormatReader, PagedReader, retired_format_name, retired_header_name,
+};
 
 const FAMILIES: [(&str, &[u8], &[u8]); 13] = [
     (
@@ -158,4 +165,69 @@ fn an_io_failure_is_not_reported_as_a_retired_format() {
         .err()
         .expect("empty");
     assert!(!matches!(error, FormatError::RetiredFormat(_)), "{error:?}");
+}
+
+#[test]
+fn opening_a_retired_file_paged_says_the_same() {
+    for (name, head, foot) in FAMILIES {
+        let error = PagedReader::open(Cursor::new(minimal_file(head, foot)))
+            .err()
+            .unwrap_or_else(|| panic!("{name} opened"));
+        assert!(
+            matches!(error, FormatError::RetiredFormat(found) if found == name),
+            "{name}: {error:?}"
+        );
+    }
+}
+
+/// A retired file handed to the Tokio reader fails with the same error, not an I/O or header one.
+#[cfg(feature = "async-reader")]
+#[test]
+fn opening_a_retired_file_through_the_async_reader_says_the_same() {
+    use viewer_format::{AsyncFormatReader, AsyncReadError};
+
+    let dir = std::env::temp_dir().join(format!("retired-async-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    for (name, head, foot) in FAMILIES {
+        let path = dir.join(format!("{name}.oct"));
+        std::fs::write(&path, minimal_file(head, foot)).unwrap();
+        let result = runtime.block_on(AsyncFormatReader::open(&path, None, 1, 1 << 20));
+        match result {
+            Err(AsyncReadError::Format(FormatError::RetiredFormat(found))) => {
+                assert_eq!(found, name);
+            }
+            Err(other) => panic!("{name}: {other:?}"),
+            Ok(_) => panic!("{name} opened"),
+        }
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The major byte of a valid `v8` header damaged to 7 is a corrupt header, not a retired `v7`
+/// file: the retired-format check only trusts a header whose own checksum holds.
+#[test]
+fn a_v8_header_damaged_to_major_7_is_an_invalid_header() {
+    let (primary, attributes) =
+        write_v8_split(v8_fixture_block(), v8_metadata(4, common::descriptors()));
+    assert_eq!(&primary[8..10], &8_u16.to_le_bytes());
+    let mut damaged = primary.clone();
+    damaged[8..10].copy_from_slice(&7_u16.to_le_bytes());
+    let error = FormatReader::new(Cursor::new(damaged.clone()))
+        .err()
+        .expect("damaged header opened");
+    assert!(matches!(error, FormatError::InvalidHeader), "{error:?}");
+    // The lazy path identifies the revision from the footer and never reads the header, so it
+    // cannot name a retired file from a damaged header either.
+    assert!(PagedReader::open(Cursor::new(damaged)).is_ok());
+    // The companion's header gets the same treatment.
+    let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
+    let mut damaged = attributes;
+    damaged[8..10].copy_from_slice(&7_u16.to_le_bytes());
+    let error = reader
+        .attach_attributes(Cursor::new(damaged))
+        .expect_err("damaged companion attached");
+    assert!(matches!(error, FormatError::InvalidHeader), "{error:?}");
 }

@@ -877,6 +877,19 @@ fn writer_rejects_metadata_that_breaks_the_spec() {
 }
 
 #[test]
+fn v8_takes_a_global_frame_and_rejects_metadata_without_one() {
+    assert_eq!(FormatVersion::DEFAULT_OUTPUT, V8);
+    // `new_writer` adds the V8 extras, so the only thing missing is the global frame.
+    let plain = common::metadata(0, Vec::new());
+    let outcome = new_writer(plain, v8_options());
+    assert!(
+        matches!(outcome, Err(FormatError::InvalidMetadata(_))),
+        "{:?}",
+        outcome.map(|_| ())
+    );
+}
+
+#[test]
 fn a_local_cloud_anchors_its_lattice_at_the_frame_origin() {
     let origin = [-3_000_i64, 120, -77];
     let local = CrsRecord::local();

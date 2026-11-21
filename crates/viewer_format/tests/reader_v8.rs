@@ -13,7 +13,9 @@ use common::{
     COLORS, POINTS, descriptors, fixture_attributes, global_metadata, prefix_of,
     repair_index_and_footer,
 };
-use v8_fixture::{V8_BLOCK, v8_crs, v8_fixture_block, v8_metadata, with_v8_extras, write_v8_split};
+use v8_fixture::{
+    V8_BLOCK, v8_crs, v8_fixture_block, v8_metadata, v8_options, with_v8_extras, write_v8_split,
+};
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
     DatasetSource,
@@ -21,8 +23,9 @@ use viewer_core::{
 #[cfg(feature = "experimental")]
 use viewer_core::{OccupiedOctreeRoot, OccupiedPointBlock, VoxelCoord};
 use viewer_format::{
-    BlockCodec, BlockPayloadKind, FormatError, FormatMetadata, FormatReader, FormatVersion,
-    OctreeReader, ReadSelection, ReadSource, SelectedRead, SourcePointBlock,
+    BlockCodec, BlockPayloadKind, FileRole, FormatBlockEncoder, FormatError, FormatIdentity,
+    FormatMetadata, FormatReader, FormatVersion, FormatWriter, OctreeReader, ReadSelection,
+    ReadSource, SelectedRead, SourcePointBlock,
 };
 use viewer_format::{GeometryEncoding, quanta_to_units, quantize_coordinate};
 #[cfg(feature = "experimental")]
@@ -1850,4 +1853,64 @@ fn v8_refuses_a_plain_occupied_geometry_tag_even_with_repaired_checksums() {
         reader.read_block(BLOCK_ID),
         Err(FormatError::MalformedBlock("invalid occupied geometry"))
     ));
+}
+
+#[test]
+fn unsupported_v8_revisions_are_rejected_by_writer_encoder_and_reader() {
+    let meta = v8_metadata(POINTS.len() as u64, descriptors());
+    let options = v8_options();
+    let versions = [
+        FormatVersion::Unknown {
+            major: 8,
+            revision: 3,
+        },
+        FormatVersion::Unknown {
+            major: 8,
+            revision: 99,
+        },
+    ];
+    for version in versions {
+        assert!(matches!(
+            FormatWriter::new_split_for_version(
+                version,
+                Cursor::new(Vec::new()),
+                Cursor::new(Vec::new()),
+                meta.clone(),
+                options
+            ),
+            Err(FormatError::UnsupportedFormatVersion(actual)) if actual == version
+        ));
+        assert!(matches!(
+            FormatBlockEncoder::new(version, &meta, options),
+            Err(FormatError::UnsupportedFormatVersion(actual)) if actual == version
+        ));
+        // No identity of an unsupported revision can even be serialised, so forge the header
+        // bytes from a valid one: revision and header checksum.
+        assert!(matches!(
+            FormatIdentity {
+                version,
+                role: FileRole::SplitPrimary
+            }
+            .to_header_bytes(),
+            Err(FormatError::UnsupportedFormatVersion(actual)) if actual == version
+        ));
+        let mut header = FormatIdentity {
+            version: FormatVersion::V8,
+            role: FileRole::SplitPrimary,
+        }
+        .to_header_bytes()
+        .unwrap();
+        header[16..20].copy_from_slice(&version.revision().to_le_bytes());
+        let crc = viewer_format::crc32(&header[..20]);
+        header[20..24].copy_from_slice(&crc.to_le_bytes());
+        let result = FormatReader::new(Cursor::new(header));
+        assert!(
+            matches!(
+                &result,
+                Err(FormatError::UnsupportedFormatVersion(actual)) if *actual == version
+            ),
+            "{:?}",
+            result.map(|_| ())
+        );
+    }
 }
