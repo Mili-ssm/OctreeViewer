@@ -106,7 +106,7 @@ pub enum ConvertError {
     },
     #[error("attribute codec {0} needs format version v8.2-pre; {1} stores no zstd payloads")]
     AttributeCodecUnsupported(AttributeCodecScheme, FormatVersion),
-    #[error("row order hybrid needs a v7 output format")]
+    #[error("row order hybrid needs a v7 or v8 output format")]
     HybridRowOrderUnsupported,
     #[error(
         "coordinate magnitude {coordinate} exceeds the converter limit of 2^35 CRS units for {version}"

@@ -97,13 +97,13 @@ impl FormatVersion {
             .is_ok_and(crate::layout::StorageLayout::supports_hybrid_rows)
     }
 
-    /// Whether the display colour is derived from stored data instead of stored twice (`v8.N-pre`).
+    /// Whether the display colour is derived from stored data instead of stored twice (`v8` and `v8.N-pre`).
     pub fn derives_display_attribute(self) -> bool {
         crate::layout::StorageLayout::from_version(self)
             .is_ok_and(crate::layout::StorageLayout::derives_display_attribute)
     }
 
-    /// Whether interior LOD nodes omit the attribute columns the viewer does not draw (`v8.N-pre`).
+    /// Whether interior LOD nodes omit the attribute columns the viewer does not draw (`v8` and `v8.N-pre`).
     pub fn omits_lod_attributes(self) -> bool {
         crate::layout::StorageLayout::from_version(self)
             .is_ok_and(crate::layout::StorageLayout::omits_lod_attributes)
@@ -115,14 +115,14 @@ impl FormatVersion {
             .is_ok_and(crate::layout::StorageLayout::supports_zstd)
     }
 
-    /// Whether nodes store nearest-neighbour distance quantiles (`v8.N-pre`).
+    /// Whether nodes store nearest-neighbour distance quantiles (`v8` and `v8.N-pre`).
     pub fn stores_distance_quantiles(self) -> bool {
         crate::layout::StorageLayout::from_version(self)
             .is_ok_and(crate::layout::StorageLayout::stores_distance_quantiles)
     }
 
-    /// Row order the format fixes: `v7` and the implemented `v8.N-pre` revisions (today `v8.1-pre`
-    /// and `v8.2-pre`) always write hybrid (ADR 0044); every other revision
+    /// Row order the format fixes: `v7`, `v8` and the implemented `v8.N-pre` revisions (today
+    /// `v8.1-pre` and `v8.2-pre`) always write hybrid (ADR 0044); every other revision
     /// leaves the choice to the caller (`Source` by default).
     pub fn fixed_row_order(self) -> Option<crate::RowOrder> {
         match self {

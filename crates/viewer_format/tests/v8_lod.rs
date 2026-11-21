@@ -483,18 +483,59 @@ fn v8_pre2_without_zstd_differs_from_v8_pre1_only_in_identity() {
     assert!(pre1.1 == pre2.1, "attribute files differ beyond identity");
 }
 
+/// Revision of a file's header and its magics: header bytes 16..20, the footer magic and, for the
+/// primary file, the index magic.
+fn identity_of(bytes: &[u8], primary: bool) -> (u16, u32, [u8; 8], Option<[u8; 8]>) {
+    let footer = bytes.len() - 40;
+    let index = primary.then(|| {
+        let at = u64::from_le_bytes(bytes[footer + 8..footer + 16].try_into().unwrap()) as usize;
+        bytes[at..at + 8].try_into().unwrap()
+    });
+    (
+        u16::from_le_bytes(bytes[8..10].try_into().unwrap()),
+        u32::from_le_bytes(bytes[16..20].try_into().unwrap()),
+        bytes[footer..footer + 8].try_into().unwrap(),
+        index,
+    )
+}
+
 #[test]
 fn v8_differs_from_v8_pre1_only_in_identity() {
-    let display = viewer_format::DisplayColourSource::Intensity(0);
-    let pre1 = write_as(V8_PRE1, Some(vec![0, 2]), display).unwrap();
-    let mut v8 = write_as(FormatVersion::V8, Some(vec![0, 2]), display).unwrap();
-    assert_ne!(pre1.0, v8.0);
-    assert_ne!(pre1.1, v8.1);
-    assert_eq!(&v8.0[8..10], &8_u16.to_le_bytes());
-    assert_eq!(&v8.0[16..20], &0_u32.to_le_bytes());
-    v8_as_pre1(&mut v8.0, &mut v8.1);
-    assert!(pre1.0 == v8.0, "primary files differ beyond identity");
-    assert!(pre1.1 == v8.1, "attribute files differ beyond identity");
+    use viewer_format::DisplayColourSource as Display;
+    // The test schema has no u16 x 3 column, so `Rgb` display colour cannot be exercised here.
+    let fixtures = [
+        (Some(vec![]), Display::None),
+        (Some(vec![0, 1, 2]), Display::None),
+        (Some(vec![0, 2]), Display::Intensity(0)),
+        (Some(vec![0]), Display::Intensity(0)),
+        (Some(vec![1, 2]), Display::None),
+    ];
+    for (columns, display) in fixtures {
+        let label = format!("{columns:?} {display:?}");
+        let pre1 = write_as(V8_PRE1, columns.clone(), display).unwrap();
+        let mut v8 = write_as(FormatVersion::V8, columns, display).unwrap();
+        assert_ne!(pre1.0, v8.0, "{label}");
+        assert_ne!(pre1.1, v8.1, "{label}");
+        for (bytes, primary) in [(&v8.0, true), (&v8.1, false)] {
+            let (version, revision, footer, index) = identity_of(bytes, primary);
+            assert_eq!((version, revision), (8, 0), "{label}");
+            assert_eq!(&footer, b"OCTVEND8", "{label}");
+            assert_eq!(
+                index.as_ref().map(|m| &m[..]),
+                primary.then_some(&b"OCTVIDX8"[..]),
+                "{label}"
+            );
+        }
+        v8_as_pre1(&mut v8.0, &mut v8.1);
+        assert!(
+            pre1.0 == v8.0,
+            "primary files differ beyond identity: {label}"
+        );
+        assert!(
+            pre1.1 == v8.1,
+            "attribute files differ beyond identity: {label}"
+        );
+    }
 }
 
 #[test]
@@ -519,10 +560,9 @@ fn a_v8_file_with_a_v8_pre1_companion_is_rejected_by_identity() {
     let v8 = write_as(FormatVersion::V8, Some(vec![0, 2]), display).unwrap();
     for (primary, attributes) in [(&v8.0, &pre1.1), (&pre1.0, &v8.1)] {
         let mut reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
-        assert!(
-            reader
-                .attach_attributes(Cursor::new(attributes.clone()))
-                .is_err()
-        );
+        assert!(matches!(
+            reader.attach_attributes(Cursor::new(attributes.clone())),
+            Err(FormatError::InvalidHeader)
+        ));
     }
 }

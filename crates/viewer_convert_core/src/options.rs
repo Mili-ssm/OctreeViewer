@@ -105,7 +105,7 @@ impl ConvertOptions {
         self
     }
 
-    /// Requests a row order. `v7` fixes `Hybrid` and `v7.N-pre` defaults to `Source`; the
+    /// Requests a row order. `v7`, `v8` and `v8.N-pre` fix `Hybrid` and `v7.N-pre` defaults to `Source`; the
     /// combination with the format is checked by [`Self::validate`].
     pub fn with_row_order(mut self, row_order: RowOrder) -> Result<Self, ConvertError> {
         self.row_order = Some(row_order);

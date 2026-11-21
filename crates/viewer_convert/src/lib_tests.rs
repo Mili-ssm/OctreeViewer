@@ -3193,14 +3193,46 @@ fn joined_segments_read_back_identically() {
     assert_eq!(out, expected);
 }
 
-/// SHA-256 of the `.oct` and `.octattrs` files of a default conversion (format V8).
-fn v8_output_shas(input: &std::path::Path, dir: &std::path::Path, name: &str) -> (String, String) {
+/// SHA-256 of the `.oct` and `.octattrs` files of a default conversion (format V8) with an explicit
+/// worker count, so the pins do not depend on the machine's parallelism.
+fn v8_output_shas_with(
+    input: &std::path::Path,
+    dir: &std::path::Path,
+    name: &str,
+    workers: usize,
+) -> (String, String) {
     let output = dir.join(format!("{name}.oct"));
-    convert_file(input, &output, ConvertOptions::default()).unwrap();
+    convert_file(
+        input,
+        &output,
+        ConvertOptions::default()
+            .with_spatial_workers(workers)
+            .unwrap(),
+    )
+    .unwrap();
     (
         sha256_hex(&fs::read(&output).unwrap()),
         sha256_hex(&fs::read(output_attributes_path(&output)).unwrap()),
     )
+}
+
+fn v8_output_shas(input: &std::path::Path, dir: &std::path::Path, name: &str) -> (String, String) {
+    v8_output_shas_with(input, dir, name, 2)
+}
+
+#[test]
+fn v8_output_is_identical_for_1_2_and_4_workers() {
+    let tmp = test_dir();
+    let input = workspace_path("data/samples/fs_e430_n4008_18.las");
+    let reference = v8_output_shas_with(&input, tmp.path(), "w1", 1);
+    for workers in [2, 4] {
+        let name = format!("w{workers}");
+        assert_eq!(
+            v8_output_shas_with(&input, tmp.path(), &name, workers),
+            reference,
+            "workers={workers}"
+        );
+    }
 }
 
 #[test]

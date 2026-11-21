@@ -85,6 +85,8 @@ test("timings and spool stats render only what is present", () => {
 
 test("fixed-frame fields show the fixed values for global-frame formats and restore the user's otherwise", () => {
     assert.equal(fixedFrameDisplayValue("pointsPerBlock", "v7", "1000"), "64000");
+    assert.equal(fixedFrameDisplayValue("pointsPerBlock", "v8", "1000"), "64000");
+    assert.equal(fixedFrameDisplayValue("spatialDivisions", "v8", "4"), "2");
     assert.equal(fixedFrameDisplayValue("spatialDivisions", "v7.5-pre", "4"), "2");
     assert.equal(fixedFrameDisplayValue("pointsPerBlock", "v5", "1000"), "1000");
     assert.equal(fixedFrameDisplayValue("spatialDivisions", "v5", undefined), OPTION_DEFAULTS.spatialDivisions);
