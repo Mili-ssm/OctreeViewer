@@ -1,7 +1,6 @@
 use std::{fs, process::Command};
 
 use las::{Builder, Point, Writer, point::Format};
-use viewer_format::{FormatReader, OctreeReader};
 
 #[test]
 fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
@@ -25,7 +24,6 @@ fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
     let converted = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
         .arg(&input)
         .arg(&output)
-        .args(["--format-version", "v7.5-pre"])
         .output()
         .unwrap();
     assert!(
@@ -44,7 +42,7 @@ fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
     };
     let ok = verify(&output);
     assert_eq!(ok.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&ok.stdout).starts_with("OK v7.5-pre"));
+    assert!(String::from_utf8_lossy(&ok.stdout).starts_with("OK v8"));
 
     // The root page sits just before the 40-byte footer: damaging it breaks the index CRC.
     let mut bytes = fs::read(&output).unwrap();
@@ -94,51 +92,56 @@ fn las_with_points(path: &std::path::Path, count: u32) {
 }
 
 #[test]
-fn format_fixed_options_are_checked_independently_of_flag_order() {
+fn cli_refuses_the_options_v8_fixes_before_any_work() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
     small_las(&input);
-    let run = |name: &str, args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-            .arg(&input)
-            .arg(tmp.path().join(name))
-            .args(args)
-            .output()
-            .unwrap()
-    };
-    let rejected = run(
-        "v7.oct",
-        &["--format-version", "v7", "--row-order", "source"],
-    );
-    assert!(!rejected.status.success());
-    assert!(
-        String::from_utf8_lossy(&rejected.stderr)
-            .contains("row order is fixed by the output format"),
-        "{}",
-        String::from_utf8_lossy(&rejected.stderr)
-    );
-    assert!(!tmp.path().join("v7.oct").exists());
-
-    for (name, args) in [
-        (
-            "a.oct",
-            ["--spatial-divisions", "4", "--format-version", "v5"],
-        ),
-        (
-            "b.oct",
-            ["--format-version", "v5", "--spatial-divisions", "4"],
-        ),
-    ] {
-        let ok = run(name, &args);
+    for (index, flags) in [
+        vec!["--format-version", "v8"],
+        vec!["--format-version", "v5"],
+        vec!["--format-version"],
+        vec!["--row-order", "hybrid"],
+        vec!["--points-per-block", "64000"],
+        vec!["--spatial-divisions", "2"],
+        // A removed option wins over a valid one placed before it.
+        vec!["--max-error", "0.01", "--spatial-divisions", "4"],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let output = tmp.path().join(format!("out{index}.oct"));
+        let run = run_cli(&[&input, &output], &flags);
+        assert!(!run.status.success(), "{flags:?}");
+        let removed = flags
+            .iter()
+            .copied()
+            .find(|flag| {
+                [
+                    "--format-version",
+                    "--row-order",
+                    "--points-per-block",
+                    "--spatial-divisions",
+                ]
+                .contains(flag)
+            })
+            .unwrap();
+        let message = stderr(&run);
         assert!(
-            ok.status.success(),
-            "{}",
-            String::from_utf8_lossy(&ok.stderr)
+            message.contains(&format!(
+                "option {removed} was removed: V8 is the only format and fixes it"
+            )),
+            "{flags:?}: {message}"
+        );
+        assert!(!output.exists(), "{flags:?} left an output");
+        assert!(
+            !output.with_extension("octattrs").exists(),
+            "{flags:?} left attributes"
         );
     }
     assert_eq!(
-        fs::read(tmp.path().join("a.oct")).unwrap(),
-        fs::read(tmp.path().join("b.oct")).unwrap()
+        fs::read_dir(tmp.path()).unwrap().count(),
+        1,
+        "partial output"
     );
 }
 
@@ -178,46 +181,6 @@ fn cli_refuses_the_removed_attr_codec_option() {
             "{name}: {message}"
         );
     }
-}
-
-#[test]
-fn cli_refuses_the_retired_v8_pre2_version() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("in.las");
-    small_las(&input);
-    let output = tmp.path().join("out.oct");
-    let run = run_cli(&[&input, &output], &["--format-version", "v8.2-pre"]);
-    assert!(!run.status.success());
-    assert!(!output.exists());
-    assert!(stderr(&run).contains("v8.2-pre"), "{}", stderr(&run));
-}
-
-#[test]
-fn cli_converts_and_verifies_v8_pre1() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("in.las");
-    small_las(&input);
-    let output = tmp.path().join("out.oct");
-    let run = run_cli(&[&input, &output], &["--format-version", "v8.1-pre"]);
-    assert!(run.status.success(), "{}", stderr(&run));
-    let primary = fs::read(&output).unwrap();
-    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVE81P");
-    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
-    assert_eq!(
-        reader.format_version(),
-        viewer_format::FormatVersion::V8_PRE1
-    );
-    // The LAS schema starts with intensity and classification: those are the LOD set.
-    assert_eq!(
-        reader.format_metadata().lod_attribute_columns(),
-        Some(&[0, 1][..])
-    );
-    let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-        .arg("verify")
-        .arg(&output)
-        .output()
-        .unwrap();
-    assert!(verify.status.success(), "{}", stderr(&verify));
 }
 
 #[test]
@@ -273,33 +236,6 @@ fn default_extra_bytes_error_names_version() {
 }
 
 #[test]
-fn v5_without_points_per_block_keeps_262144() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("in.las");
-    // More points than the 64000 a wrong default would cap blocks at.
-    las_with_points(&input, 150_000);
-    let implicit = tmp.path().join("implicit.oct");
-    let explicit = tmp.path().join("explicit.oct");
-    let run = run_cli(&[&input, &implicit], &["--format-version", "v5"]);
-    assert!(run.status.success(), "{}", stderr(&run));
-    let run = run_cli(
-        &[&input, &explicit],
-        &["--format-version", "v5", "--points-per-block", "262144"],
-    );
-    assert!(run.status.success(), "{}", stderr(&run));
-    // `assert!`, not `assert_eq!`, so a failure does not dump megabytes.
-    assert!(
-        fs::read(&implicit).unwrap() == fs::read(&explicit).unwrap(),
-        ".oct differs"
-    );
-    assert!(
-        fs::read(tmp.path().join("implicit.octattrs")).unwrap()
-            == fs::read(tmp.path().join("explicit.octattrs")).unwrap(),
-        ".octattrs differs"
-    );
-}
-
-#[test]
 fn cli_refuses_ept_input_before_any_work() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("ept");
@@ -308,7 +244,6 @@ fn cli_refuses_ept_input_before_any_work() {
     for (name, input, flags) in [
         ("dir.oct", root.clone(), vec![]),
         ("json.oct", root.join("ept.json"), vec![]),
-        ("v5.oct", root.clone(), vec!["--format-version", "v5"]),
     ] {
         let output = tmp.path().join(name);
         let run = run_cli(&[&input, &output], &flags);
@@ -348,12 +283,7 @@ fn cli_refuses_checkpoint_and_resume_before_any_work() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
     small_las(&input);
-    for (name, flags) in [
-        ("c.oct", vec!["--checkpoint"]),
-        ("r.oct", vec!["--resume"]),
-        ("cv5.oct", vec!["--checkpoint", "--format-version", "v5"]),
-        ("rv5.oct", vec!["--resume", "--format-version", "v5"]),
-    ] {
+    for (name, flags) in [("c.oct", vec!["--checkpoint"]), ("r.oct", vec!["--resume"])] {
         let output = tmp.path().join(name);
         let run = run_cli(&[&input, &output], &flags);
         assert!(!run.status.success(), "{name}");

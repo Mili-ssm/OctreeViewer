@@ -9,7 +9,6 @@ use std::{
 };
 
 use viewer_convert::{ConversionStage, ConvertOptions, convert_file_with_progress};
-use viewer_format::{FormatVersion, RowOrder};
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -39,15 +38,11 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     }
     let input = PathBuf::from(&arguments[0]);
     let output = PathBuf::from(&arguments[1]);
-    let mut points_per_block = None;
     let mut max_error = ConvertOptions::default().max_quantization_error();
     let mut max_memory_bytes = ConvertOptions::default().max_memory_budget_bytes();
     let mut spatial_workers = None;
     let mut pipelined_writes = false;
-    let mut spatial_divisions = None;
-    let mut format_version = None;
     let mut page_target_bytes = None;
-    let mut row_order: Option<RowOrder> = None;
     let mut index = 2;
     while index < arguments.len() {
         let flag = arguments[index].to_string_lossy();
@@ -68,13 +63,18 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
                     .into(),
             );
         }
+        if matches!(
+            flag.as_ref(),
+            "--format-version" | "--row-order" | "--points-per-block" | "--spatial-divisions"
+        ) {
+            return Err(
+                format!("option {flag} was removed: V8 is the only format and fixes it").into(),
+            );
+        }
         let value = arguments.get(index + 1).ok_or("missing value for option")?;
         match flag.as_ref() {
-            "--format-version" => format_version = Some(value.to_string_lossy().parse()?),
-            "--row-order" => row_order = Some(value.to_string_lossy().parse()?),
             // Hidden: tests and benchmarks that need several pages in a small file.
             "--page-target-bytes" => page_target_bytes = Some(value.to_string_lossy().parse()?),
-            "--points-per-block" => points_per_block = Some(value.to_string_lossy().parse()?),
             "--max-error" => max_error = value.to_string_lossy().parse()?,
             "--max-memory-mib" => {
                 max_memory_bytes = value
@@ -84,27 +84,14 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
                     .ok_or("memory budget overflows bytes")?;
             }
             "--spatial-workers" => spatial_workers = Some(value.to_string_lossy().parse()?),
-            "--spatial-divisions" => spatial_divisions = Some(value.to_string_lossy().parse()?),
             _ => return Err(format!("unknown option: {flag}").into()),
         }
         index += 2;
     }
 
-    // Only requested values are set: the format resolves and checks the rest, in any order.
-    let mut options = ConvertOptions::with_requested_points_per_block(
-        points_per_block,
-        max_error,
-        max_memory_bytes,
-    )?;
-    if let Some(version) = format_version {
-        options = options.with_format_version(version)?;
-    }
-    if let Some(divisions) = spatial_divisions {
-        options = options.with_spatial_divisions(divisions)?;
-    }
-    if let Some(order) = row_order {
-        options = options.with_row_order(order)?;
-    }
+    // V8 fixes the format, points per block, spatial divisions and row order.
+    let mut options =
+        ConvertOptions::with_requested_points_per_block(None, max_error, max_memory_bytes)?;
     options = options.validate()?.with_pipelined_writes(pipelined_writes);
     if let Some(bytes) = page_target_bytes {
         options = options.with_page_target_bytes(bytes);
@@ -188,18 +175,13 @@ fn verify(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn print_help() {
-    let versions = FormatVersion::WRITABLE
-        .map(|version| version.to_string())
-        .join("|");
-    let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
-        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--row-order source|hybrid] [--pipeline-writes]\n\
+        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--max-error E] [--max-memory-mib MIB] [--spatial-workers N] [--pipeline-writes]\n\
          Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both.\n\
-         viewer_convert verify FILE.oct reads every index page of a paged v7 file and runs the global checks (and the companion footer when FILE.octattrs exists); exit code 0 if valid, 1 otherwise.\n\
-         Defaults: format {default_version}, points per block 64000 (fixed by global-frame formats such as the default v8; 262144 for the others), maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
-         --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
+         viewer_convert verify FILE.oct reads every index page of a paged file and runs the global checks (and the companion footer when FILE.octattrs exists); exit code 0 if valid, 1 otherwise.\n\
+         The output is always V8, which fixes 64000 points per block, 2 spatial divisions per axis and hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key); --format-version, --row-order, --points-per-block and --spatial-divisions were removed and are refused.\n\
+         Defaults: maximum quantization error 0.01 in source units, estimated memory budget 512 MiB.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
-         v7, v8 and v8.1-pre fix hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key) and reject any other --row-order. --row-order hybrid needs a v7 or v8 format; v7.N-pre default to source (hybrid is for measurement); older formats keep source.\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. EPT input and --checkpoint/--resume were removed with V8 (ADR 0061).\n\
          The converter preserves intensity, classification, returns, scan angle, user data and point source ID, plus GPS time, RGB16 and NIR when present, and reports omitted LAS dimensions."
