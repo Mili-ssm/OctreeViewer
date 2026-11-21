@@ -1,0 +1,7 @@
+v7: V7  v8.1-pre: V8Pre(1)
+schema (9 columns): intensity, classification, return_number, number_of_returns, scan_angle_degrees, user_data, point_source_id, gps_time, las_flags
+LOD set: intensity, classification
+MUTATION: flipped one bit of a leaf column byte in memory (node 47244640257 block 63 (leaf))
+DIFFERENCE: node 47244640257 block 63 (leaf): column 0 (intensity) differs
+summary: nodes=75 blocks=76 (leaf 5, LOD 71) points=123534 columns_compared=339 row_order=identical resorted_blocks=0 differences=1
+exit 1

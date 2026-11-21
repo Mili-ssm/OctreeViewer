@@ -66,7 +66,7 @@ rebasa entre tareas. Nada se fusiona sin el visto bueno del propietario.
 ### Task 0: Gate — V1 and V4 before losing v7
 
 V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra antes.
-- [ ] **V1 (mismo dibujo, A7):** un ejemplo o test ignorado de `viewer_format` lee la misma entrada convertida en v7 y
+- [x] **V1 (mismo dibujo, A7):** un ejemplo o test ignorado de `viewer_format` lee la misma entrada convertida en v7 y
   en `v8.1-pre`, ambas recién convertidas con el binario de HEAD (no se reutilizan los ficheros de `render-data`).
   - **Precondición:** mismos ids de nodo y de bloque, mismo número de puntos y mismos bytes de geometría.
   - **Comparación por nodo:** byte a byte en todas las columnas de las hojas (también RGB16, tiempo GPS, extra bytes,
@@ -77,9 +77,11 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 
   Se ejecuta con `data/samples`, Belvedere y Majadas. Cero diferencias y la precondición cumplida es la condición de
   paso. Va en un registro nuevo fechado, con la orden exacta. Una diferencia para el plan y se lleva al propietario.
-- [ ] **V4 (coste de conversión):** se enlaza la medida v7 frente a `v8.1-pre` del
+  Resultado: [registro del 21-11-2026](../records/benchmarks/V1_EQUIVALENCIA_V8_PRE1_21-11-2026.md), 0 diferencias en
+  las cuatro entradas (ejemplo `v1_equivalence`).
+- [x] **V4 (coste de conversión):** se enlaza la medida v7 frente a `v8.1-pre` del
   [registro del 20-11-2026](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md) (mismo binario). Si el propietario la
-  da por buena como RQ-07, no se repite.
+  da por buena como RQ-07, no se repite. Enlazada (mismo binario); pendiente de confirmar por el propietario.
 - [ ] Commit `docs: V1 equivalence of v8.1-pre against v7 before retiring v7`.
 
 ### Task 1: Final V8 identity, default output and web default
