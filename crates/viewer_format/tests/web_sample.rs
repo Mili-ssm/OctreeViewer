@@ -58,11 +58,11 @@ fn web_host_v7_sample_is_a_readable_split_dataset() {
 }
 
 #[test]
-fn web_host_default_sample_is_a_v7_dataset_with_attributes() {
+fn web_host_default_sample_is_a_v8_dataset_with_attributes() {
     let bytes = include_bytes!("../../../examples/web-host/sample.oct");
     let mut reader = FormatReader::new(Cursor::new(bytes.as_slice())).unwrap();
 
-    assert_eq!(reader.format_version(), FormatVersion::V7);
+    assert_eq!(reader.format_version(), FormatVersion::V8);
     // 768 x 768 grid at 64/768 m spacing, see `viewer_convert/examples/create_web_sample.rs`.
     assert_eq!(
         reader.metadata().hierarchy().stats().source_point_count,

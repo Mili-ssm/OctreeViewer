@@ -69,6 +69,20 @@ fn write_las_version(
     writer.into_inner().unwrap().into_inner()
 }
 
+/// V8-family revisions omit LOD columns and need their LOD set and distance quantiles.
+fn with_v8_fields(metadata: FormatMetadata, version: FormatVersion) -> FormatMetadata {
+    if matches!(version, FormatVersion::V8 | FormatVersion::V8Pre(_)) {
+        metadata
+            .with_point_distance_quantiles(
+                viewer_format::PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap(),
+            )
+            .with_lod_attribute_columns(vec![0])
+            .with_display_colour_source(viewer_format::DisplayColourSource::None)
+    } else {
+        metadata
+    }
+}
+
 /// One tiny two-point block written with the real writer for `version`: monolithic and split.
 fn write_revision(version: FormatVersion) -> (Vec<u8>, Option<(Vec<u8>, Vec<u8>)>) {
     let mut origin = [1_000.0, -2_000.0, 10.0];
@@ -114,6 +128,7 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Option<(Vec<u8>, Vec<u8>)
     if let Some(frame) = global {
         metadata = metadata.with_global_frame(frame).unwrap();
     }
+    let metadata = with_v8_fields(metadata, version);
     let block = || {
         let attribute =
             AttributeColumn::new(descriptor.clone(), AttributeValues::U16(vec![100, 200]), 2)
@@ -163,10 +178,10 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Option<(Vec<u8>, Vec<u8>)
     )
 }
 
-/// `v7.5-pre` chain: four nested nodes written with one level per page (`k` = 1), so the file has
+/// Paged chain (V8 and the legacy `v7.5-pre`; Task 5 of the V8 freeze drops the latter): four nested nodes written with one level per page (`k` = 1), so the file has
 /// a root page and three chained child pages. `levels` picks the page target: 1 byte forces
 /// `k` = 1 everywhere, the default keeps the whole chain in the root page.
-fn write_paged_chain(page_target: Option<usize>) -> (Vec<u8>, Vec<u8>) {
+fn write_paged_chain(version: FormatVersion, page_target: Option<usize>) -> (Vec<u8>, Vec<u8>) {
     use viewer_format::{CrsRecord, GlobalFrame, NodeCell};
     let root_prefix = [5, 7, 9].map(|k| (1_u64 << 39) + k);
     let level = 40;
@@ -231,12 +246,13 @@ fn write_paged_chain(page_target: Option<usize>) -> (Vec<u8>, Vec<u8>) {
     .unwrap()
     .with_global_frame(frame)
     .unwrap();
+    let metadata = with_v8_fields(metadata, version);
     let mut options = FormatWriterOptions::new(0.001, 1024).unwrap();
     if let Some(target) = page_target {
         options = options.with_page_target_bytes(target);
     }
     let mut writer = FormatWriter::new_split_for_version(
-        FormatVersion::V7_PRE5,
+        version,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
@@ -347,11 +363,25 @@ fn main() {
     let paged_dir = Path::new("corpus/fuzz_paged_reader");
     fs::create_dir_all(paged_dir).unwrap();
     // Only `seed-sample*` files are tracked (see `fuzz/.gitignore`).
-    let sample = write_revision(FormatVersion::V7_PRE5);
+    let sample = write_revision(FormatVersion::V8);
     let (sample_primary, sample_attributes) = sample.1.unwrap();
     for (name, primary, attributes) in [
-        ("seed-sample-chain-k5", write_paged_chain(None)),
-        ("seed-sample-chain-k1", write_paged_chain(Some(1))),
+        (
+            "seed-sample-chain-k5",
+            write_paged_chain(FormatVersion::V8, None),
+        ),
+        (
+            "seed-sample-chain-k1",
+            write_paged_chain(FormatVersion::V8, Some(1)),
+        ),
+        (
+            "seed-sample-chain-v7-k5",
+            write_paged_chain(FormatVersion::V7_PRE5, None),
+        ),
+        (
+            "seed-sample-chain-v7-k1",
+            write_paged_chain(FormatVersion::V7_PRE5, Some(1)),
+        ),
     ]
     .map(|(name, (primary, attributes))| (name, primary, attributes))
     .into_iter()

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the second web-demo dataset: an XY crop of the Belvedere Glacier LAZ (CC BY 4.0,
 # Ioli et al., https://doi.org/10.5281/zenodo.19265915; see data/datasets/README.md), converted
-# with the converter defaults (final v7, as sample.oct). Output (not committed):
+# with the converter defaults (V8, as sample.oct). Output (not committed):
 #   target/demo-data/belvedere-crop.{laz,oct,octattrs}
 # The window (EPSG:32632 metres) covers relief, moraine edges and vegetation borders, ~1.3 M points.
 #   scripts/make-demo-belvedere.sh [INPUT.laz]

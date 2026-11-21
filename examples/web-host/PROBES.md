@@ -95,8 +95,8 @@ node examples/web-host/probe-cells-parity.mjs target/render-data/belvedere-v7.oc
   --url=http://127.0.0.1:8791/examples/web-host/index.html --rest-timeout-s=120
 ```
 
-The probe needs a V7 file (the Belvedere one above): a V5 file such as `data/samples/fs_e430_n4008_18.oct`
-(header `OCTVFRM1 0500`) does not reach the cells path. The probe
+The probe needs a global-frame file (V7 or V8, such as the Belvedere one above): a V5 file (header `OCTVFRM1 0500`)
+does not reach the cells path. The committed `data/samples/*.oct` are V8 since the 21-11-2026 regeneration. The probe
 takes a file, not the built-in demo sample. Its final `gate`/`parity` summary is written to the report
 (a lookup bug, `arm.name` instead of `arm.arm`, kept it out before). Kill the server and browsers when done.
 

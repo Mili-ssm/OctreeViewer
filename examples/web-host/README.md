@@ -21,7 +21,7 @@ the site's `datasets/`; the button stays hidden where neither location answers. 
 in the side panel, press **Convert to .oct**, then open the result. Converted files default to the
 `v7` format.
 
-The built-in sample button opens `sample.oct`, a final `v7` file drawn by the cells path. The demo
+The built-in sample button opens `sample.oct`, a final `V8` file drawn by the cells path. The demo
 sample always uses the latest stable format ([ADR 0047](../../docs/adr/0047-v5-heredado-hasta-v8.md)).
 `sample-v5.oct` (v5, legacy comparison) and `sample-v7.oct` (`v7.1-pre`, Blob-range probe) back
 older probes only.
@@ -44,8 +44,8 @@ scripts/build-wasm-bindings.sh   # cargo build --release --target wasm32-unknown
 ```
 
 The repository includes `sample.oct` and `sample.octattrs`: a deterministic synthetic wave surface
-over 64×64 m on a 768×768 grid (≈ 8.3 cm spacing, 589,824 points, about 4.2 MiB) with fine relief.
-The example writes it as LAS and converts it with the converter defaults (`v7`). Regenerate it from the workspace root with:
+over 64×64 m on a 768×768 grid (≈ 8.3 cm spacing, 589,824 points, about 3.0 MiB) with fine relief.
+The example writes it as LAS and converts it with the converter defaults (`V8`). Regenerate it from the workspace root with:
 
 ```bash
 cargo run --offline --release -p viewer_convert --example create_web_sample
