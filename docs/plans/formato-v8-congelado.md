@@ -82,7 +82,7 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 - [ ] **V4 (coste de conversión):** se enlaza la medida v7 frente a `v8.1-pre` del
   [registro del 20-11-2026](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md) (mismo binario). Si el propietario la
   da por buena como RQ-07, no se repite. Enlazada (mismo binario); pendiente de confirmar por el propietario.
-- [ ] Commit `docs: V1 equivalence of v8.1-pre against v7 before retiring v7`.
+- [x] Commit `docs: V1 equivalence of v8.1-pre against v7 before retiring v7`.
 
 ### Task 1: Final V8 identity, default output and web default
 
