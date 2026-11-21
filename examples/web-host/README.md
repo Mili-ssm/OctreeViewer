@@ -28,7 +28,7 @@ sample always uses the latest stable format ([ADR 0047](../../docs/adr/0047-v5-h
 `?url=FILE.oct` opens a file over HTTP and needs a server with **HTTP Range and CORS**; python's
 `http.server` does not support Range. Locally use
 `node examples/web-host/red-ref-server.mjs DIR --port=8780` (it also adds CORS; flags `--rtt-ms`,
-`--mbps`, `--ignore-range`). The v7 format opens remotely too. Details in
+`--mbps`, `--ignore-range`). The V8 format opens remotely. Details in
 [Open a file over HTTP Range](#open-a-file-over-http-range). Probe procedures: [PROBES.md](PROBES.md).
 
 This folder demonstrates the embeddable contract for the viewer. The host owns the `canvas` and
@@ -117,7 +117,7 @@ sample and check the console; also check startup from localhost.
 `index.html?url=FILE.oct[&attrs=FILE.octattrs|none][&px=4]` opens a file from a server that answers
 `Range` (single range, `206`) and sends CORS headers (`Access-Control-Allow-Headers: Range, If-Range`,
 `Access-Control-Expose-Headers: Content-Range, ETag`). The workers read it with
-`http-range-source.mjs`: one suffix request opens a `v7.5-pre` file, later reads are single ranges
+`http-range-source.mjs`: one suffix request opens a V8 file, later reads are single ranges
 pinned by `If-Range`, and a server that ignores `Range` (answers `200`) is an error.
 
 Failures are handled per request: network errors, `429` and `5xx` are retried three times with
@@ -283,7 +283,7 @@ interpret). The stats report `minLength`.
 The cells path never draws cubes smaller than a default length minimum of `1e-4` dataset units (0.1 mm when
 the unit is metres); continuity (cloud spacing x factor) wins when larger.
 The demo's default length (ADR 0059) is the file's p5 when it carries one: the open result has
-`recommendedMinSize` (p5 of the nearest-neighbour distance in dataset units; `null` for a v7 file, a file
+`recommendedMinSize` (p5 of the nearest-neighbour distance in dataset units; `null` for a file
 whose p5 was not measured, or the CPU path). The panel then shows it converted with `crsUnit` in mm, cm or m
 (3 significant digits) and sends the same value; with `null`, or a geographic CRS, it shows 0.1 mm.
 Both open paths (build worker and in-worker, `?buildWorker=0`) carry `recommendedMinSize`; only the cells path
@@ -389,7 +389,7 @@ The host decides whether to download or open `result.file`. Extra Bytes and CRS 
 `timings.totalMs` is a browser wall-clock measurement. Large-file behaviour and quotas per browser are
 recorded in the [stage 4 plan](../../docs/records/archive/conversor-web-paralelo-etapa4.md).
 
-Use the keyboard-accessible **Open built-in sample** button to load the included `v7` file, or focus
+Use the keyboard-accessible **Open built-in sample** button to load the included `V8` file, or focus
 the labeled file picker to choose another local dataset. The sample is a synthetic wave surface
 (see [Build the WASM package](#build-the-wasm-package)) and does not depend on external or licensed
 point-cloud data.
@@ -475,7 +475,7 @@ The collector separates timing triggers and uses refinement times, retaining leg
 ID; `workerRenderCallDuringLoadMs` is a legacy label for the active refinement's render samples.
 The window finisher waits for the full 10,000 ms even if the browser timer fires early.
 
-## Coordinate and attribute files (v5)
+## Coordinate and attribute files (V8)
 
 Open `.oct` alone for gray geometry. Select its optional `.octattrs` before opening coordinates or
 add it afterward using the companion picker (the host reopens the dataset and clears caches).
@@ -485,8 +485,7 @@ companions fail validation. Conversion returns two downloadable files and opens 
 The worker closes/cleans both OPFS files on ordinary cancellation or failure. Abrupt termination
 can leave partial entries. Successful output remains in site storage until removed by the user.
 
-The native stream format also permits monolithic v5 files for integrations, but the web
-converter produces pairs. Previous format versions require reconversion. The current range-progress events
+V8 is the only format: files in any older format are rejected with a message asking to reconvert them from the LAS/LAZ source. The current range-progress events
 count unique reads from the coordinate file; they do not include companion I/O. In contrast,
 `refinementWork.rangeReadBytes` includes repeated Blob-cache fills from both files inside LOD
 callbacks. Exports identify the sidecar as `dataset.attributes: {name, fileBytes}` or `null`;

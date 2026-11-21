@@ -5,6 +5,8 @@ Una rama con representantes gruesos ya no impone automáticamente su resolución
 corte. Se conserva una grilla diádica compartida, con celdas enteras y una única regla terminal
 para todos los bloques. No cambia v5/pre1–pre4, la política de caché ni Additive.
 
+> Histórico: las órdenes de este documento usan `--format-version v5` y `--points-per-block`, retiradas con la V8 (D4, 21-11-2026); hoy el conversor solo escribe [V8](../reference/format/FORMAT_V8.md).
+
 ## Problema y contrato
 
 Antes, `build_voxel_scene_with_limits` elegía una profundidad máxima global: el mínimo entre

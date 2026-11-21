@@ -1,5 +1,7 @@
 # Native `.oct` format, v7.5-pre
 
+> Histórico: formato retirado con la V8 (D4, 21-11-2026); la referencia vigente es [FORMAT_V8](FORMAT_V8.md).
+
 Development identity: major **7**, revision **5**, opt-in as `v7.5-pre`. The default output is the final [v7](FORMAT_V7.md) ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md));
 v5 and v7.1–4-pre stay readable with unchanged bytes. This revision pages the node table so that
 opening a cloud no longer costs bytes proportional to its node count

@@ -69,7 +69,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RF-23 | El conversor deberá cuantizar sobre una **rejilla global determinista**: dos nubes con el mismo CRS, convertidas en cualquier lugar o momento, deberán producir celdas coincidentes en todos los niveles. | Propietario, ADR 0021 |
 | RF-24 | El formato deberá conservar CRS (WKT/GeoTIFF), flags LAS (withheld, synthetic, keypoint, overlap) y Extra Bytes, y la exportación deberá devolverlos. Waveform queda fuera. Excepción: los puntos fundidos por M toman los del primer punto ([ADR 0051](adr/0051-granularidad-de-hojas-configurable.md)). | Propietario, ADR 0022 |
 | RF-25 | Si el disco temporal estimado no cabe en el destino, entonces el CLI deberá rechazar la conversión antes de empezar. | Propietario |
-| RF-26 | El CLI deberá identificar la fuente de un checkpoint por ruta, tamaño y `mtime` y, donde se pase `--verify-source`, también por hash del contenido. | Propietario |
+| RF-26 | El CLI deberá identificar la fuente de un checkpoint por ruta, tamaño y `mtime` y, donde se pase `--verify-source`, también por hash del contenido. **No aplica** mientras no existan checkpoints: se retiraron con la V8 y volverán, si vuelven, con una decisión nueva ([ADR 0061](adr/0061-ept-y-checkpoints-se-retiran-con-la-v8.md)). | Propietario |
 | RF-27 | Si el esquema supera 256 atributos, entonces el escritor deberá rechazar la conversión con un mensaje claro. | Propietario, ADR 0007 |
 | RF-28 | La UI de conversión web deberá anunciar «validado hasta Majadas (~6 GB de LAZ)» y mostrar la estimación de RAM y OPFS antes de empezar; lo mayor se deriva al CLI. | Propietario |
 | RF-29 | Si en Firefox la conversión necesita más cuota de la concedida sin `persist()`, entonces la UI deberá pedir `persist()` y explicar el límite. | W2 |
@@ -99,7 +99,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | CON-02 | No se exige COOP/COEP; si el sitio las sirve, se usan hilos wasm con memoria compartida. | Propietario, ADR 0024 |
 | CON-03 | Licencia **MIT OR Apache-2.0**. | Propietario, ADR 0026 |
 | CON-04 | La API es un paquete npm en TypeScript tipado; los crates de Rust son internos, sin descartar publicarlos en el futuro. | Propietario, ADR 0026 |
-| CON-05 | Nada se publica (npm ni app pública) hasta la **1.0**: RQ-11 superado, V7 final congelado y API con RF-10 a RF-15, con la demo construida solo sobre ella. La demo experimental de GitHub Pages es la excepción ([ADR 0045](adr/0045-demo-experimental-publica-antes-de-la-1-0.md)). | Propietario, ADR 0026 |
+| CON-05 | Nada se publica (npm ni app pública) hasta la **1.0**: RQ-11 superado, V8 congelado y API con RF-10 a RF-15, con la demo construida solo sobre ella. La demo experimental de GitHub Pages es la excepción ([ADR 0045](adr/0045-demo-experimental-publica-antes-de-la-1-0.md)). | Propietario, ADR 0026 |
 | CON-06 | La UI y los mensajes de la API, solo en inglés. | Propietario |
 | CON-07 | Nightly con fecha fija se mantiene: los hilos wasm opcionales necesitan `build-std` con atomics. | Propietario, ADR 0011, ADR 0024 |
 | CON-08 | La conversión de cientos de GB solo es nativa (CLI); en el navegador, hasta Majadas. | Propietario |
@@ -183,7 +183,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | Pregunta | Resolución | Registro |
 | --- | --- | --- |
 | C4 / RQ-07: coste de conversión de V7 | Se revisa la cifra de conversión de [RQ-07](#requisitos-de-calidad); TC5 no se planifica. | [ADR 0043](adr/0043-coste-de-conversion-de-v7-frente-a-v5.md) |
-| Congelado de V7 (D3c) | V7 final sobre v7.5-pre, escritor híbrido fijo, salida predeterminada ya; checkpoint y EPT exigen otro formato ([inventario](reference/inventory.md#entrada-checkpoints-y-formato)); `-pre` conservadas; LZ4 propio después. | [ADR 0044](adr/0044-v7-final-congelada-y-predeterminada.md) |
+| Congelado de V7 (D3c) | **Sustituido por la V8 (D4, 21-11-2026).** V7 final sobre v7.5-pre, escritor híbrido fijo, salida predeterminada; después se retiró con el resto de formatos ([FORMAT_V8](reference/format/FORMAT_V8.md)). | [ADR 0044](adr/0044-v7-final-congelada-y-predeterminada.md) |
 | Integración continua | Sin CI: los checks se ejecutan en local con `scripts/check.sh`; se retira `.github/workflows/ci.yml`; Actions queda solo para el despliegue gestionado de Pages (ADR 0045). | [CONTRIBUTING](../CONTRIBUTING.md#checks) |
 | Integración de `feat/r3-v75` | Remoto `origin` = `github.com/Mili-ssm/OctreeViewer`; integrada en `main` por la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1) (15-11-2026). | [Plan](plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026) |
 
@@ -207,6 +207,14 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | ≤ 16,7 ms sin tiempo de GPU (R3-Q31) | Donde el navegador mide el tiempo de GPU (`timestamp-query`) se usa ese tiempo; donde no, el p95 del intervalo entre frames (`requestAnimationFrame`) ≤ 16,7 ms a 60 Hz. | [#19](https://github.com/Mili-ssm/OctreeViewer/issues/19) |
 | Factor de continuidad (RF-05) | Se mantiene 1 × el espaciado; la demo deja cambiar el factor. | [#17](https://github.com/Mili-ssm/OctreeViewer/issues/17) |
 | Catálogo funcional/técnico | Aceptado; las filas «Por confirmar» se deciden abajo (RF-06, RF-25, RQ-08, CON-06, CON-10). | [#26](https://github.com/Mili-ssm/OctreeViewer/issues/26) |
+
+## Resoluciones del 21-11-2026
+
+| Pregunta | Resolución | Registro |
+| --- | --- | --- |
+| Compresión de V8 (D3) | Solo LZ4; zstd y `--attr-codec` fuera. | [ADR 0060](adr/0060-v8-solo-lz4.md) |
+| Solo V8 (D4) | V8 congelada sobre `v8.1-pre` y único formato: se retiran v5, v6, v7, las revisiones previas, la entrada EPT y los checkpoints (RF-26 no aplica hasta que vuelvan). Un fichero antiguo da un error que pide reconvertir. | [Plan](plans/formato-v8-congelado.md), [ADR 0058](adr/0058-formato-v8-experimental.md), [ADR 0061](adr/0061-ept-y-checkpoints-se-retiran-con-la-v8.md), [referencia](reference/format/FORMAT_V8.md) |
+| Requisitos V1–V5 del diseño de V8 | Cumplidos: V1 (mismo dibujo que v7, 0 diferencias) en el [registro de equivalencia](records/benchmarks/V1_EQUIVALENCIA_V8_PRE1_21-11-2026.md); V2 (−34,8 a −40,6 % de salida) y V4 (coste de conversión, dado por bueno como RQ-07) en el [registro de medida](records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md); V3 (mismos bytes web y CLI) por las puertas de paridad de `scripts/check.sh`; V5 (distancia reproducible con semilla fija) en [FORMAT_V8](reference/format/FORMAT_V8.md#bloque-de-metadatos). | [Diseño](plans/formato-v8.md#requisitos) |
 
 ## Catálogo: funcional o técnico, duro o blando (aceptado 19-11-2026)
 

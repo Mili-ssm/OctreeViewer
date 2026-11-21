@@ -1,6 +1,6 @@
 # 0058 Se abre el formato V8 como revisiones previas experimentales
 
-Estado: Aceptada · Fecha: 20-11-2026 · Decide: propietario · Precisa el [ADR 0047](0047-v5-heredado-hasta-v8.md) (empezar V8 retira V5)
+Estado: Aceptada; D4 ejecutada el 21-11-2026 (V8 congelada y único formato, [plan](../plans/formato-v8-congelado.md)) · Fecha: 20-11-2026 · Decide: propietario · Precisa el [ADR 0047](0047-v5-heredado-hasta-v8.md) (empezar V8 retira V5)
 
 ## Contexto
 - [formato-v8](../plans/formato-v8.md) reúne las decisiones del propietario del 20-11-2026 para una revisión nueva del formato.

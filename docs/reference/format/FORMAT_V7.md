@@ -1,5 +1,7 @@
 # Formato nativo `.oct`, v7 (final)
 
+> Histórico: formato retirado con la V8 (D4, 21-11-2026); la referencia vigente es [FORMAT_V8](FORMAT_V8.md).
+
 Identidad: cabecera mayor **7**, revisión **0**, texto `v7`. Es la identidad final que congela
 el [ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md) sobre la disposición de bytes
 de [v7.5-pre](FORMAT_V7_PRE5.md). Esta página solo recoge lo que cambia respecto a esa

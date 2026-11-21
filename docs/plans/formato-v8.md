@@ -1,6 +1,6 @@
 # Formato V8: salida más pequeña y distancia mínima entre puntos
 
-Estado: aprobado · 20-11-2026 · diseño aprobado por el propietario; primera revisión [v8.1-pre](formato-v8-pre1.md) implementada y medida ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md): −34,8 % a −40,6 % de salida frente a v7); experimento de D3 [v8.2-pre](formato-v8-pre2.md) medido ([registro](../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); D3 resuelta: solo LZ4 ([ADR 0060](../adr/0060-v8-solo-lz4.md))
+Estado: completado salvo la publicación de la demo · 21-11-2026 · ejecutado: V8 congelada y único formato ([plan](formato-v8-congelado.md), [referencia](../reference/format/FORMAT_V8.md)); antes: diseño aprobado por el propietario; primera revisión [v8.1-pre](formato-v8-pre1.md) implementada y medida ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md): −34,8 % a −40,6 % de salida frente a v7); experimento de D3 [v8.2-pre](formato-v8-pre2.md) medido ([registro](../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); D3 resuelta: solo LZ4 ([ADR 0060](../adr/0060-v8-solo-lz4.md))
 
 **Objetivo:** reducir el disco que ocupa la salida del conversor, que tras la fase B de temporales es lo que marca
 el disco necesario para convertir (Albuera: 15,75 GB = 3,7 × el LAZ), y guardar en el fichero una estimación de la

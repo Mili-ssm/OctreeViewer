@@ -1,5 +1,7 @@
 # Native `.oct` format, v7.4-pre
 
+> Histórico: formato retirado con la V8 (D4, 21-11-2026); la referencia vigente es [FORMAT_V8](FORMAT_V8.md).
+
 Development identity: major **7**, revision **4**, opt-in as `v7.4-pre`. The default output is the final [v7](FORMAT_V7.md) ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md));
 v5 and v7.1–3-pre stay readable with unchanged bytes. This revision changes the coordinate
 frame, node identity and CRS metadata for the dense LOD pyramid of [R4](../../records/archive/render-r4-piramide-densa.md).

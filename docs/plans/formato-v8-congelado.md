@@ -1,6 +1,6 @@
 # Formato V8 congelado y retirada de los demás formatos (D4, plan de implementación)
 
-Estado: aprobado · 21-11-2026 · pre-mortem hecho (enmiendas A1–A11 incorporadas); el propietario lo aprueba y pide fusionar #111 antes de empezar, así que la rama sale de `main`
+Estado: completado salvo la publicación de la demo · 21-11-2026 · V8 congelada y único formato ([referencia](../reference/format/FORMAT_V8.md)); la publicación de la demo en V8 queda pendiente del propietario
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -209,16 +209,16 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
 
 ### Task 7: Documentation, requirements and trackers
 
-- [ ] `docs/reference/format/FORMAT_V8.md` pasa a ser la referencia única: se consolida `FORMAT_V8_PRE1.md` y se quitan
+- [x] `docs/reference/format/FORMAT_V8.md` pasa a ser la referencia única: se consolida `FORMAT_V8_PRE1.md` y se quitan
   las capacidades retiradas.
-- [ ] Las referencias de v5, v6, v7 y las previas quedan como históricas, enlazadas desde un índice, porque explican
+- [x] Las referencias de v5, v6, v7 y las previas quedan como históricas, enlazadas desde un índice, porque explican
   los registros. No se borran.
-- [ ] Se actualizan inventario, requisitos (RF-26, fila D3c), `estado.md`, el `README.md` raíz y el del
+- [x] Se actualizan inventario, requisitos (RF-26, fila D3c), `estado.md`, el `README.md` raíz y el del
   conversor/demo.
-- [ ] Estados de los ADR: 0004 y 0047 cumplidos o sustituidos por 0058 y 0061; nota en 0044 y 0058.
-- [ ] Este plan y `formato-v8.md` pasan a «hecho».
+- [x] Estados de los ADR: 0004 y 0047 cumplidos o sustituidos por 0058 y 0061; nota en 0044 y 0058.
+- [x] Este plan y `formato-v8.md` pasan a «hecho».
 - [ ] Issues: se cierran #28 y #13 con enlace, se reescribe #12 para V8, y se anota en #16 lo que queda resuelto.
-- [ ] `check_docs_links.py` y `check_docs_index.py` en verde; commit `docs: V8 is the only format (D4)`.
+- [x] `check_docs_links.py` y `check_docs_index.py` en verde; commit `docs: V8 is the only format (D4)`.
 
 ## Criterios de parada
 

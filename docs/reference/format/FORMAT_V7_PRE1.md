@@ -1,5 +1,7 @@
 # Native `.oct` format, v7.1-pre
 
+> Histórico: formato retirado con la V8 (D4, 21-11-2026); la referencia vigente es [FORMAT_V8](FORMAT_V8.md).
+
 Development identity: major **7**, revision **1**, explicitly selected as `v7.1-pre`.
 Unimplemented revisions are rejected. This is a working migration
 baseline, not the final V7 storage design. The final [v7](FORMAT_V7.md) is the default output ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md)); V5/V6 are scheduled for retirement ([plan](../../records/archive/format-v7-plan.md)).

@@ -15,11 +15,12 @@ Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [est
 | Documento | Contenido | Marca |
 | --- | --- | --- |
 | [Inventario](reference/inventory.md) | Mapa de componentes, identidades de formato, herramientas, límites y candidatos. | vivo |
-| [Formato V5](reference/format/FORMAT_V5.md) | Especificación del `.oct`/`.octattrs` V5, formato heredado de comparación hasta V8 ([ADR 0047](adr/0047-v5-heredado-hasta-v8.md)). | vivo |
-| [Formato V7](reference/format/FORMAT_V7.md) | Especificación de la identidad final `v7` (disposición de v7.5-pre, magics propios). | vivo |
-| [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](reference/format/FORMAT_V7_PRE4.md), [V7.5-pre](reference/format/FORMAT_V7_PRE5.md) | Especificaciones de las revisiones V7 experimentales (v7.5: índice paginado, R5). | vivo |
-| [V8.1-pre](reference/format/FORMAT_V8_PRE1.md) | Revisión V8 experimental: cabecera con cuantiles de distancia, columnas LOD y origen del color de pantalla, y reglas de almacenamiento por bloque ([ADR 0058](adr/0058-formato-v8-experimental.md)). | vivo |
-| [V8.2-pre](reference/format/FORMAT_V8_PRE2.md) | Revisión V8 experimental: v8.1-pre más zstd opcional en `.octattrs` (`--attr-codec`), experimento de D3 ([ADR 0058](adr/0058-formato-v8-experimental.md)). | vivo |
+| [Formato V8](reference/format/FORMAT_V8.md) | **Vigente y único**: especificación del `.oct`/`.octattrs` V8 (identidad, marco global, índice paginado, bloques, códecs LZ4 y errores de los formatos retirados; [ADR 0058](adr/0058-formato-v8-experimental.md), [0060](adr/0060-v8-solo-lz4.md), [0061](adr/0061-ept-y-checkpoints-se-retiran-con-la-v8.md)). | vivo |
+| [Formato V5](reference/format/FORMAT_V5.md) | Especificación del V5, formato retirado con la V8 (D4). | histórico |
+| [Formato V7](reference/format/FORMAT_V7.md) | Especificación de la identidad final `v7` (disposición de v7.5-pre, magics propios), retirada con la V8. | histórico |
+| [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](reference/format/FORMAT_V7_PRE4.md), [V7.5-pre](reference/format/FORMAT_V7_PRE5.md) | Especificaciones de las revisiones V7 experimentales (v7.5: índice paginado, R5), retiradas con la V8. | histórico |
+| [V8.1-pre](reference/format/FORMAT_V8_PRE1.md) | Revisión previa de la V8 (cuantiles de distancia, columnas LOD, color de pantalla derivado, reglas de almacenamiento por bloque); la V8 vigente usa su disposición. | histórico |
+| [V8.2-pre](reference/format/FORMAT_V8_PRE2.md) | Revisión previa de la V8: v8.1-pre más zstd opcional en `.octattrs` (`--attr-codec`), experimento de D3 que no pasó a la V8 ([ADR 0060](adr/0060-v8-solo-lz4.md)). | histórico |
 
 ## Planes y specs
 
@@ -36,10 +37,10 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 | [Temporales del conversor](plans/temporales-del-conversor.md) | Bajar el disco temporal del CLI de 11 × a ≤ 2 × el LAZ (RQ-06) sin cambiar la salida: spools comprimidos (LZ4 por planos) y escritura por subárbol; fase B fusionada (#108, 3,5 ×), falta la A. | en curso |
 | [Temporales, fase A](plans/temporales-del-conversor-fase-a.md) | Plan de implementación de la escritura por subárbol: codificador sin jerarquía, escritor en flujo, sumidero de bloques y un hijo de la raíz cada vez. | en pausa (#109) |
-| [Formato V8](plans/formato-v8.md) | Diseño de la V8 (aprobado): color de pantalla sin duplicar, LOD solo con atributos de dibujo, distancia mínima entre puntos en la cabecera, solo LZ4 tras medir zstd ([ADR 0060](adr/0060-v8-solo-lz4.md)) y retirada de V5, v6 y v7. | pendiente |
+| [Formato V8](plans/formato-v8.md) | Diseño de la V8 (aprobado): color de pantalla sin duplicar, LOD solo con atributos de dibujo, distancia mínima entre puntos en la cabecera, solo LZ4 tras medir zstd ([ADR 0060](adr/0060-v8-solo-lz4.md)) y retirada de V5, v6 y v7. | completado salvo la publicación de la demo (21-11-2026) |
 | [Formato V8, v8.1-pre](plans/formato-v8-pre1.md) | Plan de implementación de la primera revisión experimental: identidad, cuantiles de distancia, LOD con columnas de dibujo, color de pantalla derivado y lectura en el visor; ejecutado y medido. | medido |
 | [Formato V8, v8.2-pre](plans/formato-v8-pre2.md) | Experimento de D3: zstd en columnas de `.octattrs` con cuatro esquemas fijos (`lz4`, `cold`, `cold-rgb`, `all`) medidos en tamaño, conversión, carga y render; resultado: solo LZ4 (ADR 0060). | medido |
-| [Formato V8 congelado (D4)](plans/formato-v8-congelado.md) | Identidad final V8 sobre v8.1-pre y retirada de v5, v6, v7, las revisiones previas, zstd, EPT y checkpoints. | aprobado |
+| [Formato V8 congelado (D4)](plans/formato-v8-congelado.md) | Identidad final V8 sobre v8.1-pre y retirada de v5, v6, v7, las revisiones previas, zstd, EPT y checkpoints. | completado salvo la publicación de la demo (21-11-2026) |
 
 ## Explicación
 
