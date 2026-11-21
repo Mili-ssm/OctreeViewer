@@ -1,6 +1,6 @@
 # Formato V8, revisión v8.1-pre (plan de implementación)
 
-Estado: medido · 20-11-2026 · tareas 0 a 8 hechas; v8.1-pre frente a v7 con el mismo binario: Albuera −40,6 % (V2 cumplido), Majadas −40,5 %, Belvedere −34,8 %, sin cambio apreciable en el tiempo de conversión (una ejecución por caso) ni en la carga en el navegador (Belvedere, 4 ejecuciones por formato, serie bimodal) ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md)); la decisión sobre D3 y sobre pasar a una v8 final queda para el propietario
+Estado: completado · 20-11-2026 · tareas 0 a 8 hechas; v8.1-pre frente a v7 con el mismo binario: Albuera −40,6 % (V2 cumplido), Majadas −40,5 %, Belvedere −34,8 %, sin cambio apreciable en el tiempo de conversión (una ejecución por caso) ni en la carga en el navegador (Belvedere, 4 ejecuciones por formato, serie bimodal) ([registro](../benchmarks/FORMATO_V8_PRE1_20-11-2026.md)); la decisión sobre D3 y sobre pasar a una v8 final queda para el propietario
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -19,13 +19,13 @@ calculan en los trabajos de hoja y se agregan en orden de id de nodo.
 **Tech Stack:** Rust (nightly fijado), wasm-bindgen, JS del visor (`examples/web-host`); sin dependencias nuevas.
 
 **Spec:** [formato-v8.md](formato-v8.md) (diseño aprobado el 20-11-2026) y el
-[estudio del tamaño de la salida](../records/benchmarks/TAMANO_SALIDA_V7_20-11-2026.md).
+[estudio del tamaño de la salida](../benchmarks/TAMANO_SALIDA_V7_20-11-2026.md).
 
 ## Global Constraints
 
 - **v7 no cambia:** los SHA fijados en `crates/viewer_convert/src/lib_tests.rs:1587-1812`, el digest de
   `tools/format_parity` y los SHA de referencia de Belvedere/Albuera/Majadas del
-  [registro de la fase B](../records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md) siguen iguales en todas las tareas.
+  [registro de la fase B](../benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md) siguen iguales en todas las tareas.
 - `FormatVersion::DEFAULT_OUTPUT` sigue siendo `V7`; `v8.1-pre` solo se escribe pedido.
 - `FormatVersion::V<n>` solo dentro de `viewer_format` (`scripts/check_version_literals.sh`): fuera, capacidades de
   `StorageLayout`.

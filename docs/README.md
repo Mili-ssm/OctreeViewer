@@ -37,10 +37,6 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 | [Temporales del conversor](plans/temporales-del-conversor.md) | Bajar el disco temporal del CLI de 11 × a ≤ 2 × el LAZ (RQ-06) sin cambiar la salida: spools comprimidos (LZ4 por planos) y escritura por subárbol; fase B fusionada (#108, 3,5 ×), falta la A. | en curso |
 | [Temporales, fase A](plans/temporales-del-conversor-fase-a.md) | Plan de implementación de la escritura por subárbol: codificador sin jerarquía, escritor en flujo, sumidero de bloques y un hijo de la raíz cada vez. | en pausa (#109) |
-| [Formato V8](plans/formato-v8.md) | Diseño de la V8 (aprobado): color de pantalla sin duplicar, LOD solo con atributos de dibujo, distancia mínima entre puntos en la cabecera, solo LZ4 tras medir zstd ([ADR 0060](adr/0060-v8-solo-lz4.md)) y retirada de V5, v6 y v7. | completado salvo la publicación de la demo (21-11-2026) |
-| [Formato V8, v8.1-pre](plans/formato-v8-pre1.md) | Plan de implementación de la primera revisión experimental: identidad, cuantiles de distancia, LOD con columnas de dibujo, color de pantalla derivado y lectura en el visor; ejecutado y medido. | medido |
-| [Formato V8, v8.2-pre](plans/formato-v8-pre2.md) | Experimento de D3: zstd en columnas de `.octattrs` con cuatro esquemas fijos (`lz4`, `cold`, `cold-rgb`, `all`) medidos en tamaño, conversión, carga y render; resultado: solo LZ4 (ADR 0060). | medido |
-| [Formato V8 congelado (D4)](plans/formato-v8-congelado.md) | Identidad final V8 sobre v8.1-pre y retirada de v5, v6, v7, las revisiones previas, zstd, EPT y checkpoints. | completado salvo la publicación de la demo (21-11-2026) |
 
 ## Explicación
 
@@ -206,6 +202,10 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [R5: jerarquía paginada](records/archive/render-r5-jerarquia-paginada.md) | Revisión `v7.5-pre`: páginas por niveles desde anclas, k por página, lector perezoso local y HTTP Range; flags LAS y Extra Bytes. | histórico |
 | [Etapa 1](records/archive/conversor-web-paralelo-etapa1.md), [2](records/archive/conversor-web-paralelo-etapa2.md), [3](records/archive/conversor-web-paralelo-etapa3.md), [4](records/archive/conversor-web-paralelo-etapa4.md) del conversor web | S0/M0/S1; trabajos por nodo, S8, S9 y M1; S2, S10, M2 y M3a; M3b con zonas OPFS y retirada del conversor antiguo. | histórico |
 | [Dependencias del renderer](records/archive/RENDERER_DEPENDENCIES.md) | Migración a wgpu 30/glam 0.34 (14-10-2026), checks y validación parcial de navegador; decisión en el ADR 0010. | histórico |
+| [Formato V8](records/archive/formato-v8.md) | Diseño de la V8 (aprobado): color de pantalla sin duplicar, LOD solo con atributos de dibujo, distancia mínima entre puntos en la cabecera, solo LZ4 tras medir zstd ([ADR 0060](adr/0060-v8-solo-lz4.md)) y retirada de V5, v6 y v7. | histórico |
+| [Formato V8, v8.1-pre](records/archive/formato-v8-pre1.md) | Plan de implementación de la primera revisión experimental: identidad, cuantiles de distancia, LOD con columnas de dibujo, color de pantalla derivado y lectura en el visor; ejecutado y medido. | histórico |
+| [Formato V8, v8.2-pre](records/archive/formato-v8-pre2.md) | Experimento de D3: zstd en columnas de `.octattrs` con cuatro esquemas fijos (`lz4`, `cold`, `cold-rgb`, `all`) medidos en tamaño, conversión, carga y render; resultado: solo LZ4 (ADR 0060). | histórico |
+| [Formato V8 congelado (D4)](records/archive/formato-v8-congelado.md) | Identidad final V8 sobre v8.1-pre y retirada de v5, v6, v7, las revisiones previas, zstd, EPT y checkpoints. | histórico |
 
 ## Decisiones
 

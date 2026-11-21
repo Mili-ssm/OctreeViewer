@@ -1,8 +1,8 @@
 # Formato v8.2-pre: cuatro esquemas de compresión de `.octattrs` — 20-11-2026
 
-**Estado: medido.** Es la tarea 4 del [plan de v8.2-pre](../../plans/formato-v8-pre2.md), el experimento de D3 del
-[diseño de la V8](../../plans/formato-v8.md#resoluciones-tras-medir-v81-pre-propietario-20-11-2026). Parte de la
-[proyección de la tarea 0](../../plans/formato-v8-pre2.md#codificador) y del
+**Estado: medido.** Es la tarea 4 del [plan de v8.2-pre](../archive/formato-v8-pre2.md), el experimento de D3 del
+[diseño de la V8](../archive/formato-v8.md#resoluciones-tras-medir-v81-pre-propietario-20-11-2026). Parte de la
+[proyección de la tarea 0](../archive/formato-v8-pre2.md#codificador) y del
 [registro de v8.1-pre](FORMATO_V8_PRE1_20-11-2026.md).
 
 **Conclusión:** frente a `lz4`, los esquemas `cold`, `cold-rgb` y `all` reducen la salida total un **−3,08 / −5,69 /

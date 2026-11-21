@@ -1,6 +1,6 @@
 # Formato V8 congelado y retirada de los demás formatos (D4, plan de implementación)
 
-Estado: completado salvo la publicación de la demo · 21-11-2026 · V8 congelada y único formato ([referencia](../reference/format/FORMAT_V8.md)); la publicación de la demo en V8 queda pendiente del propietario
+Estado: completado · 21-11-2026 · V8 congelada y único formato ([referencia](../../reference/format/FORMAT_V8.md)); fusionado en `main` con la PR #118 (`82416ae`) y demo publicada desde `82416ae` (gh-pages `b42abb7`), verificada con Playwright
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -9,16 +9,16 @@ V8**. Se retiran v5, v6, v7, todas las revisiones previas (también `v8.1-pre` y
 checkpoints.
 
 **Architecture:** primero se añade la identidad final `V8`, igual que `V7` se creó sobre `v7.5-pre`
-([ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md)): mismos bytes que `v8.1-pre`, salvo la revisión de
+([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md)): mismos bytes que `v8.1-pre`, salvo la revisión de
 cabecera y los magics. Pasa a ser la salida por defecto, y los fixtures se regeneran. Después se borra cada familia en
 una tarea propia, de la más externa a la más interna: zstd, EPT y checkpoints, y por último las versiones antiguas. Así
 cada tarea deja `scripts/check.sh` en verde y se puede revertir sola.
 
 **Tech Stack:** Rust (nightly fijado), wasm-bindgen, Node/Playwright para la demo.
 
-**Spec:** [formato-v8.md](formato-v8.md) («Solo V8 (D4)», resoluciones D3 y D4), [ADR 0058](../adr/0058-formato-v8-experimental.md),
-[ADR 0060](../adr/0060-v8-solo-lz4.md) (solo LZ4), [ADR 0061](../adr/0061-ept-y-checkpoints-se-retiran-con-la-v8.md)
-(EPT y checkpoints), [FORMAT_V8_PRE1](../reference/format/FORMAT_V8_PRE1.md).
+**Spec:** [formato-v8.md](formato-v8.md) («Solo V8 (D4)», resoluciones D3 y D4), [ADR 0058](../../adr/0058-formato-v8-experimental.md),
+[ADR 0060](../../adr/0060-v8-solo-lz4.md) (solo LZ4), [ADR 0061](../../adr/0061-ept-y-checkpoints-se-retiran-con-la-v8.md)
+(EPT y checkpoints), [FORMAT_V8_PRE1](../../reference/format/FORMAT_V8_PRE1.md).
 
 **Rama:** `feat/formato-v8-final`. Precondición (A9): el propietario aprueba o congela #111 (`experiment/formato-v8-pre1`)
 antes de la tarea 3; si se fusiona, la rama sale de `main`, y si no, de la rama del experimento, con su PR apilada. Solo se
@@ -77,10 +77,10 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 
   Se ejecuta con `data/samples`, Belvedere y Majadas. Cero diferencias y la precondición cumplida es la condición de
   paso. Va en un registro nuevo fechado, con la orden exacta. Una diferencia para el plan y se lleva al propietario.
-  Resultado: [registro del 21-11-2026](../records/benchmarks/V1_EQUIVALENCIA_V8_PRE1_21-11-2026.md), 0 diferencias en
+  Resultado: [registro del 21-11-2026](../benchmarks/V1_EQUIVALENCIA_V8_PRE1_21-11-2026.md), 0 diferencias en
   las cuatro entradas (ejemplo `v1_equivalence`).
 - [x] **V4 (coste de conversión):** se enlaza la medida v7 frente a `v8.1-pre` del
-  [registro del 20-11-2026](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md) (mismo binario). Si el propietario la
+  [registro del 20-11-2026](../benchmarks/FORMATO_V8_PRE1_20-11-2026.md) (mismo binario). Si el propietario la
   da por buena como RQ-07, no se repite. El propietario la da por buena el 21-11-2026: no se repite.
 - [x] Commit `docs: V1 equivalence of v8.1-pre against v7 before retiring v7`.
 
@@ -125,7 +125,7 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 
   Decisiones (tarea 2a, 21-11-2026). Se ha regenerado `sample.*` y `data/samples/fs_*.*` como V8; la semilla de fuzz
   `gen_seeds` escribe V8 (más `-v7-` heredadas); los fixtures de error están en
-  [`crates/viewer_format/tests/fixtures/retired/`](../../crates/viewer_format/tests/fixtures/retired/README.md).
+  [`crates/viewer_format/tests/fixtures/retired/`](../../../crates/viewer_format/tests/fixtures/retired/README.md).
 
   | Consumidor | Decisión | Motivo |
   | --- | --- | --- |
@@ -136,7 +136,7 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
   | `storage_suite.py`, `profile_conversion.py` | Portar en la tarea 5 | Defecto `v5` y lista `v5…v7.3-pre`; V8 fija 64.000 puntos por bloque y rechaza lo demás, así que cambiar el defecto cambia lo que miden y hay que decidir qué se compara |
   | `compare_storage_revisions.py` | Portar en la tarea 5 | Compara `v5` y `v7.2-pre` (ambos se retiran); decidir contra qué V8 se compara |
   | `run-r3-b6-matrix.sh` | Portado en 2b | Lee `$RENDER_DATA_DIR/*-v8.oct` (defecto `target/render-data`); no se ejecuta (necesita navegador) |
-  | `lod_cells_*_tests.rs` | Portado en 2b | Leen `$RENDER_DATA_DIR/*-v8.oct` (ignorados); mismos valores que con v7, nada que rehacer ([registro](../records/benchmarks/RENDER_DATA_V8_21-11-2026.md)) |
+  | `lod_cells_*_tests.rs` | Portado en 2b | Leen `$RENDER_DATA_DIR/*-v8.oct` (ignorados); mismos valores que con v7, nada que rehacer ([registro](../benchmarks/RENDER_DATA_V8_21-11-2026.md)) |
   | `viewer_render_wgpu` (`cell_pool/plan.rs`, `examples/coverage_spike.rs`) | Sin cambio | No fijan versión ni leen fixtures versionados; `coverage_spike` recibe el `.oct` por argumento (su texto cita «v7.5») |
   | `PROBES.md` y READMEs | Portado en lo barato | Se corrigen las frases sobre `sample.oct` y los fixtures V5; quedan los comandos con `formatVersion`/`--attr-codec` (en `PROBES.md`, `web-host/README.md`, `converter-ui.mjs`, `tools/convert_parity`) para las tareas 3 a 5, cada una con su opción |
 - [x] Commit `test: fixtures and seeds as V8`.
@@ -206,7 +206,7 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
   - la consola.
 
   (La caché de un wasm antiguo solo se comprobó sobre una copia local del sitio; se verifica al publicar.)
-- [ ] **No se publica:** se pregunta al propietario antes de `scripts/publish-demo.sh`.
+- [x] **No se publica:** se pregunta al propietario antes de `scripts/publish-demo.sh`. (El propietario lo autorizó el 21-11-2026; sitio verificado en local y publicado, incluida la caché de un wasm antiguo.)
 - [x] Commit `chore(web): V8 demo sample`.
 
 ### Task 7: Documentation, requirements and trackers
@@ -218,7 +218,7 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
 - [x] Se actualizan inventario, requisitos (RF-26, fila D3c), `estado.md`, el `README.md` raíz y el del
   conversor/demo.
 - [x] Estados de los ADR: 0004 y 0047 cumplidos o sustituidos por 0058 y 0061; nota en 0044 y 0058.
-- [x] Este plan y `formato-v8.md` pasan a «hecho» (completado salvo la publicación de la demo).
+- [x] Este plan y `formato-v8.md` pasan a «hecho».
 - [ ] Issues: se cierran #28 y #13 con enlace, se reescribe #12 para V8, y se anota en #16 lo que queda resuelto.
 - [x] `check_docs_links.py` y `check_docs_index.py` en verde; commit `docs: V8 is the only format (D4)`.
 

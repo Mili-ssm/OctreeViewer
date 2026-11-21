@@ -1,8 +1,8 @@
 # Formato v8.1-pre frente a v7 — 20-11-2026
 
-**Estado: medido.** Es la tarea 8 del [plan de v8.1-pre](../../plans/formato-v8-pre1.md), dentro del
-[diseño de la V8](../../plans/formato-v8.md) ([ADR 0058](../../adr/0058-formato-v8-experimental.md)). Parte de la
-[proyección de la tarea 0](../../plans/formato-v8-pre1.md#proyección) y del
+**Estado: medido.** Es la tarea 8 del [plan de v8.1-pre](../archive/formato-v8-pre1.md), dentro del
+[diseño de la V8](../archive/formato-v8.md) ([ADR 0058](../../adr/0058-formato-v8-experimental.md)). Parte de la
+[proyección de la tarea 0](../archive/formato-v8-pre1.md#proyección) y del
 [reparto de bytes de v7](TAMANO_SALIDA_V7_20-11-2026.md).
 
 **Conclusión:** con el mismo binario, `--format-version v8.1-pre` reduce la salida a **−40,6 % (Albuera), −40,5 %
@@ -80,7 +80,7 @@ Leídos de la cabecera de cada salida v8.1-pre; unidades del dataset.
 - En Majadas p1 = p5 = 2⁻¹⁰, un valor redondo (observado; no se investigó si viene de la cuantización de las
   coordenadas o de puntos repetidos).
 - Los cuantiles salen de una muestra con semilla fija en las hojas (borde de hoja sobreestima algo, ver el
-  [diseño](../../plans/formato-v8.md#distancia-mínima-entre-puntos-d5)); no se comparó con un cálculo exacto sobre
+  [diseño](../archive/formato-v8.md#distancia-mínima-entre-puntos-d5)); no se comparó con un cálculo exacto sobre
   todos los puntos.
 
 ## Lectura en el navegador (Belvedere)

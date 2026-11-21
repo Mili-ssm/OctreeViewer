@@ -5,7 +5,7 @@ mayor **8**, revisión **0**, texto `v8`; magic del índice `OCTVIDX8`, magic de
 [ADR 0058](../../adr/0058-formato-v8-experimental.md) (V8 y sus revisiones previas),
 [ADR 0060](../../adr/0060-v8-solo-lz4.md) (solo LZ4, sin zstd) y
 [ADR 0061](../../adr/0061-ept-y-checkpoints-se-retiran-con-la-v8.md) (sin EPT ni checkpoints); diseño en
-[formato-v8](../../plans/formato-v8.md) y plan de congelado en [formato-v8-congelado](../../plans/formato-v8-congelado.md).
+[formato-v8](../../records/archive/formato-v8.md) y plan de congelado en [formato-v8-congelado](../../records/archive/formato-v8-congelado.md).
 Fuente de verdad: `crates/viewer_format/src/` (`version.rs`, `layout.rs`, `page_codec.rs`, `paged_index.rs`,
 `global_frame.rs`, `codec.rs`, `attribute_codec.rs`, `retired.rs`, `prepare.rs`).
 

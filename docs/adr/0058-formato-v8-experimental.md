@@ -1,9 +1,9 @@
 # 0058 Se abre el formato V8 como revisiones previas experimentales
 
-Estado: Aceptada; D4 ejecutada el 21-11-2026 (V8 congelada y único formato, [plan](../plans/formato-v8-congelado.md)) · Fecha: 20-11-2026 · Decide: propietario · Precisa el [ADR 0047](0047-v5-heredado-hasta-v8.md) (empezar V8 retira V5)
+Estado: Aceptada; D4 ejecutada el 21-11-2026 (V8 congelada y único formato, [plan](../records/archive/formato-v8-congelado.md)) · Fecha: 20-11-2026 · Decide: propietario · Precisa el [ADR 0047](0047-v5-heredado-hasta-v8.md) (empezar V8 retira V5)
 
 ## Contexto
-- [formato-v8](../plans/formato-v8.md) reúne las decisiones del propietario del 20-11-2026 para una revisión nueva del formato.
+- [formato-v8](../records/archive/formato-v8.md) reúne las decisiones del propietario del 20-11-2026 para una revisión nueva del formato.
 - v7 está congelado ([ADR 0044](0044-v7-final-congelada-y-predeterminada.md)); los cambios de carga útil necesitan una identidad nueva.
 - La [medida de tamaño de v7](../records/benchmarks/TAMANO_SALIDA_V7_20-11-2026.md) lista los candidatos para reducir la salida.
 
@@ -20,7 +20,7 @@ Decisiones del propietario (20-11-2026):
 Decisión técnica del diseño (expuesta al propietario, sin objeción; no es D2): el color de pantalla no se guarda dos veces, se deriva de los datos guardados al leer.
 
 ## Alternativas
-Candidatos de la medida de tamaño y de [formato-v8](../plans/formato-v8.md) que no se adoptan:
+Candidatos de la medida de tamaño y de [formato-v8](../records/archive/formato-v8.md) que no se adoptan:
 
 | Opción | Descartada o aplazada porque |
 | --- | --- |
@@ -30,7 +30,7 @@ Candidatos de la medida de tamaño y de [formato-v8](../plans/formato-v8.md) que
 | Opción del conversor para omitir atributos (−23 %) | Con pérdida y a elección del usuario; no es el camino de V8 |
 
 ## Consecuencias
-- Hasta el final de V8 conviven v7 y `v8.N-pre`. Por el plan de implementación ([formato-v8-pre1](../plans/formato-v8-pre1.md), restricciones globales), v7 sigue siendo la salida predeterminada y `v8.1-pre` solo se escribe si se pide; v7 no cambia.
+- Hasta el final de V8 conviven v7 y `v8.N-pre`. Por el plan de implementación ([formato-v8-pre1](../records/archive/formato-v8-pre1.md), restricciones globales), v7 sigue siendo la salida predeterminada y `v8.1-pre` solo se escribe si se pide; v7 no cambia.
 - `scripts/check_version_literals.sh` mantiene los literales de versión dentro de `viewer_format`.
 - La retirada de V5, v6 y v7 (D4) llega con una fase propia y no cambia ahora ningún lector.
 

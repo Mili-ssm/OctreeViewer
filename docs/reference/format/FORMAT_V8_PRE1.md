@@ -4,8 +4,8 @@
 
 Identidad de desarrollo: cabecera mayor **8**, revisión **1**, texto `v8.1-pre`; opt-in
 (`viewer_convert --format-version v8.1-pre`). La salida predeterminada sigue siendo [v7](FORMAT_V7.md). Decisiones
-en el [ADR 0058](../../adr/0058-formato-v8-experimental.md); diseño en [formato-v8](../../plans/formato-v8.md), plan en
-[formato-v8-pre1](../../plans/formato-v8-pre1.md) y medida en el
+en el [ADR 0058](../../adr/0058-formato-v8-experimental.md); diseño en [formato-v8](../../records/archive/formato-v8.md), plan en
+[formato-v8-pre1](../../records/archive/formato-v8-pre1.md) y medida en el
 [registro](../../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md). Es experimental y **no está congelada** (ADR 0058,
 D6): puede cambiar en revisiones previas posteriores sin compatibilidad.
 

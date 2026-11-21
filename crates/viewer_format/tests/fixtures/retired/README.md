@@ -1,7 +1,7 @@
 # Fixtures de formatos retirados
 
 Cabecera (24 bytes, `<versión>.head`) y pie (40 bytes, `<versión>.foot`) del `.oct` real que escribía cada
-familia que la tarea 5 de [formato-v8-congelado](../../../../../docs/plans/formato-v8-congelado.md) retira:
+familia que la tarea 5 de [formato-v8-congelado](../../../../../docs/records/archive/formato-v8-congelado.md) retira:
 v5, v6.1-pre … v6.4-pre, v7.1-pre … v7.5-pre, v7, v8.1-pre y v8.2-pre. Sirven al test de la tarea 5: abrir un
 fichero retirado debe decir «version N: reconvert to V8» sin conservar lectores antiguos (A4 del pre-mortem).
 

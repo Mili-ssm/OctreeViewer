@@ -1,14 +1,14 @@
 # Formato V8: salida más pequeña y distancia mínima entre puntos
 
-Estado: completado salvo la publicación de la demo · 21-11-2026 · ejecutado: V8 congelada y único formato ([plan](formato-v8-congelado.md), [referencia](../reference/format/FORMAT_V8.md)); antes: diseño aprobado por el propietario; primera revisión [v8.1-pre](formato-v8-pre1.md) implementada y medida ([registro](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md): −34,8 % a −40,6 % de salida frente a v7); experimento de D3 [v8.2-pre](formato-v8-pre2.md) medido ([registro](../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); D3 resuelta: solo LZ4 ([ADR 0060](../adr/0060-v8-solo-lz4.md))
+Estado: completado · 21-11-2026 · ejecutado: V8 congelada y único formato, fusionado en la PR #118 y demo publicada ([plan](formato-v8-congelado.md), [referencia](../../reference/format/FORMAT_V8.md)); antes: diseño aprobado por el propietario; primera revisión [v8.1-pre](formato-v8-pre1.md) implementada y medida ([registro](../benchmarks/FORMATO_V8_PRE1_20-11-2026.md): −34,8 % a −40,6 % de salida frente a v7); experimento de D3 [v8.2-pre](formato-v8-pre2.md) medido ([registro](../benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); D3 resuelta: solo LZ4 ([ADR 0060](../../adr/0060-v8-solo-lz4.md))
 
 **Objetivo:** reducir el disco que ocupa la salida del conversor, que tras la fase B de temporales es lo que marca
 el disco necesario para convertir (Albuera: 15,75 GB = 3,7 × el LAZ), y guardar en el fichero una estimación de la
 distancia mínima entre puntos que sirva como tamaño mínimo de vóxel recomendado.
 
-**Por qué ahora:** el [estudio del tamaño de la salida](../records/benchmarks/TAMANO_SALIDA_V7_20-11-2026.md) mide
+**Por qué ahora:** el [estudio del tamaño de la salida](../benchmarks/TAMANO_SALIDA_V7_20-11-2026.md) mide
 que v7 guarda 1,97 N puntos (los LOD son otro 0,97 N) y el color dos veces; las reducciones grandes cambian el formato,
-congelado en v7 por el [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md). La fase A de temporales queda
+congelado en v7 por el [ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md). La fase A de temporales queda
 aparcada ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)).
 
 ## Decisiones del propietario (20-11-2026)
@@ -18,9 +18,9 @@ aparcada ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)).
 | D1 | Se abre una revisión nueva del formato, V8, con su ADR. |
 | D2 | Los puntos LOD guardan solo lo que dibuja el visor: coordenadas, RGB, intensidad y clase. Las hojas guardan todos los atributos. |
 | D3 | zstd solo si una medida (tamaño, tiempo de conversión y lectura en wasm) lo justifica; la decide el propietario con las cifras. |
-| D4 | El visor y el conversor soportan **solo V8**: los ficheros v7 (también el recorte de la demo) se reconvierten. Con el [ADR 0047](../adr/0047-v5-heredado-hasta-v8.md), empezar V8 retira V5 ([#28](https://github.com/Mili-ssm/OctreeViewer/issues/28)); D4 retira además v6 y v7 y sus revisiones previas. |
+| D4 | El visor y el conversor soportan **solo V8**: los ficheros v7 (también el recorte de la demo) se reconvierten. Con el [ADR 0047](../../adr/0047-v5-heredado-hasta-v8.md), empezar V8 retira V5 ([#28](https://github.com/Mili-ssm/OctreeViewer/issues/28)); D4 retira además v6 y v7 y sus revisiones previas. |
 | D6 | V8 está en desarrollo y en pruebas: no se fija nada todavía (propietario, 20-11-2026). Se trabaja en revisiones previas (`v8.1-pre`, `v8.2-pre`…), como v7, y se congela cuando las pruebas lo justifiquen. |
-| D5 | V8 guarda una estimación estocástica de la distancia mínima entre puntos, como tamaño mínimo de vóxel recomendado. Que la demo la use en lugar de los 0,1 mm por defecto se decide más adelante (hoy lo fija la resolución de OQ-13 del 18-11-2026, RQ-09 y el [ADR 0054](../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md)). |
+| D5 | V8 guarda una estimación estocástica de la distancia mínima entre puntos, como tamaño mínimo de vóxel recomendado. Que la demo la use en lugar de los 0,1 mm por defecto se decide más adelante (hoy lo fija la resolución de OQ-13 del 18-11-2026, RQ-09 y el [ADR 0054](../../adr/0054-el-objetivo-de-px-es-el-tamano-minimo.md)). |
 
 ### Resoluciones tras medir v8.1-pre (propietario, 20-11-2026)
 
@@ -28,8 +28,8 @@ aparcada ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)).
 | --- | --- |
 | D3 | (Resuelta el 21-11-2026: ver la fila siguiente.) Sigue abierta como experimento: `v8.2-pre` mide cuatro esquemas fijos — LZ4 en todo (v8.1-pre, la base), todo `.octattrs` con zstd, zstd solo en las columnas frías (las que el render no lee: tiempo GPS, ángulo, retornos, id de fuente, datos de usuario, extra bytes) y frías más el RGB de 16 bits — en tamaño, tiempo de conversión, tiempo de carga y rendimiento de render en el navegador. «Quizá sea mejor quedarse solo con LZ4». |
 | D4 | La V8 se congela (y se retiran v5, v6 y v7) después de medir `v8.2-pre`, con el esquema que salga de D3. |
-| D3 (21-11-2026) | Tras medir `v8.2-pre`: **solo LZ4**; la V8 no lleva zstd ([ADR 0060](../adr/0060-v8-solo-lz4.md)). |
-| D5 | La demo usa el p5 del fichero como mínimo en longitud por defecto cuando lo trae; si no, 0,1 mm ([ADR 0059](../adr/0059-minimo-por-defecto-desde-p5.md)). |
+| D3 (21-11-2026) | Tras medir `v8.2-pre`: **solo LZ4**; la V8 no lleva zstd ([ADR 0060](../../adr/0060-v8-solo-lz4.md)). |
+| D5 | La demo usa el p5 del fichero como mínimo en longitud por defecto cuando lo trae; si no, 0,1 mm ([ADR 0059](../../adr/0059-minimo-por-defecto-desde-p5.md)). |
 
 ## Requisitos
 
@@ -123,11 +123,11 @@ El nivel 3 es el codo (el 6 gana 1–2 puntos y codifica 2,5–3 × más lento).
 
 ## Fuera de alcance
 
-Densidad de los LOD (×2 por nivel, [ADR 0020](../adr/0020-piramide-lod-densa.md)); LOD como referencias a filas de
+Densidad de los LOD (×2 por nivel, [ADR 0020](../../adr/0020-piramide-lod-densa.md)); LOD como referencias a filas de
 hoja; checkpoints en el formato paginado (RF-26); cambiar el mínimo por defecto de la demo (D5, más adelante).
 
 ## Preguntas abiertas
 
 | Id | Pregunta |
 | --- | --- |
-| P1 | Esquema de compresión de V8: resuelta el 21-11-2026 tras medir las cuatro variantes de `v8.2-pre`: solo LZ4 ([ADR 0060](../adr/0060-v8-solo-lz4.md)). |
+| P1 | Esquema de compresión de V8: resuelta el 21-11-2026 tras medir las cuatro variantes de `v8.2-pre`: solo LZ4 ([ADR 0060](../../adr/0060-v8-solo-lz4.md)). |

@@ -4,7 +4,7 @@
 
 Identidad de desarrollo: cabecera mayor **8**, revisión **2**, texto `v8.2-pre`; opt-in
 (`viewer_convert --format-version v8.2-pre`). La salida predeterminada sigue siendo [v7](FORMAT_V7.md). Decisiones
-en el [ADR 0058](../../adr/0058-formato-v8-experimental.md); plan en [formato-v8-pre2](../../plans/formato-v8-pre2.md).
+en el [ADR 0058](../../adr/0058-formato-v8-experimental.md); plan en [formato-v8-pre2](../../records/archive/formato-v8-pre2.md).
 
 Es lo mismo que [v8.1-pre](FORMAT_V8_PRE1.md) más el códec zstd para los payloads de `.octattrs`. Con
 `--attr-codec lz4` (por defecto) un fichero `v8.2-pre` es byte a byte uno `v8.1-pre` salvo la identidad. Es

@@ -3,7 +3,7 @@
 Estado: Aceptada · Fecha: 21-11-2026 · Decide: propietario · Precisa el [ADR 0047](0047-v5-heredado-hasta-v8.md) (condición de retirada de V5) y acota RF-26
 
 ## Contexto
-- D4 ([ADR 0058](0058-formato-v8-experimental.md), [diseño](../plans/formato-v8.md)) deja **solo V8**: se retiran v5,
+- D4 ([ADR 0058](0058-formato-v8-experimental.md), [diseño](../records/archive/formato-v8.md)) deja **solo V8**: se retiran v5,
   v6, v7 y todas las revisiones previas, y el visor solo lee V8.
 - Hoy la entrada EPT y `--checkpoint`/`--resume` solo funcionan con `v5` y `v7.1-pre`–`v7.3-pre`. Los formatos de marco
   global (v7, v8) rechazan EPT, y los paginados rechazan los checkpoints

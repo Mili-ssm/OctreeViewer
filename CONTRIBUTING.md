@@ -68,7 +68,7 @@ Fuente única de las reglas.
 
 - Commits: [Conventional Commits](https://www.conventionalcommits.org/) (`docs:`, `build:`, `fix:`…).
 - **Solo V8**: V8 es el único formato que se lee y se escribe ([referencia](docs/reference/format/FORMAT_V8.md),
-  [plan de congelado](docs/plans/formato-v8-congelado.md)); los formatos anteriores dan el error «retirado, reconvierte».
+  [plan de congelado](docs/records/archive/formato-v8-congelado.md)); los formatos anteriores dan el error «retirado, reconvierte».
   Un cambio de bytes de V8 necesita un ADR y el visto bueno del propietario.
 - **Literales de versión**: `FormatVersion::V<n>` solo vive en `viewer_format`; el resto usa su
   API de capacidades (`DEFAULT_OUTPUT`, `WRITABLE`, `supports_block_checkpoint()`), así añadir una
