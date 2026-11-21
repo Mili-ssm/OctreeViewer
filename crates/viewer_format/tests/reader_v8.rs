@@ -6,6 +6,8 @@
 mod common;
 #[path = "common/v8_fixture.rs"]
 mod v8_fixture;
+#[path = "common/v8_tree.rs"]
+mod v8_tree;
 
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
@@ -16,9 +18,10 @@ use common::{
 use v8_fixture::{
     V8_BLOCK, v8_crs, v8_fixture_block, v8_metadata, v8_options, with_v8_extras, write_v8_split,
 };
+use v8_tree::{tree, tree_dataset, write_tree_pair};
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
-    DatasetSource,
+    DatasetSource, NodeId,
 };
 #[cfg(feature = "experimental")]
 use viewer_core::{OccupiedOctreeRoot, OccupiedPointBlock, VoxelCoord};
@@ -1913,4 +1916,40 @@ fn unsupported_v8_revisions_are_rejected_by_writer_encoder_and_reader() {
             result.map(|_| ())
         );
     }
+}
+
+#[test]
+fn finite_ranges_are_derived_per_node_and_combined_across_lod() {
+    let schema = vec![AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap()];
+    let nodes = tree(1, |_, octant| octant == 1);
+    assert_eq!(nodes.len(), 3);
+    let (metadata, blocks) = tree_dataset(&nodes, &schema, |node, rows| {
+        let values = match node.id {
+            0 => vec![100, 200, 100, 200],
+            1 => vec![500, 600, 500, 600],
+            _ => vec![300, 400, 300, 400],
+        };
+        assert_eq!(values.len(), rows);
+        vec![AttributeColumn::new(schema[0].clone(), AttributeValues::U16(values), rows).unwrap()]
+    });
+    // V8 hierarchies are replacement-only: the file-wide range spans the frontier (both leaves),
+    // not the root whose points the children replace.
+    let (primary, attributes) = write_tree_pair(metadata, blocks, None);
+    let reader = open_pair(primary, attributes);
+    assert_eq!(reader.attribute_range(0, 0).unwrap(), Some([300.0, 600.0]));
+    assert_eq!(reader.attribute_range(0, 0).unwrap(), Some([300.0, 600.0]));
+    assert_eq!(
+        reader
+            .format_metadata()
+            .node_attribute_ranges(NodeId::new(2))[0]
+            .max(),
+        &AttributeValues::U16(vec![400])
+    );
+    assert_eq!(
+        reader
+            .format_metadata()
+            .node_attribute_ranges(NodeId::new(1))[0]
+            .min(),
+        &AttributeValues::U16(vec![500])
+    );
 }
