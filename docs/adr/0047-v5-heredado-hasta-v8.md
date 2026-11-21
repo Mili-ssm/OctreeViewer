@@ -1,6 +1,6 @@
 # 0047 V5 queda como formato heredado de comparación hasta que empiece V8; la demo usa la última versión estable
 
-Estado: Cumplida por el [ADR 0058](0058-formato-v8-experimental.md) y el [plan de congelado de la V8](../plans/formato-v8-congelado.md) (21-11-2026) · Fecha: 15-11-2026 · Decide: propietario · Precisa el [ADR 0004](0004-retirar-v5-v6-tras-v7.md)
+Estado: Cumplida por el [ADR 0058](0058-formato-v8-experimental.md) y el [plan de congelado de la V8](../records/archive/formato-v8-congelado.md) (21-11-2026) · Fecha: 15-11-2026 · Decide: propietario · Precisa el [ADR 0004](0004-retirar-v5-v6-tras-v7.md)
 
 ## Contexto
 - El ADR 0004 retira V5/V6 «al completar V7». V7 final ya es la salida predeterminada

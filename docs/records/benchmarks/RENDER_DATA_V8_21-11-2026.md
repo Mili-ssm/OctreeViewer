@@ -1,6 +1,6 @@
 # Tests ignorados sobre datos reales en V8 — 21-11-2026
 
-**Estado: medido.** Es la tarea 2b (A6) del [plan del formato V8 congelado](../../plans/formato-v8-congelado.md): los tests
+**Estado: medido.** Es la tarea 2b (A6) del [plan del formato V8 congelado](../archive/formato-v8-congelado.md): los tests
 ignorados de `crates/viewer_wasm` (`lod_cells_*_tests.rs`) leen ahora `belvedere-v8.oct` y `majadas-v8.oct`, y se han
 ejecutado con tres juegos de datos.
 

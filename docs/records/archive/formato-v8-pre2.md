@@ -1,6 +1,6 @@
 # Formato V8, revisión v8.2-pre: zstd en columnas de `.octattrs` (plan de implementación)
 
-Estado: medido · 20-11-2026 · experimento de D3; el propietario aprobó el plan («hagamos la prueba, pero creo que al final nos quedaremos con LZ4»); tareas 0–4 hechas ([registro](../records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); D3 resuelta el 21-11-2026: solo LZ4 ([ADR 0060](../adr/0060-v8-solo-lz4.md))
+Estado: completado · 21-11-2026 · experimento de D3; el propietario aprobó el plan («hagamos la prueba, pero creo que al final nos quedaremos con LZ4»); tareas 0–4 hechas ([registro](../benchmarks/FORMATO_V8_PRE2_20-11-2026.md)); D3 resuelta el 21-11-2026: solo LZ4 ([ADR 0060](../../adr/0060-v8-solo-lz4.md))
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -18,12 +18,12 @@ fija un esquema y la opción desaparece (D4).
 `zstd-sys` 2.1.3 en C, y `ruzstd` 0.8.3 en Rust puro).
 
 **Spec:** [formato-v8.md](formato-v8.md), «Resoluciones tras medir v8.1-pre» (D3, D4) y «Medida de zstd
-(20-11-2026)»; [FORMAT_V8_PRE1](../reference/format/FORMAT_V8_PRE1.md).
+(20-11-2026)»; [FORMAT_V8_PRE1](../../reference/format/FORMAT_V8_PRE1.md).
 
 ## Global Constraints
 
 - **v7 y v8.1-pre no cambian:** sus SHA fijados, el digest de `tools/format_parity` y los SHA del
-  [registro de v8.1-pre](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md) siguen iguales en todas las tareas.
+  [registro de v8.1-pre](../benchmarks/FORMATO_V8_PRE1_20-11-2026.md) siguen iguales en todas las tareas.
 - **Paridad web/CLI (RQ-08):** el conversor web produce los mismos bytes que el CLI en `v8.2-pre` con cada esquema,
   así que el codificador zstd es el mismo código en nativo y en wasm32.
 - **zstd nivel 3** (el codo medido; el nivel 6 gana 1–2 puntos y codifica 2,5–3 × más lento).

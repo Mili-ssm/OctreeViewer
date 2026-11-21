@@ -1,7 +1,7 @@
 # Equivalencia V1 de v8.1-pre frente a v7 — 21-11-2026
 
-**Estado: medido.** Es la tarea 0 del [plan del formato V8 congelado](../../plans/formato-v8-congelado.md): comprueba el
-requisito V1 del [diseño de la V8](../../plans/formato-v8.md) («con la misma entrada el visor dibuja lo mismo que con
+**Estado: medido.** Es la tarea 0 del [plan del formato V8 congelado](../archive/formato-v8-congelado.md): comprueba el
+requisito V1 del [diseño de la V8](../archive/formato-v8.md) («con la misma entrada el visor dibuja lo mismo que con
 v7, en todos los modos de color por defecto y en todos los niveles») a nivel de datos, mientras v7 todavía se puede
 escribir.
 
