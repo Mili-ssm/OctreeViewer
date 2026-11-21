@@ -272,3 +272,7 @@ impl Seek for PositionedCursor {
         Ok(self.position)
     }
 }
+
+#[cfg(test)]
+#[path = "async_reader_tests.rs"]
+mod tests;

@@ -1280,3 +1280,7 @@ fn allocation_capacity(count: usize, item_size: usize) -> Result<usize, FormatEr
         .ok_or(FormatError::BlockSizeOverflow)?;
     Ok(count)
 }
+
+#[cfg(test)]
+#[path = "reader_tests.rs"]
+mod tests;

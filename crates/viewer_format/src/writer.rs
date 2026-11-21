@@ -349,3 +349,7 @@ fn ensure_schema_within_limit(metadata: &FormatMetadata) -> Result<(), FormatErr
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "writer_tests.rs"]
+mod tests;

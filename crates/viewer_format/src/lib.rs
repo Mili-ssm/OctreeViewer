@@ -36,6 +36,8 @@ mod reader_limits;
 mod retired;
 mod slice_cursor;
 mod storage_reader;
+#[cfg(test)]
+mod test_support;
 mod version;
 mod writer;
 
