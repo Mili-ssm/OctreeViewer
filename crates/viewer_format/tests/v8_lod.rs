@@ -408,28 +408,56 @@ fn corrupt_lod_set_is_rejected() {
     }
 }
 
-/// Rewrites the identity of a `v8.2-pre` pair as `v8.1-pre`: header revisions and checksums, footer
-/// magics, the primary file's index magic, and the index and footer checksums. The attributes
-/// file's footer repeats the primary file's index location and checksum.
-fn as_v8_pre1(primary: &mut [u8], attributes: &mut [u8]) {
+/// Rewrites a pair's identity: header revisions and checksums, footer magics, the primary file's
+/// index magic, and the index and footer checksums. The attributes file's footer repeats the
+/// primary file's index location and checksum.
+fn retag(
+    primary: &mut [u8],
+    attributes: &mut [u8],
+    revision: u32,
+    (index_from, footer_from): (&[u8; 8], &[u8; 8]),
+    (index_to, footer_to): (&[u8; 8], &[u8; 8]),
+) {
     for bytes in [&mut *primary, &mut *attributes] {
-        bytes[16..20].copy_from_slice(&1_u32.to_le_bytes());
+        bytes[16..20].copy_from_slice(&revision.to_le_bytes());
         let crc = viewer_format::crc32(&bytes[..20]);
         bytes[20..24].copy_from_slice(&crc.to_le_bytes());
         let footer = bytes.len() - 40;
-        assert_eq!(&bytes[footer..footer + 8], b"OCTVE82P");
-        bytes[footer..footer + 8].copy_from_slice(b"OCTVE81P");
+        assert_eq!(&bytes[footer..footer + 8], footer_from);
+        bytes[footer..footer + 8].copy_from_slice(footer_to);
     }
     let footer = primary.len() - 40;
     let index = u64::from_le_bytes(primary[footer + 8..footer + 16].try_into().unwrap()) as usize;
-    assert_eq!(&primary[index..index + 8], b"OCTVI82P");
-    primary[index..index + 8].copy_from_slice(b"OCTVI81P");
+    assert_eq!(&primary[index..index + 8], index_from);
+    primary[index..index + 8].copy_from_slice(index_to);
     repair_index_and_footer(primary);
     let index_crc = primary[footer + 32..footer + 36].to_vec();
     let footer = attributes.len() - 40;
     attributes[footer + 32..footer + 36].copy_from_slice(&index_crc);
     let crc = viewer_format::crc32(&attributes[footer..footer + 36]);
     attributes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
+}
+
+/// Rewrites the identity of a `v8.2-pre` pair as `v8.1-pre`.
+fn as_v8_pre1(primary: &mut [u8], attributes: &mut [u8]) {
+    retag(
+        primary,
+        attributes,
+        1,
+        (b"OCTVI82P", b"OCTVE82P"),
+        (b"OCTVI81P", b"OCTVE81P"),
+    );
+}
+
+/// Rewrites the identity of a final `v8` pair as `v8.1-pre`.
+fn v8_as_pre1(primary: &mut [u8], attributes: &mut [u8]) {
+    retag(
+        primary,
+        attributes,
+        1,
+        (b"OCTVIDX8", b"OCTVEND8"),
+        (b"OCTVI81P", b"OCTVE81P"),
+    );
 }
 
 #[test]
@@ -453,4 +481,48 @@ fn v8_pre2_without_zstd_differs_from_v8_pre1_only_in_identity() {
     as_v8_pre1(&mut pre2.0, &mut pre2.1);
     assert!(pre1.0 == pre2.0, "primary files differ beyond identity");
     assert!(pre1.1 == pre2.1, "attribute files differ beyond identity");
+}
+
+#[test]
+fn v8_differs_from_v8_pre1_only_in_identity() {
+    let display = viewer_format::DisplayColourSource::Intensity(0);
+    let pre1 = write_as(V8_PRE1, Some(vec![0, 2]), display).unwrap();
+    let mut v8 = write_as(FormatVersion::V8, Some(vec![0, 2]), display).unwrap();
+    assert_ne!(pre1.0, v8.0);
+    assert_ne!(pre1.1, v8.1);
+    assert_eq!(&v8.0[8..10], &8_u16.to_le_bytes());
+    assert_eq!(&v8.0[16..20], &0_u32.to_le_bytes());
+    v8_as_pre1(&mut v8.0, &mut v8.1);
+    assert!(pre1.0 == v8.0, "primary files differ beyond identity");
+    assert!(pre1.1 == v8.1, "attribute files differ beyond identity");
+}
+
+#[test]
+fn v8_has_the_v8_pre1_capabilities_and_no_zstd() {
+    let (a, b) = (FormatVersion::V8_PRE1, FormatVersion::V8);
+    assert_eq!(a.uses_global_frame(), b.uses_global_frame());
+    assert_eq!(a.uses_pages(), b.uses_pages());
+    assert_eq!(a.supports_hybrid_rows(), b.supports_hybrid_rows());
+    assert_eq!(a.fixed_row_order(), b.fixed_row_order());
+    assert_eq!(a.derives_display_attribute(), b.derives_display_attribute());
+    assert_eq!(a.omits_lod_attributes(), b.omits_lod_attributes());
+    assert_eq!(a.stores_distance_quantiles(), b.stores_distance_quantiles());
+    assert_eq!(a.supports_block_checkpoint(), b.supports_block_checkpoint());
+    assert!(b.uses_global_frame() && b.uses_pages() && b.stores_distance_quantiles());
+    assert!(!b.supports_zstd());
+}
+
+#[test]
+fn a_v8_file_with_a_v8_pre1_companion_is_rejected_by_identity() {
+    let display = viewer_format::DisplayColourSource::Intensity(0);
+    let pre1 = write_as(V8_PRE1, Some(vec![0, 2]), display).unwrap();
+    let v8 = write_as(FormatVersion::V8, Some(vec![0, 2]), display).unwrap();
+    for (primary, attributes) in [(&v8.0, &pre1.1), (&pre1.0, &v8.1)] {
+        let mut reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+        assert!(
+            reader
+                .attach_attributes(Cursor::new(attributes.clone()))
+                .is_err()
+        );
+    }
 }

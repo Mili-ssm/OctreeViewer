@@ -735,19 +735,18 @@ fn rejects_truncated_and_unsupported_legacy_version_files() {
             Err(FormatError::UnsupportedVersion(actual)) if actual == version
         ));
     }
-    // Major 8 is recognized, but only the implemented revisions (8.1, 8.2) have a layout.
-    for revision in [0_u32, 3] {
-        let mut unsupported = format_bytes();
-        unsupported[8..10].copy_from_slice(&8_u16.to_le_bytes());
-        unsupported[16..20].copy_from_slice(&revision.to_le_bytes());
-        let crc = crate::crc32(&unsupported[..20]);
-        unsupported[20..24].copy_from_slice(&crc.to_le_bytes());
-        assert!(matches!(
-            FormatReader::new(Cursor::new(unsupported)),
-            Err(FormatError::UnsupportedFormatVersion(version))
-                if version.major() == 8 && version.revision() == revision
-        ));
-    }
+    // Major 8 is recognized, but only the implemented revisions (8, 8.1, 8.2) have a layout.
+    let revision = 3_u32;
+    let mut unsupported = format_bytes();
+    unsupported[8..10].copy_from_slice(&8_u16.to_le_bytes());
+    unsupported[16..20].copy_from_slice(&revision.to_le_bytes());
+    let crc = crate::crc32(&unsupported[..20]);
+    unsupported[20..24].copy_from_slice(&crc.to_le_bytes());
+    assert!(matches!(
+        FormatReader::new(Cursor::new(unsupported)),
+        Err(FormatError::UnsupportedFormatVersion(version))
+            if version.major() == 8 && version.revision() == revision
+    ));
     let mut bad_footer = format_bytes();
     let footer = bad_footer.len() - 40;
     bad_footer[footer..footer + 8].copy_from_slice(b"OCTVEND3");

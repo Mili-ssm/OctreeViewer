@@ -3,13 +3,13 @@
 
 const GB = 1e9;
 
-/** Writable output revisions: v7 (the default) first, then the v7.N-pre revisions in ascending order, then v5, the v6.N-pre revisions and the experimental v8.1-pre and v8.2-pre. */
-export const FORMAT_VERSIONS = ["v7", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v8.1-pre", "v8.2-pre"];
+/** Writable output revisions: v8 (the default) first, then v7, the v7.N-pre revisions in ascending order, then v5, the v6.N-pre revisions and the experimental v8.1-pre and v8.2-pre. */
+export const FORMAT_VERSIONS = ["v8", "v7", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v8.1-pre", "v8.2-pre"];
 export const SPATIAL_DIVISIONS = [2, 4, 8];
 /** Experimental per-column-class entropy coder of `v8.2-pre` (`--attr-codec`); reachable by API only, with no form field. */
 export const ATTR_CODECS = ["lz4", "cold", "cold-rgb", "all"];
 
-const GLOBAL_FRAME_FORMATS = new Set(["v7", "v7.4-pre", "v7.5-pre", "v8.1-pre", "v8.2-pre"]);
+const GLOBAL_FRAME_FORMATS = new Set(["v8", "v7", "v7.4-pre", "v7.5-pre", "v8.1-pre", "v8.2-pre"]);
 
 /** Global-frame formats fix points per block and spatial divisions; the core rejects other values. */
 export const isGlobalFrameFormat = (formatVersion) => GLOBAL_FRAME_FORMATS.has(formatVersion);
@@ -32,7 +32,7 @@ export const fixedFrameDisplayValue = (name, formatVersion, saved) =>
  * `FIXED_FRAME_VALUES` instead (see `fixedFrameDisplayValue`).
  */
 export const OPTION_DEFAULTS = Object.freeze({
-    formatVersion: "v7",
+    formatVersion: "v8",
     pointsPerBlock: "262144",
     maxError: "0.01",
     spatialDivisions: "2",

@@ -9,11 +9,11 @@ test("defaults are the CLI defaults and map to core options", () => {
     const { errors, options } = validateConverterOptions(OPTION_DEFAULTS);
     assert.deepEqual(errors, {});
     assert.deepEqual(options, {
-        formatVersion: "v7", maxError: 0.01, maxMemoryMiB: 512, ramBudget: 4e9,
+        formatVersion: "v8", maxError: 0.01, maxMemoryMiB: 512, ramBudget: 4e9,
     });
     assert.deepEqual(validateConverterOptions().options, options);
-    assert.equal(FORMAT_VERSIONS[0], "v7");
-    assert.equal(OPTION_DEFAULTS.formatVersion, "v7");
+    assert.equal(FORMAT_VERSIONS[0], "v8");
+    assert.equal(OPTION_DEFAULTS.formatVersion, "v8");
 });
 
 test("v5 and v7.5-pre are accepted; only v5 sends leaf size and divisions", () => {
@@ -26,7 +26,7 @@ test("v5 and v7.5-pre are accepted; only v5 sends leaf size and divisions", () =
 });
 
 test("global-frame formats send neither points per block nor divisions, even if invalid", () => {
-    for (const formatVersion of ["v7", "v7.4-pre", "v7.5-pre", "v8.1-pre", "v8.2-pre"]) {
+    for (const formatVersion of ["v8", "v7", "v7.4-pre", "v7.5-pre", "v8.1-pre", "v8.2-pre"]) {
         assert.ok(isGlobalFrameFormat(formatVersion));
         const { errors, options } = validateConverterOptions({ formatVersion, pointsPerBlock: "0", spatialDivisions: "3" });
         assert.deepEqual(errors, {});

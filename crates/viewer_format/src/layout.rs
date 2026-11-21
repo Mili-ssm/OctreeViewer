@@ -33,6 +33,8 @@ pub(crate) enum StorageLayout {
     V7Pre5,
     /// Final v7: the v7.5-pre byte layout under its own identity.
     V7,
+    /// Final v8: the v8.1-pre byte layout under its own identity.
+    V8,
     /// Experimental v8.1-pre: the v7 byte layout plus the v8 header fields and per-block column rules.
     V8Pre1,
     /// Experimental v8.2-pre: v8.1-pre plus the zstd entropy stage for `.octattrs` payloads.
@@ -53,6 +55,7 @@ impl StorageLayout {
             crate::FormatVersion::V7Pre(revision) if revision.get() == 4 => Ok(Self::V7Pre4),
             crate::FormatVersion::V7Pre(revision) if revision.get() == 5 => Ok(Self::V7Pre5),
             crate::FormatVersion::V7 => Ok(Self::V7),
+            crate::FormatVersion::V8 => Ok(Self::V8),
             crate::FormatVersion::V8Pre(revision) if revision.get() == 1 => Ok(Self::V8Pre1),
             crate::FormatVersion::V8Pre(revision) if revision.get() == 2 => Ok(Self::V8Pre2),
             _ => Err(FormatError::UnsupportedFormatVersion(version)),
@@ -72,6 +75,7 @@ impl StorageLayout {
             Self::V7Pre4 => crate::FormatVersion::V7_PRE4,
             Self::V7Pre5 => crate::FormatVersion::V7_PRE5,
             Self::V7 => crate::FormatVersion::V7,
+            Self::V8 => crate::FormatVersion::V8,
             Self::V8Pre1 => crate::FormatVersion::V8_PRE1,
             Self::V8Pre2 => crate::FormatVersion::V8_PRE2,
         }
@@ -90,6 +94,7 @@ impl StorageLayout {
             Self::V7Pre4 => b"OCTVI74P",
             Self::V7Pre5 => b"OCTVI75P",
             Self::V7 => b"OCTVIDX7",
+            Self::V8 => b"OCTVIDX8",
             Self::V8Pre1 => b"OCTVI81P",
             Self::V8Pre2 => b"OCTVI82P",
         }
@@ -108,6 +113,7 @@ impl StorageLayout {
             Self::V7Pre4 => b"OCTVE74P",
             Self::V7Pre5 => b"OCTVE75P",
             Self::V7 => b"OCTVEND7",
+            Self::V8 => b"OCTVEND8",
             Self::V8Pre1 => b"OCTVE81P",
             Self::V8Pre2 => b"OCTVE82P",
         }
@@ -122,14 +128,17 @@ impl StorageLayout {
     pub(crate) const fn uses_global_frame(self) -> bool {
         matches!(
             self,
-            Self::V7Pre4 | Self::V7Pre5 | Self::V7 | Self::V8Pre1 | Self::V8Pre2
+            Self::V7Pre4 | Self::V7Pre5 | Self::V7 | Self::V8 | Self::V8Pre1 | Self::V8Pre2
         )
     }
 
     /// Paged hierarchy: the index is a metadata block plus a root page, and the rest of the
     /// node table lives in child pages (v7.5-pre and v7).
     pub(crate) const fn uses_pages(self) -> bool {
-        matches!(self, Self::V7Pre5 | Self::V7 | Self::V8Pre1 | Self::V8Pre2)
+        matches!(
+            self,
+            Self::V7Pre5 | Self::V7 | Self::V8 | Self::V8Pre1 | Self::V8Pre2
+        )
     }
 
     /// Writer policy: occupancy blocks are always compact 24-bit candidates.
@@ -141,6 +150,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8
                 | Self::V8Pre1
                 | Self::V8Pre2
         )
@@ -150,7 +160,13 @@ impl StorageLayout {
     pub(crate) const fn restricts_dictionary_tuples(self) -> bool {
         matches!(
             self,
-            Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7 | Self::V8Pre1 | Self::V8Pre2
+            Self::V7Pre3
+                | Self::V7Pre4
+                | Self::V7Pre5
+                | Self::V7
+                | Self::V8
+                | Self::V8Pre1
+                | Self::V8Pre2
         )
     }
 
@@ -164,6 +180,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8
                 | Self::V8Pre1
                 | Self::V8Pre2
         )
@@ -171,17 +188,17 @@ impl StorageLayout {
 
     /// The display colour is derived from stored data instead of being stored twice.
     pub(crate) const fn derives_display_attribute(self) -> bool {
-        matches!(self, Self::V8Pre1 | Self::V8Pre2)
+        matches!(self, Self::V8 | Self::V8Pre1 | Self::V8Pre2)
     }
 
     /// Interior LOD nodes omit the attribute columns the viewer does not draw.
     pub(crate) const fn omits_lod_attributes(self) -> bool {
-        matches!(self, Self::V8Pre1 | Self::V8Pre2)
+        matches!(self, Self::V8 | Self::V8Pre1 | Self::V8Pre2)
     }
 
     /// Nodes store nearest-neighbour distance quantiles.
     pub(crate) const fn stores_distance_quantiles(self) -> bool {
-        matches!(self, Self::V8Pre1 | Self::V8Pre2)
+        matches!(self, Self::V8 | Self::V8Pre1 | Self::V8Pre2)
     }
 
     /// The one rule for which payload columns a block stores. `column` is the payload index
@@ -232,6 +249,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8
                 | Self::V8Pre1
                 | Self::V8Pre2
         )
@@ -247,6 +265,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8
                 | Self::V8Pre1
                 | Self::V8Pre2
         )
@@ -263,6 +282,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8
                 | Self::V8Pre1
                 | Self::V8Pre2
         )
@@ -278,6 +298,7 @@ impl StorageLayout {
                 | Self::V7Pre4
                 | Self::V7Pre5
                 | Self::V7
+                | Self::V8
                 | Self::V8Pre1
                 | Self::V8Pre2
         )

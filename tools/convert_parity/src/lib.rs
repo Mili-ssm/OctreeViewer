@@ -111,12 +111,13 @@ fn parse_format(code: u32) -> Result<Option<viewer_format::FormatVersion>, Strin
         4 => Some(FormatVersion::V7),
         5 => Some(FormatVersion::V8_PRE1),
         6 => Some(FormatVersion::V8_PRE2),
+        7 => Some(FormatVersion::V8),
         other => return Err(format!("unknown format code {other}")),
     })
 }
 
 /// Converts and validates the buffer from `convert_parity_alloc`; `workers == 0` keeps the core
-/// default. `format` is 0 for the default revision, 1 for `v7.4-pre`, 2 for `v7.5-pre`, 3 for `v5`, 4 for `v7` and 5 for `v8.1-pre` and 6 for `v8.2-pre`; any other code fails. `row_order` is 0 for the format default, 1 for hybrid and 2 for source; `attr_codec` is 0 for `lz4`, 1 for `cold`, 2 for `cold-rgb` and 3 for `all`. Returns 1
+/// default. `format` is 0 for the default revision (`v8`), 1 for `v7.4-pre`, 2 for `v7.5-pre`, 3 for `v5`, 4 for `v7` and 5 for `v8.1-pre`, 6 for `v8.2-pre` and 7 for `v8`; any other code fails. `row_order` is 0 for the format default, 1 for hybrid and 2 for source; `attr_codec` is 0 for `lz4`, 1 for `cold`, 2 for `cold-rgb` and 3 for `all`. Returns 1
 /// on success; on failure returns 0 and the message is at `error_ptr`.
 ///
 /// # Safety

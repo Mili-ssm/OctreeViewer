@@ -1,5 +1,5 @@
 //! Builds the web demo sample: a deterministic wave surface written as LAS and converted with the
-//! converter's default options, so the output is the default format (V7) with `.octattrs`.
+//! converter's default options, so the output is the default format (V8) with `.octattrs`.
 
 use std::{
     env,

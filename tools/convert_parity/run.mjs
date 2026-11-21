@@ -102,6 +102,9 @@ const cases = [
   { name: "synthetic-v75-hybrid", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre", rowOrder: "hybrid", sourceTwin: "synthetic-v75" },
   { name: "synthetic-v74", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
   { name: "synthetic-v7", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7" },
+  { name: "small-v8", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8" },
+  { name: "flags-extra-v8", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v8" },
+  { name: "synthetic-v8", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v8" },
   { name: "small-v81", input: small, ppb: 262144, divisions: 2, multi: true, format: "v8.1-pre" },
   { name: "flags-extra-v81", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v8.1-pre" },
   { name: "synthetic-v81", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v8.1-pre" },
@@ -143,7 +146,7 @@ const x = (await WebAssembly.instantiate(module, imports)).exports;
 const dumpDir = process.env.CONVERT_PARITY_DUMP;
 
 // `convert_parity_run` format argument.
-const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2, v5: 3, v7: 4, "v8.1-pre": 5, "v8.2-pre": 6 };
+const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2, v5: 3, v7: 4, "v8.1-pre": 5, "v8.2-pre": 6, v8: 7 };
 const ATTR_CODEC_CODES = { lz4: 0, cold: 1, "cold-rgb": 2, all: 3 };
 
 function codeOf(table, kind, key) {

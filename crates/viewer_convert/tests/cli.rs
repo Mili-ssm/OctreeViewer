@@ -320,7 +320,7 @@ fn cli_converts_and_verifies_v8_pre1() {
 }
 
 #[test]
-fn default_conversion_writes_v7_pair() {
+fn default_conversion_writes_v8_pair() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
     small_las(&input);
@@ -329,8 +329,8 @@ fn default_conversion_writes_v7_pair() {
     assert!(run.status.success(), "{}", stderr(&run));
     let primary = fs::read(&output).unwrap();
     let attributes = fs::read(tmp.path().join("out.octattrs")).unwrap();
-    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVEND7");
-    assert_eq!(&attributes[attributes.len() - 40..][..8], b"OCTVEND7");
+    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVEND8");
+    assert_eq!(&attributes[attributes.len() - 40..][..8], b"OCTVEND8");
     assert!(contains(&primary, b"leaf:64000"));
 }
 
@@ -343,7 +343,7 @@ fn default_checkpoint_points_to_v5() {
     let run = run_cli(&[&input, &output], &["--checkpoint"]);
     assert!(!run.status.success());
     let message = stderr(&run);
-    assert!(message.contains("v7"), "{message}");
+    assert!(message.contains("v8"), "{message}");
     assert!(message.contains("--format-version v5"), "{message}");
     assert!(!output.exists());
     assert!(!tmp.path().join("c.octattrs").exists());
@@ -403,7 +403,7 @@ fn default_extra_bytes_error_names_version() {
     assert!(!run.status.success());
     let message = stderr(&run);
     assert!(message.contains("Extra Bytes"), "{message}");
-    assert!(message.contains("v7"), "{message}");
+    assert!(message.contains("v8"), "{message}");
     assert!(!message.contains("v7.5-pre"), "{message}");
     assert!(!output.exists());
     assert_eq!(

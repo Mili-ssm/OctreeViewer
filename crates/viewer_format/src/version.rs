@@ -19,6 +19,8 @@ pub enum FormatVersion {
     V6,
     V7Pre(NonZeroU32),
     V7,
+    /// Final v8: the `v8.1-pre` byte layout under its own identity.
+    V8,
     /// Experimental v8 revisions (`v8.N-pre`).
     V8Pre(NonZeroU32),
     Unknown {
@@ -50,10 +52,10 @@ impl FormatVersion {
     pub const V8_PRE2: Self = Self::V8Pre(NonZeroU32::new(2).expect("nonzero revision"));
 
     /// Revision written when the caller does not choose one.
-    pub const DEFAULT_OUTPUT: Self = Self::V7;
+    pub const DEFAULT_OUTPUT: Self = Self::V8;
 
     /// Every revision the writer implements, in user-facing listing order.
-    pub const WRITABLE: [Self; 13] = [
+    pub const WRITABLE: [Self; 14] = [
         Self::V7_PRE1,
         Self::V7_PRE2,
         Self::V7_PRE3,
@@ -65,6 +67,7 @@ impl FormatVersion {
         Self::V7_PRE4,
         Self::V7_PRE5,
         Self::V7,
+        Self::V8,
         Self::V8_PRE1,
         Self::V8_PRE2,
     ];
@@ -123,7 +126,7 @@ impl FormatVersion {
     /// leaves the choice to the caller (`Source` by default).
     pub fn fixed_row_order(self) -> Option<crate::RowOrder> {
         match self {
-            Self::V7 | Self::V8Pre(_)
+            Self::V7 | Self::V8 | Self::V8Pre(_)
                 if crate::layout::StorageLayout::from_version(self).is_ok() =>
             {
                 Some(crate::RowOrder::Hybrid)
@@ -142,7 +145,7 @@ impl FormatVersion {
             Self::V5 => 5,
             Self::V6Pre(_) | Self::V6 => 6,
             Self::V7Pre(_) | Self::V7 => 7,
-            Self::V8Pre(_) => 8,
+            Self::V8Pre(_) | Self::V8 => 8,
             Self::Unknown { major, .. } => major,
         }
     }
@@ -151,7 +154,7 @@ impl FormatVersion {
         match self {
             Self::V6Pre(revision) | Self::V7Pre(revision) | Self::V8Pre(revision) => revision.get(),
             Self::Unknown { revision, .. } => revision,
-            Self::V5 | Self::V6 | Self::V7 => 0,
+            Self::V5 | Self::V6 | Self::V7 | Self::V8 => 0,
         }
     }
 }
@@ -164,6 +167,7 @@ impl fmt::Display for FormatVersion {
             Self::V6Pre(revision) => write!(f, "v6.{revision}-pre"),
             Self::V7 => f.write_str("v7"),
             Self::V7Pre(revision) => write!(f, "v7.{revision}-pre"),
+            Self::V8 => f.write_str("v8"),
             Self::V8Pre(revision) => write!(f, "v8.{revision}-pre"),
             Self::Unknown { major, revision } => write!(f, "unknown({major}, {revision})"),
         }
@@ -178,6 +182,7 @@ impl std::str::FromStr for FormatVersion {
             "v5" => Ok(Self::V5),
             "v6" => Ok(Self::V6),
             "v7" => Ok(Self::V7),
+            "v8" => Ok(Self::V8),
             _ => value
                 .strip_prefix("v6.")
                 .and_then(|v| v.strip_suffix("-pre"))
@@ -197,7 +202,7 @@ impl std::str::FromStr for FormatVersion {
                         .and_then(|v| v.parse::<NonZeroU32>().ok())
                         .map(Self::V8Pre)
                 })
-                .ok_or("expected v5, v6, v7 or a positive pre-release revision (v6.N-pre, v7.N-pre, v8.N-pre)"),
+                .ok_or("expected v5, v6, v7, v8 or a positive pre-release revision (v6.N-pre, v7.N-pre, v8.N-pre)"),
         }
     }
 }
@@ -285,6 +290,7 @@ pub(crate) fn parse_identity(
         (6, Some(revision)) => FormatVersion::V6Pre(revision),
         (7, None) => FormatVersion::V7,
         (7, Some(revision)) => FormatVersion::V7Pre(revision),
+        (8, None) => FormatVersion::V8,
         (8, Some(revision)) => FormatVersion::V8Pre(revision),
         _ => FormatVersion::Unknown { major, revision },
     };
@@ -332,7 +338,7 @@ mod tests {
             .collect();
         assert_eq!(
             names.join("|"),
-            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre|v7.5-pre|v7|v8.1-pre|v8.2-pre"
+            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre|v7.5-pre|v7|v8|v8.1-pre|v8.2-pre"
         );
     }
 
@@ -341,7 +347,17 @@ mod tests {
         let version: FormatVersion = "v8.1-pre".parse().unwrap();
         assert_eq!(version, FormatVersion::V8_PRE1);
         assert_eq!(version.to_string(), "v8.1-pre");
-        assert!("v8".parse::<FormatVersion>().is_err());
+    }
+
+    #[test]
+    fn v8_parses_prints_and_is_the_default_output() {
+        let version: FormatVersion = "v8".parse().unwrap();
+        assert_eq!(version, FormatVersion::V8);
+        assert_eq!(version.to_string(), "v8");
+        assert_eq!((version.major(), version.revision()), (8, 0));
+        assert_eq!(FormatVersion::DEFAULT_OUTPUT, FormatVersion::V8);
+        assert!(FormatVersion::WRITABLE.contains(&FormatVersion::V8));
+        assert!(FormatVersion::V8.ensure_writable().is_ok());
     }
 
     #[test]
@@ -440,6 +456,7 @@ mod tests {
             (7, 4, "v7.4-pre"),
             (7, 5, "v7.5-pre"),
             (7, 0, "v7"),
+            (8, 0, "v8"),
             (8, 1, "v8.1-pre"),
             (8, 2, "v8.2-pre"),
             (9, 9, "unknown(9, 9)"),

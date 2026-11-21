@@ -54,7 +54,7 @@ fn number(options: &JsValue, key: &str) -> Result<Option<f64>, JsValue> {
 }
 
 /// Builds the options from a JS object; absent keys keep the CLI defaults (R2). Keys:
-/// `formatVersion`, `rowOrder` (`source`|`hybrid`; hybrid needs a v7 or v8 format; `v7`, `v8.1-pre` and `v8.2-pre` fix hybrid and reject source; `v7.N-pre` default to source),
+/// `formatVersion`, `rowOrder` (`source`|`hybrid`; hybrid needs a v7 or v8 format; `v7`, `v8`, `v8.1-pre` and `v8.2-pre` fix hybrid and reject source; `v7.N-pre` default to source),
 /// `attrCodec` (`lz4`|`cold`|`cold-rgb`|`all`; experimental, `v8.2-pre` only),
 /// `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB` and `spatialWorkers`. The
 /// format resolves and checks the values it fixes, whatever the key order.

@@ -438,9 +438,9 @@ mod tests {
     }
 
     #[test]
-    fn default_output_is_v7_hybrid() {
+    fn default_output_is_v8_hybrid() {
         let options = ConvertOptions::default().validate().unwrap();
-        assert_eq!(options.format_version(), FormatVersion::V7);
+        assert_eq!(options.format_version(), FormatVersion::V8);
         assert_eq!(options.row_order(), RowOrder::Hybrid);
         assert_eq!(options.points_per_block(), GLOBAL_LEAF_POINT_LIMIT);
         assert_eq!(options.points_per_block(), 64_000);
