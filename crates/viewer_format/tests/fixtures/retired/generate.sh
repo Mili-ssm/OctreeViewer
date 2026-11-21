@@ -14,7 +14,7 @@ if [ -z "$convert" ]; then
 fi
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
-for version in v5 v6.1-pre v6.2-pre v6.3-pre v6.4-pre v7.1-pre v7.2-pre v7.3-pre v7.4-pre v7.5-pre v7 v8.1-pre v8.2-pre; do
+for version in v5 v6.1-pre v6.2-pre v6.3-pre v6.4-pre v7.1-pre v7.2-pre v7.3-pre v7.4-pre v7.5-pre v7 v8.1-pre; do
     if ! "$convert" "$las" "$scratch/$version.oct" --format-version "$version" >"$scratch/$version.log" 2>&1; then
         echo "conversion to $version failed:" >&2
         cat "$scratch/$version.log" >&2

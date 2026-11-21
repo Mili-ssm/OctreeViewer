@@ -735,7 +735,7 @@ fn rejects_truncated_and_unsupported_legacy_version_files() {
             Err(FormatError::UnsupportedVersion(actual)) if actual == version
         ));
     }
-    // Major 8 is recognized, but only the implemented revisions (8, 8.1, 8.2) have a layout.
+    // Major 8 is recognized, but only the implemented revisions (8, 8.1) have a layout.
     let revision = 3_u32;
     let mut unsupported = format_bytes();
     unsupported[8..10].copy_from_slice(&8_u16.to_le_bytes());

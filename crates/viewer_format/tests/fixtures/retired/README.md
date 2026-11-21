@@ -16,3 +16,6 @@ puede comprobar cada fuente por separado. El pie del `.octattrs` lleva la misma 
 Se generan con `generate.sh [ruta/al/viewer_convert]` a partir de `data/samples/fs_e430_n4008_18.las`; hace falta
 un conversor que aún tenga los escritores (hasta la tarea 5, o una revisión anterior). Los ficheros son
 binarios fijos: no se regeneran al retirar los escritores.
+
+`v8.2-pre.head` y `v8.2-pre.foot` se generaron antes de la tarea 3 (commit `be4b69f`), que retiró el escritor de
+v8.2-pre: `generate.sh` ya no los regenera y se conservan tal cual.
