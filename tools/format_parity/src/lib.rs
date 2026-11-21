@@ -1,7 +1,10 @@
 //! Encoding digest used to compare `viewer_format` output across targets.
 //!
-//! The same deterministic blocks are written as V8 (the only format) and the resulting
-//! primary/attributes pair is hashed. Native and `wasm32-unknown-unknown` builds must agree.
+//! The same deterministic blocks are written as V8 in several variants (stored display colour,
+//! colour derived from `rgb16`, colour derived from a `u16` intensity-like column, a one-byte
+//! page target that spreads the node index over many pages, and an empty LOD column set); every
+//! primary/attributes pair is hashed into one digest. Native and `wasm32-unknown-unknown` builds
+//! must agree.
 
 use std::io::Cursor;
 
@@ -10,8 +13,8 @@ use viewer_core::{
     CoordinateFrame, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode,
 };
 use viewer_format::{
-    CrsRaw, CrsRecord, FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions,
-    GlobalFrame, NodeCell, OctreeWriter, SourcePointBlock,
+    CrsRaw, CrsRecord, DisplayColourSource, FormatMetadata, FormatVersion, FormatWriter,
+    FormatWriterOptions, GlobalFrame, NodeCell, OctreeWriter, SourcePointBlock,
 };
 
 const SEED: u64 = 0x5eed;
@@ -140,7 +143,10 @@ fn crs() -> CrsRecord {
 /// scaled) so its bounding box sits inside its cell, which keeps its point pattern; the root
 /// level is the deepest one whose child cells still hold the largest block. Only the written
 /// bytes matter here, so the metadata is whatever the writer accepts.
-fn v8_dataset(blocks: &[SourcePointBlock]) -> (FormatMetadata, Vec<SourcePointBlock>) {
+fn v8_dataset(
+    blocks: &[SourcePointBlock],
+    variant: &Variant,
+) -> (FormatMetadata, Vec<SourcePointBlock>) {
     assert!(
         (2..=MAX_LEAVES + 1).contains(&blocks.len()),
         "need a LOD block and 1..={MAX_LEAVES} leaves"
@@ -235,18 +241,48 @@ fn v8_dataset(blocks: &[SourcePointBlock]) -> (FormatMetadata, Vec<SourcePointBl
             )
             .expect("valid node"),
         );
+        let colors = match variant.colour {
+            // Leaves must carry exactly the colour the reader derives: the high byte per channel.
+            DisplayColourSource::None => block.colors().to_vec(),
+            DisplayColourSource::Rgb(column) => {
+                let AttributeValues::U16(values) = block.attributes()[column as usize].values()
+                else {
+                    panic!("rgb column is u16")
+                };
+                values
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|c| ColorRgb::new((c[0] >> 8) as u8, (c[1] >> 8) as u8, (c[2] >> 8) as u8))
+                    .collect()
+            }
+            DisplayColourSource::Intensity(column) => {
+                let AttributeValues::U16(values) = block.attributes()[column as usize].values()
+                else {
+                    panic!("intensity column is u16")
+                };
+                values
+                    .iter()
+                    .map(|v| ColorRgb::new((v >> 8) as u8, (v >> 8) as u8, (v >> 8) as u8))
+                    .collect()
+            }
+        };
         translated.push(SourcePointBlock::new(
             id,
             positions,
-            block.colors().to_vec(),
+            colors,
             block.attributes().to_vec(),
         ));
     }
     let hierarchy = SpatialHierarchy::new(nodes, schema, Some(total)).expect("valid hierarchy");
     // Whatever the LOD set is, it has to be a strictly increasing list inside the schema.
-    let lod_columns = (0..hierarchy.attributes().len() as u32)
-        .step_by(2)
-        .collect::<Vec<_>>();
+    let lod_columns = if variant.empty_lod {
+        Vec::new()
+    } else {
+        (0..hierarchy.attributes().len() as u32)
+            .step_by(2)
+            .collect::<Vec<_>>()
+    };
     let metadata = FormatMetadata::new(
         DatasetMetadata::new(
             CoordinateFrame::new(frame.frame_origin()).expect("valid frame"),
@@ -260,19 +296,65 @@ fn v8_dataset(blocks: &[SourcePointBlock]) -> (FormatMetadata, Vec<SourcePointBl
     .with_global_frame(frame)
     .expect("global frame matches the hierarchy")
     .with_lod_attribute_columns(lod_columns)
-    .with_display_colour_source(viewer_format::DisplayColourSource::None)
+    .with_display_colour_source(variant.colour)
     .with_point_distance_quantiles(
         viewer_format::PointDistanceQuantiles::new(0.25, 0.5, 1.5).expect("valid quantiles"),
     );
     (metadata, translated)
 }
 
-fn encode(blocks: &[SourcePointBlock]) -> (Vec<u8>, Vec<u8>) {
-    let (metadata, blocks) = v8_dataset(blocks);
-    let options =
+/// One way of writing the same blocks.
+struct Variant {
+    colour: DisplayColourSource,
+    /// `Some(bytes)` sets the page target; a tiny one gives every index level its own page.
+    page_target: Option<usize>,
+    empty_lod: bool,
+}
+
+/// The variants a schema supports: the derived-colour ones need a `u16` x 3 column (`rgb16`) or
+/// a `u16` column (intensity-like), so a schema without them skips those variants.
+fn variants(blocks: &[SourcePointBlock]) -> Vec<Variant> {
+    let column = |components| {
+        blocks[0].attributes().iter().position(|column| {
+            let descriptor = column.descriptor();
+            descriptor.data_type() == AttributeDataType::U16
+                && descriptor.component_count() == components
+        })
+    };
+    let mut colours = vec![DisplayColourSource::None];
+    colours.extend(column(3).map(|i| DisplayColourSource::Rgb(i as u32)));
+    colours.extend(column(1).map(|i| DisplayColourSource::Intensity(i as u32)));
+    let mut variants = colours
+        .into_iter()
+        .map(|colour| Variant {
+            colour,
+            page_target: None,
+            empty_lod: false,
+        })
+        .collect::<Vec<_>>();
+    variants.push(Variant {
+        colour: DisplayColourSource::None,
+        page_target: Some(1),
+        empty_lod: false,
+    });
+    variants.push(Variant {
+        colour: DisplayColourSource::None,
+        page_target: None,
+        empty_lod: true,
+    });
+    variants
+}
+
+fn encode(blocks: &[SourcePointBlock], variant: &Variant) -> (Vec<u8>, Vec<u8>) {
+    let (metadata, blocks) = v8_dataset(blocks, variant);
+    let mut options =
         FormatWriterOptions::new(MAX_QUANTIZATION_ERROR, BLOCK_LIMIT_BYTES).expect("valid options");
+    if let Some(bytes) = variant.page_target {
+        options = options.with_page_target_bytes(bytes);
+    }
+    let version: FormatVersion = "v8".parse().expect("known format version");
     let mut writer = FormatWriter::new_split_for_version(
-        FormatVersion::V8,
+        version,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
@@ -296,13 +378,16 @@ fn fnv1a(hash: &mut u64, bytes: &[u8]) {
     }
 }
 
-/// FNV-1a 64 over `len || bytes` of the V8 primary file and its attributes companion.
+/// FNV-1a 64 over `len || bytes` of the V8 primary file and its attributes companion, for every
+/// [`variants`] entry in order.
 fn digest(blocks: &[SourcePointBlock]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325;
-    let (primary, attributes) = encode(blocks);
-    for file in [primary, attributes] {
-        fnv1a(&mut hash, &(file.len() as u64).to_le_bytes());
-        fnv1a(&mut hash, &file);
+    for variant in &variants(blocks) {
+        let (primary, attributes) = encode(blocks, variant);
+        for file in [primary, attributes] {
+            fnv1a(&mut hash, &(file.len() as u64).to_le_bytes());
+            fnv1a(&mut hash, &file);
+        }
     }
     hash
 }

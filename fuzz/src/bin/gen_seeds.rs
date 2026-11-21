@@ -16,7 +16,10 @@ use viewer_format::{
     FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions, SourcePointBlock,
 };
 
-const VERSION: FormatVersion = FormatVersion::V8;
+// Parsed, not named: `FormatVersion::V<n>` literals live only inside `viewer_format`.
+fn version() -> FormatVersion {
+    "v8".parse().expect("known format version")
+}
 
 const MAX_SEED: u64 = 1024 * 1024;
 
@@ -128,7 +131,7 @@ fn write_sample() -> (Vec<u8>, Vec<u8>) {
         vec![attribute],
     );
     let mut writer = FormatWriter::new_split_for_version(
-        VERSION,
+        version(),
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
@@ -140,14 +143,14 @@ fn write_sample() -> (Vec<u8>, Vec<u8>) {
     (primary.into_inner(), attributes.unwrap().into_inner())
 }
 
-/// Paged chain: four nested nodes written with one level per page (`k` = 1), so the file has a
-/// root page and three chained child pages. `page_target` picks the page size: 1 byte forces
+/// Paged chain: `levels` nested nodes; with one level per page (`k` = 1) the file has a root page
+/// and `levels - 1` chained child pages. `page_target` picks the page size: 1 byte forces
 /// `k` = 1 everywhere, the default keeps the whole chain in the root page.
-fn write_paged_chain(page_target: Option<usize>) -> (Vec<u8>, Vec<u8>) {
+fn write_paged_chain(page_target: Option<usize>, levels: u32) -> (Vec<u8>, Vec<u8>) {
     use viewer_format::{CrsRecord, GlobalFrame, NodeCell};
     let root_prefix = [5, 7, 9].map(|k| (1_u64 << 39) + k);
     let level = 40;
-    let prefixes: Vec<[u64; 3]> = (0..4_u32)
+    let prefixes: Vec<[u64; 3]> = (0..levels)
         .scan(root_prefix, |prefix, depth| {
             let current = *prefix;
             *prefix = prefix.map(|p| (p << 1) | u64::from(depth % 2));
@@ -155,7 +158,7 @@ fn write_paged_chain(page_target: Option<usize>) -> (Vec<u8>, Vec<u8>) {
         })
         .collect();
     let spacing = |depth: u32| {
-        if depth == 3 {
+        if depth == levels - 1 {
             0.03125
         } else {
             2.0_f64.powi(1 - depth as i32)
@@ -214,14 +217,14 @@ fn write_paged_chain(page_target: Option<usize>) -> (Vec<u8>, Vec<u8>) {
         options = options.with_page_target_bytes(target);
     }
     let mut writer = FormatWriter::new_split_for_version(
-        VERSION,
+        version(),
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
         options,
     )
     .unwrap();
-    for id in 0..4_u64 {
+    for id in 0..u64::from(levels) {
         let attribute = AttributeColumn::new(
             descriptor.clone(),
             AttributeValues::U16(vec![id as u16, 9]),
@@ -304,8 +307,10 @@ fn main() {
     )
     .unwrap();
     for (name, (primary, attributes)) in [
-        ("k5", write_paged_chain(None)),
-        ("k1", write_paged_chain(Some(1))),
+        ("k5", write_paged_chain(None, 4)),
+        ("k1", write_paged_chain(Some(1), 4)),
+        // 12 pages: past the paged-reader target's release threshold (8 visited pages).
+        ("k1-deep", write_paged_chain(Some(1), 12)),
     ] {
         fs::write(
             paged_dir.join(format!("seed-sample-chain-{name}")),
