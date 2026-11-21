@@ -33,7 +33,7 @@ function findAutzen() {
 }
 
 // LAS 1.2, point format 1 with 4 Extra Bytes (u16 + u8 + i8, described by an Extra Bytes VLR) and
-// every flag bit set somewhere: exercises the RF-24 columns of `v7.5-pre`. Fully deterministic.
+// every flag bit set somewhere: exercises the RF-24 columns of V8. Fully deterministic.
 function writeFlagsExtraLas(path) {
   const points = 6000;
   const recordLength = 32;

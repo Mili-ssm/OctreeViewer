@@ -1103,7 +1103,7 @@ fn a_node_without_finite_points_is_resident_but_never_drawn() {
 
 /// Metadata and blocks of a four-node tree (root, two children, a grandchild), one block per node.
 fn paged_tree_fixture() -> (FormatMetadata, Vec<SourcePointBlock>) {
-    // A paged v7.5 file with a root, two children and a grandchild, one page per node.
+    // A paged file with a root, two children and a grandchild, one page per node.
     let root_level = 40;
     let root_prefix = [(1_u64 << 39) + 3, (1 << 39) + 4, (1 << 39) + 5];
     let tree = [
@@ -1189,11 +1189,15 @@ fn paged_tree_fixture() -> (FormatMetadata, Vec<SourcePointBlock>) {
 #[test]
 fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
     let (metadata, blocks) = paged_tree_fixture();
+    let metadata = metadata
+        .with_point_distance_quantiles(PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap())
+        .with_lod_attribute_columns(Vec::new())
+        .with_display_colour_source(viewer_format::DisplayColourSource::None);
     let options = FormatWriterOptions::new(0.01, 1 << 24)
         .unwrap()
         .with_page_target_bytes(1);
     let mut writer = FormatWriter::new_split_for_version(
-        FormatVersion::V7_PRE5,
+        FormatVersion::V8,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
@@ -1279,7 +1283,7 @@ fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
     assert_eq!(check(&dataset), has_children.len());
 }
 
-/// `cellsInfo().recommendedMinSize` comes from the file header: p5 of a v8.1-pre file's
+/// `cellsInfo().recommendedMinSize` comes from the file header: p5 of a V8 file's
 /// distance quantiles, `None` when they are all zero ("not measured"). The bindings build the
 /// dataset with the same `with_point_distance_quantiles` call.
 #[test]
@@ -1291,7 +1295,7 @@ fn the_dataset_takes_its_recommended_min_size_from_the_file_header() {
             .with_lod_attribute_columns(Vec::new())
             .with_display_colour_source(viewer_format::DisplayColourSource::None);
         let mut writer = FormatWriter::new_split_for_version(
-            FormatVersion::V8_PRE1,
+            FormatVersion::V8,
             Cursor::new(Vec::new()),
             Cursor::new(Vec::new()),
             metadata,

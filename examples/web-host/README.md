@@ -23,8 +23,7 @@ in the side panel, press **Convert to .oct**, then open the result. Converted fi
 
 The built-in sample button opens `sample.oct`, a final `V8` file drawn by the cells path. The demo
 sample always uses the latest stable format ([ADR 0047](../../docs/adr/0047-v5-heredado-hasta-v8.md)).
-`sample-small.oct` (`V8`, 4,096 points) backs the `*.browser.mjs` tests; `sample-v5.oct` (v5, legacy
-comparison) and `sample-v7.oct` (`v7.1-pre`) are legacy files kept until their removal.
+`sample-small.oct` (`V8`, 4,096 points) backs the `*.browser.mjs` tests.
 
 `?url=FILE.oct` opens a file over HTTP and needs a server with **HTTP Range and CORS**; python's
 `http.server` does not support Range. Locally use
@@ -56,15 +55,6 @@ The browser tests use `sample-small.oct` / `sample-small.octattrs`: the same sur
 
 ```bash
 cargo run --offline -p viewer_convert --example create_web_sample -- examples/web-host/sample-small.oct 64
-```
-
-The legacy pairs keep the old 4,096-point grid (1 m spacing). `sample-v5.oct` / `sample-v5.octattrs`
-(v5, `OCTVFRM1`, revision 0) back the CPU-path LOD probes; `sample-v7.oct` / `sample-v7.octattrs`
-(`v7.1-pre`) back the asynchronous Blob-reader probe. Regenerate them with:
-
-```bash
-cargo run --offline -p viewer_format --example create_legacy_sample
-cargo run --offline -p viewer_format --example create_legacy_sample -- examples/web-host/sample-v7.oct v7.1-pre
 ```
 
 ## Serve the demo
@@ -493,10 +483,7 @@ callbacks. Exports identify the sidecar as `dataset.attributes: {name, fileBytes
 the collector separates absent, present and unknown legacy companions, and displays color/depth
 settings. Names/sizes describe inputs, not cryptographic content identity.
 
-The legacy 4,096-point fixture (`sample-v5.*`) includes typed intensity (`u16`, 0–65,016) and
-classification (`u8`, 0–3). Regenerate it with
-`cargo run --offline -p viewer_format --example create_legacy_sample`. The default `sample.*` carries
-the same columns (intensity 0–64,428).
+The default `sample.*` carries typed intensity (`u16`, 0–64,428) and classification (`u8`, 0–3).
 
 Majadas RGB pairing completed three Firefox runs with the same final geometry counters and a
 visibly colored capture. `tests/lod-attributes.browser.mjs` checks the typed `sample-small` fixture by default;
