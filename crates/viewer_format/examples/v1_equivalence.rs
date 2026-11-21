@@ -7,8 +7,14 @@
 //! nodes: geometry, display colour, intensity and classification; v8.1-pre must store exactly the
 //! columns the header's LOD set names (D2) and nothing else. When the row order inside a block
 //! differs, the sorted multiset of whole rows is compared instead. Exits 0 only on zero
-//! differences. `V1_EQUIVALENCE_MUTATE=1` flips one byte of one compared leaf value in memory, to
-//! show the comparison can fail.
+//! differences. The global frame (root cell, CRS, source scale/offset) must also match.
+//!
+//! `V1_EQUIVALENCE_MUTATE=<mode>` alters the v8.1-pre side in memory (the files stay untouched) to
+//! show each comparison path can fail: `leaf-column` (flip a byte of a leaf column), `display`
+//! (flip a display colour byte), `lod-column` (flip a byte of a LOD column), `stored-set` (drop a
+//! stored leaf column), `reorder` (swap two rows of a leaf block: the multiset path must still
+//! report 0 differences) and `reorder-corrupt` (swap two rows and flip a byte: the multiset path
+//! must report a difference).
 use std::{collections::BTreeSet, fs::File, path::Path};
 
 use viewer_core::{AttributeDescriptor, AttributeValues, BlockId, NodeId, SpatialNode};
@@ -18,6 +24,73 @@ type Reader = FormatReader<File>;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 const MAX_REPORTED: usize = 20;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Mutation {
+    LeafColumn,
+    Display,
+    LodColumn,
+    StoredSet,
+    Reorder,
+    ReorderCorrupt,
+}
+
+impl Mutation {
+    fn parse(name: &str) -> Result<Self> {
+        Ok(match name {
+            "leaf-column" => Self::LeafColumn,
+            "display" => Self::Display,
+            "lod-column" => Self::LodColumn,
+            "stored-set" => Self::StoredSet,
+            "reorder" => Self::Reorder,
+            "reorder-corrupt" => Self::ReorderCorrupt,
+            other => return Err(format!("unknown V1_EQUIVALENCE_MUTATE mode {other:?}").into()),
+        })
+    }
+
+    fn wants_lod(self) -> bool {
+        self == Self::LodColumn
+    }
+
+    /// Applies the mutation to a v8.1-pre block when it is eligible; returns what was done.
+    fn apply(self, block: &mut Block) -> Option<&'static str> {
+        let flip = |block: &mut Block| {
+            let (_, bytes, _) = block.columns.iter_mut().find(|c| !c.1.is_empty())?;
+            bytes[0] ^= 1;
+            Some("flipped one bit of the first byte of a column")
+        };
+        let swap = |block: &mut Block| {
+            if block.quanta.len() < 2 || block.quanta[0] == block.quanta[1] {
+                return None;
+            }
+            block.quanta.swap(0, 1);
+            block.display.swap(0, 1);
+            for (_, bytes, width) in &mut block.columns {
+                for k in 0..*width {
+                    bytes.swap(k, *width + k);
+                }
+            }
+            Some("swapped rows 0 and 1")
+        };
+        match self {
+            Self::LeafColumn | Self::LodColumn => flip(block),
+            Self::Display => {
+                block.display.first_mut()?[0] ^= 1;
+                Some("flipped one bit of a display colour byte")
+            }
+            Self::StoredSet => {
+                block.columns.pop()?;
+                Some("dropped the last stored column")
+            }
+            Self::Reorder => swap(block),
+            Self::ReorderCorrupt => {
+                swap(block)?;
+                flip(block)?;
+                Some("swapped rows 0 and 1 and flipped one bit of a column byte")
+            }
+        }
+    }
+}
 
 fn open(oct: &Path) -> Result<Reader> {
     let mut reader = FormatReader::new(File::open(oct)?)?;
@@ -84,6 +157,8 @@ struct Totals {
     points: u64,
     leaf_blocks: u64,
     lod_blocks: u64,
+    leaf_points: u64,
+    lod_points: u64,
     columns_compared: u64,
     resorted_blocks: u64,
     differences: u64,
@@ -167,7 +242,10 @@ fn run() -> Result<bool> {
     let (Some(old_path), Some(new_path), None) = (args.next(), args.next(), args.next()) else {
         return Err("usage: v1_equivalence V7.oct V8PRE1.oct".into());
     };
-    let mutate = std::env::var_os("V1_EQUIVALENCE_MUTATE").is_some();
+    let mutation = std::env::var("V1_EQUIVALENCE_MUTATE")
+        .ok()
+        .map(|mode| Mutation::parse(&mode))
+        .transpose()?;
     let (mut old, mut new) = (open(Path::new(&old_path))?, open(Path::new(&new_path))?);
     println!(
         "v7: {:?}  v8.1-pre: {:?}",
@@ -182,6 +260,12 @@ fn run() -> Result<bool> {
             return Ok(false);
         }
     };
+    if old.format_metadata().global_frame() != new.format_metadata().global_frame() {
+        println!(
+            "PRECONDITION FAILED (global frame): root cell, CRS or source scale/offset differ"
+        );
+        return Ok(false);
+    }
     let schema = old
         .format_metadata()
         .dataset()
@@ -244,6 +328,12 @@ fn run() -> Result<bool> {
             let wanted: &[u32] = if is_lod { &lod_set } else { &all };
             let a = read_block(&mut old, id, schema_len, wanted)?;
             let mut b = read_block(&mut new, id, schema_len, &all)?;
+            let mut v7_has = Vec::new();
+            for index in 0..schema_len {
+                if old.attribute_present(id, index)? {
+                    v7_has.push(index);
+                }
+            }
             let label = format!(
                 "node {} block {} ({})",
                 node_id.get(),
@@ -253,8 +343,20 @@ fn run() -> Result<bool> {
             totals.points += a.quanta.len() as u64;
             if is_lod {
                 totals.lod_blocks += 1;
+                totals.lod_points += a.quanta.len() as u64;
             } else {
                 totals.leaf_blocks += 1;
+                totals.leaf_points += a.quanta.len() as u64;
+            }
+
+            if let Some(mode) = mutation
+                && !mutated
+                && mode.wants_lod() == is_lod
+                && (is_lod || !a.quanta.is_empty())
+                && let Some(done) = mode.apply(&mut b)
+            {
+                mutated = true;
+                println!("MUTATION: {done} in memory ({label})");
             }
 
             // Precondition: point counts and geometry bytes.
@@ -284,18 +386,16 @@ fn run() -> Result<bool> {
                     "{label}: v8.1-pre stores columns {stored:?}, expected {expected:?}"
                 ));
             }
+            // Reverse check: nothing stored in v8.1-pre that v7 does not have.
+            for (index, _, _) in &b.columns {
+                if !v7_has.contains(index) {
+                    totals.differ(&format!(
+                        "{label}: column {index} stored in v8.1-pre but absent in v7"
+                    ));
+                }
+            }
             // Keep only the columns v7 was asked for (LOD: the LOD set).
             b.columns.retain(|c| wanted.contains(&c.0));
-
-            if mutate
-                && !is_lod
-                && !mutated
-                && let Some((_, bytes, _)) = b.columns.iter_mut().find(|c| !c.1.is_empty())
-            {
-                bytes[0] ^= 1;
-                mutated = true;
-                println!("MUTATION: flipped one bit of a leaf column byte in memory ({label})");
-            }
 
             if same_geometry {
                 if a.display != b.display {
@@ -337,17 +437,20 @@ fn run() -> Result<bool> {
             return Ok(false);
         }
     }
-    if mutate && !mutated {
-        println!("MUTATION requested but no leaf column was found to flip");
+    if mutation.is_some() && !mutated {
+        println!("MUTATION requested but no eligible block was found");
+        return Ok(false);
     }
     println!(
-        "summary: nodes={} blocks={} (leaf {}, LOD {}) points={} columns_compared={} \
+        "summary: nodes={} blocks={} (leaf {}, LOD {}) points={} (leaf {}, LOD {}) columns_compared={} \
          row_order={} resorted_blocks={} differences={}",
         totals.nodes,
         totals.blocks,
         totals.leaf_blocks,
         totals.lod_blocks,
         totals.points,
+        totals.leaf_points,
+        totals.lod_points,
         totals.columns_compared,
         if totals.resorted_blocks == 0 {
             "identical"

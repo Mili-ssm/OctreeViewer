@@ -1,0 +1,22 @@
+InspectingInput
+PlanningMetadata
+PlanningSpatialIndex
+  47190/111190 points (0 MiB written; 42%)
+  111190/111190 points (0 MiB written; 100%)
+BuildingSpatialHierarchy
+ReadingAndWritingBlocks
+  0/111190 points (0 MiB written; 0%)
+  16831/111190 points (0 MiB written; 15%)
+  56312/111190 points (0 MiB written; 50%)
+  107530/111190 points (0 MiB written; 96%)
+  111190/111190 points (0 MiB written; 100%)
+ValidatingOutput
+  0/111190 points (1 MiB written; 0%)
+  20796/111190 points (1 MiB written; 18%)
+  59972/111190 points (1 MiB written; 53%)
+  111190/111190 points (1 MiB written; 100%)
+PublishingOutput
+Complete
+Converted 111190 points in 76 blocks (1406454 bytes; estimated controlled memory 73 MiB) to target/v1-gate/fs_e430_n4008_18.v7.oct + target/v1-gate/fs_e430_n4008_18.v7.octattrs
+Not preserved: scan direction and flight-line edge flags
+convert v7 wall=0.67s maxrss=15832KB

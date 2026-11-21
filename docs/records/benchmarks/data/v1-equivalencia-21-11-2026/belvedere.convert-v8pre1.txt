@@ -30,15 +30,15 @@ ValidatingOutput
   8180740/81682329 points (883 MiB written; 10%)
   16371954/81682329 points (883 MiB written; 20%)
   24534144/81682329 points (883 MiB written; 30%)
-  32726968/81682329 points (883 MiB written; 40%)
-  40894224/81682329 points (883 MiB written; 50%)
+  32676013/81682329 points (883 MiB written; 40%)
+  40855364/81682329 points (883 MiB written; 50%)
   49021846/81682329 points (883 MiB written; 60%)
-  57179173/81682329 points (883 MiB written; 70%)
+  57221597/81682329 points (883 MiB written; 70%)
   65408083/81682329 points (883 MiB written; 80%)
-  73520508/81682329 points (883 MiB written; 90%)
+  73527382/81682329 points (883 MiB written; 90%)
   81682329/81682329 points (883 MiB written; 100%)
 PublishingOutput
 Complete
 Converted 81682329 points in 3941 blocks (926000077 bytes; estimated controlled memory 130 MiB) to target/v1-gate/belvedere.v8pre1.oct + target/v1-gate/belvedere.v8pre1.octattrs
 Not preserved: scan direction and flight-line edge flags, scanner channel
-convert v8.1-pre wall=51.41s maxrss=104908KB
+convert v8pre1 wall=53.18s maxrss=105192KB

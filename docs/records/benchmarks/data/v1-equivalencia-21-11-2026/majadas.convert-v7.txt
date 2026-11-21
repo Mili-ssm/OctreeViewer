@@ -29,16 +29,16 @@ ValidatingOutput
   0/415465882 points (7332 MiB written; 0%)
   41551609/415465882 points (7332 MiB written; 10%)
   83094010/415465882 points (7332 MiB written; 20%)
-  124642156/415465882 points (7332 MiB written; 30%)
-  166194034/415465882 points (7332 MiB written; 40%)
-  207775731/415465882 points (7332 MiB written; 50%)
+  124650690/415465882 points (7332 MiB written; 30%)
+  166199934/415465882 points (7332 MiB written; 40%)
+  207733947/415465882 points (7332 MiB written; 50%)
   249314316/415465882 points (7332 MiB written; 60%)
-  290833165/415465882 points (7332 MiB written; 70%)
-  332382568/415465882 points (7332 MiB written; 80%)
-  373929520/415465882 points (7332 MiB written; 90%)
+  290846231/415465882 points (7332 MiB written; 70%)
+  332395359/415465882 points (7332 MiB written; 80%)
+  373932248/415465882 points (7332 MiB written; 90%)
   415465882/415465882 points (7332 MiB written; 100%)
 PublishingOutput
 Complete
 Converted 415465882 points in 24091 blocks (7688544926 bytes; estimated controlled memory 130 MiB) to target/v1-gate/majadas.v7.oct + target/v1-gate/majadas.v7.octattrs
 Not preserved: scan direction and flight-line edge flags
-convert v7 wall=338.82s maxrss=232856KB
+convert v7 wall=352.28s maxrss=243440KB

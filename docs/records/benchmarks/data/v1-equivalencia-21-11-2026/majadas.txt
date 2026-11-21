@@ -1,6 +1,5 @@
 v7: V7  v8.1-pre: V8Pre(1)
 schema (9 columns): intensity, classification, return_number, number_of_returns, scan_angle_degrees, user_data, point_source_id, rgb, las_flags
 LOD set: intensity, classification
-summary: nodes=24091 blocks=24091 (leaf 19526, LOD 4565) points=829479307 columns_compared=233046 row_order=identical resorted_blocks=0 differences=0
-compare wall=119.27s maxrss=220368KB
+summary: nodes=24091 blocks=24091 (leaf 19526, LOD 4565) points=829479307 (leaf 415465882, LOD 414013425) columns_compared=233046 row_order=identical resorted_blocks=0 differences=0
 exit 0

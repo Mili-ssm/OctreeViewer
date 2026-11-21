@@ -38,20 +38,25 @@ multiconjuntos). La comprobación es de **datos, no de píxeles**: no ejecuta la
    todas las columnas.
 3. **LOD** (nodos con hijos): geometría, color de pantalla, `intensity` y `classification`; `v8.1-pre` debe almacenar
    exactamente el conjunto LOD de la cabecera (que el ejemplo exige igual a `intensity` + `classification`) y nada más.
-4. Si el orden de filas de un bloque difiere, compara el multiconjunto ordenado de filas completas y lo avisa
-   (`row_order=multiset`); aquí no ocurrió.
+4. Si el orden de filas de un bloque difiere, compara el multiconjunto ordenado de filas completas (geometría, color de pantalla y columnas) y lo avisa
+   (`row_order=multiset`); con los datos reales no ocurrió, y la rama se ejecutó solo con las mutaciones `reorder` y
+   `reorder-corrupt` (véase más abajo).
+5. **Marco global** (parte de la precondición): `format_metadata().global_frame()` de ambos ficheros debe ser igual
+   (celda raíz, CRS, escala y desplazamiento de la fuente, celdas de nodo); si no, la precondición falla.
+6. **Comprobación inversa:** ninguna columna almacenada en un bloque de `v8.1-pre` puede faltar en el mismo bloque de v7.
 
 ## Resultados
 
-| Entrada | Nodos | Bloques (hojas / LOD) | Puntos comparados | Comparaciones de columna | Orden de filas | Diferencias |
-| --- | ---: | ---: | ---: | ---: | --- | ---: |
-| `fs_e430_n4008_18` | 75 | 76 (5 / 71 nodos) | 123 534 | 339 | idéntico | **0** |
-| `fs_e432_n4002_18` | 79 | 80 (8 / 72 nodos) | 187 550 | 376 | idéntico | **0** |
-| Belvedere | 3 941 | 3 941 (3 174 / 767) | 132 822 553 | 41 156 | idéntico | **0** |
-| Majadas | 24 091 | 24 091 (19 526 / 4 565) | 829 479 307 | 233 046 | idéntico | **0** |
+| Entrada | Nodos | Bloques (hojas / LOD) | Puntos hojas | Puntos LOD | Puntos, todos los bloques | Comparaciones de columna | Orden de filas | Diferencias |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| `fs_e430_n4008_18` | 75 | 76 (5 / 71) | 111 190 | 12 344 | 123 534 | 339 | idéntico | **0** |
+| `fs_e432_n4002_18` | 79 | 80 (8 / 72) | 149 730 | 37 820 | 187 550 | 376 | idéntico | **0** |
+| Belvedere | 3 941 | 3 941 (3 174 / 767) | 81 682 329 | 51 140 224 | 132 822 553 | 41 156 | idéntico | **0** |
+| Majadas | 24 091 | 24 091 (19 526 / 4 565) | 415 465 882 | 414 013 425 | 829 479 307 | 233 046 | idéntico | **0** |
 
-- «Puntos comparados» suma los puntos de todos los bloques, hojas y LOD (los LOD repiten puntos de las hojas con
-  otra geometría): las hojas de Belvedere y Majadas suman 81 682 329 y 415 465 882 puntos (los de la entrada).
+- Los puntos de hojas y de LOD salen de la línea `summary` de cada `<caso>.txt` (`points=TODOS (leaf H, LOD L)`). Los
+  LOD repiten puntos de las hojas con otra geometría; los de las hojas son los de la entrada (conversor: 81 682 329 en
+  Belvedere y 415 465 882 en Majadas).
 - Una «comparación de columna» es una columna de un bloque (geometría y color cuentan cada una como una).
 - Esquemas: las muestras y Belvedere llevan `gps_time`; Belvedere y Majadas llevan `rgb` (RGB16), las muestras no, así
   que su color de pantalla se deriva de `intensity` (por la regla D2; el ejemplo no distingue el origen, solo compara el resultado). Majadas no tiene `gps_time`. Todas las comparaciones de hojas
@@ -61,26 +66,38 @@ multiconjuntos). La comprobación es de **datos, no de píxeles**: no ejecuta la
 
 | Conversión | v7 | v8.1-pre |
 | --- | --- | --- |
-| Belvedere | 56,6 s, RSS 106 520 kB | 51,4 s, RSS 104 908 kB |
-| Majadas | 338,8 s, RSS 232 856 kB | 334,6 s, RSS 259 564 kB |
+| Belvedere | 52,3 s, RSS 106 324 kB | 53,2 s, RSS 105 192 kB |
+| Majadas | 352,3 s, RSS 243 440 kB | 354,6 s, RSS 239 100 kB |
 
-La comparación tarda 23,6 s (Belvedere) y 119,3 s (Majadas); es una sola ejecución por caso y no sustituye la medida
-de coste del [registro del 20-11-2026](FORMATO_V8_PRE1_20-11-2026.md) (V4).
+Son una sola ejecución por caso (con la máquina en uso) y no sustituyen la medida de coste del
+[registro del 20-11-2026](FORMATO_V8_PRE1_20-11-2026.md) (V4). El tiempo de la comparación no se registró.
 
 ## Prueba de que el comparador puede fallar
 
-Con `V1_EQUIVALENCE_MUTATE=1` el ejemplo invierte un bit de un byte de una columna de hoja de `v8.1-pre` en memoria
-(sin tocar el fichero) y compara `fs_e430_n4008_18`: informa `column 0 (intensity) differs`, `differences=1` y sale con
-código 1 ([`mutation-check.txt`](data/v1-equivalencia-21-11-2026/mutation-check.txt)). Un byte corrompido en el
-fichero daría un error de CRC al leer, no una diferencia, por eso la mutación es en memoria.
+`V1_EQUIVALENCE_MUTATE=<modo>` altera en memoria el lado `v8.1-pre` (los ficheros no se tocan; un byte corrompido en
+el fichero daría un error de CRC al leer, no una diferencia). Se ejecutó cada modo sobre `fs_e430_n4008_18` (salida
+íntegra en [`mutation-check.txt`](data/v1-equivalencia-21-11-2026/mutation-check.txt)):
+
+| Modo | Qué altera | Resultado |
+| --- | --- | --- |
+| `leaf-column` | invierte un bit de un byte de columna de una hoja | `column 0 (intensity) differs`, 1 diferencia, salida 1 |
+| `display` | invierte un bit del color de pantalla de una hoja | `display colour differs`, 1 diferencia, salida 1 |
+| `lod-column` | invierte un bit de una columna de un bloque LOD | `column 0 (intensity) differs`, 1 diferencia, salida 1 |
+| `stored-set` | quita una columna almacenada de una hoja | `v8.1-pre stores columns [...], expected [...]` y `column 8 missing`, 2 diferencias, salida 1 |
+| `reorder` | intercambia las filas 0 y 1 de un bloque de hoja | rama multiconjunto (`row_order=multiset`, `resorted_blocks=1`), **0 diferencias**, salida 0 |
+| `reorder-corrupt` | intercambia las filas 0 y 1 e invierte un bit | rama multiconjunto, `sorted row multisets differ`, 1 diferencia, salida 1 |
+
+`reorder` muestra que la rama del multiconjunto se ejecuta y tolera un orden distinto; `reorder-corrupt`, que esa rama
+compara filas completas y detecta un valor corrompido. La rama del multiconjunto **solo** se ejecutó con estas
+mutaciones, no con datos reales.
 
 ## Lo que no se midió
 
 - **Píxeles:** no se renderiza nada; V1 queda probado en los datos que el visor lee, no en la imagen (GPU, shaders y
   modos de color del visor no intervienen). Los modos de color por defecto dependen de `rgb`, `intensity` y
   `classification`, que sí se comparan.
-- **Orden de filas distinto:** la rama del multiconjunto existe pero no se ejecutó (el orden fue idéntico siempre), así
-  que solo se probó con la mutación, no con datos reales.
+- **Orden de filas distinto en datos reales:** nunca ocurrió (el orden fue idéntico siempre); la rama del
+  multiconjunto solo se probó con las mutaciones `reorder` y `reorder-corrupt`.
 - **Otras entradas:** Albuera y los datos sintéticos no se repitieron aquí; los tests de `viewer_format`
   (`tests/v8_display.rs`) cubren la equivalencia de lectura con nubes sintéticas.
 - **V4 (coste de conversión):** no se repite; el plan lo enlaza al registro del 20-11-2026 (mismo binario).
