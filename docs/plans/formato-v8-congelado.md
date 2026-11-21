@@ -88,17 +88,17 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 
 **Files:** `crates/viewer_format/src/{version.rs,layout.rs}` y lo que despacha por capacidad; tests en
 `crates/viewer_format/tests/v8_lod.rs`. CLI y conversor web: valor por defecto.
-- [ ] Test primero: un fichero `V8` es byte a byte uno `v8.1-pre` salvo la revisión de cabecera y los magics (como el
+- [x] Test primero: un fichero `V8` es byte a byte uno `v8.1-pre` salvo la revisión de cabecera y los magics (como el
   test de v8.2-pre); una pareja V8/`v8.1-pre` mezclada se rechaza.
-- [ ] `FormatVersion::V8`: cabecera mayor `8`, revisión final y magics propios siguiendo el patrón de V7
+- [x] `FormatVersion::V8`: cabecera mayor `8`, revisión final y magics propios siguiendo el patrón de V7
   (`OCTVEND7` → `OCTVEND8`). Las capacidades son las de `v8.1-pre`, y `DEFAULT_OUTPUT = V8`.
-- [ ] El conversor web toma `v8` por defecto; `FORMAT_VERSIONS` lo añade (se quita en la tarea 5).
-- [ ] La paridad (`tools/format_parity`, `tools/convert_parity`) incluye V8 con su propia línea de digest; `check.sh` en
+- [x] El conversor web toma `v8` por defecto; `FORMAT_VERSIONS` lo añade (se quita en la tarea 5).
+- [x] La paridad (`tools/format_parity`, `tools/convert_parity`) incluye V8 con su propia línea de digest; `check.sh` en
   verde. Los tests que fijan `DEFAULT_OUTPUT == V7`, los nombres de `WRITABLE`, `"v8".parse()` y `create_web_sample.rs`
   se ajustan.
-- [ ] Se fija el SHA-256 de la salida V8 (A3): test sobre `data/samples/*.las`, y test ignorado más registro para
+- [x] Se fija el SHA-256 de la salida V8 (A3): test sobre `data/samples/*.las`, y test ignorado más registro para
   Belvedere.
-- [ ] Commit `feat(format): final V8 identity on the v8.1-pre layout, default output`.
+- [x] Commit `feat(format): final V8 identity on the v8.1-pre layout, default output`.
 
 ### Task 2: Regenerate fixtures and test data as V8
 
