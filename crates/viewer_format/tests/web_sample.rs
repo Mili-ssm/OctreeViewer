@@ -5,7 +5,7 @@ use viewer_format::{FormatReader, FormatVersion, OctreeReader};
 
 #[test]
 fn web_host_default_sample_is_a_v8_dataset_with_attributes() {
-    let bytes = include_bytes!("../../../examples/web-host/sample.oct");
+    let bytes = include_bytes!("../../../examples/web-host/sample-v8.oct");
     let mut reader = FormatReader::new(Cursor::new(bytes.as_slice())).unwrap();
 
     assert_eq!(reader.format_version(), FormatVersion::V8);
@@ -16,7 +16,7 @@ fn web_host_default_sample_is_a_v8_dataset_with_attributes() {
     );
     reader
         .attach_attributes(Cursor::new(
-            include_bytes!("../../../examples/web-host/sample.octattrs").as_slice(),
+            include_bytes!("../../../examples/web-host/sample-v8.octattrs").as_slice(),
         ))
         .unwrap();
     // intensity = (x * 1000 + y * 8) as u16 with x, y in 0..=63.9167.

@@ -2610,8 +2610,8 @@ fn a_late_node_of_an_older_colour_generation_is_dropped_by_the_driver() {
 
 /// The built-in sample loaded in a harness, with its coordinate origin and visual scale.
 fn sample_harness() -> (Harness, [f64; 3], f64) {
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/web-host/sample.oct");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/web-host/sample-v8.oct");
     let file = std::fs::File::open(path).unwrap();
     let reader: RealReader =
         FormatReader::open_lazy(std::io::BufReader::new(file), FormatReaderLimits::default())

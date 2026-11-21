@@ -189,8 +189,8 @@ self.onmessage = async ({ data = {} }) => {
             // for the small fixture. The default sample is larger, so it proves the payload reads
             // stay ranged.
             const tailWindowBytes = 1024 * 1024;
-            const largePrimary = await fetch(new URL("../sample.oct", import.meta.url)).then(r => r.blob());
-            const largeAttributes = await fetch(new URL("../sample.octattrs", import.meta.url)).then(r => r.blob());
+            const largePrimary = await fetch(new URL("../sample-v8.oct", import.meta.url)).then(r => r.blob());
+            const largeAttributes = await fetch(new URL("../sample-v8.octattrs", import.meta.url)).then(r => r.blob());
             assert(largePrimary.size > tailWindowBytes, "default sample no longer exceeds the tail window");
             const largeReader = await WasmAsyncFormatReader.open(largePrimary, largeAttributes);
             const largePlan = largeReader.planRead(0n, "positions");

@@ -276,7 +276,7 @@ node examples/web-host/red-ref-server.mjs examples/web-host --port=8780 --rtt-ms
 Open, in a WebGPU-capable browser (headless Chrome with Playwright works; the result is also in `window.probeResult`):
 
 ```text
-http://127.0.0.1:8791/examples/web-host/probe-api-remote.html?data=http://127.0.0.1:8780/sample.oct&buildWorker=0&attributes=derived
+http://127.0.0.1:8791/examples/web-host/probe-api-remote.html?data=http://127.0.0.1:8780/sample-v8.oct&buildWorker=0&attributes=derived
 ```
 
 Vary `buildWorker=0|1` and `attributes=derived|none`. The page awaits up to 60 s per wait and prints
@@ -284,11 +284,11 @@ Vary `buildWorker=0|1` and `attributes=derived|none`. The page awaits up to 60 s
 
 Expected:
 
-- `name` is `sample.oct`, `bytes` is the file size and `metadata` (node count, max level, semantics,
+- `name` is `sample-v8.oct`, `bytes` is the file size and `metadata` (node count, max level, semantics,
   point count) is identical with and without the build worker; `bytes` is not `null` in either mode
   (the build worker reports it as `fileBytes`).
 - `attributes=derived` gives `hasAttributes: true` (explicit `{ url: sidecarUrl(url) }`); `none` gives `false`.
 - `reachedTarget` is `true`.
-- Against the `--ignore-range` server (`data=http://127.0.0.1:8781/sample.oct`) the result is an `error`
+- Against the `--ignore-range` server (`data=http://127.0.0.1:8781/sample-v8.oct`) the result is an `error`
   about the server ignoring Range, with no hang. A server that never answers takes about 63 s to fail
   (4 attempts of 15 s plus waits), longer than this probe's wait.

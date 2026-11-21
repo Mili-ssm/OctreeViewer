@@ -21,7 +21,7 @@ the site's `datasets/`; the button stays hidden where neither location answers. 
 in the side panel, press **Convert to .oct**, then open the result. Converted files default to the
 `v8` format.
 
-The built-in sample button opens `sample.oct`, a final `V8` file drawn by the cells path. The demo
+The built-in sample button opens `sample-v8.oct`, a final `V8` file drawn by the cells path. The demo
 sample always uses the latest stable format ([ADR 0047](../../docs/adr/0047-v5-heredado-hasta-v8.md)).
 `sample-small.oct` (`V8`, 4,096 points) backs the `*.browser.mjs` tests.
 
@@ -42,7 +42,7 @@ rustup target add wasm32-unknown-unknown
 scripts/build-wasm-bindings.sh   # cargo build --release --target wasm32-unknown-unknown + wasm-bindgen into pkg/
 ```
 
-The repository includes `sample.oct` and `sample.octattrs`: a deterministic synthetic wave surface
+The repository includes `sample-v8.oct` and `sample-v8.octattrs`: a deterministic synthetic wave surface
 over 64×64 m on a 768×768 grid (≈ 8.3 cm spacing, 589,824 points, about 3.0 MiB) with fine relief.
 The example writes it as LAS and converts it with the converter defaults (`V8`). Regenerate it from the workspace root with:
 
@@ -72,6 +72,16 @@ python3 -m http.server 8000 --bind 127.0.0.1
 and open **http://localhost:8000/examples/web-host/index.html**. Serve the whole repository root,
 including `pkg/`: serving only `examples/web-host/` leaves out the bindings and WASM. WebGPU and
 workers need a secure context such as localhost or HTTPS; plain HTTP from another machine may not work.
+
+### Cache busting on the published site
+
+Dataset files carry the format in their name (`sample-v8.oct`, `belvedere-crop-v8.oct`), so a new
+format never reuses a cached name. `scripts/publish-demo.sh` also stamps the short commit (`BUILD_ID`)
+into the bundle it assembles: `pkg/viewer_wasm-<id>.js` and `pkg/viewer_wasm_bg-<id>.wasm` (the glue
+points at the renamed wasm), `main.js?v=<id>` in `index.html`, and `?v=<id>` on the three worker URLs.
+A visitor holding an older cached wasm therefore never pairs it with newer data. The repository layout
+served by `scripts/serve-demo.sh` is left unversioned. The rewrite runs only at publish time and is
+guarded by checks that fail the script if an unversioned reference remains.
 
 ### Loading contract and CORS regression prevention
 

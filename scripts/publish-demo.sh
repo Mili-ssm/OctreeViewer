@@ -33,10 +33,10 @@ site="target/demo-site"
 rm -rf "$site"
 mkdir -p "$site/pkg"
 host=examples/web-host
-cp "$host"/index.html "$host"/sample.oct "$host"/sample.octattrs "$site"/
+cp "$host"/index.html "$host"/sample-v8.oct "$host"/sample-v8.octattrs "$site"/
 # The real second cloud (Belvedere crop, CC BY 4.0) is built outside git by
 # scripts/make-demo-belvedere.sh; the page opens it over HTTP Range from datasets/.
-crop=target/demo-data/belvedere-crop
+crop=target/demo-data/belvedere-crop-v8
 if [ -f "$crop.oct" ] && [ -f "$crop.octattrs" ]; then
   mkdir -p "$site/datasets"
   cp "$crop.oct" "$crop.octattrs" "$site/datasets/"
@@ -64,6 +64,24 @@ for ref in $(grep -hoE "(from|import\(|new URL\() *['\"]\./[^'\"]*['\"]" "$site"
   [ -f "$site/$ref" ] || { echo "missing in site: $ref" >&2; missing=1; }
 done
 [ "$missing" = "0" ] || exit 1
+# Cache busting (plan A10): a visitor with a cached wasm of an older format must not pair it with
+# V8 data. The bindings get the commit in their file names and the page, its workers and the
+# bindings glue reference those names, so old and new bundles never mix; datasets are versioned by name.
+build_id="$(git rev-parse --short HEAD)"
+glue="viewer_wasm-$build_id.js"
+wasm="viewer_wasm_bg-$build_id.wasm"
+mv "$site/pkg/viewer_wasm.js" "$site/pkg/$glue"
+mv "$site/pkg/viewer_wasm_bg.wasm" "$site/pkg/$wasm"
+sed -i "s#viewer_wasm_bg\\.wasm#$wasm#" "$site/pkg/$glue"
+sed -i "s#\"\\./pkg/viewer_wasm\\.js\"#\"./pkg/$glue\"#" "$site"/*.js
+sed -i -E "s#\"\\./(viewer-worker|build-worker|converter-worker)\\.js\"#\"./\\1.js?v=$build_id\"#g" "$site"/*.js "$site"/*.mjs
+sed -i "s#module.src = \"\\./main\\.js\"#module.src = \"./main.js?v=$build_id\"#" "$site/index.html"
+grep -q "main.js?v=$build_id" "$site/index.html" || { echo "index.html cache-busting rewrite failed" >&2; exit 1; }
+grep -q "$wasm" "$site/pkg/$glue" || { echo "wasm name rewrite failed in $glue" >&2; exit 1; }
+if grep -lE '"\./pkg/viewer_wasm\.js"|viewer_wasm_bg\.wasm' "$site"/*.js "$site/pkg/$glue"; then
+  echo "unversioned bindings reference left in the site" >&2
+  exit 1
+fi
 touch "$site/.nojekyll"
 
 site_abs="$(cd "$site" && pwd)"

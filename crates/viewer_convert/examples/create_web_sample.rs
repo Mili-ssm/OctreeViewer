@@ -69,7 +69,7 @@ fn write_las(path: &std::path::Path, side: u32) -> Result<u64, Box<dyn Error>> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let output = env::args_os().nth(1).map_or_else(
-        || PathBuf::from("examples/web-host/sample.oct"),
+        || PathBuf::from("examples/web-host/sample-v8.oct"),
         PathBuf::from,
     );
     let side = match env::args().nth(2) {

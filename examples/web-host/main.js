@@ -1272,7 +1272,7 @@ sampleButton.addEventListener("click", async () => {
     const controller = new AbortController();
     sampleFetchController = controller;
     try {
-        const response = await fetch(new URL("./sample.oct", import.meta.url), {
+        const response = await fetch(new URL("./sample-v8.oct", import.meta.url), {
             signal: controller.signal,
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1280,7 +1280,7 @@ sampleButton.addEventListener("click", async () => {
             type: "application/octet-stream",
         });
         if (sampleFetchController !== controller) return;
-        const attrsResponse = await fetch(new URL("./sample.octattrs", import.meta.url), { signal: controller.signal });
+        const attrsResponse = await fetch(new URL("./sample-v8.octattrs", import.meta.url), { signal: controller.signal });
         if (!attrsResponse.ok) throw new Error(`Attributes HTTP ${attrsResponse.status}`);
         const attrs = new File([await attrsResponse.arrayBuffer()], "sample.octattrs");
         if (sampleFetchController !== controller) return;
@@ -1305,8 +1305,8 @@ sampleButton.addEventListener("click", async () => {
 // (scripts/make-demo-belvedere.sh). The button stays hidden where neither answers. Relative to
 // the page, not to the module URL, which the offline package cannot reference.
 const belvedereCandidates = [
-    new URL("./datasets/belvedere-crop.oct", document.baseURI),
-    new URL("../../target/demo-data/belvedere-crop.oct", document.baseURI),
+    new URL("./datasets/belvedere-crop-v8.oct", document.baseURI),
+    new URL("../../target/demo-data/belvedere-crop-v8.oct", document.baseURI),
 ];
 let belvedereUrl = null;
 (async () => {
@@ -1340,8 +1340,8 @@ belvedereButton.addEventListener("click", async () => {
             if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
             return new File([await response.arrayBuffer()], name, { type: "application/octet-stream" });
         };
-        const file = await fetchFile(belvedereUrl, "belvedere-crop.oct");
-        const attrs = await fetchFile(new URL(`${belvedereUrl.href}attrs`), "belvedere-crop.octattrs");
+        const file = await fetchFile(belvedereUrl, "belvedere-crop-v8.oct");
+        const attrs = await fetchFile(new URL(`${belvedereUrl.href}attrs`), "belvedere-crop-v8.octattrs");
         if (sampleFetchController !== controller) return;
         sampleFetchController = null;
         openProjectFile(file, "Belvedere Glacier crop", attrs);
