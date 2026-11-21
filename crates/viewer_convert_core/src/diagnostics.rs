@@ -43,7 +43,7 @@ pub struct ConversionDiagnostics {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpatialPhaseDiagnostics {
-    /// Time in root direct-LAS `fill_points`; source-spool generation and checkpoints are excluded.
+    /// Time in root direct-LAS `fill_points`; source-spool generation is excluded.
     pub root_las_fill_elapsed_ns: u128,
     /// Time in recursive `read_records` calls for source/child spool scans.
     pub spool_scan_read_elapsed_ns: u128,

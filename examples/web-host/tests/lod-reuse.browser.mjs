@@ -10,8 +10,8 @@ self.onmessage = async () => {
     try {
         await init();
         viewer = await WasmVoxelViewer.createOffscreen(new OffscreenCanvas(640, 480), 0.6);
-        const coordinates = await fetch(new URL("../sample-v5.oct", import.meta.url)).then(r => r.blob());
-        const attributes = await fetch(new URL("../sample-v5.octattrs", import.meta.url)).then(r => r.blob());
+        const coordinates = await fetch(new URL("../sample-small.oct", import.meta.url)).then(r => r.blob());
+        const attributes = await fetch(new URL("../sample-small.octattrs", import.meta.url)).then(r => r.blob());
         const finish = (pixels = 4) => {
             for (let attempt = 0; attempt < 20; attempt += 1) {
                 const stats = viewer.updateLod(pixels);
@@ -63,7 +63,7 @@ self.onmessage = async () => {
         // Visible cache entries are protected: a failed replacement must retain the scene.
         let rejected = false;
         try {
-            viewer.insertLodBlock("1", new Float32Array([0, 0, 0]), new Uint8Array([255, 0, 0]));
+            viewer.insertLodBlock("0", new Float32Array([0, 0, 0]), new Uint8Array([255, 0, 0]));
         } catch (error) {
             rejected = String(error).includes("ProtectedEntries");
         }
@@ -75,7 +75,7 @@ self.onmessage = async () => {
             && retained.renderedVoxels === finer.renderedVoxels, "failed replacement changed the scene");
         // Attribute changes release the old cut. The same block ID can now hold new data.
         viewer.setColorMode("intensity");
-        viewer.insertLodBlock("1", new Float32Array([0, 0, 0]), new Uint8Array([255, 0, 0]));
+        viewer.insertLodBlock("0", new Float32Array([0, 0, 0]), new Uint8Array([255, 0, 0]));
         const replaced = finish(2);
         assert(replaced.renderedVoxels === 1, "stale scene survived cache reset and new payload");
         viewer.setColorMode("rgb");

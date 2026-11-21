@@ -91,12 +91,11 @@ the repository root on a free port and run it on one file:
 
 ```bash
 PORT=8791 scripts/serve-demo.sh --no-build &
-node examples/web-host/probe-cells-parity.mjs target/render-data/belvedere-v7.oct target/cells-parity.json \
+node examples/web-host/probe-cells-parity.mjs target/render-data/belvedere-v8.oct target/cells-parity.json \
   --url=http://127.0.0.1:8791/examples/web-host/index.html --rest-timeout-s=120
 ```
 
-The probe needs a V7 file (the Belvedere one above): a V5 file such as `data/samples/fs_e430_n4008_18.oct`
-(header `OCTVFRM1 0500`) does not reach the cells path. The probe
+The probe needs a V8 file, such as the Belvedere one above: any retired format is refused at open. The committed `data/samples/*.oct` are V8 since the 21-11-2026 regeneration. The probe
 takes a file, not the built-in demo sample. Its final `gate`/`parity` summary is written to the report
 (a lookup bug, `arm.name` instead of `arm.arm`, kept it out before). Kill the server and browsers when done.
 
@@ -217,33 +216,30 @@ and records `memory.mainThreadJsHeapUsedBytes` separately; the legacy field
 `environment.jsHeapUsedBytes` has the same main-thread scope. They are neither live memory nor a
 joint RSS/PSS/GPU peak.
 
-### Final v5 storage contract probe
+### V8 storage contract probe
 
 With fresh bindings, run `tests/storage-format.browser.mjs` as a module Worker and wait for
 `type === "probeResult"`, ignoring read-progress messages. It checks Blob opening with/without
-the companion and explicit rejection of provisional files, unsupported v6 revisions and an
+the companion and explicit rejection of provisional files, retired formats (reconvert message) and an
 incorrect companion. It needs no GPU adapter. Recorded native/OPFS/browser evidence and the
 remaining presentation limitation are in [storage benchmarks](../../docs/records/benchmarks/STORAGE_BENCH.md).
 
-### V7 asynchronous Blob range probe
+### Asynchronous Blob range probe
 
 With fresh bindings, run `tests/async-format-reader.browser.mjs` as a module Worker and wait for
-`type === "probeResult"`. Against the V7.1-pre fixture it checks bounded metadata ranges,
+`type === "probeResult"`. Against `sample-small.oct` (V8) it checks bounded metadata ranges,
 asynchronous `Blob.arrayBuffer()` payload reads, XYZ/RGB and typed U16 materialization, companion
 identity and CRC rejection without a full-file read, plus shared read quota, concurrent calls
 and scheduler tickets/retry. Equivalent V7.3 fixtures passed with fresh bindings ([evidence](../../docs/records/benchmarks/data/storage-v7-v73-integration-2026-10-25.json)). Visual
 LOD publication and navigation measurements are still pending ([#72](https://github.com/Mili-ssm/OctreeViewer/issues/72)); context in the archived [V7 plan](../../docs/records/archive/format-v7-plan.md#3-reader-lógico-único-concurrencia-y-transporte-asíncrono).
 
-### Opt-in conversion revisions
+### Conversion format
 
-The converter writes final v7 by default. Callers may select another revision with the converter
-option `formatVersion`, for example `converter.convert(file, { options: { formatVersion: "v7.3-pre" } })`.
-Opening a Blob automatically selects final v5, final v7 or an implemented experimental identity: `v6.1-pre`–`v6.4-pre`
-and `v7.1-pre`–`v7.3-pre`. The option accepts these exact strings;
-paired files must have the exact same identity. Final `v6`, v7 revisions after `v7.5-pre` and v8 revisions other than the experimental `v8.1-pre` and `v8.2-pre` remain unsupported; final `v7` is supported and the default.
-The demo converter panel defaults to `v7` and lists the other writable revisions in its format selector; for global-frame formats (`v7`, `v7.4-pre`, `v7.5-pre`, `v8.1-pre`, `v8.2-pre`) it disables **Points per block** and **Spatial divisions** (fixed by the format) and does not send them.
+The converter always writes V8: the option `formatVersion` (and `rowOrder`, `pointsPerBlock`, `spatialDivisions`) is
+refused. Opening a Blob accepts only V8 (paired files must have the same identity); any retired format is refused with a message asking to reconvert it. The demo converter panel has no
+format selector.
 
-For the storage probe, pass `expectedVersion: "v7.3-pre"` with the converted Blobs and check the
+For the storage probe, pass `expectedVersion: "v8"` with the converted Blobs and check the
 returned `formatVersion`. Use fresh bindings and reload worker scripts after rebuilding (a cache
 busting query on the worker/probe URL avoids a stale development module). Results are recorded
 in [storage comparisons](../../docs/records/benchmarks/STORAGE_BENCH.md); GPU presentation remains separate.
@@ -278,7 +274,7 @@ node examples/web-host/red-ref-server.mjs examples/web-host --port=8780 --rtt-ms
 Open, in a WebGPU-capable browser (headless Chrome with Playwright works; the result is also in `window.probeResult`):
 
 ```text
-http://127.0.0.1:8791/examples/web-host/probe-api-remote.html?data=http://127.0.0.1:8780/sample.oct&buildWorker=0&attributes=derived
+http://127.0.0.1:8791/examples/web-host/probe-api-remote.html?data=http://127.0.0.1:8780/sample-v8.oct&buildWorker=0&attributes=derived
 ```
 
 Vary `buildWorker=0|1` and `attributes=derived|none`. The page awaits up to 60 s per wait and prints
@@ -286,11 +282,11 @@ Vary `buildWorker=0|1` and `attributes=derived|none`. The page awaits up to 60 s
 
 Expected:
 
-- `name` is `sample.oct`, `bytes` is the file size and `metadata` (node count, max level, semantics,
+- `name` is `sample-v8.oct`, `bytes` is the file size and `metadata` (node count, max level, semantics,
   point count) is identical with and without the build worker; `bytes` is not `null` in either mode
   (the build worker reports it as `fileBytes`).
 - `attributes=derived` gives `hasAttributes: true` (explicit `{ url: sidecarUrl(url) }`); `none` gives `false`.
 - `reachedTarget` is `true`.
-- Against the `--ignore-range` server (`data=http://127.0.0.1:8781/sample.oct`) the result is an `error`
+- Against the `--ignore-range` server (`data=http://127.0.0.1:8781/sample-v8.oct`) the result is an `error`
   about the server ignoring Range, with no hang. A server that never answers takes about 63 s to fail
   (4 attempts of 15 s plus waits), longer than this probe's wait.

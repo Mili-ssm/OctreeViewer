@@ -131,17 +131,6 @@ pub fn write_split(
     (primary.into_inner(), attributes.unwrap().into_inner())
 }
 
-pub fn write_monolithic(
-    version: FormatVersion,
-    block: SourcePointBlock,
-    meta: FormatMetadata,
-) -> Vec<u8> {
-    let mut writer =
-        FormatWriter::new_for_version(version, Cursor::new(Vec::new()), meta, options()).unwrap();
-    writer.write_block(block).unwrap();
-    writer.finish().unwrap().into_inner()
-}
-
 pub fn repair_index_and_footer(bytes: &mut [u8]) {
     let footer = bytes.len() - 40;
     let index = u64::from_le_bytes(bytes[footer + 8..footer + 16].try_into().unwrap()) as usize;

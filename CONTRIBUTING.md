@@ -67,13 +67,14 @@ python3 examples/web-host/package-local.py
 Fuente única de las reglas.
 
 - Commits: [Conventional Commits](https://www.conventionalcommits.org/) (`docs:`, `build:`, `fix:`…).
-- **V7 predeterminado**: `v7` final es la salida por defecto ([ADR 0044](docs/adr/0044-v7-final-congelada-y-predeterminada.md));
-  V5, V6 y las `-pre` siguen legibles y escribibles hasta su retirada. No se crean revisiones V5/V6 nuevas.
+- **Solo V8**: V8 es el único formato que se lee y se escribe ([referencia](docs/reference/format/FORMAT_V8.md),
+  [plan de congelado](docs/plans/formato-v8-congelado.md)); los formatos anteriores dan el error «retirado, reconvierte».
+  Un cambio de bytes de V8 necesita un ADR y el visto bueno del propietario.
 - **Literales de versión**: `FormatVersion::V<n>` solo vive en `viewer_format`; el resto usa su
   API de capacidades (`DEFAULT_OUTPUT`, `WRITABLE`, `supports_block_checkpoint()`), así añadir una
   revisión no toca otros crates. Lo vigila `scripts/check_version_literals.sh`.
 - **Registros inmutables**: lo de `docs/records/` no se edita (salvo corregir enlaces rotos);
-  nueva evidencia va en un registro nuevo o en `format-v7-evidence.md`, que se amplía.
+  nueva evidencia va en un registro nuevo y fechado (`format-v7-evidence.md` es histórico y ya no se amplía).
 - **Fechas** `dd-mm-aaaa`; documentación en español salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md` y `PROBES.md` (inglés).
 - **Decisiones**: las de diseño duraderas se registran en [docs/adr/](docs/adr/README.md); una aceptada se sustituye con un ADR nuevo, no se edita.
 - **Un hecho, un documento**: el resto enlaza; dónde va cada tipo de documento, en el

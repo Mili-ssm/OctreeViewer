@@ -1,19 +1,16 @@
-//! RF-24 round trip: LAS flags and Extra Bytes survive `--format-version v7.5-pre` exactly
+//! RF-24 round trip: LAS flags and Extra Bytes survive the V8 conversion exactly
 //! (no LAS exporter exists, so converter -> reader is the verification).
 
 use std::{collections::BTreeSet, fs, path::Path};
 
 use las::{Builder, Point, Vlr, Writer, point::Format};
 use viewer_core::{AttributeValues, las::LasExtraBytesError};
-use viewer_format::{FormatReader, FormatVersion};
+use viewer_format::FormatReader;
 
 use super::{ConvertError, ConvertOptions, convert_file};
 
-fn options(version: FormatVersion) -> ConvertOptions {
-    ConvertOptions::new(262_144, 0.01)
-        .unwrap()
-        .with_format_version(version)
-        .unwrap()
+fn options() -> ConvertOptions {
+    ConvertOptions::new(0.01).unwrap()
 }
 
 fn descriptor(
@@ -151,7 +148,7 @@ fn column_index(reader: &FormatReader<fs::File>, name: &str) -> u32 {
         .unwrap_or_else(|| panic!("column {name}")) as u32
 }
 
-/// Every row of every block (leaf and LOD) must carry the values of the source point it came from.
+/// Every row of every leaf block must carry the values of the source point it came from.
 fn round_trip(format_id: u8) {
     let extended = format_id >= 6;
     let dir = tempfile::tempdir().unwrap();
@@ -159,7 +156,7 @@ fn round_trip(format_id: u8) {
     let count = 70_000;
     write_las(&input, format_id, count, Some(descriptors()), 19);
     let output = dir.path().join("out.oct");
-    convert_file(&input, &output, options(FormatVersion::V7_PRE5)).unwrap();
+    convert_file(&input, &output, options()).unwrap();
     let mut reader = open(&output);
 
     let stored = reader.format_metadata().las_extra_bytes().to_vec();
@@ -188,6 +185,10 @@ fn round_trip(format_id: u8) {
     let mut rows = 0;
     let mut sources = BTreeSet::<u64>::new();
     for block in blocks {
+        // V8 stores attributes only in leaf blocks; LOD blocks derive them.
+        if !reader.attribute_present(block, columns[0]).unwrap() {
+            continue;
+        }
         let [flags, amplitude, pair, key, small] =
             columns.map(|index| reader.read_attribute(block, index).unwrap());
         let (AttributeValues::U8(flags), AttributeValues::U16(amplitude)) =
@@ -217,7 +218,7 @@ fn round_trip(format_id: u8) {
             rows += 1;
         }
     }
-    assert!(rows >= count, "{rows} rows");
+    assert!(rows == count, "{rows} rows");
     assert_eq!(
         sources.len(),
         count,
@@ -237,12 +238,12 @@ fn extended_point_format_round_trips_flags_and_extra_bytes() {
 }
 
 #[test]
-fn flags_without_extra_bytes_are_kept_and_older_formats_are_unchanged() {
+fn flags_without_extra_bytes_are_kept() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in.las");
     write_las(&input, 1, 3000, None, 0);
     let paged = dir.path().join("p.oct");
-    convert_file(&input, &paged, options(FormatVersion::V7_PRE5)).unwrap();
+    convert_file(&input, &paged, options()).unwrap();
     let mut reader = open(&paged);
     assert!(
         reader.format_metadata().las_extra_bytes().is_empty(),
@@ -265,31 +266,6 @@ fn flags_without_extra_bytes_are_kept_and_older_formats_are_unchanged() {
     // Format 1 has no overlap bit in the classification byte.
     assert!(values.iter().all(|v| *v < 8));
     assert!(values.iter().any(|v| *v & 4 != 0));
-
-    // The same file with extra bytes in v7.4-pre has the pre-RF-24 schema.
-    let extras = dir.path().join("e.las");
-    write_las(&extras, 3, 3000, Some(descriptors()), 19);
-    {
-        let version = FormatVersion::V7_PRE4;
-        let output = dir.path().join("old.oct");
-        convert_file(&extras, &output, options(version)).unwrap();
-        let reader = open(&output);
-        let names: Vec<_> = reader
-            .format_metadata()
-            .dataset()
-            .hierarchy()
-            .attributes()
-            .iter()
-            .map(|a| a.name().to_owned())
-            .collect();
-        assert_eq!(
-            names,
-            viewer_core::las::las_attribute_schema(true, true, false)
-                .iter()
-                .map(|a| a.name().to_owned())
-                .collect::<Vec<_>>()
-        );
-    }
 }
 
 #[test]
@@ -298,11 +274,7 @@ fn unsupported_or_inconsistent_extra_bytes_are_explicit_errors() {
     let convert = |name: &str, vlr: Option<Vec<u8>>, extra_len: u16| {
         let input = dir.path().join(format!("{name}.las"));
         write_las(&input, 0, 100, vlr, extra_len);
-        convert_file(
-            &input,
-            &dir.path().join(format!("{name}.oct")),
-            options(FormatVersion::V7_PRE5),
-        )
+        convert_file(&input, &dir.path().join(format!("{name}.oct")), options())
     };
     for data_type in [0_u8, 31, 255] {
         assert!(matches!(
@@ -330,15 +302,6 @@ fn unsupported_or_inconsistent_extra_bytes_are_explicit_errors() {
             ..
         })
     ));
-    // The same descriptors are fine for a format that drops Extra Bytes.
-    let input = dir.path().join("m.las");
-    write_las(&input, 0, 100, Some(descriptors()), 19);
-    convert_file(
-        &input,
-        &dir.path().join("old.oct"),
-        options(FormatVersion::V7_PRE4),
-    )
-    .unwrap();
 }
 
 /// The web converter runs the serial core path: its bytes must equal the CLI's for a file with
@@ -349,7 +312,7 @@ fn serial_core_matches_native_with_flags_and_extra_bytes() {
     for format_id in [3_u8, 6] {
         let input = dir.path().join(format!("f{format_id}.las"));
         write_las(&input, format_id, 5000, Some(descriptors()), 19);
-        let options = options(FormatVersion::V7_PRE5);
+        let options = options();
         crate::tests::assert_serial_matches_native(
             &input,
             options,
@@ -367,7 +330,7 @@ fn undocumented_extra_bytes_are_dropped_and_reported() {
     let input = dir.path().join("u.las");
     write_las(&input, 3, 500, None, 4);
     let output = dir.path().join("u.oct");
-    let report = convert_file(&input, &output, options(FormatVersion::V7_PRE5)).unwrap();
+    let report = convert_file(&input, &output, options()).unwrap();
     assert!(
         report
             .omitted_dimensions

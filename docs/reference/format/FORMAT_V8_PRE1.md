@@ -1,5 +1,7 @@
 # Formato nativo `.oct`, v8.1-pre
 
+> Histórico: formato retirado con la V8 (D4, 21-11-2026); la referencia vigente es [FORMAT_V8](FORMAT_V8.md).
+
 Identidad de desarrollo: cabecera mayor **8**, revisión **1**, texto `v8.1-pre`; opt-in
 (`viewer_convert --format-version v8.1-pre`). La salida predeterminada sigue siendo [v7](FORMAT_V7.md). Decisiones
 en el [ADR 0058](../../adr/0058-formato-v8-experimental.md); diseño en [formato-v8](../../plans/formato-v8.md), plan en

@@ -1,4 +1,4 @@
-use std::io::{Cursor, Read, Seek};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetMetadata, DatasetSource,
@@ -23,10 +23,18 @@ impl<R: Read + Seek> FormatReader<R> {
     }
 
     pub fn with_limits(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
-        let identity = probe_format(&mut reader)?;
-        validate_identity(identity)?;
-        let backend = IndexedReader::with_identity(reader, limits, identity)?;
-        Ok(Self { backend })
+        let identity = probe_format(&mut reader)
+            .map_err(|error| crate::explain_open_failure(&mut reader, error))?;
+        // The reader stays borrowed while the index loads, so a failure can still read the envelope
+        // to name a retired family; a successful open never reads it again.
+        let loaded = validate_identity(identity)
+            .and_then(|()| IndexedReader::load_identity(&mut reader, &limits, identity));
+        match loaded {
+            Ok(loaded) => Ok(Self {
+                backend: IndexedReader::from_loaded(reader, limits, loaded),
+            }),
+            Err(error) => Err(crate::explain_open_failure(&mut reader, error)),
+        }
     }
 
     fn backend(&self) -> &IndexedReader<R> {
@@ -46,10 +54,20 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend().format_metadata()
     }
 
-    /// Opens a `v7.5-pre` primary file lazily: one tail read brings the footer, metadata block and
-    /// root page; child pages come from [`Self::read_page`]. `format_metadata()` then holds only
-    /// the root page's nodes.
+    /// Opens a V8 primary file lazily: a header read, then one tail read that brings the footer,
+    /// metadata block and root page; child pages come from [`Self::read_page`].
+    /// `format_metadata()` then holds only the root page's nodes.
     pub fn open_lazy(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
+        // The paged core reads only the tail, never the header: check it here so a header that
+        // names another version is refused like it is by `with_limits`.
+        let length = reader.seek(SeekFrom::End(0)).map_err(FormatError::Io)?;
+        if length < crate::layout::HEADER_SIZE {
+            return Err(FormatError::FileTooShort);
+        }
+        let identity = probe_format(&mut reader)
+            .map_err(|error| crate::explain_open_failure(&mut reader, error))?;
+        validate_identity(identity)
+            .map_err(|error| crate::explain_open_failure(&mut reader, error))?;
         let core = crate::paged_index::open_core(&mut reader, limits)?;
         Ok(Self {
             backend: IndexedReader::from_paged_core(reader, core, false)?,
@@ -229,52 +247,6 @@ impl<R: Read + Seek> FormatReader<R> {
 }
 
 impl FormatReader<Cursor<Vec<u8>>> {
-    /// Validate split header/footer and return the exact index byte range for transport.
-    pub fn split_index_range(
-        file_length: u64,
-        header: &[u8],
-        footer: &[u8],
-        limits: FormatReaderLimits,
-    ) -> Result<(u64, u64), FormatError> {
-        use crate::layout::{FOOTER_SIZE, HEADER_SIZE};
-        let header: &[u8; HEADER_SIZE as usize] =
-            header.try_into().map_err(|_| FormatError::InvalidHeader)?;
-        let identity = crate::version::parse_identity(header)?;
-        validate_identity(identity)?;
-        if identity.role != crate::FileRole::SplitPrimary {
-            return Err(FormatError::InvalidHeader);
-        }
-        let layout = crate::layout::StorageLayout::from_version(identity.version)?;
-        let footer: &[u8; FOOTER_SIZE as usize] =
-            footer.try_into().map_err(|_| FormatError::InvalidFooter)?;
-        let (offset, length, declared, _) =
-            crate::index_codec::parse_split_footer(footer, layout.footer_magic())?;
-        crate::index_codec::validate_index_range(file_length, offset, length, declared, limits)?;
-        Ok((offset, length))
-    }
-
-    /// Builds a metadata-only split reader for async range transports. Its empty cursor is a
-    /// marker backend. Use `materialize_selected_from_buffers`; synchronous payload reads return
-    /// `ExternalPayloadBuffersRequired`.
-    pub fn from_split_buffers(
-        file_length: u64,
-        header: &[u8],
-        footer: &[u8],
-        index: &[u8],
-        limits: FormatReaderLimits,
-    ) -> Result<Self, FormatError> {
-        Ok(Self {
-            backend: IndexedReader::from_open_parts(
-                Cursor::new(Vec::new()),
-                file_length,
-                header,
-                footer,
-                index,
-                limits,
-            )?,
-        })
-    }
-
     /// Bind a previously fetched companion's identity without retaining an attribute cursor.
     pub fn attach_attribute_identity(
         &mut self,
@@ -371,54 +343,18 @@ impl FormatReader<std::io::Cursor<Vec<u8>>> {
 mod tests {
     use std::io::Cursor;
 
-    use viewer_core::{
-        BlockId, ColorRgb, CoordinateFrame, DatasetMetadata, NodeId, SpatialBounds,
-        SpatialHierarchy, SpatialNode,
-    };
+    use viewer_core::BlockId;
 
     use super::*;
-    use crate::{FormatWriter, FormatWriterOptions, SourcePointBlock};
+    use crate::test_support::{COLORS, V8_BLOCK, v8_pair};
 
-    fn metadata() -> FormatMetadata {
-        let id = BlockId::new(1);
-        let bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
-        let node = SpatialNode::new(NodeId::new(0), None, 0, bounds, 1, 0.0, vec![id]).unwrap();
-        let hierarchy = SpatialHierarchy::new(vec![node], Vec::new(), Some(1)).unwrap();
-        FormatMetadata::new(
-            DatasetMetadata::new(CoordinateFrame::new([0.0; 3]).unwrap(), hierarchy),
-            None,
-            None,
-            Vec::new(),
-        )
-        .unwrap()
-    }
-
-    fn block(color: ColorRgb) -> SourcePointBlock {
-        SourcePointBlock::new(
-            BlockId::new(1),
-            vec![[0.25, 0.5, 0.75]],
-            vec![color],
-            Vec::new(),
-        )
-    }
-
-    fn options() -> FormatWriterOptions {
-        FormatWriterOptions::new(0.001, 1024).unwrap()
-    }
-
-    fn v5_bytes() -> Vec<u8> {
-        let mut writer = FormatWriter::new(Cursor::new(Vec::new()), metadata(), options()).unwrap();
-        writer
-            .write_block(block(ColorRgb::new(10, 20, 30)))
-            .unwrap();
-        writer.finish().unwrap().into_inner()
-    }
+    const ID: BlockId = V8_BLOCK;
 
     #[test]
-    fn facade_autodetects_v5_and_forks_the_validated_backend() {
-        let bytes = v5_bytes();
-        let mut reader = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
-        assert_eq!(reader.format_version(), FormatVersion::V5);
+    fn facade_opens_v8_and_forks_the_validated_backend() {
+        let (primary, _) = v8_pair();
+        let mut reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+        assert_eq!(reader.format_version(), FormatVersion::V8);
         assert_eq!(
             reader
                 .format_metadata()
@@ -428,51 +364,61 @@ mod tests {
                 .node_count,
             1
         );
-        assert_eq!(reader.read_positions(BlockId::new(1)).unwrap().len(), 1);
+        assert_eq!(reader.read_positions(ID).unwrap().len(), 4);
 
-        let mut fork = reader.fork_reader(Cursor::new(bytes));
-        assert_eq!(fork.read_positions(BlockId::new(1)).unwrap().len(), 1);
+        let mut fork = reader.fork_reader(Cursor::new(primary));
+        assert!(reader.shares_index_with(&fork));
+        assert_eq!(fork.read_positions(ID).unwrap().len(), 4);
     }
 
     #[test]
-    fn rejects_v6_before_looking_for_a_payload_or_index() {
-        let header = FormatIdentity {
-            version: FormatVersion::V6,
-            role: crate::FileRole::Monolithic,
-        }
-        .to_header_bytes()
-        .unwrap();
+    fn open_lazy_rejects_a_header_that_names_another_version() {
+        let (primary, _) = v8_pair();
+        let mut bytes = primary.clone();
+        bytes[8..10].copy_from_slice(&6_u16.to_le_bytes());
+        bytes[16..20].copy_from_slice(&5_u32.to_le_bytes());
+        let crc = crate::crc32(&bytes[..20]);
+        bytes[20..24].copy_from_slice(&crc.to_le_bytes());
+        assert!(matches!(
+            FormatReader::open_lazy(Cursor::new(bytes), FormatReaderLimits::default()),
+            Err(FormatError::UnsupportedFormatVersion(version))
+                if version.major() == 6 && version.revision() == 5
+        ));
+        // A retired family is still named with the reconvert hint.
+        let mut bytes = primary;
+        bytes[8..10].copy_from_slice(&7_u16.to_le_bytes());
+        bytes[16..20].copy_from_slice(&0_u32.to_le_bytes());
+        let crc = crate::crc32(&bytes[..20]);
+        bytes[20..24].copy_from_slice(&crc.to_le_bytes());
+        assert!(matches!(
+            FormatReader::open_lazy(Cursor::new(bytes), FormatReaderLimits::default()),
+            Err(FormatError::RetiredFormat("v7"))
+        ));
+    }
+
+    #[test]
+    fn rejects_an_unknown_revision_before_looking_for_a_payload_or_index() {
+        let (primary, _) = v8_pair();
+        let mut header = primary[..24].to_vec();
+        header[16..20].copy_from_slice(&99_u32.to_le_bytes());
+        let crc = crate::crc32(&header[..20]);
+        header[20..24].copy_from_slice(&crc.to_le_bytes());
         assert!(matches!(
             FormatReader::new(Cursor::new(header)),
-            Err(FormatError::UnsupportedFormatVersion(FormatVersion::V6))
+            Err(FormatError::UnsupportedFormatVersion(version))
+                if version.major() == 8 && version.revision() == 99
         ));
     }
 
     #[test]
     fn fork_can_attach_the_matching_split_sidecar_independently() {
-        let mut writer = FormatWriter::new_split(
-            Cursor::new(Vec::new()),
-            Cursor::new(Vec::new()),
-            metadata(),
-            options(),
-        )
-        .unwrap();
-        writer
-            .write_block(block(ColorRgb::new(10, 20, 30)))
-            .unwrap();
-        let (primary, attributes) = writer.finish_pair().unwrap();
-        let primary = primary.into_inner();
-        let attributes = attributes.unwrap().into_inner();
-
+        let (primary, attributes) = v8_pair();
         let reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
         let mut fork = reader.fork_reader(Cursor::new(primary));
         assert!(!reader.has_attributes());
         fork.attach_attributes(Cursor::new(attributes)).unwrap();
         assert!(fork.has_attributes());
         assert!(!reader.has_attributes());
-        assert_eq!(
-            fork.read_display_colors(BlockId::new(1)).unwrap(),
-            vec![ColorRgb::new(10, 20, 30)]
-        );
+        assert_eq!(fork.read_display_colors(ID).unwrap(), COLORS.to_vec());
     }
 }

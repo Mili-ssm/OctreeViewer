@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
+# RENDER_DATA_DIR (default target/render-data; use an absolute path from elsewhere) holds belvedere-v8.oct and majadas-v8.oct.
 # R3 Task 17 (B6) measurement matrix: CPU path (cells=0) vs cells path (cells=1), both with the build
-# worker, on Belvedere and Majadas v7.5, local file and RED-REF HTTP Range. Run from the repository
+# worker, on Belvedere and Majadas (V8), local file and RED-REF HTTP Range. Run from the repository
 # root with pkg/ built and Chrome with WebGPU. Outputs go to target/r3-b6/ (JSON per run, one log).
 #   timing   : R0 harness, 10 s orbit during load and after the target (RQ-01, RQ-05, GTT, GPU time)
 #   pixels   : same with orbit screenshots and stats samples (RQ-02 empty pixels; perturbs RQ-01 on purpose)
 #   rest     : no orbit during load; time to "reached" at the fitted pose
 set -u
 OUT=${OUT:-target/r3-b6}
-DATA=target/render-data
+DATA=${RENDER_DATA_DIR:-target/render-data}
 mkdir -p "$OUT"
 PORT=8767
 # Only processes started here are stopped: the probe's browser (Playwright, its own temporary profile)
@@ -44,14 +45,14 @@ for kind in ${KINDS:-timing pixels rest}; do
   [ "$kind" = rest ] && extra=(--rest-first)
   for ds in majadas belvedere; do
     for a in cpu cells; do
-      run "$kind-$ds-$a-4px-local" 400 "$DATA/$ds-v7.oct" --px=4 --cells="$(arm $a)" --max-load-s=120 --pixels=final "${extra[@]}"
+      run "$kind-$ds-$a-4px-local" 400 "$DATA/$ds-v8.oct" --px=4 --cells="$(arm $a)" --max-load-s=120 --pixels=final "${extra[@]}"
     done
   done
   if [ "$kind" != pixels ]; then
     for a in cpu cells; do
-      run "$kind-majadas-$a-4px-remote" 500 "$DATA/majadas-v7.oct" --px=4 --cells="$(arm $a)" --max-load-s=180 --remote --pixels=final "${extra[@]}"
+      run "$kind-majadas-$a-4px-remote" 500 "$DATA/majadas-v8.oct" --px=4 --cells="$(arm $a)" --max-load-s=180 --remote --pixels=final "${extra[@]}"
     done
-    run "$kind-majadas-cells-1px-local" 500 "$DATA/majadas-v7.oct" --px=1 --cells=1 --max-load-s=240 --pixels=final "${extra[@]}"
+    run "$kind-majadas-cells-1px-local" 500 "$DATA/majadas-v8.oct" --px=1 --cells=1 --max-load-s=240 --pixels=final "${extra[@]}"
   fi
 done
 echo "== done $(date +%T)"

@@ -1,18 +1,26 @@
-//! Hybrid row order (ADR 0041/0042): the Morton path must keep every row tuple intact.
+//! Hybrid row order (ADR 0041/0042): the Morton path must keep every row tuple intact. `v8` fixes
+//! the order, so the source-order side of the retired comparisons is checked through the codec
+//! candidates the writer reports.
 
 use std::io::Cursor;
 
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
-    CoordinateFrame, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
+    CoordinateFrame, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode,
 };
 
-use super::{FormatWriterOptions, RowOrder, prepare_point_block_for_version};
+use super::{FormatWriterOptions, RowOrder, prepare_point_block_for_version_impl};
 use crate::geometry::GeometryEncoding;
-use crate::{FormatMetadata, FormatReader, FormatVersion, FormatWriter, SourcePointBlock};
+use crate::test_support::{prefix_of, v8_crs};
+use crate::{
+    DisplayColourSource, FormatMetadata, FormatReader, FormatVersion, FormatWriter, GlobalFrame,
+    NodeCell, PointDistanceQuantiles, SourcePointBlock,
+};
 
-const VERSION: FormatVersion = FormatVersion::V7_PRE2;
-const BLOCK: BlockId = BlockId::new(5);
+const VERSION: FormatVersion = FormatVersion::V8;
+const BLOCK: BlockId = BlockId::new(0);
+/// Cells of this level are 256 CRS units wide, so the 100-unit cloud below fits the root.
+const LEVEL: u32 = 41;
 
 fn schema() -> Vec<AttributeDescriptor> {
     vec![
@@ -23,16 +31,36 @@ fn schema() -> Vec<AttributeDescriptor> {
 }
 
 fn metadata(count: u64) -> FormatMetadata {
-    let bounds = SpatialBounds::new([0.0; 3], [101.0; 3]).unwrap();
+    let prefix = [prefix_of(0.5, LEVEL); 3];
+    let origin = prefix.map(|p| crate::cell_origin_quanta(LEVEL, p));
+    let frame = GlobalFrame::new(
+        LEVEL,
+        prefix,
+        origin,
+        origin,
+        v8_crs(),
+        None,
+        vec![(NodeId::new(0), NodeCell::new(prefix, 2.0_f64.powi(-5)))],
+    )
+    .unwrap();
+    let bounds = frame.node_bounds(0, prefix).unwrap();
     let root = SpatialNode::new(NodeId::new(0), None, 0, bounds, count, 0.0, vec![BLOCK]).unwrap();
     let hierarchy = SpatialHierarchy::new(vec![root], schema(), Some(count)).unwrap();
     FormatMetadata::new(
-        DatasetMetadata::new(CoordinateFrame::new([0.0; 3]).unwrap(), hierarchy),
+        DatasetMetadata::new(
+            CoordinateFrame::new(frame.frame_origin()).unwrap(),
+            hierarchy,
+        ),
         None,
-        None,
+        Some("sample-grid:256;leaf:64000".to_owned()),
         Vec::new(),
     )
     .unwrap()
+    .with_global_frame(frame)
+    .unwrap()
+    .with_point_distance_quantiles(PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap())
+    .with_lod_attribute_columns(Vec::new())
+    .with_display_colour_source(DisplayColourSource::None)
 }
 
 /// Clustered noisy points in source (blob-interleaved) order, with every 7th point repeated at the
@@ -80,24 +108,18 @@ fn dense_block() -> (SourcePointBlock, usize) {
     (SourcePointBlock::new(BLOCK, rows, colors, columns), count)
 }
 
-fn options(order: RowOrder) -> FormatWriterOptions {
-    FormatWriterOptions::new(0.001, 16 << 20)
-        .unwrap()
-        .with_row_order(order)
+fn options() -> FormatWriterOptions {
+    FormatWriterOptions::new(0.001, 16 << 20).unwrap()
 }
 
-fn write(order: RowOrder) -> (Vec<u8>, Vec<u8>) {
-    write_version(VERSION, order)
-}
-
-fn write_version(version: FormatVersion, order: RowOrder) -> (Vec<u8>, Vec<u8>) {
+fn write() -> (Vec<u8>, Vec<u8>) {
     let (block, count) = dense_block();
     let mut writer = FormatWriter::new_split_for_version(
-        version,
+        VERSION,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata(count as u64),
-        options(order),
+        options(),
     )
     .unwrap();
     writer.write_block(block).unwrap();
@@ -107,6 +129,7 @@ fn write_version(version: FormatVersion, order: RowOrder) -> (Vec<u8>, Vec<u8>) 
 
 type Tuple = ([u32; 3], [u8; 3], u32, [u8; 2], u32);
 
+/// The row tuples of the file as `(position bits, colour, id, pair, float bits)`, sorted.
 fn tuples(primary: Vec<u8>, attributes: Vec<u8>) -> Vec<Tuple> {
     let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
     reader.attach_attributes(Cursor::new(attributes)).unwrap();
@@ -137,35 +160,99 @@ fn tuples(primary: Vec<u8>, attributes: Vec<u8>) -> Vec<Tuple> {
     out
 }
 
-fn encoding(order: RowOrder) -> GeometryEncoding {
-    let (block, _) = dense_block();
-    prepare_point_block_for_version(VERSION, block, &metadata(5000), options(order))
-        .unwrap()
-        .geometry_encoding
+fn prepare_with_diagnostics() -> (crate::PreparedPointBlock, crate::GeometryCodecDiagnostics) {
+    let (block, count) = dense_block();
+    let (prepared, diagnostics) = prepare_point_block_for_version_impl(
+        VERSION,
+        block,
+        &metadata(count as u64),
+        options(),
+        false,
+        true,
+    )
+    .unwrap();
+    (prepared, diagnostics.expect("diagnostics were requested"))
+}
+
+fn candidate(
+    diagnostics: &crate::GeometryCodecDiagnostics,
+    kind: crate::GeometryCandidateKind,
+) -> &crate::GeometryCandidateDiagnostics {
+    diagnostics
+        .candidates
+        .iter()
+        .find(|c| c.kind == kind)
+        .unwrap_or_else(|| panic!("{kind:?} candidate reported"))
 }
 
 #[test]
 fn hybrid_takes_the_morton_path_and_keeps_every_row_tuple() {
-    // The fixture must make CompactOccupied win in source order, and hybrid must replace it.
-    assert_eq!(
-        encoding(RowOrder::Source),
-        GeometryEncoding::CompactOccupied
+    // The fixture must make CompactOccupied win in source order (it beats plain delta), and the
+    // sorted Morton delta must replace it by being strictly smaller.
+    let (prepared, diagnostics) = prepare_with_diagnostics();
+    let compact = candidate(
+        &diagnostics,
+        crate::GeometryCandidateKind::CompactOccupancy { residual_bits: 24 },
     );
-    assert_eq!(encoding(RowOrder::Hybrid), GeometryEncoding::DeltaVarint);
+    let delta = candidate(&diagnostics, crate::GeometryCandidateKind::Delta);
+    let morton = candidate(&diagnostics, crate::GeometryCandidateKind::DeltaMorton);
+    assert!(compact.compressed_bytes < delta.compressed_bytes);
+    assert!(morton.compressed_bytes < compact.compressed_bytes);
+    assert_eq!(prepared.geometry_encoding, GeometryEncoding::DeltaVarint);
 
-    let count = dense_block().1;
-    let (source_primary, source_attributes) = write(RowOrder::Source);
-    let (hybrid_primary, hybrid_attributes) = write(RowOrder::Hybrid);
-    assert!(hybrid_primary.len() < source_primary.len());
-    let expected = tuples(source_primary, source_attributes);
-    assert_eq!(expected.len(), count);
-    assert_eq!(tuples(hybrid_primary, hybrid_attributes), expected);
+    // Every source row survives the permutation with its colour and attributes; the id is unique
+    // per row, so it names the source row whose position the decoded one must match.
+    let (block, count) = dense_block();
+    let (primary, attributes) = write();
+    let actual = tuples(primary, attributes);
+    assert_eq!(actual.len(), count);
+    let (AttributeValues::U32(ids), AttributeValues::U8(pairs), AttributeValues::F32(floats)) = (
+        block.attributes()[0].values().clone(),
+        block.attributes()[1].values().clone(),
+        block.attributes()[2].values().clone(),
+    ) else {
+        panic!("unexpected attribute types");
+    };
+    let mut expected_ids: Vec<u32> = ids.clone();
+    expected_ids.sort_unstable();
+    let mut seen_ids: Vec<u32> = actual.iter().map(|row| row.2).collect();
+    seen_ids.sort_unstable();
+    assert_eq!(seen_ids, expected_ids);
+    let row_of: std::collections::HashMap<u32, usize> =
+        ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+    assert_eq!(row_of.len(), count, "ids identify rows");
+    for (position, color, id, pair, float) in &actual {
+        let i = row_of[id];
+        let source = block.positions_local()[i];
+        for axis in 0..3 {
+            let decoded = f64::from(f32::from_bits(position[axis]));
+            assert!(
+                (decoded - source[axis]).abs() < 0.001,
+                "row {i} axis {axis}"
+            );
+        }
+        let expected_color = block.colors()[i];
+        assert_eq!(
+            *color,
+            [expected_color.r, expected_color.g, expected_color.b]
+        );
+        assert_eq!(*pair, [pairs[2 * i], pairs[2 * i + 1]]);
+        assert_eq!(*float, floats[i].to_bits());
+    }
 }
 
 #[test]
 fn hybrid_output_is_deterministic_with_duplicate_morton_keys() {
     // The fixture repeats positions, so the sort sees equal Morton keys.
-    assert_eq!(write(RowOrder::Hybrid), write(RowOrder::Hybrid));
+    assert_eq!(write(), write());
+}
+
+#[test]
+fn diagnostics_report_delta_morton_when_it_wins() {
+    let (prepared, diagnostics) = prepare_with_diagnostics();
+    assert_eq!(prepared.geometry_encoding, GeometryEncoding::DeltaVarint);
+    let morton = candidate(&diagnostics, crate::GeometryCandidateKind::DeltaMorton);
+    assert_eq!((morton.attempts, morton.selected_winners), (1, 1));
 }
 
 #[test]
@@ -177,34 +264,6 @@ fn morton_key_covers_all_96_bits_and_ties_break_by_source_row() {
     assert_eq!(super::morton_key([0, 0, 1 << 31]), 1u128 << 93);
     let coordinates = [[9, 9, 9], [0, 0, 0], [9, 9, 9], [0, 0, 1 << 31]];
     assert_eq!(super::morton_permutation(&coordinates), vec![1, 0, 2, 3]);
-}
-
-#[test]
-fn hybrid_is_ignored_outside_v7_layouts() {
-    // V6 pre4 supports compact occupancy, so only the layout check keeps it source ordered.
-    assert_eq!(
-        write_version(FormatVersion::V6_PRE4, RowOrder::Source),
-        write_version(FormatVersion::V6_PRE4, RowOrder::Hybrid)
-    );
-}
-
-#[test]
-fn diagnostics_report_delta_morton_when_it_wins() {
-    let (block, _) = dense_block();
-    let (prepared, diagnostics) = super::prepare_point_block_for_version_with_diagnostics(
-        VERSION,
-        block,
-        &metadata(5000),
-        options(RowOrder::Hybrid),
-    )
-    .unwrap();
-    assert_eq!(prepared.geometry_encoding, GeometryEncoding::DeltaVarint);
-    let morton = diagnostics
-        .candidates
-        .iter()
-        .find(|c| c.kind == crate::GeometryCandidateKind::DeltaMorton)
-        .expect("DeltaMorton candidate reported");
-    assert_eq!((morton.attempts, morton.selected_winners), (1, 1));
 }
 
 #[test]
@@ -284,64 +343,28 @@ fn morton_permutation_equals_sorting_by_key_then_row() {
 }
 
 #[test]
-fn v7_resolves_hybrid_row_order_by_default() {
+fn v8_resolves_hybrid_row_order_and_rejects_source_order() {
     let unset = FormatWriterOptions::new(0.001, 16 << 20).unwrap();
-    assert_eq!(
-        unset.resolved_row_order(FormatVersion::V7).unwrap(),
-        RowOrder::Hybrid
-    );
-    assert_eq!(
-        unset.resolved_row_order(FormatVersion::V7_PRE5).unwrap(),
-        RowOrder::Source
-    );
-    assert_eq!(FormatVersion::V7.fixed_row_order(), Some(RowOrder::Hybrid));
-    assert_eq!(FormatVersion::V7_PRE5.fixed_row_order(), None);
-}
-
-#[test]
-fn v8_pre1_fixes_hybrid_row_order_like_v7() {
-    let unset = FormatWriterOptions::new(0.001, 16 << 20).unwrap();
-    assert_eq!(
-        unset.resolved_row_order(FormatVersion::V8_PRE1).unwrap(),
-        RowOrder::Hybrid
-    );
-    assert!(
-        options(RowOrder::Hybrid)
-            .resolved_row_order(FormatVersion::V8_PRE1)
-            .is_ok()
-    );
-    let (block, _) = dense_block();
-    let result = prepare_point_block_for_version(
-        FormatVersion::V8_PRE1,
-        block,
-        &metadata(5000),
-        options(RowOrder::Source),
-    );
-    assert!(matches!(
-        result,
-        Err(crate::FormatError::RowOrderFixedByFormat(
-            FormatVersion::V8_PRE1
-        ))
-    ));
-}
-
-#[test]
-fn v7_rejects_explicit_source_order() {
-    let (block, _) = dense_block();
-    let result = prepare_point_block_for_version(
-        FormatVersion::V7,
-        block,
-        &metadata(5000),
-        options(RowOrder::Source),
-    );
-    assert!(matches!(
-        result,
-        Err(crate::FormatError::RowOrderFixedByFormat(FormatVersion::V7))
-    ));
+    assert_eq!(unset.resolved_row_order(VERSION).unwrap(), RowOrder::Hybrid);
+    assert_eq!(VERSION.fixed_row_order(), Some(RowOrder::Hybrid));
     // Explicit hybrid is what the format fixes anyway.
     assert!(
-        options(RowOrder::Hybrid)
-            .resolved_row_order(FormatVersion::V7)
+        unset
+            .with_row_order(RowOrder::Hybrid)
+            .resolved_row_order(VERSION)
             .is_ok()
     );
+    let (block, count) = dense_block();
+    let result = prepare_point_block_for_version_impl(
+        VERSION,
+        block,
+        &metadata(count as u64),
+        unset.with_row_order(RowOrder::Source),
+        false,
+        false,
+    );
+    assert!(matches!(
+        result,
+        Err(crate::FormatError::RowOrderFixedByFormat(FormatVersion::V8))
+    ));
 }

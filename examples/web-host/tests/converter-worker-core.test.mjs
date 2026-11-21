@@ -11,7 +11,7 @@ const source = spoolTiers + "\n" + (await readFile(new URL("../converter-worker.
 
 async function run({
     fail = null, zones = 2, quota = null, opfs = true, userAgent = "Chrome", persist = undefined,
-    estimate = {}, options = { pointsPerBlock: 4096 },
+    estimate = {}, options = { maxError: 0.5 },
 } = {}) {
     const messages = [], handles = [], removed = [], events = [], seen = {};
     let receive;
@@ -92,8 +92,8 @@ test("core engine sizes its zones from the estimate and announces every file bef
     const names = [...output, ...zoneNames(3)];
     assert.deepEqual([...messages.find((message) => message.type === "partial-files").names], names);
     assert.equal(seen.zoneCount, 3);
-    assert.equal(seen.options.pointsPerBlock, 4096);
-    assert.equal(seen.estimateOptions.pointsPerBlock, 4096);
+    assert.equal(seen.options.maxError, 0.5);
+    assert.equal(seen.estimateOptions.maxError, 0.5);
     const announced = events.indexOf("post:partial-files");
     assert.ok(announced >= 0);
     assert.deepEqual(events.filter((event) => event.startsWith("create:")), names.map((name) => `create:${name}`));

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -16,13 +18,11 @@ SPEC.loader.exec_module(profile_conversion)
 
 
 class ProfileConversionTests(unittest.TestCase):
-    def test_format_version_argument_accepts_each_supported_revision(self) -> None:
-        for version in profile_conversion.FORMAT_VERSIONS:
-            with self.subTest(version=version):
-                args = profile_conversion.parse_args(
-                    ["input.laz", "run-dir", "--format-version", version]
-                )
-                self.assertEqual(args.format_version, version)
+    def test_fixed_v8_parameters_are_not_options(self) -> None:
+        for flag in ("--format-version", "--points-per-block", "--divisions"):
+            with self.subTest(flag=flag), self.assertRaises(SystemExit), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                profile_conversion.parse_args(["input.laz", "run-dir", flag, "2"])
 
     def test_internal_phase_samples_require_complete_non_overlapping_windows(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -219,7 +219,7 @@ class ProfileConversionTests(unittest.TestCase):
             marker.write_text("preserved")
 
             with self.assertRaises(FileExistsError):
-                profile_conversion.profile(input_path, run_dir, Path("unused"), 1, 2, 10)
+                profile_conversion.profile(input_path, run_dir, Path("unused"), 1, 10)
 
             self.assertEqual(marker.read_text(), "preserved")
 
@@ -251,7 +251,7 @@ class ProfileConversionTests(unittest.TestCase):
             for requested_exit in (0, 7):
                 run_dir = root / f"run-{requested_exit}"
                 result = profile_conversion.profile(
-                    input_path, run_dir, fake, 1, 2, 10
+                    input_path, run_dir, fake, 1, 10
                 )
                 report = json.loads((run_dir / "report.json").read_text())
 
@@ -282,7 +282,7 @@ class ProfileConversionTests(unittest.TestCase):
             fake.chmod(0o755)
             for case in ("missing", "empty"):
                 run_dir = root / case
-                result = profile_conversion.profile(input_path, run_dir, fake, 1, 2, 10)
+                result = profile_conversion.profile(input_path, run_dir, fake, 1, 10)
                 report = json.loads((run_dir / "report.json").read_text())
                 self.assertEqual(result, 1)
                 self.assertEqual(report["exit_code"], 0)
@@ -305,7 +305,7 @@ class ProfileConversionTests(unittest.TestCase):
             )
             fake.chmod(0o755)
             run_dir = root / "run"
-            self.assertEqual(profile_conversion.profile(input_path, run_dir, fake, 1, 2, 10), 1)
+            self.assertEqual(profile_conversion.profile(input_path, run_dir, fake, 1, 10), 1)
             report = json.loads((run_dir / "report.json").read_text())
             self.assertEqual(report["exit_code"], 0)
             self.assertEqual(report["status"], "incomplete")

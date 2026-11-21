@@ -1,0 +1,175 @@
+
+running 1 test
+test lod_dataset::cells_stream_tests::twin_wanted_range_vs_node_range ... ######## P1: eye [50.000, 100.931, 25.896] target [50.000, 50.000, 3.221] lattice 6 px, depth ratio 1.1, lod_near_depth 0.0708 (scaled)
+== P1
+node  nd buildable eye samples excl_near excl_cross | twin [min,max] | range [lo,hi] | lo-twin_min twin_max-hi | candidate [lo_c,hi_c] twin_min-lo_c hi_c-twin_max
+   5   2  5..22        1959         0          0 | Some((7, 8)) | Some((7, 8)) wmax Some(8) |   0   0 | Some((7, 8))   0   0
+      twin min first reached at view depth 98.329 screen px [6, 168]; twin max at view depth 90.061 screen px [6, 186]
+   6   2  5..22        2794         0          0 | Some((7, 8)) | Some((7, 8)) wmax Some(8) |   0   0 | Some((7, 8))   0   0
+      twin min first reached at view depth 98.329 screen px [210, 168]; twin max at view depth 87.606 screen px [180, 192]
+   7   2  5..22        1813         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 77.097 screen px [6, 222]; twin max at view depth 77.097 screen px [6, 222]
+   8   2  5..22        6789         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 77.097 screen px [144, 222]; twin max at view depth 77.097 screen px [144, 222]
+   9   2  5..22        2816         0          0 | Some((7, 8)) | Some((7, 8)) wmax Some(8) |   0   0 | Some((7, 8))   0   0
+      twin min first reached at view depth 98.329 screen px [438, 168]; twin max at view depth 87.606 screen px [438, 192]
+  10   2  5..22        2004         0          0 | Some((7, 8)) | Some((7, 8)) wmax Some(8) |   0   0 | Some((7, 8))   0   0
+      twin min first reached at view depth 98.361 screen px [666, 168]; twin max at view depth 90.061 screen px [834, 186]
+  11   2  5..22        6823         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 77.097 screen px [438, 222]; twin max at view depth 77.097 screen px [438, 222]
+  12   2  5..22        1895         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 77.097 screen px [732, 222]; twin max at view depth 77.097 screen px [732, 222]
+  13   2  5..22         176         0          0 | Some((8, 8)) | Some((8, 9)) wmax Some(9) |   0  -1 | Some((8, 9))   0   1
+      twin min first reached at view depth 53.843 screen px [6, 330]; twin max at view depth 53.843 screen px [6, 330]
+  14   2  5..22       18099         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 9))   0   0
+      twin min first reached at view depth 53.843 screen px [18, 330]; twin max at view depth 44.213 screen px [6, 408]
+  15   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 9))   -   -
+  16   2  5..22        6840         0          0 | Some((9, 9)) | Some((9, 10)) wmax Some(10) |   0  -1 | Some((9, 10))   0   1
+      twin min first reached at view depth 31.295 screen px [6, 588]; twin max at view depth 31.295 screen px [6, 588]
+  17   2  5..22       18341         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 9))   0   0
+      twin min first reached at view depth 53.843 screen px [438, 330]; twin max at view depth 44.213 screen px [438, 408]
+  18   2  5..22         202         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 53.843 screen px [858, 330]; twin max at view depth 53.843 screen px [858, 330]
+  19   2  5..22        6935         0          0 | Some((9, 9)) | Some((9, 9)) wmax Some(9) |   0   0 | Some((9, 10))   0   1
+      twin min first reached at view depth 31.295 screen px [438, 588]; twin max at view depth 31.295 screen px [438, 588]
+  20   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 9))   -   -
+-- P1 / all nodes: 14 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 0
+   lo - twin_min {0: 14} | twin_max - hi {-1: 2, 0: 12}
+   candidate: contains the twin range in 14/14; hi_c - twin_max in 0..=1 in 14/14
+   twin_min - lo_c {0: 14} | hi_c - twin_max {0: 6, 1: 8}
+   pages (upper-bound estimate, nodes with a candidate): twin span 1408; today's range (union with the twin span) 1552; candidate (union) 1984; extra of the candidate slack 576
+-- P1 / nodes holding the eye: 0 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 0
+   lo - twin_min {} | twin_max - hi {}
+   candidate: contains the twin range in 0/0; hi_c - twin_max in 0..=1 in 0/0
+   twin_min - lo_c {} | hi_c - twin_max {}
+   pages (upper-bound estimate, nodes with a candidate): twin span 0; today's range (union with the twin span) 0; candidate (union) 0; extra of the candidate slack 0
+######## P2: eye [50.000, 59.183, 3.992] target [50.000, 50.000, 3.221] lattice 6 px, depth ratio 1.1, lod_near_depth 0.0708 (scaled)
+== P2
+node  nd buildable eye samples excl_near excl_cross | twin [min,max] | range [lo,hi] | lo-twin_min twin_max-hi | candidate [lo_c,hi_c] twin_min-lo_c hi_c-twin_max
+   5   2  5..22         371         0          0 | Some((8, 8)) | Some((8, 9)) wmax Some(9) |   0  -1 | Some((8, 9))   0   1
+      twin min first reached at view depth 51.963 screen px [0, 258]; twin max at view depth 51.963 screen px [0, 258]
+   6   2  5..22       12046         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 9))   0   0
+      twin min first reached at view depth 45.100 screen px [0, 252]; twin max at view depth 33.828 screen px [0, 234]
+   7   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 10))   -   -
+   8   2  5..22       71423         0          0 | Some((9, 11)) | Some((9, 11)) wmax Some(11) |   0   0 | Some((9, 11))   0   0
+      twin min first reached at view depth 23.363 screen px [0, 204]; twin max at view depth 8.886 screen px [0, 54]
+   9   2  5..22       12050         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 9))   0   0
+      twin min first reached at view depth 45.100 screen px [438, 252]; twin max at view depth 33.828 screen px [438, 234]
+  10   2  5..22         359         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 53.715 screen px [858, 258]; twin max at view depth 53.715 screen px [858, 258]
+  11   2  5..22       69984         0          0 | Some((9, 11)) | Some((9, 11)) wmax Some(11) |   0   0 | Some((9, 11))   0   0
+      twin min first reached at view depth 23.431 screen px [438, 204]; twin max at view depth 8.886 screen px [444, 54]
+  12   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 10))   -   -
+  14   2  5..22 EYE  647384   1269324          0 | Some((11, 18)) | Some((11, 11)) wmax Some(13) |   0   7 | Some((11, 18))   0   0
+      twin min first reached at view depth 5.757 screen px [0, 0]; twin max at view depth 0.072 screen px [0, 0]
+  17   2  5..22      324146         0          0 | Some((11, 17)) | Some((11, 11)) wmax Some(17) |   0   6 | Some((11, 18))   0   1
+      twin min first reached at view depth 6.532 screen px [444, 0]; twin max at view depth 0.173 screen px [774, 0]
+-- P2 / all nodes: 8 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 2
+   lo - twin_min {0: 8} | twin_max - hi {-1: 1, 0: 5, 6: 1, 7: 1}
+   candidate: contains the twin range in 8/8; hi_c - twin_max in 0..=1 in 8/8
+   twin_min - lo_c {0: 8} | hi_c - twin_max {0: 5, 1: 3}
+   pages (upper-bound estimate, nodes with a candidate): twin span 1944; today's range (union with the twin span) 2016; candidate (union) 2160; extra of the candidate slack 216
+-- P2 / nodes holding the eye: 1 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 1
+   lo - twin_min {0: 1} | twin_max - hi {7: 1}
+   candidate: contains the twin range in 1/1; hi_c - twin_max in 0..=1 in 1/1
+   twin_min - lo_c {0: 1} | hi_c - twin_max {0: 1}
+   pages (upper-bound estimate, nodes with a candidate): twin span 576; today's range (union with the twin span) 576; candidate (union) 576; extra of the candidate slack 0
+######## P3: eye [50.000, 52.766, 3.453] target [50.000, 50.000, 3.221] lattice 6 px, depth ratio 1.1, lod_near_depth 0.0708 (scaled)
+== P3
+node  nd buildable eye samples excl_near excl_cross | twin [min,max] | range [lo,hi] | lo-twin_min twin_max-hi | candidate [lo_c,hi_c] twin_min-lo_c hi_c-twin_max
+   5   2  5..22          48         0          0 | Some((8, 8)) | Some((8, 9)) wmax Some(9) |   0  -1 | Some((8, 9))   0   1
+      twin min first reached at view depth 51.963 screen px [0, 252]; twin max at view depth 51.963 screen px [0, 252]
+   6   2  5..22       16279         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 10))   0   1
+      twin min first reached at view depth 46.034 screen px [0, 240]; twin max at view depth 27.397 screen px [0, 204]
+   7   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 10))   -   -
+   8   2  5..22      188500         0          0 | Some((9, 13)) | Some((9, 13)) wmax Some(13) |   0   0 | Some((9, 13))   0   0
+      twin min first reached at view depth 22.819 screen px [0, 180]; twin max at view depth 2.799 screen px [456, 0]
+   9   2  5..22       16279         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 10))   0   1
+      twin min first reached at view depth 46.034 screen px [438, 240]; twin max at view depth 27.397 screen px [438, 204]
+  10   2  5..22          36         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 52.354 screen px [869, 252]; twin max at view depth 52.354 screen px [869, 252]
+  11   2  5..22      179903         0          0 | Some((9, 13)) | Some((9, 13)) wmax Some(13) |   0   0 | Some((9, 13))   0   0
+      twin min first reached at view depth 22.819 screen px [438, 180]; twin max at view depth 2.799 screen px [456, 0]
+  12   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 10))   -   -
+  14   2  5..22 EYE  529033   1269324          0 | Some((12, 18)) | Some((12, 12)) wmax Some(14) |   0   6 | Some((12, 18))   0   0
+      twin min first reached at view depth 2.779 screen px [0, 642]; twin max at view depth 0.072 screen px [0, 0]
+  17   2  5..22      210996         0          0 | Some((12, 17)) | Some((12, 12)) wmax Some(17) |   0   5 | Some((12, 18))   0   1
+      twin min first reached at view depth 2.779 screen px [462, 642]; twin max at view depth 0.173 screen px [774, 0]
+-- P3 / all nodes: 8 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 2
+   lo - twin_min {0: 8} | twin_max - hi {-1: 1, 0: 5, 5: 1, 6: 1}
+   candidate: contains the twin range in 8/8; hi_c - twin_max in 0..=1 in 8/8
+   twin_min - lo_c {0: 8} | hi_c - twin_max {0: 3, 1: 5}
+   pages (upper-bound estimate, nodes with a candidate): twin span 2088; today's range (union with the twin span) 2160; candidate (union) 2448; extra of the candidate slack 360
+-- P3 / nodes holding the eye: 1 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 1
+   lo - twin_min {0: 1} | twin_max - hi {6: 1}
+   candidate: contains the twin range in 1/1; hi_c - twin_max in 0..=1 in 1/1
+   twin_min - lo_c {0: 1} | hi_c - twin_max {0: 1}
+   pages (upper-bound estimate, nodes with a candidate): twin span 504; today's range (union with the twin span) 504; candidate (union) 504; extra of the candidate slack 0
+######## P4: eye [50.000, 60.640, 9.665] target [50.000, 50.000, 3.221] lattice 6 px, depth ratio 1.1, lod_near_depth 0.0708 (scaled)
+== P4
+node  nd buildable eye samples excl_near excl_cross | twin [min,max] | range [lo,hi] | lo-twin_min twin_max-hi | candidate [lo_c,hi_c] twin_min-lo_c hi_c-twin_max
+   5   2  5..22          42         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 51.963 screen px [0, 0]; twin max at view depth 51.963 screen px [0, 0]
+   6   2  5..22        5978         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 9))   0   0
+      twin min first reached at view depth 51.963 screen px [0, 0]; twin max at view depth 36.608 screen px [0, 0]
+   7   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 10))   -   -
+   8   2  5..22       53281         0          0 | Some((9, 11)) | Some((9, 11)) wmax Some(11) |   0   0 | Some((9, 11))   0   0
+      twin min first reached at view depth 28.826 screen px [0, 0]; twin max at view depth 11.176 screen px [0, 132]
+   9   2  5..22        5977         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 9))   0   0
+      twin min first reached at view depth 56.677 screen px [438, 0]; twin max at view depth 36.608 screen px [438, 0]
+  10   2  5..22          33         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 56.677 screen px [840, 0]; twin max at view depth 56.677 screen px [840, 0]
+  11   2  5..22       52368         0          0 | Some((9, 11)) | Some((9, 11)) wmax Some(11) |   0   0 | Some((9, 11))   0   0
+      twin min first reached at view depth 23.823 screen px [438, 0]; twin max at view depth 11.176 screen px [798, 132]
+  12   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 10))   -   -
+  13   2  5..22           0         0          0 | None | Some((5, 5)) wmax Some(5) |   -   - | None   -   -
+  14   2  5..22 EYE   71380         0          0 | Some((10, 12)) | Some((10, 11)) wmax Some(11) |   0   1 | Some((10, 13))   0   1
+      twin min first reached at view depth 11.135 screen px [0, 210]; twin max at view depth 5.527 screen px [0, 444]
+  17   2  5..22       68894         0          0 | Some((10, 12)) | Some((10, 12)) wmax Some(12) |   0   0 | Some((10, 13))   0   1
+      twin min first reached at view depth 11.135 screen px [444, 210]; twin max at view depth 5.527 screen px [450, 444]
+  18   2  5..22           0         0          0 | None | Some((5, 5)) wmax Some(5) |   -   - | None   -   -
+-- P4 / all nodes: 8 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 1
+   lo - twin_min {0: 8} | twin_max - hi {0: 7, 1: 1}
+   candidate: contains the twin range in 8/8; hi_c - twin_max in 0..=1 in 8/8
+   twin_min - lo_c {0: 8} | hi_c - twin_max {0: 4, 1: 4}
+   pages (upper-bound estimate, nodes with a candidate): twin span 1296; today's range (union with the twin span) 1296; candidate (union) 1584; extra of the candidate slack 288
+-- P4 / nodes holding the eye: 1 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 1
+   lo - twin_min {0: 1} | twin_max - hi {1: 1}
+   candidate: contains the twin range in 1/1; hi_c - twin_max in 0..=1 in 1/1
+   twin_min - lo_c {0: 1} | hi_c - twin_max {1: 1}
+   pages (upper-bound estimate, nodes with a candidate): twin span 216; today's range (union with the twin span) 216; candidate (union) 288; extra of the candidate slack 72
+######## P5: eye [50.000, 53.734, 3.534] target [50.000, 50.000, 3.221] lattice 6 px, depth ratio 1.1, lod_near_depth 0.0708 (scaled)
+== P5
+node  nd buildable eye samples excl_near excl_cross | twin [min,max] | range [lo,hi] | lo-twin_min twin_max-hi | candidate [lo_c,hi_c] twin_min-lo_c hi_c-twin_max
+   5   2  5..22         100         0          0 | Some((8, 8)) | Some((8, 9)) wmax Some(9) |   0  -1 | Some((8, 9))   0   1
+      twin min first reached at view depth 51.963 screen px [0, 252]; twin max at view depth 51.963 screen px [0, 252]
+   6   2  5..22       15695         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 10))   0   1
+      twin min first reached at view depth 44.782 screen px [0, 240]; twin max at view depth 28.368 screen px [0, 210]
+   7   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 10))   -   -
+   8   2  5..22      158060         0          0 | Some((9, 12)) | Some((9, 12)) wmax Some(12) |   0   0 | Some((9, 13))   0   1
+      twin min first reached at view depth 23.377 screen px [0, 186]; twin max at view depth 3.558 screen px [0, 0]
+   9   2  5..22       15695         0          0 | Some((8, 9)) | Some((8, 9)) wmax Some(9) |   0   0 | Some((8, 10))   0   1
+      twin min first reached at view depth 44.782 screen px [438, 240]; twin max at view depth 28.368 screen px [438, 210]
+  10   2  5..22          82         0          0 | Some((8, 8)) | Some((8, 8)) wmax Some(8) |   0   0 | Some((8, 9))   0   1
+      twin min first reached at view depth 52.964 screen px [864, 252]; twin max at view depth 52.964 screen px [864, 252]
+  11   2  5..22      152178         0          0 | Some((9, 12)) | Some((9, 12)) wmax Some(12) |   0   0 | Some((9, 13))   0   1
+      twin min first reached at view depth 23.377 screen px [438, 186]; twin max at view depth 3.919 screen px [450, 0]
+  12   2  5..22           0         0          0 | None | Some((9, 9)) wmax Some(9) |   -   - | Some((9, 10))   -   -
+  14   2  5..22 EYE  560696   1269324          0 | Some((12, 18)) | Some((12, 12)) wmax Some(14) |   0   6 | Some((12, 18))   0   0
+      twin min first reached at view depth 2.954 screen px [0, 0]; twin max at view depth 0.072 screen px [0, 0]
+  17   2  5..22      239522         0          0 | Some((12, 17)) | Some((12, 12)) wmax Some(17) |   0   5 | Some((12, 18))   0   1
+      twin min first reached at view depth 3.079 screen px [456, 0]; twin max at view depth 0.173 screen px [774, 0]
+-- P5 / all nodes: 8 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 2
+   lo - twin_min {0: 8} | twin_max - hi {-1: 1, 0: 5, 5: 1, 6: 1}
+   candidate: contains the twin range in 8/8; hi_c - twin_max in 0..=1 in 8/8
+   twin_min - lo_c {0: 8} | hi_c - twin_max {0: 1, 1: 7}
+   pages (upper-bound estimate, nodes with a candidate): twin span 1944; today's range (union with the twin span) 2016; candidate (union) 2448; extra of the candidate slack 504
+-- P5 / nodes holding the eye: 1 nodes with samples and a range; lo > twin_min: 0; hi < twin_max: 1
+   lo - twin_min {0: 1} | twin_max - hi {6: 1}
+   candidate: contains the twin range in 1/1; hi_c - twin_max in 0..=1 in 1/1
+   twin_min - lo_c {0: 1} | hi_c - twin_max {0: 1}
+   pages (upper-bound estimate, nodes with a candidate): twin span 504; today's range (union with the twin span) 504; candidate (union) 504; extra of the candidate slack 0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 201 filtered out; finished in 17.65s
+

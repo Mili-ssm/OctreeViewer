@@ -7,7 +7,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0001](0001-pareja-separada-oct-octattrs.md) | La salida es una pareja separada `.oct` / `.octattrs` | Aceptada |
 | [0002](0002-v5-predeterminado-en-transicion.md) | V5 sigue siendo la salida predeterminada durante la transición a V7 | Sustituida por 0044 |
 | [0003](0003-v6-final-y-pre5-rechazados.md) | V6 final y pre5 permanecen rechazados | Aceptada |
-| [0004](0004-retirar-v5-v6-tras-v7.md) | Retirar V5/V6 al completar V7 | Aceptada (promoción ejecutada por 0044; retirada precisada por 0047) |
+| [0004](0004-retirar-v5-v6-tras-v7.md) | Retirar V5/V6 al completar V7 | Cumplida por 0058 y el plan de congelado de la V8 (21-11-2026) |
 | [0005](0005-identidades-exactas-v7n-pre-por-candidato.md) | Cada candidato de writer V7 tiene identidad exacta `v7.N-pre` | Aceptada (revisar) |
 | [0006](0006-politica-de-version-solo-en-viewer-format.md) | La política de versiones vive solo en `viewer_format` | Aceptada |
 | [0007](0007-limites-por-defecto-del-lector.md) | El lector aplica límites por defecto configurables | Aceptada |
@@ -47,10 +47,10 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0041](0041-orden-de-filas-libre-por-bloque.md) | Orden de filas libre por bloque en V7 y escritor híbrido (precisa 0022) | Aceptada |
 | [0042](0042-escritor-hibrido-en-la-identidad-final-de-v7.md) | El escritor híbrido entra en la identidad final de V7, sin revisión `-pre` propia (enmienda a 0005) | Aceptada |
 | [0043](0043-coste-de-conversion-de-v7-frente-a-v5.md) | El coste de conversión de V7 final se acota a ≤ 2,1× el tiempo y ≤ +40 % el RSS de V5 (revisa RQ-07) | Aceptada |
-| [0044](0044-v7-final-congelada-y-predeterminada.md) | V7 final se congela sobre v7.5-pre con el escritor híbrido y pasa a ser la salida predeterminada (sustituye a 0002) | Aceptada |
+| [0044](0044-v7-final-congelada-y-predeterminada.md) | V7 final se congela sobre v7.5-pre con el escritor híbrido y pasa a ser la salida predeterminada (sustituye a 0002) | Sustituida por 0058 (D4, 21-11-2026) |
 | [0045](0045-demo-experimental-publica-antes-de-la-1-0.md) | La demo web se publica como demo experimental antes de la 1.0 (acota CON-05) | Aceptada |
 | [0046](0046-la-poda-de-niveles-no-limita-el-render.md) | La poda de la cadena de niveles es de almacenamiento; el render deriva el nivel que pide la vista (precisa 0031 y 0032) | Aceptada (decisión y revisión sustituidas por 0048) |
-| [0047](0047-v5-heredado-hasta-v8.md) | V5 queda como formato heredado de comparación hasta que empiece V8; la demo usa la última versión estable (precisa 0004) | Aceptada |
+| [0047](0047-v5-heredado-hasta-v8.md) | V5 queda como formato heredado de comparación hasta que empiece V8; la demo usa la última versión estable (precisa 0004) | Cumplida por 0058 y el plan de congelado de la V8 (21-11-2026) |
 | [0048](0048-el-render-dibuja-el-nivel-pedido.md) | El render dibuja siempre el nivel que pide la vista y lo construye a demanda si no está guardado (sustituye la decisión de 0046) | Aceptada |
 | [0049](0049-tamano-minimo-del-voxel.md) | El tamaño mínimo del cubo se elige en px, en longitud o por el espaciado de la nube (precisa RF-05 y RQ-09) | Aceptada (revisada el 16-11-2026: filtros combinables) |
 | [0050](0050-nivel-por-celda-segun-distancia.md) | El nivel de detalle sigue la distancia de cada celda, no la de su octante, y las transiciones son graduales (sustituye la regla por octante de 0034) | Aceptada |
@@ -61,7 +61,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0055](0055-la-gpu-decide-el-nivel-la-cpu-la-residencia.md) | En modo celda la GPU decide el nivel dibujado y la CPU solo la residencia: conjunto activo contiguo (precisa ADR 0050 y 0053; cambia la lectura de RF-31 y R3-Q21) | Aceptada |
 | [0056](0056-se-retira-el-modo-octante.md) | Se retira el modo octante: el modo celda es el único y el predeterminado; se borra `setCellLod` (sustituye a 0034; precisa 0050 y 0055) | Aceptada |
 | [0057](0057-release-optimiza-velocidad.md) | `release` optimiza velocidad con `opt-level = 3` (sustituye a 0008 en ese punto) | Aceptada |
-| [0058](0058-formato-v8-experimental.md) | Se abre V8 como revisiones previas experimentales (`v8.N-pre`); LOD solo con lo que se dibuja, color no duplicado, solo V8 al final (precisa 0047) | Aceptada |
+| [0058](0058-formato-v8-experimental.md) | Se abre V8 como revisiones previas experimentales (`v8.N-pre`); LOD solo con lo que se dibuja, color no duplicado, solo V8 al final (precisa 0047) | Aceptada; D4 ejecutada el 21-11-2026 |
 | [0059](0059-minimo-por-defecto-desde-p5.md) | El mínimo en longitud por defecto de la demo es el p5 del fichero cuando lo trae; si no, 0,1 mm (sustituye en parte a 0054) | Aceptada |
 | [0060](0060-v8-solo-lz4.md) | La V8 comprime solo con LZ4: sin zstd en `.octattrs` tras medir v8.2-pre (cierra D3 de 0058) | Aceptada |
 | [0061](0061-ept-y-checkpoints-se-retiran-con-la-v8.md) | La entrada EPT y los checkpoints se retiran al congelar la V8 y se aplazan; RF-26 no aplica hasta entonces (precisa 0047) | Aceptada |

@@ -1,0 +1,44 @@
+InspectingInput
+PlanningMetadata
+PlanningSpatialIndex
+  55600/81682329 points (0 MiB written; 0%)
+  8174271/81682329 points (0 MiB written; 10%)
+  16366271/81682329 points (0 MiB written; 20%)
+  24558271/81682329 points (0 MiB written; 30%)
+  32686271/81682329 points (0 MiB written; 40%)
+  40878271/81682329 points (0 MiB written; 50%)
+  49070271/81682329 points (0 MiB written; 60%)
+  57198271/81682329 points (0 MiB written; 70%)
+  65390271/81682329 points (0 MiB written; 80%)
+  73518271/81682329 points (0 MiB written; 90%)
+  81682329/81682329 points (0 MiB written; 100%)
+BuildingSpatialHierarchy
+ReadingAndWritingBlocks
+  0/81682329 points (0 MiB written; 0%)
+  8172172/81682329 points (52 MiB written; 10%)
+  16366396/81682329 points (104 MiB written; 20%)
+  24511762/81682329 points (156 MiB written; 30%)
+  32674702/81682329 points (206 MiB written; 40%)
+  40856382/81682329 points (255 MiB written; 50%)
+  49053697/81682329 points (305 MiB written; 60%)
+  57236900/81682329 points (355 MiB written; 70%)
+  65363553/81682329 points (406 MiB written; 80%)
+  73519583/81682329 points (457 MiB written; 90%)
+  81682329/81682329 points (505 MiB written; 100%)
+ValidatingOutput
+  0/81682329 points (1354 MiB written; 0%)
+  8180740/81682329 points (1354 MiB written; 10%)
+  16371954/81682329 points (1354 MiB written; 20%)
+  24546845/81682329 points (1354 MiB written; 30%)
+  32726968/81682329 points (1354 MiB written; 40%)
+  40871350/81682329 points (1354 MiB written; 50%)
+  49021846/81682329 points (1354 MiB written; 60%)
+  57221597/81682329 points (1354 MiB written; 70%)
+  65408083/81682329 points (1354 MiB written; 80%)
+  73520508/81682329 points (1354 MiB written; 90%)
+  81682329/81682329 points (1354 MiB written; 100%)
+PublishingOutput
+Complete
+Converted 81682329 points in 3941 blocks (1420602171 bytes; estimated controlled memory 130 MiB) to target/v1-gate/belvedere.v7.oct + target/v1-gate/belvedere.v7.octattrs
+Not preserved: scan direction and flight-line edge flags, scanner channel
+convert v7 wall=52.33s maxrss=106324KB

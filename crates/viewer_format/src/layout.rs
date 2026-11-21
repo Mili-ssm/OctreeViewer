@@ -3,7 +3,6 @@ use viewer_core::AttributeDataType;
 
 use crate::{BlockCodec, DisplayColourSource, FormatError};
 
-pub const FORMAT_VERSION: u16 = 5;
 /// Common header envelope, identified by the final byte of OCTVFRM1.
 pub const HEADER_ENVELOPE_VERSION: u16 = 1;
 
@@ -15,173 +14,37 @@ pub(crate) const HEADER_SIZE: u64 = SPLIT_HEADER_BYTES;
 pub(crate) const FOOTER_SIZE: u64 = SPLIT_FOOTER_BYTES;
 pub const HEADER_MAGIC: &[u8; 8] = b"OCTVFRM1";
 pub(crate) const PROVISIONAL_HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
-pub(crate) const INDEX_MAGIC: &[u8; 8] = b"OCTVIDX5";
-pub(crate) const FOOTER_MAGIC: &[u8; 8] = b"OCTVEND5";
 
-/// Only exact implemented identities select a payload layout.
+/// Only the exact implemented identity selects a payload layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StorageLayout {
-    V5,
-    V6Pre1,
-    V6Pre2,
-    V6Pre3,
-    V6Pre4,
-    V7Pre1,
-    V7Pre2,
-    V7Pre3,
-    V7Pre4,
-    V7Pre5,
-    /// Final v7: the v7.5-pre byte layout under its own identity.
-    V7,
-    /// Experimental v8.1-pre: the v7 byte layout plus the v8 header fields and per-block column rules.
-    V8Pre1,
-    /// Experimental v8.2-pre: v8.1-pre plus the zstd entropy stage for `.octattrs` payloads.
-    V8Pre2,
+    V8,
 }
 
+#[allow(
+    clippy::unused_self,
+    reason = "methods keep call sites naming the layout they read, should a second one return"
+)]
 impl StorageLayout {
     pub(crate) fn from_version(version: crate::FormatVersion) -> Result<Self, FormatError> {
         match version {
-            crate::FormatVersion::V5 => Ok(Self::V5),
-            crate::FormatVersion::V6Pre(revision) if revision.get() == 1 => Ok(Self::V6Pre1),
-            crate::FormatVersion::V6Pre(revision) if revision.get() == 2 => Ok(Self::V6Pre2),
-            crate::FormatVersion::V6Pre(revision) if revision.get() == 3 => Ok(Self::V6Pre3),
-            crate::FormatVersion::V6Pre(revision) if revision.get() == 4 => Ok(Self::V6Pre4),
-            crate::FormatVersion::V7Pre(revision) if revision.get() == 1 => Ok(Self::V7Pre1),
-            crate::FormatVersion::V7Pre(revision) if revision.get() == 2 => Ok(Self::V7Pre2),
-            crate::FormatVersion::V7Pre(revision) if revision.get() == 3 => Ok(Self::V7Pre3),
-            crate::FormatVersion::V7Pre(revision) if revision.get() == 4 => Ok(Self::V7Pre4),
-            crate::FormatVersion::V7Pre(revision) if revision.get() == 5 => Ok(Self::V7Pre5),
-            crate::FormatVersion::V7 => Ok(Self::V7),
-            crate::FormatVersion::V8Pre(revision) if revision.get() == 1 => Ok(Self::V8Pre1),
-            crate::FormatVersion::V8Pre(revision) if revision.get() == 2 => Ok(Self::V8Pre2),
-            _ => Err(FormatError::UnsupportedFormatVersion(version)),
+            crate::FormatVersion::V8 => Ok(Self::V8),
+            crate::FormatVersion::Unknown { .. } => {
+                Err(FormatError::UnsupportedFormatVersion(version))
+            }
         }
     }
 
     pub(crate) const fn version(self) -> crate::FormatVersion {
-        match self {
-            Self::V5 => crate::FormatVersion::V5,
-            Self::V6Pre1 => crate::FormatVersion::V6_PRE1,
-            Self::V6Pre2 => crate::FormatVersion::V6_PRE2,
-            Self::V6Pre3 => crate::FormatVersion::V6_PRE3,
-            Self::V6Pre4 => crate::FormatVersion::V6_PRE4,
-            Self::V7Pre1 => crate::FormatVersion::V7_PRE1,
-            Self::V7Pre2 => crate::FormatVersion::V7_PRE2,
-            Self::V7Pre3 => crate::FormatVersion::V7_PRE3,
-            Self::V7Pre4 => crate::FormatVersion::V7_PRE4,
-            Self::V7Pre5 => crate::FormatVersion::V7_PRE5,
-            Self::V7 => crate::FormatVersion::V7,
-            Self::V8Pre1 => crate::FormatVersion::V8_PRE1,
-            Self::V8Pre2 => crate::FormatVersion::V8_PRE2,
-        }
+        crate::FormatVersion::V8
     }
 
     pub(crate) const fn index_magic(self) -> &'static [u8; 8] {
-        match self {
-            Self::V5 => INDEX_MAGIC,
-            Self::V6Pre1 => b"OCTVI61P",
-            Self::V6Pre2 => b"OCTVI62P",
-            Self::V6Pre3 => b"OCTVI63P",
-            Self::V6Pre4 => b"OCTVI64P",
-            Self::V7Pre1 => b"OCTVI71P",
-            Self::V7Pre2 => b"OCTVI72P",
-            Self::V7Pre3 => b"OCTVI73P",
-            Self::V7Pre4 => b"OCTVI74P",
-            Self::V7Pre5 => b"OCTVI75P",
-            Self::V7 => b"OCTVIDX7",
-            Self::V8Pre1 => b"OCTVI81P",
-            Self::V8Pre2 => b"OCTVI82P",
-        }
+        b"OCTVIDX8"
     }
 
     pub(crate) const fn footer_magic(self) -> &'static [u8; 8] {
-        match self {
-            Self::V5 => FOOTER_MAGIC,
-            Self::V6Pre1 => b"OCTVE61P",
-            Self::V6Pre2 => b"OCTVE62P",
-            Self::V6Pre3 => b"OCTVE63P",
-            Self::V6Pre4 => b"OCTVE64P",
-            Self::V7Pre1 => b"OCTVE71P",
-            Self::V7Pre2 => b"OCTVE72P",
-            Self::V7Pre3 => b"OCTVE73P",
-            Self::V7Pre4 => b"OCTVE74P",
-            Self::V7Pre5 => b"OCTVE75P",
-            Self::V7 => b"OCTVEND7",
-            Self::V8Pre1 => b"OCTVE81P",
-            Self::V8Pre2 => b"OCTVE82P",
-        }
-    }
-
-    /// Only the v7 pre-releases up to v7.3 can be resumed block by block.
-    pub(crate) const fn supports_block_checkpoint(self) -> bool {
-        matches!(self, Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3)
-    }
-
-    /// Global `i64` integer frame, node prefixes, CRS record and `u32` offsets (v7.4-pre onward).
-    pub(crate) const fn uses_global_frame(self) -> bool {
-        matches!(
-            self,
-            Self::V7Pre4 | Self::V7Pre5 | Self::V7 | Self::V8Pre1 | Self::V8Pre2
-        )
-    }
-
-    /// Paged hierarchy: the index is a metadata block plus a root page, and the rest of the
-    /// node table lives in child pages (v7.5-pre and v7).
-    pub(crate) const fn uses_pages(self) -> bool {
-        matches!(self, Self::V7Pre5 | Self::V7 | Self::V8Pre1 | Self::V8Pre2)
-    }
-
-    /// Writer policy: occupancy blocks are always compact 24-bit candidates.
-    pub(crate) const fn restricts_occupancy_to_compact24(self) -> bool {
-        matches!(
-            self,
-            Self::V7Pre2
-                | Self::V7Pre3
-                | Self::V7Pre4
-                | Self::V7Pre5
-                | Self::V7
-                | Self::V8Pre1
-                | Self::V8Pre2
-        )
-    }
-
-    /// Writer policy: attribute payloads use the v7.3 dictionary-tuple encoder.
-    pub(crate) const fn restricts_dictionary_tuples(self) -> bool {
-        matches!(
-            self,
-            Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7 | Self::V8Pre1 | Self::V8Pre2
-        )
-    }
-
-    /// Whether the writer may re-sort a block's rows by Morton key (the hybrid row order).
-    pub(crate) const fn supports_hybrid_rows(self) -> bool {
-        matches!(
-            self,
-            Self::V7Pre1
-                | Self::V7Pre2
-                | Self::V7Pre3
-                | Self::V7Pre4
-                | Self::V7Pre5
-                | Self::V7
-                | Self::V8Pre1
-                | Self::V8Pre2
-        )
-    }
-
-    /// The display colour is derived from stored data instead of being stored twice.
-    pub(crate) const fn derives_display_attribute(self) -> bool {
-        matches!(self, Self::V8Pre1 | Self::V8Pre2)
-    }
-
-    /// Interior LOD nodes omit the attribute columns the viewer does not draw.
-    pub(crate) const fn omits_lod_attributes(self) -> bool {
-        matches!(self, Self::V8Pre1 | Self::V8Pre2)
-    }
-
-    /// Nodes store nearest-neighbour distance quantiles.
-    pub(crate) const fn stores_distance_quantiles(self) -> bool {
-        matches!(self, Self::V8Pre1 | Self::V8Pre2)
+        b"OCTVEND8"
     }
 
     /// The one rule for which payload columns a block stores. `column` is the payload index
@@ -195,7 +58,7 @@ impl StorageLayout {
         rules: ColumnRules<'_>,
     ) -> StoredColumn {
         // Geometry (0) is always stored; schema column `s` is payload `s + 2`.
-        if self.derives_display_attribute() && !block_is_lod && column == 1 {
+        if !block_is_lod && column == 1 {
             return match rules.display {
                 DisplayColourSource::None => StoredColumn::Present,
                 DisplayColourSource::Rgb(schema) | DisplayColourSource::Intensity(schema) => {
@@ -205,82 +68,13 @@ impl StorageLayout {
                 }
             };
         }
-        if self.omits_lod_attributes()
-            && block_is_lod
+        if block_is_lod
             && column >= 2
             && !u32::try_from(column - 2).is_ok_and(|schema| rules.lod_columns.contains(&schema))
         {
             return StoredColumn::Absent;
         }
         StoredColumn::Present
-    }
-
-    /// Whether the zstd payload codec may be written (v8.2-pre onward, `.octattrs` payloads only: never geometry, index or checkpoint records).
-    pub(crate) const fn supports_zstd(self) -> bool {
-        matches!(self, Self::V8Pre2)
-    }
-
-    pub(crate) const fn supports_occupancy(self) -> bool {
-        matches!(
-            self,
-            Self::V6Pre2
-                | Self::V6Pre3
-                | Self::V6Pre4
-                | Self::V7Pre1
-                | Self::V7Pre2
-                | Self::V7Pre3
-                | Self::V7Pre4
-                | Self::V7Pre5
-                | Self::V7
-                | Self::V8Pre1
-                | Self::V8Pre2
-        )
-    }
-
-    pub(crate) const fn supports_compact_occupancy(self) -> bool {
-        matches!(
-            self,
-            Self::V6Pre4
-                | Self::V7Pre1
-                | Self::V7Pre2
-                | Self::V7Pre3
-                | Self::V7Pre4
-                | Self::V7Pre5
-                | Self::V7
-                | Self::V8Pre1
-                | Self::V8Pre2
-        )
-    }
-
-    pub(crate) const fn supports_dictionary(self) -> bool {
-        matches!(
-            self,
-            Self::V6Pre3
-                | Self::V6Pre4
-                | Self::V7Pre1
-                | Self::V7Pre2
-                | Self::V7Pre3
-                | Self::V7Pre4
-                | Self::V7Pre5
-                | Self::V7
-                | Self::V8Pre1
-                | Self::V8Pre2
-        )
-    }
-
-    pub(crate) const fn supports_byte_planes(self) -> bool {
-        matches!(
-            self,
-            Self::V6Pre4
-                | Self::V7Pre1
-                | Self::V7Pre2
-                | Self::V7Pre3
-                | Self::V7Pre4
-                | Self::V7Pre5
-                | Self::V7
-                | Self::V8Pre1
-                | Self::V8Pre2
-        )
     }
 }
 
@@ -396,28 +190,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stored_column_is_present_for_v7() {
-        for version in crate::FormatVersion::WRITABLE {
-            let layout = StorageLayout::from_version(version).unwrap();
-            if layout.omits_lod_attributes() {
-                continue;
-            }
-            for block_is_lod in [false, true] {
-                for column in 0..12 {
-                    assert_eq!(
-                        layout.stored_column(block_is_lod, column, ColumnRules::default()),
-                        StoredColumn::Present,
-                        "{version} lod={block_is_lod} column={column}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
     fn v8_lod_blocks_store_geometry_colour_and_the_lod_set() {
         use StoredColumn::{Absent, Present};
-        let layout = StorageLayout::V8Pre1;
+        let layout = StorageLayout::V8;
         let rules = ColumnRules {
             lod_columns: &[0, 2],
             display: DisplayColourSource::None,
@@ -438,7 +213,7 @@ mod tests {
 
     #[test]
     fn v8_leaves_derive_the_display_colour_from_its_source() {
-        let layout = StorageLayout::V8Pre1;
+        let layout = StorageLayout::V8;
         for (display, expected) in [
             (DisplayColourSource::None, StoredColumn::Present),
             (
@@ -455,12 +230,8 @@ mod tests {
                 display,
             };
             assert_eq!(layout.stored_column(false, 1, rules), expected);
-            // LOD blocks keep their own colour; other revisions never derive.
+            // LOD blocks keep their own colour.
             assert_eq!(layout.stored_column(true, 1, rules), StoredColumn::Present);
-            assert_eq!(
-                StorageLayout::V7.stored_column(false, 1, rules),
-                StoredColumn::Present
-            );
         }
     }
 

@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::io::{Read, Seek, Write};
 
 use viewer_core::{BlockId, DatasetSource};
-use viewer_format::{FormatReader, OctreeReader, OctreeWriter};
+use viewer_format::{FormatReader, OctreeWriter};
 
 use crate::blocks::{ConversionPlan, output_writer, prepare_planned_block, write_prepared};
 use crate::error::ConvertError;
@@ -55,7 +55,6 @@ where
     C: Clock,
     W: Write + Seek,
 {
-    let options = options.validate()?;
     emit_progress(
         on_progress,
         progress(ConversionStage::InspectingInput, 0, 0),
@@ -171,11 +170,7 @@ pub fn validate_output_serial<R: Read + Seek>(
 ) -> Result<ConversionWorkerStats, ConvertError> {
     let mut reader = FormatReader::new(geometry)?;
     reader.attach_attributes(attributes)?;
-    let (block_ids, source_block_ids) = if reader.format_version().uses_pages() {
-        written_block_ids(&reader)?
-    } else {
-        (plan.block_ids.clone(), plan.source_block_ids.clone())
-    };
+    let (block_ids, source_block_ids) = written_block_ids(&reader)?;
     let source_blocks = source_block_ids.iter().copied().collect::<HashSet<_>>();
     emit_progress(
         on_progress,

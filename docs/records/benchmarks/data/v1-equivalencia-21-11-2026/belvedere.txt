@@ -1,0 +1,5 @@
+v7: V7  v8.1-pre: V8Pre(1)
+schema (10 columns): intensity, classification, return_number, number_of_returns, scan_angle_degrees, user_data, point_source_id, gps_time, rgb, las_flags
+LOD set: intensity, classification
+summary: nodes=3941 blocks=3941 (leaf 3174, LOD 767) points=132822553 (leaf 81682329, LOD 51140224) columns_compared=41156 row_order=identical resorted_blocks=0 differences=0
+exit 0

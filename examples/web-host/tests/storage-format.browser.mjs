@@ -20,13 +20,14 @@ self.onmessage = async ({ data = {} }) => {
     let viewer;
     try {
         await init();
-        const bytes = await (data.coordinates ?? await fetch(new URL("../sample-v5.oct", import.meta.url)).then(r => r.blob())).arrayBuffer();
-        const attributes = data.attributes ?? await fetch(new URL("../sample-v5.octattrs", import.meta.url)).then(r => r.blob());
+        const bytes = await (data.coordinates ?? await fetch(new URL("../sample-small.oct", import.meta.url)).then(r => r.blob())).arrayBuffer();
+        const attributes = data.attributes ?? await fetch(new URL("../sample-small.octattrs", import.meta.url)).then(r => r.blob());
         const header = new DataView(bytes, 0, 24);
         const major = header.getUint16(8, true);
         const revision = header.getUint32(16, true);
         const formatVersion = `v${major}${revision ? `.${revision}-pre` : ""}`;
-        if (data.expectedVersion) assert(formatVersion === data.expectedVersion, "unexpected output version");
+        // The default fixture (`sample-small`) is V8; callers with another input pass their own version.
+        assert(formatVersion === (data.expectedVersion ?? "v8"), "unexpected output version");
         viewer = new WasmVoxelViewer(0.6);
         const geometry = viewer.openFormatDataset(new Blob([bytes]), 64 * 1024 * 1024, undefined);
         assert(!geometry.hasAttributes, "primary unexpectedly requires attributes");
@@ -44,15 +45,25 @@ self.onmessage = async ({ data = {} }) => {
         view.setUint16(8, 6, true);
         view.setUint32(16, 5, true);
         view.setUint32(20, crc32(prerelease.subarray(0, 20)), true);
+        // A retired family (v7 final) is named with its reconvert hint; a pair V8 never knew keeps
+        // its raw major/revision in the message.
+        const retired = new Uint8Array(bytes.slice(0));
+        new DataView(retired.buffer).setUint16(8, 7, true);
+        new DataView(retired.buffer).setUint32(16, 0, true);
+        new DataView(retired.buffer).setUint32(20, crc32(retired.subarray(0, 20)), true);
         const errors = [];
-        for (const [input, expected] of [[legacy, "provisional"], [prerelease, "v6.5-pre"]]) {
+        for (const [input, expected] of [
+            [legacy, "provisional"],
+            [prerelease, "unknown(6, 5)"],
+            [retired, "format v7, retired with V8: reconvert it"],
+        ]) {
             let error;
             try {
                 viewer.openFormatDataset(new Blob([input]), 64 * 1024 * 1024, attributes);
             } catch (caught) {
                 error = String(caught);
             }
-            assert(error?.includes(expected), `missing explicit rejection: ${expected}`);
+            assert(error?.includes(expected), `missing explicit rejection: ${expected} (got: ${error})`);
             errors.push(error);
 
         }

@@ -20,7 +20,12 @@ fn write_var(mut value: u32, bytes: &mut Vec<u8>) {
     bytes.push(value as u8);
 }
 
-/// `None` means this candidate cannot fit the configured raw payload budget or u32 indices.
+/// `None` means this candidate cannot fit the configured raw payload budget or u32 indices. Plain
+/// occupancy is no longer written; the tests keep the encoder as the reference for the decoder.
+#[allow(
+    dead_code,
+    reason = "only the tests and the occupancy bench write plain occupancy"
+)]
 pub(crate) fn encode(
     candidate: &QuantizedOccupancy,
     own_octant: bool,

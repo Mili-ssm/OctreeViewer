@@ -6,7 +6,7 @@ use viewer_core::{
 };
 use viewer_format::{
     CrsRecord, FormatMetadata, FormatReader, FormatReaderLimits, FormatVersion, FormatWriter,
-    FormatWriterOptions, GlobalFrame, NodeCell, OctreeReader, PagedReader, PointDistanceQuantiles,
+    FormatWriterOptions, GlobalFrame, NodeCell, PagedReader, PointDistanceQuantiles,
     SourcePointBlock,
 };
 use viewer_render_wgpu::PackedNode;
@@ -16,6 +16,18 @@ use viewer_render_wgpu::{
 };
 
 pub(super) const SIDE: f64 = 64.0;
+
+/// Directory of the real datasets the ignored tests read (`belvedere-v8.oct`, `majadas-v8.oct` and
+/// their `.octattrs`). It lives only in the main checkout, so a worktree sets `RENDER_DATA_DIR` to an
+/// absolute path (cargo runs tests from the crate directory, so a relative one would not resolve);
+/// without it, `target/render-data` of this checkout. Without the data the real-data tests print SKIP and
+/// pass, so a worktree run without `RENDER_DATA_DIR` does not exercise them.
+pub(super) fn render_data_dir() -> std::path::PathBuf {
+    std::env::var_os("RENDER_DATA_DIR").map_or_else(
+        || std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/render-data"),
+        std::path::PathBuf::from,
+    )
+}
 
 /// Root (1) over its eight octants (2..=9); node 2 also has eight children (10..=17).
 pub(super) fn octree_nodes() -> Vec<SpatialNode> {
@@ -1091,7 +1103,7 @@ fn a_node_without_finite_points_is_resident_but_never_drawn() {
 
 /// Metadata and blocks of a four-node tree (root, two children, a grandchild), one block per node.
 fn paged_tree_fixture() -> (FormatMetadata, Vec<SourcePointBlock>) {
-    // A paged v7.5 file with a root, two children and a grandchild, one page per node.
+    // A paged file with a root, two children and a grandchild, one page per node.
     let root_level = 40;
     let root_prefix = [(1_u64 << 39) + 3, (1 << 39) + 4, (1 << 39) + 5];
     let tree = [
@@ -1177,11 +1189,15 @@ fn paged_tree_fixture() -> (FormatMetadata, Vec<SourcePointBlock>) {
 #[test]
 fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
     let (metadata, blocks) = paged_tree_fixture();
+    let metadata = metadata
+        .with_point_distance_quantiles(PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap())
+        .with_lod_attribute_columns(Vec::new())
+        .with_display_colour_source(viewer_format::DisplayColourSource::None);
     let options = FormatWriterOptions::new(0.01, 1 << 24)
         .unwrap()
         .with_page_target_bytes(1);
     let mut writer = FormatWriter::new_split_for_version(
-        FormatVersion::V7_PRE5,
+        FormatVersion::V8,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
@@ -1214,13 +1230,12 @@ fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
     // Lazy open: only the root page is resident and its anchors are unloaded.
     let mut reader =
         FormatReader::open_lazy(Cursor::new(bytes), FormatReaderLimits::default()).unwrap();
-    assert!(reader.format_version().uses_global_frame());
     let source = reader.page_source().expect("paged").clone();
     let mut dataset = LodDataset::from_shared_metadata(
         reader.format_metadata().viewer_dataset().unwrap(),
         1 << 20,
     )
-    .with_global_frame(reader.format_version().uses_global_frame())
+    .with_global_frame(true)
     .with_pages(source.root_unloaded(), Box::new(|_| {}), 1 << 20)
     .unwrap();
     assert!(dataset.supports_cells());
@@ -1267,7 +1282,7 @@ fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
     assert_eq!(check(&dataset), has_children.len());
 }
 
-/// `cellsInfo().recommendedMinSize` comes from the file header: p5 of a v8.1-pre file's
+/// `cellsInfo().recommendedMinSize` comes from the file header: p5 of a V8 file's
 /// distance quantiles, `None` when they are all zero ("not measured"). The bindings build the
 /// dataset with the same `with_point_distance_quantiles` call.
 #[test]
@@ -1279,7 +1294,7 @@ fn the_dataset_takes_its_recommended_min_size_from_the_file_header() {
             .with_lod_attribute_columns(Vec::new())
             .with_display_colour_source(viewer_format::DisplayColourSource::None);
         let mut writer = FormatWriter::new_split_for_version(
-            FormatVersion::V8_PRE1,
+            FormatVersion::V8,
             Cursor::new(Vec::new()),
             Cursor::new(Vec::new()),
             metadata,
@@ -1307,13 +1322,13 @@ fn the_dataset_takes_its_recommended_min_size_from_the_file_header() {
     assert_eq!(open(unmeasured).recommended_min_size(), None);
 }
 
-/// Counts the blocks owned by more than one node in the v7.5 files of `target/render-data`
+/// Counts the blocks owned by more than one node in the V8 files of `RENDER_DATA_DIR`
 /// (`cargo test -p viewer_wasm --offline -- --ignored multi_owner --nocapture`).
 #[test]
-#[ignore = "needs the datasets of target/render-data"]
-fn multi_owner_blocks_in_the_v7_datasets() {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/render-data");
-    for name in ["majadas-v7.oct", "belvedere-v7.oct"] {
+#[ignore = "needs the datasets of RENDER_DATA_DIR (default target/render-data)"]
+fn multi_owner_blocks_in_the_v8_datasets() {
+    let dir = render_data_dir();
+    for name in ["majadas-v8.oct", "belvedere-v8.oct"] {
         let path = dir.join(name);
         let Ok(file) = std::fs::File::open(&path) else {
             eprintln!("SKIP {name}: {} is missing", path.display());

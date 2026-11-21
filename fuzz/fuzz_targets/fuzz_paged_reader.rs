@@ -8,7 +8,7 @@ use viewer_format::PagedReader;
 /// Pages visited per input: a hostile file can chain far more pages than any real one.
 const MAX_PAGES: usize = 256;
 
-/// Opens a `v7.5-pre` file from its tail and follows every child pointer, reading the stored
+/// Opens a V8 file from its tail and follows every child pointer, reading the stored
 /// bytes of every block. Errors are fine; panics and over-allocation are the findings.
 fn walk(bytes: &[u8]) {
     let Ok(mut reader) = PagedReader::open(Cursor::new(bytes)) else {

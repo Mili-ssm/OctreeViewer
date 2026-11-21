@@ -88,7 +88,6 @@ class StorageSuiteTests(unittest.TestCase):
                     "--read-binary", "missing-read", "--cache-state", "cold",
                 ]
             )
-            self.assertEqual(args.points_per_block, 262144)
             with self.assertRaisesRegex(ValueError, "convert binary"):
                 storage_suite.run_suite(args)
             self.assertFalse(run_dir.exists())
@@ -102,14 +101,13 @@ class StorageSuiteTests(unittest.TestCase):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             storage_suite.parse_args([*base, "--modes", "bogus"])
 
-    def test_points_per_block_is_bounded_by_converter_limit(self):
-        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
-            storage_suite.parse_args(
-                [
-                    "input.laz", "result.oct", "run", "--convert-binary", "convert",
-                    "--read-binary", "reader", "--cache-state", "cold", "--points-per-block", "1000001",
-                ]
-            )
+    def test_fixed_v8_parameters_are_not_options(self):
+        base = ["input.laz", "result.oct", "run", "--convert-binary", "c", "--read-binary", "r",
+                "--cache-state", "cold"]
+        for flag in ("--format-version", "--points-per-block", "--divisions"):
+            with self.subTest(flag=flag), self.assertRaises(SystemExit), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                storage_suite.parse_args([*base, flag, "2"])
 
     def test_preflight_rejects_non_executable_binary_before_creating_run_dir(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -170,7 +168,6 @@ class StorageSuiteTests(unittest.TestCase):
                     str(source), "result.oct", str(run_dir),
                     "--convert-binary", str(converter), "--read-binary", str(reader),
                     "--repetitions", "2", "--cache-state", "warm after conversion", "--profile", "release-perf",
-                    "--points-per-block", "10000", "--format-version", "v7.2-pre",
                 ]
             )
             self.assertEqual(storage_suite.run_suite(args), 1)
@@ -182,9 +179,8 @@ class StorageSuiteTests(unittest.TestCase):
             self.assertTrue((run_dir / "convert-002.stderr.log").exists())
             self.assertEqual(report["options"]["cache_state"], "warm after conversion")
             self.assertEqual(report["options"]["profile"], "release-perf")
-            self.assertEqual(report["options"]["points_per_block"], 10000)
-            self.assertEqual(report["options"]["format_version"], "v7.2-pre")
-            self.assertEqual(report["conversions"][0]["command"][-2:], ["10000", "v7.2-pre"])
+            self.assertEqual(report["options"]["format_version"], "v8")
+            self.assertEqual(report["conversions"][0]["command"][-1:], ["1"])
             self.assertEqual(report["input"]["bytes"], len(b"fixture"))
             self.assertGreater(report["conversions"][0]["artifacts"]["oct"]["bytes"], 0)
             self.assertEqual(len(report["conversions"][0]["artifacts"]["octattrs"]["sha256"]), 64)

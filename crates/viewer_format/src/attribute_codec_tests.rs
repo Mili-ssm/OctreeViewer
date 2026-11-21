@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fs::File, io::BufReader, time::Instant};
 
 fn encode_without_wide_dictionary(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
     if width <= 1 {
-        return encode_pre4(raw, width, EntropyCoder::Lz4);
+        return encode_pre4(raw, width);
     }
     if width == 0 || !raw.len().is_multiple_of(width) {
         return Err(malformed());
@@ -86,7 +86,7 @@ fn no_wide_dictionary_candidate_preserves_bytes_and_never_beats_exhaustive_encod
                     })
                 })
                 .collect();
-            let baseline = encode_pre4(&raw, width, EntropyCoder::Lz4).unwrap();
+            let baseline = encode_pre4(&raw, width).unwrap();
             let candidate = encode_without_wide_dictionary(&raw, width).unwrap();
             assert!(
                 candidate.bytes().len() >= baseline.bytes().len(),
@@ -130,7 +130,7 @@ struct AttributeEncoderProfile {
 impl AttributeEncoderProfile {
     fn observe(&mut self, raw: &[u8], width: usize, stored: crate::PayloadReadRange) {
         let reference = [
-            encode_pre4(raw, width, EntropyCoder::Lz4).unwrap(),
+            encode_pre4(raw, width).unwrap(),
             encode_without_wide_dictionary(raw, width).unwrap(),
         ];
         assert_eq!(reference[0].codec(), stored.codec());
@@ -166,7 +166,7 @@ impl AttributeEncoderProfile {
             for variant in order {
                 let started = Instant::now();
                 let encoded = if variant == 0 {
-                    encode_pre4(raw, width, EntropyCoder::Lz4)
+                    encode_pre4(raw, width)
                 } else {
                     encode_without_wide_dictionary(raw, width)
                 }
@@ -307,12 +307,12 @@ fn v73_dictionary_policy_matches_profiled_candidates_and_preserves_bits() {
                     })
                     .collect();
                 let expected = if matches!(width, 1 | 2 | 4) {
-                    encode_pre4(&raw, width, EntropyCoder::Lz4)
+                    encode_pre4(&raw, width)
                 } else {
                     encode_without_wide_dictionary(&raw, width)
                 }
                 .unwrap();
-                let actual = encode_v7_pre3(&raw, width, EntropyCoder::Lz4).unwrap();
+                let actual = encode_v7_pre3(&raw, width).unwrap();
                 assert_eq!(
                     actual.codec(),
                     expected.codec(),
@@ -337,7 +337,7 @@ fn v73_dictionary_policy_matches_profiled_candidates_and_preserves_bits() {
     let raw: Vec<_> = (0..4096)
         .flat_map(|i| bits[i % bits.len()].to_le_bytes())
         .collect();
-    let actual = encode_v7_pre3(&raw, 8, EntropyCoder::Lz4).unwrap();
+    let actual = encode_v7_pre3(&raw, 8).unwrap();
     assert_ne!(actual.codec(), BlockCodec::Dictionary);
     assert_eq!(
         decode(actual.codec(), actual.bytes(), raw.len(), 8, raw.len()).unwrap(),
@@ -455,7 +455,7 @@ fn integer_dictionary_matches_old_slice_encoder_byte_for_byte() {
     }
     for (width, raw) in cases {
         let expected = old_slice_encoder(&raw, width).unwrap();
-        let actual = encode(&raw, width, EntropyCoder::Lz4).unwrap();
+        let actual = encode(&raw, width).unwrap();
         assert_eq!(
             actual.codec(),
             expected.codec(),
@@ -495,7 +495,7 @@ fn integer_dictionary_full_encoder_benchmark() {
                     let encoded = if old {
                         old_slice_encoder(input, width)
                     } else {
-                        encode(input, width, EntropyCoder::Lz4)
+                        encode(input, width)
                     }
                     .unwrap();
                     black_box((encoded.codec(), encoded.bytes()));
@@ -556,7 +556,7 @@ fn byte_dictionary_encoding_matches_previous_payload_for_all_cardinalities() {
                 .map(|row| ((unique - 1 - row % unique) * 73 % 256) as u8)
                 .collect();
             let expected = previous_byte_dictionary(&raw);
-            let actual = encode(&raw, 1, EntropyCoder::Lz4).unwrap();
+            let actual = encode(&raw, 1).unwrap();
             assert_eq!(
                 actual.codec(),
                 expected.codec(),
@@ -658,7 +658,7 @@ fn byte_dictionary_matches_hashmap_palette_order_for_all_cardinalities() {
             assert_eq!(table, expected_table);
             assert_eq!(ids, expected_ids);
             assert!(table.capacity() <= 256);
-            let encoded = encode_pre4(&raw, 1, EntropyCoder::Lz4).unwrap();
+            let encoded = encode_pre4(&raw, 1).unwrap();
             assert_eq!(
                 decode(encoded.codec(), encoded.bytes(), raw.len(), 1, raw.len()).unwrap(),
                 raw
@@ -720,8 +720,8 @@ fn pre4_byte_planes_preserve_bits_and_never_exceed_pre3() {
                     })
                 })
                 .collect();
-            let old = encode(&raw, width, EntropyCoder::Lz4).unwrap();
-            let new = encode_pre4(&raw, width, EntropyCoder::Lz4).unwrap();
+            let old = encode(&raw, width).unwrap();
+            let new = encode_pre4(&raw, width).unwrap();
             assert!(new.bytes().len() <= old.bytes().len());
             assert_eq!(
                 decode(new.codec(), new.bytes(), raw.len(), width, raw.len()).unwrap(),
@@ -736,7 +736,7 @@ fn pre4_byte_planes_preserve_bits_and_never_exceed_pre3() {
             (0x7ff8_0000_0000_0000_u64 | u64::from(state)).to_le_bytes()
         })
         .collect();
-    let new = encode_pre4(&raw, 8, EntropyCoder::Lz4).unwrap();
+    let new = encode_pre4(&raw, 8).unwrap();
     assert_eq!(new.codec(), BlockCodec::BytePlanes);
     assert_eq!(
         decode(new.codec(), new.bytes(), raw.len(), 8, raw.len()).unwrap(),
@@ -763,7 +763,7 @@ fn roundtrip_bits_components_and_fallback() {
                 let raw: Vec<u8> = (0..rows)
                     .flat_map(|r| (0..width).map(move |c| ((r % unique * 37 + c * 11) % 256) as u8))
                     .collect();
-                let encoded = encode(&raw, width, EntropyCoder::Lz4).unwrap();
+                let encoded = encode(&raw, width).unwrap();
                 assert!(encoded.bytes().len() <= compress_block(&raw).bytes().len());
                 assert_eq!(
                     decode(
@@ -779,15 +779,12 @@ fn roundtrip_bits_components_and_fallback() {
             }
         }
     }
-    let constant = encode(&[255; 4096], 1, EntropyCoder::Lz4).unwrap();
+    let constant = encode(&[255; 4096], 1).unwrap();
     assert_eq!(constant.codec(), BlockCodec::Constant);
     let raw: Vec<u8> = (0..4096)
         .flat_map(|r| ((r * 37 % 17) as u64).to_le_bytes())
         .collect();
-    assert_eq!(
-        encode(&raw, 8, EntropyCoder::Lz4).unwrap().codec(),
-        BlockCodec::Dictionary
-    );
+    assert_eq!(encode(&raw, 8).unwrap().codec(), BlockCodec::Dictionary);
 }
 #[test]
 fn rejects_invalid_shapes_nested_codecs_ids_padding_and_limits() {
@@ -811,10 +808,8 @@ fn rejects_invalid_shapes_nested_codecs_ids_padding_and_limits() {
     assert!(decode(BlockCodec::Constant, &[0, 1], 100, 1, 100).is_err());
 }
 
-mod zstd {
+mod payloads {
     use super::*;
-    use crate::layout::{PayloadDirectoryEntry, StorageLayout, StoredColumn};
-    use crate::{FormatVersion, index_codec::validate_column_codec};
 
     /// Column shapes that make each candidate win for some width.
     fn corpus() -> Vec<(usize, Vec<u8>)> {
@@ -854,204 +849,109 @@ mod zstd {
         corpus
     }
 
-    fn zstd_payloads() -> Vec<(usize, Vec<u8>, EncodedBlock)> {
+    fn lz4_payloads() -> Vec<(usize, Vec<u8>, EncodedBlock)> {
         corpus()
             .into_iter()
             .map(|(width, raw)| {
-                let encoded = encode_pre4(&raw, width, EntropyCoder::Zstd).unwrap();
+                let encoded = encode_pre4(&raw, width).unwrap();
                 (width, raw, encoded)
             })
             .collect()
     }
 
     #[test]
-    fn zstd_payload_round_trips() {
+    fn lz4_payload_round_trips() {
         let mut seen = std::collections::BTreeSet::new();
-        for (width, raw, encoded) in zstd_payloads() {
-            assert_ne!(encoded.codec(), BlockCodec::Lz4);
-            assert_ne!(encoded.codec(), BlockCodec::BytePlanes);
+        for (width, raw, encoded) in lz4_payloads() {
             if encoded.codec() == BlockCodec::Dictionary {
                 let tags = (encoded.bytes()[4], encoded.bytes()[5]);
-                assert!(tags.0 != 1 && tags.1 != 1, "LZ4 tag in a zstd dictionary");
-                if tags.0 == 2 || tags.1 == 2 {
-                    seen.insert("dictionary with a zstd part".to_string());
-                }
-            } else {
-                seen.insert(format!("{:?}", encoded.codec()));
+                assert!(tags.0 <= 1 && tags.1 <= 1, "tags {tags:?}");
             }
+            seen.insert(format!("{:?}", encoded.codec()));
             assert_eq!(
-                decode_with(
+                decode(
                     encoded.codec(),
                     encoded.bytes(),
                     raw.len(),
                     width,
-                    raw.len(),
-                    true
+                    raw.len()
                 )
                 .unwrap(),
                 raw,
                 "width {width}"
             );
             // Deterministic.
-            assert_eq!(
-                encode_pre4(&raw, width, EntropyCoder::Zstd).unwrap(),
-                encoded
-            );
+            assert_eq!(encode_pre4(&raw, width).unwrap(), encoded);
         }
-        for expected in [
-            "Zstd",
-            "BytePlanesZstd",
-            "Constant",
-            "dictionary with a zstd part",
-        ] {
+        for expected in ["Lz4", "BytePlanes", "Constant", "Dictionary"] {
             assert!(seen.contains(expected), "{expected} missing from {seen:?}");
         }
     }
 
+    /// A zstd payload no longer decodes: codec bytes 5 and 6 are unknown and the dictionary inner
+    /// tag 2 is malformed (ADR 0060).
     #[test]
-    fn zstd_payload_round_trips_through_every_layout_that_allows_it() {
-        for (width, raw, _) in zstd_payloads() {
-            let mut bytes = Vec::new();
-            let mut payloads = Vec::new();
-            crate::prepare::append_payload(
-                &raw,
-                &mut bytes,
-                &mut payloads,
-                StorageLayout::V8Pre2,
-                width,
-                EntropyCoder::Zstd,
-            )
-            .unwrap();
-            let column = &payloads[0];
-            assert_eq!(column.raw_length, raw.len() as u64);
-            assert_eq!(column.stored_length, bytes.len() as u64);
+    fn retired_zstd_codecs_and_dictionary_tag_are_refused() {
+        for byte in [5_u8, 6] {
             assert_eq!(
-                decode_with(column.codec, &bytes, raw.len(), width, raw.len(), true).unwrap(),
-                raw
+                BlockCodec::try_from(byte).unwrap_err(),
+                crate::CodecError::UnsupportedCodec(byte)
             );
-            for older in [
-                StorageLayout::V8Pre1,
-                StorageLayout::V7,
-                StorageLayout::V6Pre3,
-            ] {
+        }
+        let mut refused = 0;
+        for (width, raw, encoded) in lz4_payloads() {
+            if encoded.codec() != BlockCodec::Dictionary {
+                continue;
+            }
+            for position in [4, 5] {
+                let mut patched = encoded.bytes().to_vec();
+                patched[position] = 2;
                 assert!(
-                    crate::prepare::append_payload(
-                        &raw,
-                        &mut Vec::new(),
-                        &mut Vec::new(),
-                        older,
+                    decode(
+                        BlockCodec::Dictionary,
+                        &patched,
+                        raw.len(),
                         width,
-                        EntropyCoder::Zstd
+                        raw.len()
                     )
                     .is_err()
                 );
+                refused += 1;
             }
         }
+        assert!(refused > 4);
     }
 
-    fn column(codec: BlockCodec) -> PayloadDirectoryEntry {
-        PayloadDirectoryEntry {
-            offset: 0,
-            stored_length: 10,
-            raw_length: 100,
-            codec,
-            checksum: 0,
-            stored: StoredColumn::Present,
+    /// `append_payload` stores exactly the direct LZ4 encoding and records its decoded length.
+    /// (The pre-V8 revision this once compared against is gone; the V8 side keeps the property.)
+    #[test]
+    fn v8_payload_is_the_direct_encoding_and_decodes_to_the_raw_bytes() {
+        for (width, raw) in corpus() {
+            let mut bytes = Vec::new();
+            let mut payloads = Vec::new();
+            crate::prepare::append_payload(&raw, &mut bytes, &mut payloads, width).unwrap();
+            assert_eq!(payloads.len(), 1, "width {width}");
+            assert_eq!(payloads[0].raw_length, raw.len() as u64);
+            assert_eq!(payloads[0].stored_length, bytes.len() as u64);
+            assert_eq!(
+                decode(payloads[0].codec, &bytes, raw.len(), width, raw.len()).unwrap(),
+                raw
+            );
+            let direct = encode_v7_pre3(&raw, width).unwrap();
+            assert_eq!(direct.bytes(), bytes, "width {width}");
         }
     }
 
     #[test]
-    fn zstd_is_rejected_before_v8_pre2() {
-        use viewer_core::{AttributeDataType, AttributeDescriptor};
-        let schema = [AttributeDescriptor::new("a", AttributeDataType::U32, 1).unwrap()];
-        let layout_of = |version: FormatVersion| StorageLayout::from_version(version);
-        let all = [
-            StorageLayout::V5,
-            StorageLayout::V6Pre1,
-            StorageLayout::V6Pre2,
-            StorageLayout::V6Pre3,
-            StorageLayout::V6Pre4,
-            StorageLayout::V7Pre1,
-            StorageLayout::V7Pre2,
-            StorageLayout::V7Pre3,
-            StorageLayout::V7Pre4,
-            StorageLayout::V7Pre5,
-            StorageLayout::V7,
-            StorageLayout::V8Pre1,
-            StorageLayout::V8Pre2,
-        ];
-        assert_eq!(
-            layout_of(FormatVersion::V8_PRE2).unwrap(),
-            StorageLayout::V8Pre2
-        );
-        for layout in all {
-            for codec in [BlockCodec::Zstd, BlockCodec::BytePlanesZstd] {
-                let verdict = validate_column_codec(layout, &schema, 2, 25, &column(codec));
-                assert_eq!(
-                    verdict.is_ok(),
-                    layout == StorageLayout::V8Pre2,
-                    "{layout:?} {codec:?}"
-                );
-            }
-            // Geometry is never zstd.
-            assert!(
-                validate_column_codec(layout, &schema, 0, 25, &column(BlockCodec::Zstd)).is_err()
-            );
-        }
-        // The decoder of an older layout refuses the codecs and the dictionary tag.
-        let mut refused = 0;
-        for (width, raw, encoded) in zstd_payloads() {
-            if encoded.codec() == BlockCodec::Constant
-                || (encoded.codec() == BlockCodec::Dictionary
-                    && encoded.bytes()[4] != 2
-                    && encoded.bytes()[5] != 2)
-            {
-                continue;
-            }
-            refused += 1;
-            assert!(
-                decode_with(
-                    encoded.codec(),
-                    encoded.bytes(),
-                    raw.len(),
-                    width,
-                    raw.len(),
-                    false
-                )
-                .is_err(),
-                "{:?}",
-                encoded.codec()
-            );
-        }
-        assert!(refused > 10);
-    }
-
-    #[test]
-    fn corrupt_zstd_payload_is_an_error() {
-        for (width, raw, encoded) in zstd_payloads() {
+    fn corrupt_payload_is_an_error() {
+        for (width, raw, encoded) in lz4_payloads() {
             let decode = |bytes: &[u8], size: usize| {
-                decode_with(
-                    encoded.codec(),
-                    bytes,
-                    size,
-                    width,
-                    size.max(raw.len()),
-                    true,
-                )
+                decode(encoded.codec(), bytes, size, width, size.max(raw.len()))
             };
             if matches!(encoded.codec(), BlockCodec::Constant) {
                 continue;
             }
             let stored = encoded.bytes();
-            // A raw length that is too small (the frame does not fit) or too large (it falls short).
-            // Dictionary payloads size their own parts from the row count, so only the rest checks it.
-            if matches!(
-                encoded.codec(),
-                BlockCodec::Zstd | BlockCodec::BytePlanesZstd
-            ) {
-                assert!(decode(stored, raw.len() - width).is_err());
-                assert!(decode(stored, raw.len() + width).is_err());
-            }
             assert!(decode(&stored[..stored.len() / 2], raw.len()).is_err());
             assert!(decode(&stored[..stored.len() - 1], raw.len()).is_err());
             let mut trailing = stored.to_vec();
@@ -1082,8 +982,8 @@ mod zstd {
         })
     }
 
-    /// One small fixed input per layout; the expected bytes pin level 3, magicless frames and no
-    /// checksum or content size, so changing any of them fails here (and in the parity digest).
+    /// One small fixed input per layout; the expected bytes pin the LZ4 candidates and the dictionary layout, so
+    /// changing any of them fails here (and in the parity digest).
     fn golden_inputs() -> Vec<(&'static str, usize, Vec<u8>)> {
         let raw: Vec<u8> = (0..96_u32).map(|i| (i * i % 23) as u8).collect();
         let planes: Vec<u8> = (0..64_u32)
@@ -1105,104 +1005,31 @@ mod zstd {
     }
 
     #[test]
-    fn golden_payload_bytes_pin_the_zstd_parameters() {
-        let golden: [(&str, BlockCodec, &str, &str); 3] = [
+    fn golden_lz4_payload_bytes() {
+        let golden: [(&str, BlockCodec, &str); 3] = [
             (
                 "raw",
-                BlockCodec::Zstd,
-                "0000f50000b80001040910020d03120c080606080c12030d021009040101004dd1d904",
+                BlockCodec::Lz4,
                 "ff080001040910020d03120c080606080c12030d021009040117003060040100010409",
             ),
             (
                 "planes",
-                BlockCodec::BytePlanesZstd,
-                "00004d02001404000408090d1112161a1b1f2324282c2d3135363a3e3f4347484c505155595a5e6263676b6c707475797d7e8286878b8f909498999da1a2a6aaabafb3b4b8bcbd000100018f0251",
+                BlockCodec::BytePlanes,
                 "ff33000408090d1112161a1b1f2324282c2d3135363a3e3f4347484c505155595a5e6263676b6c707475797d7e8286878b8f909498999da1a2a6aaabafb3b4b8bcbd00000200a560000000000000",
             ),
             (
                 "dictionary",
                 BlockCodec::Dictionary,
-                "0d00000000021a00000000ffe4abd1b213f898c74ce35fdc26f139ea72d585cebeb9abc00000cd06000650352e506d5b0d70ab952bf3593dac621f36821b02d2be4f184848c0142e89c806986c5397ed2cecf68996d676f777ff1426002c00280047a637fa892621f5db0b6c2a7ecf256512f366db18a43042e6f99386e01c6fdf645598ea1afd1400f2988663f7c9a1b4f835f8b344a22e9c80dc10ff46184a5eeafd2017e0994544cc5e163d0f037d59c601770082b6533dc97fab3fbda0f0f20e0e3b52973907b4653618d21a9a40d0995fbfad6ced6e478d647f4c44dca4f90b28025c252d2f5ae463ee23edb6f52dfd0d587d4d59e3ebd87c5e21ae7cab1200",
                 "0d00000000001a00000000ffe4abd1b213f898c74ce35fdc26f139ea72d585cebeb9abc00000100203405262703005800000a900060a002005000b00574a00510a9000028002000b7bb02087b8000000898417000002000040c8080cc010020010000100009ab005105ab8050cb005b007778ab00006550961000560a00960520ca00000075b00c60806a060200400c00037a0000702138b0b00a09000060030ac0a1110090c40aba003007000228000000087000b9421501071002097845702103c8b002c60070090035c00002c061095100000004002000000000405629480060a1ca02270000009a06b40000b000b9000400000a200130087006206a7000010800000408000030020c003900000092807052809620315862b0000007130030182b500",
             ),
         ];
-        for ((name, width, raw), (golden_name, codec, zstd_hex, lz4_hex)) in
+        for ((name, width, raw), (golden_name, codec, lz4_hex)) in
             golden_inputs().into_iter().zip(golden)
         {
             assert_eq!(name, golden_name);
-            let zstd = encode_pre4(&raw, width, EntropyCoder::Zstd).unwrap();
-            let lz4 = encode_pre4(&raw, width, EntropyCoder::Lz4).unwrap();
-            assert_eq!(zstd.codec(), codec, "{name}");
-            assert_eq!(hex(zstd.bytes()), zstd_hex, "{name} zstd");
+            let lz4 = encode_pre4(&raw, width).unwrap();
+            assert_eq!(lz4.codec(), codec, "{name}");
             assert_eq!(hex(lz4.bytes()), lz4_hex, "{name} lz4");
-        }
-    }
-
-    #[test]
-    fn crafted_zstd_frame_with_a_huge_window_is_a_format_error() {
-        // Magicless frame: descriptor 0 (no content size, checksum or dictionary), window byte
-        // with exponent 31 (2^41 bytes), then one empty last raw block.
-        let huge_window = [0x00, 0xF8, 0x01, 0x00, 0x00];
-        let error = decode_with(BlockCodec::Zstd, &huge_window, 16, 1, 16, true);
-        assert!(error.is_err(), "{error:?}");
-        // The same patch on a real frame: the window field is the byte after the descriptor.
-        let raw: Vec<u8> = (0..64_u8).map(|i| i % 5).collect();
-        let encoded = compress_block_with(&raw, EntropyCoder::Zstd).unwrap();
-        assert_eq!(encoded.codec(), BlockCodec::Zstd);
-        let mut patched = encoded.bytes().to_vec();
-        assert_eq!(
-            patched[0] & 0x20,
-            0,
-            "a single-segment frame has no window byte"
-        );
-        patched[1] = 0xF8;
-        let result = decode_with(BlockCodec::Zstd, &patched, raw.len(), 1, raw.len(), true);
-        assert!(result.is_err(), "{result:?}");
-    }
-
-    #[test]
-    fn lz4_coder_keeps_v8_pre1_bytes() {
-        for (width, raw) in corpus() {
-            let mut expected = (Vec::new(), Vec::new());
-            let mut actual = (Vec::new(), Vec::new());
-            crate::prepare::append_payload(
-                &raw,
-                &mut expected.0,
-                &mut expected.1,
-                StorageLayout::V8Pre1,
-                width,
-                EntropyCoder::Lz4,
-            )
-            .unwrap();
-            crate::prepare::append_payload(
-                &raw,
-                &mut actual.0,
-                &mut actual.1,
-                StorageLayout::V8Pre2,
-                width,
-                EntropyCoder::Lz4,
-            )
-            .unwrap();
-            assert_eq!(expected.0, actual.0, "width {width}");
-            let key = |column: &PayloadDirectoryEntry| {
-                (
-                    column.codec as u8,
-                    column.checksum,
-                    column.stored_length,
-                    column.raw_length,
-                )
-            };
-            assert_eq!(key(&expected.1[0]), key(&actual.1[0]), "width {width}");
-            assert!(matches!(
-                actual.1[0].codec,
-                BlockCodec::None
-                    | BlockCodec::Lz4
-                    | BlockCodec::Constant
-                    | BlockCodec::Dictionary
-                    | BlockCodec::BytePlanes
-            ));
-            let direct = encode_v7_pre3(&raw, width, EntropyCoder::Lz4).unwrap();
-            assert_eq!(direct.bytes(), actual.0);
         }
     }
 }

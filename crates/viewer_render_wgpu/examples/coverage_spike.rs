@@ -46,7 +46,7 @@ use viewer_core::{
     BlockId, DEFAULT_LOD_PRIORITY_BYTES, DatasetSource, LodSelectionConfig, NodeId, PointBlock,
     ResidentBlockSource, SpatialBounds, SpatialFrustum,
 };
-use viewer_format::{FormatReader, OctreeReader, PagedReader};
+use viewer_format::{FormatReader, PagedReader};
 use viewer_render_wgpu::{
     CellCutEntry, CellCutNode, CellGrid, InstanceRaw, MAX_CELL_DEPTH, NodeCell, NodeCellLevel,
     NodeCellSource, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame,
@@ -475,7 +475,7 @@ fn main() -> Result<()> {
         reader.attach_attributes(File::open(attrs_path)?)?;
     }
     let mut leaf_flags = HashMap::new();
-    if reader.format_version().uses_pages() {
+    {
         let mut paged = PagedReader::open(File::open(&args[0])?)?;
         let mut pages = vec![paged.root_page().clone()];
         let mut cursor = 0;

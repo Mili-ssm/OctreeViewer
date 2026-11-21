@@ -1,0 +1,328 @@
+
+running 8 tests
+test lod_dataset::cells_stream_tests::sim::glue::real_glue_belvedere_dolly_reaches_the_in_process_digest ... ok
+test lod_dataset::cells_stream_tests::sim::glue::real_glue_belvedere_orbit_reaches_the_in_process_digest ... ok
+test lod_dataset::cells_stream_tests::sim::glue::real_glue_belvedere_pool_reset_and_driver_replaced_mid_load_converge ... ok
+test lod_dataset::cells_stream_tests::sim::real_lag_belvedere_dolly ... belvedere dolly seed 3: SimStats { node_messages: 72, missing_reports: 0, missing_resent: 0, evicted: 9, pool_resets: 0, driver_replacements: 0, max_above_target_run: 0, opening_updates: Some(54), updates: 75, parent_violations: 0, evictions_during_ack_lag: 0, gpu_digest: 3958725304733859072, gpu_digest_last: 14523691661684938892, active_gaps: 0, run_compared: 829, run_classes: [0, 29, 0, 10, 2, 18, 0], run_coarser: 0, run_finer: 48 } | zone coarsenings 0 | drops below the raw wish: stage-excused 0, unexcused 0 | lost samples 0 | ADR 0053 gate StepGate { hops: 0, cell_node_changed: 382, cell_within_node: 0, cell_border_pairs: 4540, cell_border_over_one: 1180, cell_border_visible_pairs: 0, cell_border_visible_over_one: 0 }
+belvedere dolly seed 3: first run difference, entering: entering frame 16: node NodeId(1) today [9] node_run (8, 9) range Some((9, 9)) target Some(9) anchor Some(8) prev None usable [4, 8, 9] stage false step None D5 None
+belvedere dolly seed 3: first run difference, above_hi: above_hi frame 38: node NodeId(34) today [11] node_run (11, 12) range Some((7, 7)) target Some(7) anchor Some(12) prev Some((12, 12)) usable [7, 11, 12] stage true step Some(10) D5 None
+belvedere dolly seed 3: first run difference, below_lo: below_lo frame 41: node NodeId(47) today [11] node_run (10, 11) range Some((11, 11)) target Some(11) anchor Some(10) prev Some((10, 10)) usable [7, 10, 11, 12] stage false step None D5 None
+belvedere dolly seed 3: first run difference, fine_end: fine_end frame 41: node NodeId(41) today [7] node_run (7, 8) range Some((7, 7)) target Some(7) anchor Some(8) prev Some((7, 8)) usable [7, 8, 9, 10] stage false step None D5 None
+LAG belvedere dolly seed 3 f=0 gen=3 judged=0 off=0 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=0
+LAG belvedere dolly seed 3 f=1 gen=3 judged=0 off=0 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere dolly seed 3 f=2 gen=4 judged=4689 off=7193 undrawn=1798 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=26
+LAG belvedere dolly seed 3 f=3 gen=4 judged=4689 off=7193 undrawn=1798 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=32
+LAG belvedere dolly seed 3 f=4 gen=5 judged=5964 off=6982 undrawn=468 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=32
+LAG belvedere dolly seed 3 f=5 gen=5 judged=5964 off=11503 undrawn=468 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=32
+LAG belvedere dolly seed 3 f=6 gen=6 judged=5919 off=11548 undrawn=468 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=45
+LAG belvedere dolly seed 3 f=7 gen=6 judged=5919 off=11548 undrawn=468 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=45
+LAG belvedere dolly seed 3 f=8 gen=6 judged=4589 off=11481 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=45
+LAG belvedere dolly seed 3 f=9 gen=7 judged=4542 off=11528 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=45
+LAG belvedere dolly seed 3 f=10 gen=8 judged=4493 off=11577 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=45
+LAG belvedere dolly seed 3 f=11 gen=8 judged=4493 off=7056 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=45
+LAG belvedere dolly seed 3 f=12 gen=8 judged=4493 off=21664 undrawn=4157 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=45
+LAG belvedere dolly seed 3 f=13 gen=9 judged=4445 off=21551 undrawn=4105 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=188
+LAG belvedere dolly seed 3 f=14 gen=9 judged=4445 off=12976 undrawn=4105 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=287
+LAG belvedere dolly seed 3 f=15 gen=10 judged=4409 off=13057 undrawn=4060 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=288
+LAG belvedere dolly seed 3 f=16 gen=10 judged=5180 off=40687 undrawn=2807 b>=1,2,3=661,0,0 bmax=1 r>=1,2,3=661,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=597
+LAG belvedere dolly seed 3 f=17 gen=10 judged=3927 off=27194 undrawn=0 b>=1,2,3=661,0,0 bmax=1 r>=1,2,3=661,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=597
+LAG belvedere dolly seed 3 f=18 gen=11 judged=3896 off=47352 undrawn=12800 b>=1,2,3=661,0,0 bmax=1 r>=1,2,3=661,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=597
+LAG belvedere dolly seed 3 f=19 gen=11 judged=3896 off=54534 undrawn=11940 b>=1,2,3=661,0,0 bmax=1 r>=1,2,3=661,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=675
+LAG belvedere dolly seed 3 f=20 gen=12 judged=12789 off=66000 undrawn=2435 b>=1,2,3=661,0,0 bmax=1 r>=1,2,3=661,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=1 pages=1263
+LAG belvedere dolly seed 3 f=21 gen=12 judged=12476 off=64473 undrawn=5294 b>=1,2,3=3064,426,0 bmax=2 r>=1,2,3=3064,426,0 rmax=2 finer_b=0 over_bound=0 over_max=0 req=1 pages=1304
+LAG belvedere dolly seed 3 f=22 gen=13 judged=11102 off=66055 undrawn=4236 b>=1,2,3=508,0,0 bmax=1 r>=1,2,3=508,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=1 pages=1347
+LAG belvedere dolly seed 3 f=23 gen=13 judged=13058 off=63938 undrawn=2280 b>=1,2,3=508,0,0 bmax=1 r>=1,2,3=508,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=1 pages=1353
+LAG belvedere dolly seed 3 f=24 gen=13 judged=13058 off=54811 undrawn=2280 b>=1,2,3=508,0,0 bmax=1 r>=1,2,3=508,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=1 pages=1359
+LAG belvedere dolly seed 3 f=25 gen=13 judged=13058 off=59820 undrawn=2560 b>=1,2,3=508,0,0 bmax=1 r>=1,2,3=508,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=1 pages=1370
+LAG belvedere dolly seed 3 f=26 gen=13 judged=13058 off=60964 undrawn=2560 b>=1,2,3=508,0,0 bmax=1 r>=1,2,3=508,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=1 pages=1596
+LAG belvedere dolly seed 3 f=27 gen=13 judged=13266 off=60964 undrawn=2352 b>=1,2,3=716,0,0 bmax=1 r>=1,2,3=716,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=1 pages=1930
+LAG belvedere dolly seed 3 f=28 gen=13 judged=11065 off=56014 undrawn=2280 b>=1,2,3=315,0,0 bmax=1 r>=1,2,3=315,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1930
+LAG belvedere dolly seed 3 f=29 gen=13 judged=11065 off=58079 undrawn=2280 b>=1,2,3=315,0,0 bmax=1 r>=1,2,3=315,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1932
+LAG belvedere dolly seed 3 f=30 gen=13 judged=11065 off=57929 undrawn=13382 b>=1,2,3=315,0,0 bmax=1 r>=1,2,3=315,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1942
+LAG belvedere dolly seed 3 f=31 gen=13 judged=11065 off=54610 undrawn=13382 b>=1,2,3=315,0,0 bmax=1 r>=1,2,3=315,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2006
+LAG belvedere dolly seed 3 f=32 gen=13 judged=16077 off=56113 undrawn=3548 b>=1,2,3=10296,0,0 bmax=1 r>=1,2,3=10296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2018
+LAG belvedere dolly seed 3 f=33 gen=13 judged=16077 off=64617 undrawn=3548 b>=1,2,3=10296,0,0 bmax=1 r>=1,2,3=10296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2166
+LAG belvedere dolly seed 3 f=34 gen=13 judged=15389 off=61318 undrawn=0 b>=1,2,3=10296,0,0 bmax=1 r>=1,2,3=10296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2213
+LAG belvedere dolly seed 3 f=35 gen=13 judged=15389 off=62647 undrawn=0 b>=1,2,3=10296,0,0 bmax=1 r>=1,2,3=10296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2220
+LAG belvedere dolly seed 3 f=36 gen=13 judged=15389 off=65008 undrawn=0 b>=1,2,3=10296,0,0 bmax=1 r>=1,2,3=10296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2225
+LAG belvedere dolly seed 3 f=37 gen=13 judged=15389 off=65454 undrawn=0 b>=1,2,3=10296,0,0 bmax=1 r>=1,2,3=10296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2234
+LAG belvedere dolly seed 3 f=38 gen=13 judged=15389 off=54240 undrawn=0 b>=1,2,3=10296,0,0 bmax=1 r>=1,2,3=10296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2237
+LAG belvedere dolly seed 3 f=39 gen=13 judged=15389 off=54240 undrawn=0 b>=1,2,3=10296,0,0 bmax=1 r>=1,2,3=10296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2258
+LAG belvedere dolly seed 3 f=40 gen=13 judged=15109 off=38399 undrawn=0 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2258
+LAG belvedere dolly seed 3 f=41 gen=13 judged=15109 off=38623 undrawn=0 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2259
+LAG belvedere dolly seed 3 f=42 gen=13 judged=15109 off=38910 undrawn=0 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2263
+LAG belvedere dolly seed 3 f=43 gen=13 judged=15109 off=41476 undrawn=0 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2266
+LAG belvedere dolly seed 3 f=44 gen=13 judged=15109 off=41495 undrawn=0 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2280
+LAG belvedere dolly seed 3 f=45 gen=13 judged=15109 off=42864 undrawn=1071 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2281
+LAG belvedere dolly seed 3 f=46 gen=13 judged=15109 off=42789 undrawn=1071 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2291
+LAG belvedere dolly seed 3 f=47 gen=13 judged=15725 off=47018 undrawn=455 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2295
+LAG belvedere dolly seed 3 f=48 gen=13 judged=15725 off=47068 undrawn=455 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2308
+LAG belvedere dolly seed 3 f=49 gen=13 judged=15725 off=56755 undrawn=3309 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2309
+LAG belvedere dolly seed 3 f=50 gen=13 judged=15725 off=56850 undrawn=3309 b>=1,2,3=10016,0,0 bmax=1 r>=1,2,3=10016,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2347
+LAG belvedere dolly seed 3 f=51 gen=13 judged=15486 off=59956 undrawn=0 b>=1,2,3=12870,0,0 bmax=1 r>=1,2,3=12870,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2348
+LAG belvedere dolly seed 3 f=52 gen=13 judged=15486 off=60060 undrawn=0 b>=1,2,3=12870,0,0 bmax=1 r>=1,2,3=12870,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2366
+LAG belvedere dolly seed 3 f=53 gen=13 judged=15486 off=51678 undrawn=0 b>=1,2,3=12870,0,0 bmax=1 r>=1,2,3=12870,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2367
+LAG belvedere dolly seed 3 f=54 gen=13 judged=15486 off=50845 undrawn=0 b>=1,2,3=12870,0,0 bmax=1 r>=1,2,3=12870,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2368
+LAG belvedere dolly seed 3 f=55 gen=13 judged=15486 off=48622 undrawn=0 b>=1,2,3=12870,0,0 bmax=1 r>=1,2,3=12870,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2368
+LAGSUM belvedere dolly seed 3 | frames=56 judged_sum=602658 | settle_b=29 settle_r=29 | sample_frames_b1=267779 b2=426 b3=0 | sample_frames_r1=267779 r2=426 r3=0 | worst_b=2 at f=21 worst_r=2 at f=21 | over_bound_sample_frames=0 over_max=0 | requests min=0 med=0 max=1 | pages_end=2368
+LAGSPLIT belvedere dolly seed 3 | in_clip: judged=703 b1=0 b2=0 b3=0 r1=0 r2=0 r3=0 | out_clip: judged=601955 b1=267779 b2=426 b3=0 r1=267779 r2=426 r3=0
+ok
+test lod_dataset::cells_stream_tests::sim::real_lag_belvedere_orbit ... belvedere orbit seed 1: SimStats { node_messages: 96, missing_reports: 0, missing_resent: 0, evicted: 3, pool_resets: 0, driver_replacements: 0, max_above_target_run: 0, opening_updates: Some(69), updates: 98, parent_violations: 0, evictions_during_ack_lag: 0, gpu_digest: 4625330705254500972, gpu_digest_last: 18096589314870789715, active_gaps: 7, run_compared: 2791, run_classes: [7, 37, 0, 19, 0, 19, 0], run_coarser: 1, run_finer: 59 } | zone coarsenings 0 | drops below the raw wish: stage-excused 0, unexcused 0 | lost samples 0 | ADR 0053 gate StepGate { hops: 0, cell_node_changed: 1854, cell_within_node: 0, cell_border_pairs: 17602, cell_border_over_one: 2656, cell_border_visible_pairs: 44, cell_border_visible_over_one: 0 }
+belvedere orbit seed 1: first active gap: frame 36: node NodeId(77) active [7, 12] skips non-usable buildable depths [8, 9, 10, 11] (depth, resident, usable: [(8, false, false), (9, false, false), (10, false, false), (11, true, false)]; buildable (7, 12), D5 None, range Some((7, 7)), drawn [7, 12], wanted [Some(7), Some(7), Some(7), Some(7), Some(7), Some(7), Some(7), Some(7)])
+belvedere orbit seed 1: first run difference, gap: gap frame 36: node NodeId(77) today [7, 12] node_run (12, 12) range Some((7, 7)) target Some(7) anchor Some(12) prev Some((12, 12)) usable [7, 12] stage true step Some(11) D5 None
+belvedere orbit seed 1: first run difference, entering: entering frame 6: node NodeId(4) today [9] node_run (8, 9) range Some((9, 9)) target Some(9) anchor Some(8) prev None usable [4, 8, 9] stage false step None D5 None
+belvedere orbit seed 1: first run difference, above_hi: above_hi frame 29: node NodeId(25) today [6, 7] node_run (6, 8) range Some((6, 6)) target Some(6) anchor Some(8) prev Some((8, 8)) usable [6, 7, 8] stage false step None D5 None
+belvedere orbit seed 1: first run difference, fine_end: fine_end frame 31: node NodeId(23) today [6] node_run (6, 7) range Some((6, 6)) target Some(6) anchor Some(7) prev Some((6, 7)) usable [6, 7, 8] stage false step None D5 None
+belvedere orbit seed 1: first run difference with node_run coarser: entering frame 36: node NodeId(24) today [11] node_run (8, 9) range Some((11, 11)) target Some(11) anchor Some(8) prev None usable [6, 8, 9, 11] stage true step Some(10) D5 Some(6)
+LAG belvedere orbit seed 1 f=0 gen=2 judged=0 off=0 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=0
+LAG belvedere orbit seed 1 f=1 gen=3 judged=0 off=0 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 1 f=2 gen=3 judged=6141 off=5408 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 1 f=3 gen=3 judged=6141 off=5408 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 1 f=4 gen=4 judged=6665 off=5605 undrawn=1144 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 1 f=5 gen=4 judged=6665 off=5605 undrawn=1144 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=30
+LAG belvedere orbit seed 1 f=6 gen=4 judged=7514 off=5605 undrawn=295 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=30
+LAG belvedere orbit seed 1 f=7 gen=4 judged=7514 off=5605 undrawn=295 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=30
+LAG belvedere orbit seed 1 f=8 gen=5 judged=6809 off=6605 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=30
+LAG belvedere orbit seed 1 f=9 gen=5 judged=6809 off=11126 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=30
+LAG belvedere orbit seed 1 f=10 gen=5 judged=6809 off=11126 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=11 gen=6 judged=6580 off=11355 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=12 gen=6 judged=6580 off=11355 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=13 gen=6 judged=6580 off=9490 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=14 gen=7 judged=6136 off=9934 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=15 gen=8 judged=5578 off=10492 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=16 gen=8 judged=5578 off=10492 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=17 gen=8 judged=5578 off=10492 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=18 gen=8 judged=5578 off=5971 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=19 gen=9 judged=4975 off=6574 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 1 f=20 gen=9 judged=4975 off=36203 undrawn=4990 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=2 pages=43
+LAG belvedere orbit seed 1 f=21 gen=10 judged=4567 off=28041 undrawn=5151 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=2 pages=211
+LAG belvedere orbit seed 1 f=22 gen=11 judged=6133 off=38460 undrawn=5593 b>=1,2,3=2448,0,0 bmax=1 r>=1,2,3=2448,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=2 pages=225
+LAG belvedere orbit seed 1 f=23 gen=11 judged=6133 off=29687 undrawn=4973 b>=1,2,3=2448,0,0 bmax=1 r>=1,2,3=2448,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=317
+LAG belvedere orbit seed 1 f=24 gen=12 judged=8111 off=32870 undrawn=5399 b>=1,2,3=3360,0,0 bmax=1 r>=1,2,3=3360,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=343
+LAG belvedere orbit seed 1 f=25 gen=13 judged=7016 off=33704 undrawn=224 b>=1,2,3=2092,0,0 bmax=1 r>=1,2,3=2092,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=351
+LAG belvedere orbit seed 1 f=26 gen=13 judged=7016 off=33621 undrawn=224 b>=1,2,3=2092,0,0 bmax=1 r>=1,2,3=2092,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=381
+LAG belvedere orbit seed 1 f=27 gen=13 judged=7220 off=52415 undrawn=2484 b>=1,2,3=2296,0,0 bmax=1 r>=1,2,3=2296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=383
+LAG belvedere orbit seed 1 f=28 gen=13 judged=7220 off=57269 undrawn=3616 b>=1,2,3=2296,0,0 bmax=1 r>=1,2,3=2296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=712
+LAG belvedere orbit seed 1 f=29 gen=13 judged=7235 off=50235 undrawn=1152 b>=1,2,3=2296,0,0 bmax=1 r>=1,2,3=2296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=848
+LAG belvedere orbit seed 1 f=30 gen=13 judged=3820 off=50976 undrawn=2725 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=854
+LAG belvedere orbit seed 1 f=31 gen=13 judged=3820 off=62978 undrawn=3193 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1152
+LAG belvedere orbit seed 1 f=32 gen=13 judged=3805 off=27755 undrawn=0 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1152
+LAG belvedere orbit seed 1 f=33 gen=13 judged=5837 off=59815 undrawn=1161 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1152
+LAG belvedere orbit seed 1 f=34 gen=13 judged=5837 off=59815 undrawn=1161 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1212
+LAG belvedere orbit seed 1 f=35 gen=13 judged=4538 off=56870 undrawn=2695 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1212
+LAG belvedere orbit seed 1 f=36 gen=13 judged=4538 off=57058 undrawn=2695 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1503
+LAG belvedere orbit seed 1 f=37 gen=13 judged=6500 off=80869 undrawn=1277 b>=1,2,3=1223,0,0 bmax=1 r>=1,2,3=1223,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1506
+LAG belvedere orbit seed 1 f=38 gen=13 judged=6500 off=80869 undrawn=1277 b>=1,2,3=1223,0,0 bmax=1 r>=1,2,3=1223,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1928
+LAG belvedere orbit seed 1 f=39 gen=13 judged=4734 off=83016 undrawn=318 b>=1,2,3=1223,0,0 bmax=1 r>=1,2,3=1223,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1928
+LAG belvedere orbit seed 1 f=40 gen=13 judged=4734 off=83016 undrawn=841 b>=1,2,3=1223,0,0 bmax=1 r>=1,2,3=1223,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1947
+LAG belvedere orbit seed 1 f=41 gen=13 judged=4734 off=84160 undrawn=1404 b>=1,2,3=1223,0,0 bmax=1 r>=1,2,3=1223,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1952
+LAG belvedere orbit seed 1 f=42 gen=13 judged=5107 off=79996 undrawn=579 b>=1,2,3=1746,0,0 bmax=1 r>=1,2,3=1746,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2206
+LAG belvedere orbit seed 1 f=43 gen=13 judged=5362 off=80286 undrawn=100 b>=1,2,3=1662,0,0 bmax=1 r>=1,2,3=1662,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2470
+LAG belvedere orbit seed 1 f=44 gen=13 judged=4246 off=83852 undrawn=84 b>=1,2,3=1400,0,0 bmax=1 r>=1,2,3=1400,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2757
+LAG belvedere orbit seed 1 f=45 gen=13 judged=1646 off=79502 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2780
+LAG belvedere orbit seed 1 f=46 gen=13 judged=1646 off=71174 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2785
+LAG belvedere orbit seed 1 f=47 gen=13 judged=1646 off=71182 undrawn=3473 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2787
+LAG belvedere orbit seed 1 f=48 gen=13 judged=1646 off=71182 undrawn=3473 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2800
+LAG belvedere orbit seed 1 f=49 gen=13 judged=4575 off=74455 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2800
+LAG belvedere orbit seed 1 f=50 gen=13 judged=4575 off=74455 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2810
+LAG belvedere orbit seed 1 f=51 gen=13 judged=4575 off=74455 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2810
+LAG belvedere orbit seed 1 f=52 gen=13 judged=4575 off=74455 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2811
+LAG belvedere orbit seed 1 f=53 gen=13 judged=4575 off=87996 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2811
+LAG belvedere orbit seed 1 f=54 gen=13 judged=4575 off=87996 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2847
+LAG belvedere orbit seed 1 f=55 gen=13 judged=4575 off=87996 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2847
+LAG belvedere orbit seed 1 f=56 gen=13 judged=4575 off=92159 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2847
+LAG belvedere orbit seed 1 f=57 gen=13 judged=4575 off=98702 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2860
+LAG belvedere orbit seed 1 f=58 gen=13 judged=4575 off=98702 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3004
+LAG belvedere orbit seed 1 f=59 gen=13 judged=4575 off=99654 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3005
+LAG belvedere orbit seed 1 f=60 gen=13 judged=4575 off=104183 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3030
+LAG belvedere orbit seed 1 f=61 gen=13 judged=4575 off=107530 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3043
+LAG belvedere orbit seed 1 f=62 gen=13 judged=4575 off=113562 undrawn=259 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3051
+LAG belvedere orbit seed 1 f=63 gen=13 judged=4575 off=119840 undrawn=259 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3097
+LAG belvedere orbit seed 1 f=64 gen=13 judged=4818 off=126604 undrawn=16 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3115
+LAG belvedere orbit seed 1 f=65 gen=13 judged=4818 off=126604 undrawn=16 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3134
+LAG belvedere orbit seed 1 f=66 gen=13 judged=4818 off=127886 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3135
+LAG belvedere orbit seed 1 f=67 gen=13 judged=4818 off=127894 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3156
+LAG belvedere orbit seed 1 f=68 gen=13 judged=4818 off=121355 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3157
+LAG belvedere orbit seed 1 f=69 gen=13 judged=4818 off=121355 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3158
+LAG belvedere orbit seed 1 f=70 gen=13 judged=4818 off=121355 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3158
+LAG belvedere orbit seed 1 f=71 gen=13 judged=4818 off=121355 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3158
+LAG belvedere orbit seed 1 f=72 gen=13 judged=4818 off=127839 undrawn=2020 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3158
+LAG belvedere orbit seed 1 f=73 gen=13 judged=4818 off=133686 undrawn=2020 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3202
+LAG belvedere orbit seed 1 f=74 gen=13 judged=6556 off=133686 undrawn=282 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3220
+LAG belvedere orbit seed 1 f=75 gen=13 judged=6556 off=125029 undrawn=282 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3220
+LAG belvedere orbit seed 1 f=76 gen=13 judged=6556 off=132420 undrawn=545 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3220
+LAG belvedere orbit seed 1 f=77 gen=13 judged=6556 off=132459 undrawn=545 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3298
+LAG belvedere orbit seed 1 f=78 gen=13 judged=6762 off=127515 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3299
+LAG belvedere orbit seed 1 f=79 gen=13 judged=6762 off=127280 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3301
+LAG belvedere orbit seed 1 f=80 gen=13 judged=6762 off=127280 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3301
+LAG belvedere orbit seed 1 f=81 gen=13 judged=6762 off=127284 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3301
+LAG belvedere orbit seed 1 f=82 gen=13 judged=6762 off=127284 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3302
+LAG belvedere orbit seed 1 f=83 gen=13 judged=6762 off=127284 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3302
+LAG belvedere orbit seed 1 f=84 gen=13 judged=6762 off=127387 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3302
+LAG belvedere orbit seed 1 f=85 gen=13 judged=6762 off=127400 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3306
+LAG belvedere orbit seed 1 f=86 gen=13 judged=6762 off=127400 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3307
+LAG belvedere orbit seed 1 f=87 gen=13 judged=6762 off=127411 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3308
+LAG belvedere orbit seed 1 f=88 gen=13 judged=6762 off=127428 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3309
+LAG belvedere orbit seed 1 f=89 gen=13 judged=6762 off=127428 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3310
+LAG belvedere orbit seed 1 f=90 gen=13 judged=6762 off=127453 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3310
+LAG belvedere orbit seed 1 f=91 gen=13 judged=6762 off=128938 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3311
+LAG belvedere orbit seed 1 f=92 gen=13 judged=6762 off=124427 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3315
+LAG belvedere orbit seed 1 f=93 gen=13 judged=6762 off=124427 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3316
+LAG belvedere orbit seed 1 f=94 gen=13 judged=6762 off=125667 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3316
+LAG belvedere orbit seed 1 f=95 gen=13 judged=6762 off=125718 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3321
+LAG belvedere orbit seed 1 f=96 gen=13 judged=6762 off=125718 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3323
+LAG belvedere orbit seed 1 f=97 gen=13 judged=6762 off=125718 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3324
+LAG belvedere orbit seed 1 f=98 gen=13 judged=6762 off=138231 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3324
+LAG belvedere orbit seed 1 f=99 gen=13 judged=6762 off=138231 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3359
+LAG belvedere orbit seed 1 f=100 gen=13 judged=6762 off=131777 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3359
+LAG belvedere orbit seed 1 f=101 gen=13 judged=6762 off=131777 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3360
+LAG belvedere orbit seed 1 f=102 gen=13 judged=6762 off=137313 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3360
+LAG belvedere orbit seed 1 f=103 gen=13 judged=6762 off=137434 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3373
+LAG belvedere orbit seed 1 f=104 gen=13 judged=6762 off=137632 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3374
+LAG belvedere orbit seed 1 f=105 gen=13 judged=6762 off=133535 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3376
+LAG belvedere orbit seed 1 f=106 gen=13 judged=6762 off=140296 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3377
+LAG belvedere orbit seed 1 f=107 gen=13 judged=6762 off=140423 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3396
+LAG belvedere orbit seed 1 f=108 gen=13 judged=6762 off=126882 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3397
+LAG belvedere orbit seed 1 f=109 gen=13 judged=6762 off=127000 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3398
+LAG belvedere orbit seed 1 f=110 gen=13 judged=6762 off=127210 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3399
+LAG belvedere orbit seed 1 f=111 gen=13 judged=6762 off=127210 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3401
+LAG belvedere orbit seed 1 f=112 gen=13 judged=6762 off=113039 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3401
+LAG belvedere orbit seed 1 f=113 gen=13 judged=6762 off=113150 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3402
+LAG belvedere orbit seed 1 f=114 gen=13 judged=6762 off=109877 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3403
+LAG belvedere orbit seed 1 f=115 gen=13 judged=6762 off=103599 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3403
+LAGSUM belvedere orbit seed 1 | frames=116 judged_sum=660537 | settle_b=53 settle_r=53 | sample_frames_b1=86690 b2=0 b3=0 | sample_frames_r1=86690 r2=0 r3=0 | worst_b=1 at f=22 worst_r=1 at f=22 | over_bound_sample_frames=0 over_max=0 | requests min=0 med=0 max=2 | pages_end=3403
+LAGSPLIT belvedere orbit seed 1 | in_clip: judged=0 b1=0 b2=0 b3=0 r1=0 r2=0 r3=0 | out_clip: judged=660537 b1=86690 b2=0 b3=0 r1=86690 r2=0 r3=0
+belvedere orbit seed 7: SimStats { node_messages: 97, missing_reports: 0, missing_resent: 0, evicted: 5, pool_resets: 0, driver_replacements: 0, max_above_target_run: 0, opening_updates: Some(68), updates: 98, parent_violations: 0, evictions_during_ack_lag: 0, gpu_digest: 17507894057965628866, gpu_digest_last: 18096589314870789715, active_gaps: 0, run_compared: 1990, run_classes: [0, 30, 0, 15, 1, 15, 0], run_coarser: 0, run_finer: 47 } | zone coarsenings 0 | drops below the raw wish: stage-excused 0, unexcused 0 | lost samples 0 | ADR 0053 gate StepGate { hops: 0, cell_node_changed: 343, cell_within_node: 280, cell_border_pairs: 12149, cell_border_over_one: 1811, cell_border_visible_pairs: 22, cell_border_visible_over_one: 0 }
+belvedere orbit seed 7: first run difference, entering: entering frame 12: node NodeId(1) today [9] node_run (8, 9) range Some((9, 9)) target Some(9) anchor Some(8) prev None usable [4, 8, 9] stage false step None D5 None
+belvedere orbit seed 7: first run difference, above_hi: above_hi frame 36: node NodeId(10) today [5, 6, 7] node_run (5, 8) range Some((5, 5)) target Some(5) anchor Some(8) prev Some((8, 8)) usable [5, 6, 7, 8] stage false step None D5 None
+belvedere orbit seed 7: first run difference, below_lo: below_lo frame 30: node NodeId(24) today [10, 11] node_run (9, 11) range Some((11, 11)) target Some(11) anchor Some(9) prev Some((9, 9)) usable [6, 8, 9, 10, 11] stage false step None D5 Some(6)
+belvedere orbit seed 7: first run difference, fine_end: fine_end frame 30: node NodeId(23) today [] node_run (6, 7) range Some((6, 6)) target Some(6) anchor Some(7) prev Some((6, 7)) usable [6, 7, 8] stage false step None D5 Some(6)
+LAG belvedere orbit seed 7 f=0 gen=2 judged=0 off=0 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=0
+LAG belvedere orbit seed 7 f=1 gen=2 judged=0 off=0 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 7 f=2 gen=2 judged=5300 off=6249 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 7 f=3 gen=3 judged=6141 off=5408 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 7 f=4 gen=3 judged=6141 off=5408 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 7 f=5 gen=3 judged=6141 off=5408 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 7 f=6 gen=4 judged=6665 off=4884 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 7 f=7 gen=5 judged=6809 off=4740 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 7 f=8 gen=5 judged=6809 off=6605 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=24
+LAG belvedere orbit seed 7 f=9 gen=5 judged=6809 off=11126 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=30
+LAG belvedere orbit seed 7 f=10 gen=6 judged=6580 off=9490 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=11 gen=6 judged=6580 off=9490 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=12 gen=6 judged=6580 off=9490 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=13 gen=7 judged=6136 off=11799 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=14 gen=7 judged=6136 off=11799 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=15 gen=8 judged=5578 off=12357 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=16 gen=8 judged=5578 off=10492 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=17 gen=9 judged=4975 off=11095 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=18 gen=9 judged=4975 off=6574 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=19 gen=10 judged=4567 off=6982 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=20 gen=10 judged=4567 off=6982 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=43
+LAG belvedere orbit seed 7 f=21 gen=10 judged=4567 off=28983 undrawn=6065 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=2 pages=43
+LAG belvedere orbit seed 7 f=22 gen=11 judged=3967 off=26655 undrawn=8645 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=2 pages=187
+LAG belvedere orbit seed 7 f=23 gen=11 judged=3967 off=26767 undrawn=8668 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=2 pages=308
+LAG belvedere orbit seed 7 f=24 gen=12 judged=3440 off=25915 undrawn=10047 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=2 pages=326
+LAG belvedere orbit seed 7 f=25 gen=12 judged=6214 off=36712 undrawn=0 b>=1,2,3=1526,0,0 bmax=1 r>=1,2,3=1526,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=2 pages=337
+LAG belvedere orbit seed 7 f=26 gen=13 judged=7220 off=40649 undrawn=2484 b>=1,2,3=2296,0,0 bmax=1 r>=1,2,3=2296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=341
+LAG belvedere orbit seed 7 f=27 gen=13 judged=7220 off=45975 undrawn=3616 b>=1,2,3=2296,0,0 bmax=1 r>=1,2,3=2296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=640
+LAG belvedere orbit seed 7 f=28 gen=13 judged=7235 off=53242 undrawn=1152 b>=1,2,3=2296,0,0 bmax=1 r>=1,2,3=2296,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=775
+LAG belvedere orbit seed 7 f=29 gen=13 judged=3820 off=49192 undrawn=0 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=806
+LAG belvedere orbit seed 7 f=30 gen=13 judged=3820 off=39063 undrawn=0 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=806
+LAG belvedere orbit seed 7 f=31 gen=13 judged=3820 off=43854 undrawn=2725 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=807
+LAG belvedere orbit seed 7 f=32 gen=13 judged=3820 off=50729 undrawn=3193 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1104
+LAG belvedere orbit seed 7 f=33 gen=13 judged=4081 off=45740 undrawn=468 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1135
+LAG belvedere orbit seed 7 f=34 gen=13 judged=4538 off=57219 undrawn=2695 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1135
+LAG belvedere orbit seed 7 f=35 gen=13 judged=4538 off=84596 undrawn=3239 b>=1,2,3=486,0,0 bmax=1 r>=1,2,3=486,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1443
+LAG belvedere orbit seed 7 f=36 gen=13 judged=6500 off=70832 undrawn=1800 b>=1,2,3=1223,0,0 bmax=1 r>=1,2,3=1223,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1865
+LAG belvedere orbit seed 7 f=37 gen=13 judged=4734 off=76040 undrawn=1065 b>=1,2,3=1223,0,0 bmax=1 r>=1,2,3=1223,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1874
+LAG belvedere orbit seed 7 f=38 gen=13 judged=5107 off=70789 undrawn=563 b>=1,2,3=1746,0,0 bmax=1 r>=1,2,3=1746,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=1901
+LAG belvedere orbit seed 7 f=39 gen=13 judged=5107 off=77014 undrawn=579 b>=1,2,3=1746,0,0 bmax=1 r>=1,2,3=1746,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2131
+LAG belvedere orbit seed 7 f=40 gen=13 judged=5362 off=77304 undrawn=100 b>=1,2,3=1662,0,0 bmax=1 r>=1,2,3=1662,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2395
+LAG belvedere orbit seed 7 f=41 gen=13 judged=4246 off=80870 undrawn=84 b>=1,2,3=1400,0,0 bmax=1 r>=1,2,3=1400,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2682
+LAG belvedere orbit seed 7 f=42 gen=13 judged=1646 off=76329 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2705
+LAG belvedere orbit seed 7 f=43 gen=13 judged=1646 off=68192 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2706
+LAG belvedere orbit seed 7 f=44 gen=13 judged=1646 off=68200 undrawn=3473 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2712
+LAG belvedere orbit seed 7 f=45 gen=13 judged=1646 off=68200 undrawn=3473 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2725
+LAG belvedere orbit seed 7 f=46 gen=13 judged=4575 off=71473 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2725
+LAG belvedere orbit seed 7 f=47 gen=13 judged=4575 off=71473 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2735
+LAG belvedere orbit seed 7 f=48 gen=13 judged=4575 off=85014 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2735
+LAG belvedere orbit seed 7 f=49 gen=13 judged=4575 off=85014 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2772
+LAG belvedere orbit seed 7 f=50 gen=13 judged=4575 off=95720 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2772
+LAG belvedere orbit seed 7 f=51 gen=13 judged=4575 off=104593 undrawn=544 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2929
+LAG belvedere orbit seed 7 f=52 gen=13 judged=4575 off=101201 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2953
+LAG belvedere orbit seed 7 f=53 gen=13 judged=4575 off=101201 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2968
+LAG belvedere orbit seed 7 f=54 gen=13 judged=4575 off=93427 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2968
+LAG belvedere orbit seed 7 f=55 gen=13 judged=4575 off=110580 undrawn=259 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=2977
+LAG belvedere orbit seed 7 f=56 gen=13 judged=4575 off=116858 undrawn=259 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3022
+LAG belvedere orbit seed 7 f=57 gen=13 judged=4818 off=131129 undrawn=16 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3040
+LAG belvedere orbit seed 7 f=58 gen=13 judged=4818 off=131137 undrawn=16 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3079
+LAG belvedere orbit seed 7 f=59 gen=13 judged=4818 off=124868 undrawn=2020 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3081
+LAG belvedere orbit seed 7 f=60 gen=13 judged=4818 off=130704 undrawn=2020 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3128
+LAG belvedere orbit seed 7 f=61 gen=13 judged=6556 off=129477 undrawn=545 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3145
+LAG belvedere orbit seed 7 f=62 gen=13 judged=6556 off=129477 undrawn=545 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3224
+LAG belvedere orbit seed 7 f=63 gen=13 judged=6762 off=124293 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3224
+LAG belvedere orbit seed 7 f=64 gen=13 judged=6762 off=124298 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3225
+LAG belvedere orbit seed 7 f=65 gen=13 judged=6762 off=124400 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3226
+LAG belvedere orbit seed 7 f=66 gen=13 judged=6762 off=124405 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3230
+LAG belvedere orbit seed 7 f=67 gen=13 judged=6762 off=124418 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3231
+LAG belvedere orbit seed 7 f=68 gen=13 judged=6762 off=124446 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3233
+LAG belvedere orbit seed 7 f=69 gen=13 judged=6762 off=124471 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3235
+LAG belvedere orbit seed 7 f=70 gen=13 judged=6762 off=125956 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3236
+LAG belvedere orbit seed 7 f=71 gen=13 judged=6762 off=121445 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3240
+LAG belvedere orbit seed 7 f=72 gen=13 judged=6762 off=122712 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3241
+LAG belvedere orbit seed 7 f=73 gen=13 judged=6762 off=122736 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3247
+LAG belvedere orbit seed 7 f=74 gen=13 judged=6762 off=135249 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3248
+LAG belvedere orbit seed 7 f=75 gen=13 judged=6762 off=135338 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3284
+LAG belvedere orbit seed 7 f=76 gen=13 judged=6762 off=134225 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3285
+LAG belvedere orbit seed 7 f=77 gen=13 judged=6762 off=134452 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3297
+LAG belvedere orbit seed 7 f=78 gen=13 judged=6762 off=134452 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3299
+LAG belvedere orbit seed 7 f=79 gen=13 judged=6762 off=130393 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3299
+LAG belvedere orbit seed 7 f=80 gen=13 judged=6762 off=130553 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3300
+LAG belvedere orbit seed 7 f=81 gen=13 judged=6762 off=137314 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3302
+LAG belvedere orbit seed 7 f=82 gen=13 judged=6762 off=137559 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3321
+LAG belvedere orbit seed 7 f=83 gen=13 judged=6762 off=124129 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3323
+LAG belvedere orbit seed 7 f=84 gen=13 judged=6762 off=124228 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3325
+LAG belvedere orbit seed 7 f=85 gen=13 judged=6762 off=117464 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3326
+LAG belvedere orbit seed 7 f=86 gen=13 judged=6762 off=109957 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3326
+LAG belvedere orbit seed 7 f=87 gen=13 judged=6762 off=110057 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3326
+LAG belvedere orbit seed 7 f=88 gen=13 judged=6762 off=110168 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3327
+LAG belvedere orbit seed 7 f=89 gen=13 judged=6762 off=106895 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3328
+LAG belvedere orbit seed 7 f=90 gen=13 judged=6762 off=100617 undrawn=0 b>=1,2,3=747,0,0 bmax=1 r>=1,2,3=747,0,0 rmax=1 finer_b=0 over_bound=0 over_max=0 req=0 pages=3328
+LAGSUM belvedere orbit seed 7 | frames=91 judged_sum=495019 | settle_b=37 settle_r=37 | sample_frames_b1=57419 b2=0 b3=0 | sample_frames_r1=57419 r2=0 r3=0 | worst_b=1 at f=25 worst_r=1 at f=25 | over_bound_sample_frames=0 over_max=0 | requests min=0 med=0 max=2 | pages_end=3328
+LAGSPLIT belvedere orbit seed 7 | in_clip: judged=0 b1=0 b2=0 b3=0 r1=0 r2=0 r3=0 | out_clip: judged=495019 b1=57419 b2=0 b3=0 r1=57419 r2=0 r3=0
+ok
+test lod_dataset::cells_stream_tests::sim::real_sim_belvedere_dolly_reaches_the_in_process_digest ... belvedere dolly: unlimited run keeps 59872680 bytes, budget 53885412
+belvedere dolly seed 3: SimStats { node_messages: 72, missing_reports: 0, missing_resent: 0, evicted: 9, pool_resets: 0, driver_replacements: 0, max_above_target_run: 0, opening_updates: Some(54), updates: 75, parent_violations: 0, evictions_during_ack_lag: 0, gpu_digest: 3958725304733859072, gpu_digest_last: 14523691661684938892, active_gaps: 0, run_compared: 829, run_classes: [0, 29, 0, 10, 2, 18, 0], run_coarser: 0, run_finer: 48 } | zone coarsenings 0 | drops below the raw wish: stage-excused 0, unexcused 0 | lost samples 0 | ADR 0053 gate StepGate { hops: 0, cell_node_changed: 382, cell_within_node: 0, cell_border_pairs: 4540, cell_border_over_one: 1180, cell_border_visible_pairs: 0, cell_border_visible_over_one: 0 }
+belvedere dolly seed 3: first run difference, entering: entering frame 16: node NodeId(1) today [9] node_run (8, 9) range Some((9, 9)) target Some(9) anchor Some(8) prev None usable [4, 8, 9] stage false step None D5 None
+belvedere dolly seed 3: first run difference, above_hi: above_hi frame 38: node NodeId(34) today [11] node_run (11, 12) range Some((7, 7)) target Some(7) anchor Some(12) prev Some((12, 12)) usable [7, 11, 12] stage true step Some(10) D5 None
+belvedere dolly seed 3: first run difference, below_lo: below_lo frame 41: node NodeId(47) today [11] node_run (10, 11) range Some((11, 11)) target Some(11) anchor Some(10) prev Some((10, 10)) usable [7, 10, 11, 12] stage false step None D5 None
+belvedere dolly seed 3: first run difference, fine_end: fine_end frame 41: node NodeId(41) today [7] node_run (7, 8) range Some((7, 7)) target Some(7) anchor Some(8) prev Some((7, 8)) usable [7, 8, 9, 10] stage false step None D5 None
+belvedere dolly seed 3: digest 4647743035028880310 in-process 4647743035028880310
+ok
+test lod_dataset::cells_stream_tests::sim::real_sim_belvedere_orbit_reaches_the_in_process_digest ... belvedere orbit: unlimited run keeps 78747656 bytes, budget 39373828
+belvedere orbit seed 1: SimStats { node_messages: 96, missing_reports: 0, missing_resent: 0, evicted: 3, pool_resets: 0, driver_replacements: 0, max_above_target_run: 0, opening_updates: Some(69), updates: 98, parent_violations: 0, evictions_during_ack_lag: 0, gpu_digest: 4625330705254500972, gpu_digest_last: 18096589314870789715, active_gaps: 7, run_compared: 2791, run_classes: [7, 37, 0, 19, 0, 19, 0], run_coarser: 1, run_finer: 59 } | zone coarsenings 0 | drops below the raw wish: stage-excused 0, unexcused 0 | lost samples 0 | ADR 0053 gate StepGate { hops: 0, cell_node_changed: 1854, cell_within_node: 0, cell_border_pairs: 17602, cell_border_over_one: 2656, cell_border_visible_pairs: 44, cell_border_visible_over_one: 0 }
+belvedere orbit seed 1: first active gap: frame 36: node NodeId(77) active [7, 12] skips non-usable buildable depths [8, 9, 10, 11] (depth, resident, usable: [(8, false, false), (9, false, false), (10, false, false), (11, true, false)]; buildable (7, 12), D5 None, range Some((7, 7)), drawn [7, 12], wanted [Some(7), Some(7), Some(7), Some(7), Some(7), Some(7), Some(7), Some(7)])
+belvedere orbit seed 1: first run difference, gap: gap frame 36: node NodeId(77) today [7, 12] node_run (12, 12) range Some((7, 7)) target Some(7) anchor Some(12) prev Some((12, 12)) usable [7, 12] stage true step Some(11) D5 None
+belvedere orbit seed 1: first run difference, entering: entering frame 6: node NodeId(4) today [9] node_run (8, 9) range Some((9, 9)) target Some(9) anchor Some(8) prev None usable [4, 8, 9] stage false step None D5 None
+belvedere orbit seed 1: first run difference, above_hi: above_hi frame 29: node NodeId(25) today [6, 7] node_run (6, 8) range Some((6, 6)) target Some(6) anchor Some(8) prev Some((8, 8)) usable [6, 7, 8] stage false step None D5 None
+belvedere orbit seed 1: first run difference, fine_end: fine_end frame 31: node NodeId(23) today [6] node_run (6, 7) range Some((6, 6)) target Some(6) anchor Some(7) prev Some((6, 7)) usable [6, 7, 8] stage false step None D5 None
+belvedere orbit seed 1: first run difference with node_run coarser: entering frame 36: node NodeId(24) today [11] node_run (8, 9) range Some((11, 11)) target Some(11) anchor Some(8) prev None usable [6, 8, 9, 11] stage true step Some(10) D5 Some(6)
+belvedere orbit seed 1: digest 4511045000477093870 in-process 4511045000477093870
+belvedere orbit seed 7: SimStats { node_messages: 97, missing_reports: 0, missing_resent: 0, evicted: 5, pool_resets: 0, driver_replacements: 0, max_above_target_run: 0, opening_updates: Some(68), updates: 98, parent_violations: 0, evictions_during_ack_lag: 0, gpu_digest: 17507894057965628866, gpu_digest_last: 18096589314870789715, active_gaps: 0, run_compared: 1990, run_classes: [0, 30, 0, 15, 1, 15, 0], run_coarser: 0, run_finer: 47 } | zone coarsenings 0 | drops below the raw wish: stage-excused 0, unexcused 0 | lost samples 0 | ADR 0053 gate StepGate { hops: 0, cell_node_changed: 343, cell_within_node: 280, cell_border_pairs: 12149, cell_border_over_one: 1811, cell_border_visible_pairs: 22, cell_border_visible_over_one: 0 }
+belvedere orbit seed 7: first run difference, entering: entering frame 12: node NodeId(1) today [9] node_run (8, 9) range Some((9, 9)) target Some(9) anchor Some(8) prev None usable [4, 8, 9] stage false step None D5 None
+belvedere orbit seed 7: first run difference, above_hi: above_hi frame 36: node NodeId(10) today [5, 6, 7] node_run (5, 8) range Some((5, 5)) target Some(5) anchor Some(8) prev Some((8, 8)) usable [5, 6, 7, 8] stage false step None D5 None
+belvedere orbit seed 7: first run difference, below_lo: below_lo frame 30: node NodeId(24) today [10, 11] node_run (9, 11) range Some((11, 11)) target Some(11) anchor Some(9) prev Some((9, 9)) usable [6, 8, 9, 10, 11] stage false step None D5 Some(6)
+belvedere orbit seed 7: first run difference, fine_end: fine_end frame 30: node NodeId(23) today [] node_run (6, 7) range Some((6, 6)) target Some(6) anchor Some(7) prev Some((6, 7)) usable [6, 7, 8] stage false step None D5 Some(6)
+belvedere orbit seed 7: digest 4511045000477093870 in-process 4511045000477093870
+ok
+test lod_dataset::cells_stream_tests::sim::real_sim_belvedere_pool_reset_and_driver_replaced_mid_load_converge ... belvedere orbit+inject: unlimited run keeps 78747656 bytes, budget 39373828
+belvedere orbit+inject seed 5: SimStats { node_messages: 120, missing_reports: 23, missing_resent: 8, evicted: 17, pool_resets: 1, driver_replacements: 1, max_above_target_run: 0, opening_updates: Some(70), updates: 100, parent_violations: 0, evictions_during_ack_lag: 0, gpu_digest: 13604215773576257374, gpu_digest_last: 18096589314870789715, active_gaps: 0, run_compared: 1928, run_classes: [0, 23, 0, 14, 4, 13, 0], run_coarser: 0, run_finer: 40 } | zone coarsenings 0 | drops below the raw wish: stage-excused 0, unexcused 0 | lost samples 0 | ADR 0053 gate StepGate { hops: 0, cell_node_changed: 1282, cell_within_node: 0, cell_border_pairs: 12060, cell_border_over_one: 1894, cell_border_visible_pairs: 27, cell_border_visible_over_one: 0 }
+belvedere orbit+inject seed 5: first run difference, entering: entering frame 7: node NodeId(4) today [9] node_run (8, 9) range Some((9, 9)) target Some(9) anchor Some(8) prev None usable [4, 8, 9] stage false step None D5 None
+belvedere orbit+inject seed 5: first run difference, above_hi: above_hi frame 48: node NodeId(98) today [8, 9] node_run (8, 10) range Some((8, 8)) target Some(8) anchor Some(10) prev Some((10, 10)) usable [8, 9, 10, 11] stage false step None D5 None
+belvedere orbit+inject seed 5: first run difference, below_lo: below_lo frame 40: node NodeId(3) today [9] node_run (8, 9) range Some((9, 9)) target Some(9) anchor Some(8) prev Some((9, 9)) usable [4, 8, 9] stage false step None D5 None
+belvedere orbit+inject seed 5: first run difference, fine_end: fine_end frame 48: node NodeId(98) today [8] node_run (8, 9) range Some((8, 8)) target Some(8) anchor Some(9) prev Some((8, 9)) usable [8, 9, 10, 11] stage false step None D5 None
+belvedere orbit+inject seed 5: digest 4511045000477093870 in-process 4511045000477093870
+ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 194 filtered out; finished in 77.70s
+

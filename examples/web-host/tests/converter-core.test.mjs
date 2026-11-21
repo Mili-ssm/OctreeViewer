@@ -58,10 +58,10 @@ function fakeStorage(initialNames = [], { lockedMs = 0 } = {}) {
 const complete = { type: "complete", file: new Blob(["oct"]), outputName: "p.oct", points: "1" };
 
 test("the core engine is the default and receives the converter options", { concurrency: false }, () => {
-    const converter = createConverter({ converterOptions: { pointsPerBlock: 4096 } });
+    const converter = createConverter({ converterOptions: { maxError: 0.5 } });
     void converter.convert(lasFile()).catch(() => {});
     assert.equal(workers[0].messages[0].engine, "core");
-    assert.deepEqual(workers[0].messages[0].options, { pointsPerBlock: 4096 });
+    assert.deepEqual(workers[0].messages[0].options, { maxError: 0.5 });
     converter.dispose();
 });
 
@@ -79,13 +79,13 @@ test("engine core is accepted as a no-op and legacy is rejected with a clear mes
 });
 
 test("engine core passes options to the worker and relays progress, completion and errors", { concurrency: false }, async () => {
-    const converter = createConverter({ engine: "core", converterOptions: { spatialDivisions: 2 } });
+    const converter = createConverter({ engine: "core", converterOptions: { maxMemoryMiB: 256 } });
     const worker = workers[0];
     const stages = [];
     converter.on("progress", (value) => stages.push(value.stage));
-    const first = converter.convert(lasFile(), { options: { pointsPerBlock: 4096, spatialDivisions: 8 } });
+    const first = converter.convert(lasFile(), { options: { maxError: 0.5, maxMemoryMiB: 128 } });
     assert.equal(worker.messages[0].engine, "core");
-    assert.deepEqual(worker.messages[0].options, { pointsPerBlock: 4096, spatialDivisions: 8 });
+    assert.deepEqual(worker.messages[0].options, { maxError: 0.5, maxMemoryMiB: 128 });
     worker.dispatch("message", { type: "progress", stage: "writing" });
     const spool = { spilledBytes: 7, pagesPeak: 1 };
     worker.dispatch("message", { ...complete, spool, timings: { totalMs: 5 } });
@@ -96,7 +96,7 @@ test("engine core passes options to the worker and relays progress, completion a
     assert.deepEqual(stages, ["writing"]);
 
     const second = converter.convert(lasFile());
-    assert.deepEqual(worker.messages[1].options, { spatialDivisions: 2 });
+    assert.deepEqual(worker.messages[1].options, { maxMemoryMiB: 256 });
     worker.dispatch("message", { type: "error", message: "bad input" });
     await assert.rejects(second, /bad input/);
     await assert.rejects(converter.convert(lasFile(), { engine: "turbo" }), /unknown engine/);
@@ -209,4 +209,19 @@ test("warnings from the worker are relayed to listeners", { concurrency: false }
     await result;
     assert.deepEqual(warnings, ["RAM only"]);
     converter.dispose();
+});
+
+test("options V8 fixes are refused before anything reaches the worker", { concurrency: false }, async () => {
+    for (const name of ["formatVersion", "rowOrder", "pointsPerBlock", "spatialDivisions"]) {
+        const created = createConverter({ converterOptions: { [name]: 1 } });
+        await assert.rejects(created.convert(lasFile()), { message: `option ${name} was removed: V8 is the only format and fixes it` });
+        const perCall = createConverter();
+        await assert.rejects(perCall.convert(lasFile(), { options: { [name]: "x" } }), /was removed: V8 is the only format/);
+        const both = createConverter({ converterOptions: { [name]: "v5" } });
+        await assert.rejects(both.convert(lasFile(), { options: { maxError: 0.01 } }), { message: `option ${name} was removed: V8 is the only format and fixes it` });
+        created.dispose();
+        perCall.dispose();
+        both.dispose();
+    }
+    assert.ok(workers.every((worker) => worker.messages.length === 0));
 });

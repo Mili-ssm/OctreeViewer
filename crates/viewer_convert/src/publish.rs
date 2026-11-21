@@ -19,7 +19,6 @@ use viewer_convert_core::{
 use viewer_core::{BlockId, DatasetSource};
 use viewer_format::FormatReader;
 
-use crate::checkpoint::fingerprint_file;
 use crate::diagnostics::ConversionDiagnostics;
 use crate::diagnostics::{DiagnosticTimer, ValidationWorkerDiagnostics};
 use crate::fs_util;
@@ -32,27 +31,6 @@ pub(crate) static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn output_block_ids(path: &Path) -> Result<(Vec<BlockId>, Vec<BlockId>), ConvertError> {
     written_block_ids(&FormatReader::new(File::open(path)?)?)
-}
-
-pub(crate) fn verify_candidate_visual_scale(
-    path: &Path,
-    expected: f64,
-) -> Result<(), ConvertError> {
-    let reader = FormatReader::new(File::open(path)?)?;
-    let actual = reader.format_metadata().visual_scale();
-    if actual.to_bits() != expected.to_bits() {
-        return Err(ConvertError::StaleVisualScaleCheckpoint { expected, actual });
-    }
-    Ok(())
-}
-
-pub(crate) fn link_or_copy(source: &Path, destination: &Path) -> Result<(), ConvertError> {
-    if let Ok(()) = fs::hard_link(source, destination) {
-        Ok(())
-    } else {
-        fs::copy(source, destination)?;
-        Ok(())
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -315,30 +293,16 @@ pub(crate) fn publish_validated_output_pair(
         },
         point_count,
     )?;
-    let primary_exists = output_path.exists();
-    let attributes_exists = attributes_path.exists();
-    if primary_exists && fingerprint_file(output_path)? != fingerprint_file(temporary_path)? {
-        return Err(ConvertError::OutputExists(output_path.to_owned()));
-    }
-    if attributes_exists
-        && fingerprint_file(&attributes_path)? != fingerprint_file(attributes_temporary_path)?
-    {
-        return Err(ConvertError::OutputExists(attributes_path));
-    }
-    if !attributes_exists {
-        fs::hard_link(attributes_temporary_path, &attributes_path).map_err(|error| {
-            if error.kind() == io::ErrorKind::AlreadyExists || attributes_path.exists() {
-                ConvertError::OutputExists(attributes_path.clone())
-            } else {
-                ConvertError::Io(error)
-            }
-        })?;
-    }
-    fs_util::sync_parent(output_path)?;
-    if !primary_exists && let Err(error) = fs::hard_link(temporary_path, output_path) {
-        if !attributes_exists {
-            let _ = fs::remove_file(&attributes_path);
+    fs::hard_link(attributes_temporary_path, &attributes_path).map_err(|error| {
+        if error.kind() == io::ErrorKind::AlreadyExists || attributes_path.exists() {
+            ConvertError::OutputExists(attributes_path.clone())
+        } else {
+            ConvertError::Io(error)
         }
+    })?;
+    fs_util::sync_parent(output_path)?;
+    if let Err(error) = fs::hard_link(temporary_path, output_path) {
+        let _ = fs::remove_file(&attributes_path);
         return Err(
             if error.kind() == io::ErrorKind::AlreadyExists || output_path.exists() {
                 ConvertError::OutputExists(output_path.to_owned())

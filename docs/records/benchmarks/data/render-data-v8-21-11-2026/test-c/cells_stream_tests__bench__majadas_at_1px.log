@@ -1,0 +1,7 @@
+
+running 1 test
+test lod_dataset::cells_stream_tests::bench::majadas_at_1px_settles_with_the_browser_block_cache ... LeafRun { settled_after: Some(480), stage: Some(1.0), forgotten: 0, rebuilt: 0, cpu_coarsened: 932, pending_blocks: 0, block_evictions: 62 }
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 201 filtered out; finished in 117.78s
+

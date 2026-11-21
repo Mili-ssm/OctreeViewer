@@ -1,6 +1,6 @@
 # Formato V8 congelado y retirada de los demás formatos (D4, plan de implementación)
 
-Estado: aprobado · 21-11-2026 · pre-mortem hecho (enmiendas A1–A11 incorporadas); el propietario lo aprueba y pide fusionar #111 antes de empezar, así que la rama sale de `main`
+Estado: completado salvo la publicación de la demo · 21-11-2026 · V8 congelada y único formato ([referencia](../reference/format/FORMAT_V8.md)); la publicación de la demo en V8 queda pendiente del propietario
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -66,7 +66,7 @@ rebasa entre tareas. Nada se fusiona sin el visto bueno del propietario.
 ### Task 0: Gate — V1 and V4 before losing v7
 
 V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra antes.
-- [ ] **V1 (mismo dibujo, A7):** un ejemplo o test ignorado de `viewer_format` lee la misma entrada convertida en v7 y
+- [x] **V1 (mismo dibujo, A7):** un ejemplo o test ignorado de `viewer_format` lee la misma entrada convertida en v7 y
   en `v8.1-pre`, ambas recién convertidas con el binario de HEAD (no se reutilizan los ficheros de `render-data`).
   - **Precondición:** mismos ids de nodo y de bloque, mismo número de puntos y mismos bytes de geometría.
   - **Comparación por nodo:** byte a byte en todas las columnas de las hojas (también RGB16, tiempo GPS, extra bytes,
@@ -77,72 +77,92 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 
   Se ejecuta con `data/samples`, Belvedere y Majadas. Cero diferencias y la precondición cumplida es la condición de
   paso. Va en un registro nuevo fechado, con la orden exacta. Una diferencia para el plan y se lleva al propietario.
-- [ ] **V4 (coste de conversión):** se enlaza la medida v7 frente a `v8.1-pre` del
+  Resultado: [registro del 21-11-2026](../records/benchmarks/V1_EQUIVALENCIA_V8_PRE1_21-11-2026.md), 0 diferencias en
+  las cuatro entradas (ejemplo `v1_equivalence`).
+- [x] **V4 (coste de conversión):** se enlaza la medida v7 frente a `v8.1-pre` del
   [registro del 20-11-2026](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md) (mismo binario). Si el propietario la
-  da por buena como RQ-07, no se repite.
-- [ ] Commit `docs: V1 equivalence of v8.1-pre against v7 before retiring v7`.
+  da por buena como RQ-07, no se repite. El propietario la da por buena el 21-11-2026: no se repite.
+- [x] Commit `docs: V1 equivalence of v8.1-pre against v7 before retiring v7`.
 
 ### Task 1: Final V8 identity, default output and web default
 
 **Files:** `crates/viewer_format/src/{version.rs,layout.rs}` y lo que despacha por capacidad; tests en
 `crates/viewer_format/tests/v8_lod.rs`. CLI y conversor web: valor por defecto.
-- [ ] Test primero: un fichero `V8` es byte a byte uno `v8.1-pre` salvo la revisión de cabecera y los magics (como el
+- [x] Test primero: un fichero `V8` es byte a byte uno `v8.1-pre` salvo la revisión de cabecera y los magics (como el
   test de v8.2-pre); una pareja V8/`v8.1-pre` mezclada se rechaza.
-- [ ] `FormatVersion::V8`: cabecera mayor `8`, revisión final y magics propios siguiendo el patrón de V7
+- [x] `FormatVersion::V8`: cabecera mayor `8`, revisión final y magics propios siguiendo el patrón de V7
   (`OCTVEND7` → `OCTVEND8`). Las capacidades son las de `v8.1-pre`, y `DEFAULT_OUTPUT = V8`.
-- [ ] El conversor web toma `v8` por defecto; `FORMAT_VERSIONS` lo añade (se quita en la tarea 5).
-- [ ] La paridad (`tools/format_parity`, `tools/convert_parity`) incluye V8 con su propia línea de digest; `check.sh` en
+- [x] El conversor web toma `v8` por defecto; `FORMAT_VERSIONS` lo añade (se quita en la tarea 5).
+- [x] La paridad (`tools/format_parity`, `tools/convert_parity`) incluye V8 con su propia línea de digest; `check.sh` en
   verde. Los tests que fijan `DEFAULT_OUTPUT == V7`, los nombres de `WRITABLE`, `"v8".parse()` y `create_web_sample.rs`
   se ajustan.
-- [ ] Se fija el SHA-256 de la salida V8 (A3): test sobre `data/samples/*.las`, y test ignorado más registro para
+- [x] Se fija el SHA-256 de la salida V8 (A3): test sobre `data/samples/*.las`, y test ignorado más registro para
   Belvedere.
-- [ ] Commit `feat(format): final V8 identity on the v8.1-pre layout, default output`.
+- [x] Commit `feat(format): final V8 identity on the v8.1-pre layout, default output`.
 
 ### Task 2: Regenerate fixtures and test data as V8
 
 **Files:** `data/samples/*.oct{,attrs}` (hoy V5), `examples/web-host/sample.oct{,attrs}` (hoy V7), las semillas de
 `fuzz/src/bin/gen_seeds.rs`, y los tests que leen fixtures.
-- [ ] Se reconvierten los fixtures con el binario de la tarea 1 y se pasan a V8 los tests que los leen, de modo que
+- [x] Se reconvierten los fixtures con el binario de la tarea 1 y se pasan a V8 los tests que los leen, de modo que
   ninguno dependa de un formato que se vaya a retirar. `sample-v5.*` y `sample-v7.*` quedan hasta la tarea 5, porque
-  prueban la lectura antigua.
-- [ ] **Fixtures de error (A4):** mientras los escritores aún existen, se guarda la cabecera real (24 bytes) y el pie
+  prueban la lectura antigua. Excepción: los tests `*.browser.mjs` que leen `sample-v5` se portan en la
+  tarea 5 (ver el inventario).
+- [x] **Fixtures de error (A4):** mientras los escritores aún existen, se guarda la cabecera real (24 bytes) y el pie
   (40 bytes) de un fichero de cada familia que se retira, como fixtures del test de la tarea 5.
-- [ ] **Datos ignorados (A6):** los tests ignorados leen `target/render-data` desde una variable de entorno (o un enlace
+- [x] **Datos ignorados (A6):** los tests ignorados leen `target/render-data` desde una variable de entorno (o un enlace
   documentado), así que se pueden ejecutar desde un worktree. Se reconvierten a V8 nuevos los ficheros que el propietario
   elija (`belvedere-v7.oct`, `majadas-v7.oct`, `data/datasets/*.oct`; `MANIFEST.txt` al día). Se **ejecutan** los tests
   ignorados, y sus valores fijados (p. ej. `lod_cells_sim_tests.rs:488-505`) se rehacen para V8 en un registro fechado,
   con el log.
-- [ ] **Inventario de consumidores (A5):** cada uno se porta a V8 o se borra, y la decisión queda anotada:
+- [x] **Inventario de consumidores (A5):** cada uno se porta a V8 o se borra, y la decisión queda anotada:
   - los tests `*.browser.mjs` que piden `sample-v5`/`sample-v7` (`check.sh` no los ejecuta);
   - `storage_suite.py`, `profile_conversion.py` (v5 por defecto), `compare_storage_revisions.py` y
     `run-r3-b6-matrix.sh`;
   - `lod_cells_*_tests.rs`;
   - `viewer_render_wgpu` (`cell_pool/plan.rs`, `examples/coverage_spike.rs`);
   - las órdenes de `PROBES.md` y de los README que pasan `--format-version` u opciones retiradas.
-- [ ] Commit `test: fixtures and seeds as V8`.
+
+  Decisiones (tarea 2a, 21-11-2026). Se ha regenerado `sample.*` y `data/samples/fs_*.*` como V8; la semilla de fuzz
+  `gen_seeds` escribe V8 (más `-v7-` heredadas); los fixtures de error están en
+  [`crates/viewer_format/tests/fixtures/retired/`](../../crates/viewer_format/tests/fixtures/retired/README.md).
+
+  | Consumidor | Decisión | Motivo |
+  | --- | --- | --- |
+  | `web_sample.rs` (`sample.*`) | Portado: ahora afirma V8 | Mismos recuentos y rangos; solo cambia la identidad |
+  | `*.browser.mjs` con `sample-v5` (`lod-attributes`, `lod-reuse`, `lod-session`, `presentation`, `storage-format`, `surface-memory`) | Decidir en la tarea 5 | Prueban la ruta CPU sobre la rejilla de 4.096 puntos en V5; portarlos exige un fixture V8 de esa rejilla y comprobar que la ruta CPU lo admite. No se ejecutaron (`check.sh` no las cubre) |
+  | `async-format-reader.browser.mjs` (`sample-v7`) | Portar a V8 en la tarea 5 | Prueba la lectura asíncrona por Blob, que V8 conserva (A1: portar, no borrar); hoy usa un fichero `v7.1-pre` |
+  | Tests `*.browser.mjs` que piden `sample.oct` | Ninguno | `sample.oct` solo lo usan `main.js`, `package-local.py` y `viewer_wasm` (`lod_cells_stream_tests.rs`), que siguen igual |
+  | `storage_suite.py`, `profile_conversion.py` | Portar en la tarea 5 | Defecto `v5` y lista `v5…v7.3-pre`; V8 fija 64.000 puntos por bloque y rechaza lo demás, así que cambiar el defecto cambia lo que miden y hay que decidir qué se compara |
+  | `compare_storage_revisions.py` | Portar en la tarea 5 | Compara `v5` y `v7.2-pre` (ambos se retiran); decidir contra qué V8 se compara |
+  | `run-r3-b6-matrix.sh` | Portado en 2b | Lee `$RENDER_DATA_DIR/*-v8.oct` (defecto `target/render-data`); no se ejecuta (necesita navegador) |
+  | `lod_cells_*_tests.rs` | Portado en 2b | Leen `$RENDER_DATA_DIR/*-v8.oct` (ignorados); mismos valores que con v7, nada que rehacer ([registro](../records/benchmarks/RENDER_DATA_V8_21-11-2026.md)) |
+  | `viewer_render_wgpu` (`cell_pool/plan.rs`, `examples/coverage_spike.rs`) | Sin cambio | No fijan versión ni leen fixtures versionados; `coverage_spike` recibe el `.oct` por argumento (su texto cita «v7.5») |
+  | `PROBES.md` y READMEs | Portado en lo barato | Se corrigen las frases sobre `sample.oct` y los fixtures V5; quedan los comandos con `formatVersion`/`--attr-codec` (en `PROBES.md`, `web-host/README.md`, `converter-ui.mjs`, `tools/convert_parity`) para las tareas 3 a 5, cada una con su opción |
+- [x] Commit `test: fixtures and seeds as V8`.
 
 ### Task 3: Retire zstd, v8.2-pre and --attr-codec (ADR 0060)
 
-- [ ] Fuera:
+- [x] Fuera:
   - la dependencia `zstd`;
   - los códecs 5 y 6 y la etiqueta interna 2 (el lector V8 los trata como mal formados);
   - `attribute_scheme.rs` y la parte zstd de `codec.rs`, `attribute_codec.rs` y `read_plan.rs`. Las rutas LZ4, planos de
     bytes y diccionario se quedan;
   - `--attr-codec`, `attrCodec` (core, wasm, `converter-ui.mjs`) y sus casos de paridad y tests.
-- [ ] Test: `--attr-codec` y `attrCodec` dan un error claro de opción retirada.
-- [ ] Se mantiene la paridad nativo = wasm de los bloques (el digest cambia; se anota el nuevo).
-- [ ] Commit `refactor(format)!: drop zstd and the attribute codec option (ADR 0060)`.
+- [x] Test: `--attr-codec` y `attrCodec` dan un error claro de opción retirada.
+- [x] Se mantiene la paridad nativo = wasm de los bloques (el digest cambia; se anota el nuevo).
+- [x] Commit `refactor(format)!: drop zstd and the attribute codec option (ADR 0060)`.
 
 ### Task 4: Retire EPT input and checkpoints (ADR 0061)
 
-- [ ] Fuera:
+- [x] Fuera:
   - `ept.rs`, `ept_checkpoint.rs`, `ept_tests.rs` y `checkpoint_record.rs`;
   - las partes de `checkpoint.rs` que solo usan los checkpoints (lo que use la ruta LAS sin checkpoints se queda; hoy
     `las_source.rs:327` llama a `verify_source`);
   - `--checkpoint` y `--resume`, `CheckpointMode`, los errores `UnsupportedEpt` e `InvalidEpt`;
   - `serde_json`, si solo lo usa EPT.
-- [ ] Test: una entrada EPT, `--checkpoint` y `--resume` dan un error claro.
-- [ ] Commit `refactor(convert)!: drop EPT input and checkpoints (ADR 0061)`.
+- [x] Test: una entrada EPT, `--checkpoint` y `--resume` dan un error claro.
+- [x] Commit `refactor(convert)!: drop EPT input and checkpoints (ADR 0061)`.
 
 ### Task 5: Retire v5, v6, v7 and every pre-revision
 
@@ -157,48 +177,50 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
 - 5c: rutas antiguas del conversor y del core, y los ayudantes `v5_*`.
 - 5d: portar los tests (A1).
 - 5e: por último, quitar las variantes y los lectores.
-- [ ] Fuera:
+- [x] Fuera:
   - `FormatVersion` y `StorageLayout` quedan solo con `V8`;
   - se borran los lectores y escritores de V5, de v6 y sus previas y de v7 y sus previas, sus tests (`tests/v6.rs`,
     `v7_4*.rs`, `v7_5*.rs`, `v7_final.rs`, los de v8.1/v8.2), `create_legacy_sample.rs` y `sample-v5.*`/`sample-v7.*`.
-- [ ] El conversor escribe V8 sin opción de versión. Se retiran `--format-version`, `--row-order`,
+- [x] El conversor escribe V8 sin opción de versión. Se retiran `--format-version`, `--row-order`,
   `--points-per-block` y `--spatial-divisions` (V8 los fija), con sus equivalentes JS y la lista `FORMAT_VERSIONS`.
-- [ ] Test (Review Focus 1 y 5; A4): `retired_version_name(major, rev)` en `viewer_format` nombra cada familia retirada.
+- [x] Test (Review Focus 1 y 5; A4): `retired_format_name` y `explain_retired` (`viewer_format/src/retired.rs`) nombran cada familia retirada.
   Cuando el pie no es V8, `open()` del wasm lee y valida la cabecera; solo en la ruta de error, así que una apertura
   correcta no hace otra petición Range. Con los fixtures de la tarea 2 se prueba el lector síncrono, el wasm desde node,
   `verify` y la lectura por HTTP Range: todos dan «versión N: reconvierte a V8», nunca `unknown(7, 0)` ni
   `InvalidFooter`.
-- [ ] La paridad queda solo con V8, y `check_version_literals.sh` se adapta.
-- [ ] Commit(s) `refactor(format)!: V8 is the only format`.
+- [x] La paridad queda solo con V8, y `check_version_literals.sh` se adapta.
+- [x] Commit(s) `refactor(format)!: V8 is the only format`.
 
 ### Task 6: Demo and browser verification
 
-- [ ] Se regeneran la muestra y el recorte de Belvedere (`scripts/make-demo-belvedere.sh`) en V8, con nombres
+- [x] Se regeneran la muestra y el recorte de Belvedere (`scripts/make-demo-belvedere.sh`) en V8, con nombres
   versionados (`sample-v8.oct`, `belvedere-crop-v8.oct`) y el wasm con `?v=<sha>`, para que una caché antigua no mezcle
   ficheros (A10). El README de la demo y `PROBES.md` se actualizan.
-- [ ] Se ejecuta la suite `*.browser.mjs` sobre la muestra V8 (A5).
-- [ ] Playwright (`ui-verifier`) con la demo servida en local, en escritorio y móvil:
+- [x] Se ejecuta la suite `*.browser.mjs` sobre la muestra V8 (A5) (excepto `lod-regions`, que ya fallaba antes de D4: #117).
+- [x] Playwright (`ui-verifier`) con la demo servida en local, en escritorio y móvil:
   - abrir la muestra;
   - los modos de color;
   - el conversor web en V8;
   - abrir un fichero v7, que debe dar el error claro;
   - el caso de un wasm antiguo en caché;
   - la consola.
+
+  (La caché de un wasm antiguo solo se comprobó sobre una copia local del sitio; se verifica al publicar.)
 - [ ] **No se publica:** se pregunta al propietario antes de `scripts/publish-demo.sh`.
-- [ ] Commit `chore(web): V8 demo sample`.
+- [x] Commit `chore(web): V8 demo sample`.
 
 ### Task 7: Documentation, requirements and trackers
 
-- [ ] `docs/reference/format/FORMAT_V8.md` pasa a ser la referencia única: se consolida `FORMAT_V8_PRE1.md` y se quitan
+- [x] `docs/reference/format/FORMAT_V8.md` pasa a ser la referencia única: se consolida `FORMAT_V8_PRE1.md` y se quitan
   las capacidades retiradas.
-- [ ] Las referencias de v5, v6, v7 y las previas quedan como históricas, enlazadas desde un índice, porque explican
+- [x] Las referencias de v5, v6, v7 y las previas quedan como históricas, enlazadas desde un índice, porque explican
   los registros. No se borran.
-- [ ] Se actualizan inventario, requisitos (RF-26, fila D3c), `estado.md`, el `README.md` raíz y el del
+- [x] Se actualizan inventario, requisitos (RF-26, fila D3c), `estado.md`, el `README.md` raíz y el del
   conversor/demo.
-- [ ] Estados de los ADR: 0004 y 0047 cumplidos o sustituidos por 0058 y 0061; nota en 0044 y 0058.
-- [ ] Este plan y `formato-v8.md` pasan a «hecho».
+- [x] Estados de los ADR: 0004 y 0047 cumplidos o sustituidos por 0058 y 0061; nota en 0044 y 0058.
+- [x] Este plan y `formato-v8.md` pasan a «hecho» (completado salvo la publicación de la demo).
 - [ ] Issues: se cierran #28 y #13 con enlace, se reescribe #12 para V8, y se anota en #16 lo que queda resuelto.
-- [ ] `check_docs_links.py` y `check_docs_index.py` en verde; commit `docs: V8 is the only format (D4)`.
+- [x] `check_docs_links.py` y `check_docs_index.py` en verde; commit `docs: V8 is the only format (D4)`.
 
 ## Criterios de parada
 

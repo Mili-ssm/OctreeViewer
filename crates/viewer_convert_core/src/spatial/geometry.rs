@@ -1,18 +1,6 @@
-//! Cell and sample geometry in the local and the global frame.
+//! Cell and sample geometry in the global frame.
 
 use viewer_core::SpatialBounds;
-
-use super::spool::SpoolLayout;
-
-pub(super) fn cube_bounds(bounds: SpatialBounds) -> SpatialBounds {
-    let side = bounds.max_side();
-    if side == 0.0 {
-        return bounds;
-    }
-    let min = bounds.min();
-    let max = std::array::from_fn(|axis| (min[axis] + side).max(bounds.max()[axis]));
-    SpatialBounds::new(min, max).expect("finite source bounds produce finite cube bounds")
-}
 
 #[inline]
 pub fn cube_side(bounds: SpatialBounds) -> f64 {
@@ -32,33 +20,6 @@ pub(super) fn child_bounds(bounds: SpatialBounds, child: usize, divisions: u8) -
         .expect("converter subdivisions are validated")
         .cell_bounds(child)
         .expect("child index is in range")
-}
-
-#[inline]
-pub fn sample_index(position: [f64; 3], bounds: SpatialBounds, grid: usize) -> usize {
-    let side = cube_side(bounds);
-    let mut cell = [0_usize; 3];
-    for axis in 0..3 {
-        let scaled = ((position[axis] - bounds.min()[axis]) / side * grid as f64).floor();
-        cell[axis] = (scaled as usize).min(grid - 1);
-    }
-    (cell[0] * grid + cell[1]) * grid + cell[2]
-}
-
-/// `sample_index` and `voxel_center` of the same position in one pass: the cell coordinates are
-/// reused instead of divided back out of the index (same arithmetic, so identical results).
-#[inline]
-pub fn sample_cell(position: [f64; 3], bounds: SpatialBounds, grid: usize) -> (usize, [f64; 3]) {
-    let side = cube_side(bounds);
-    let cell_size = side / grid as f64;
-    let mut cell = [0_usize; 3];
-    for axis in 0..3 {
-        let scaled = ((position[axis] - bounds.min()[axis]) / side * grid as f64).floor();
-        cell[axis] = (scaled as usize).min(grid - 1);
-    }
-    let center =
-        std::array::from_fn(|axis| bounds.min()[axis] + (cell[axis] as f64 + 0.5) * cell_size);
-    ((cell[0] * grid + cell[1]) * grid + cell[2], center)
 }
 
 /// Exponent of a positive power-of-two side read from the `f64` bits (no `log2`).
@@ -147,7 +108,7 @@ impl GlobalCellFrame {
     }
 }
 
-/// [`sample_cell`] on exact integers for a node of a global octree: the cell of `position` is
+/// The cell of `position` is
 /// `(q - origin) >> (side_exponent - log2(grid))` and the center is an integer number of quanta.
 #[inline]
 pub fn sample_cell_global(
@@ -173,18 +134,11 @@ pub fn voxel_center_global(index: usize, bounds: SpatialBounds, grid: usize) -> 
     std::array::from_fn(|axis| global_cell_center(origin[axis], cell[axis], shift))
 }
 
-#[inline]
-pub fn voxel_center(index: usize, bounds: SpatialBounds, grid: usize) -> [f64; 3] {
-    let cell = [index / (grid * grid), (index / grid) % grid, index % grid];
-    let cell_size = cube_side(bounds) / grid as f64;
-    std::array::from_fn(|axis| bounds.min()[axis] + (cell[axis] as f64 + 0.5) * cell_size)
-}
-
 /// Half the cell diagonal, or the whole diagonal where samples sit at their nearest point
 /// (`v7.4-pre` nodes with `a < 32`).
-pub fn lod_sample_error(bounds: SpatialBounds, grid: usize, layout: SpoolLayout) -> f64 {
+pub fn lod_sample_error(bounds: SpatialBounds, grid: usize) -> f64 {
     let half_diagonal = (3.0_f64).sqrt() * (cube_side(bounds) / grid as f64) / 2.0;
-    if layout.is_global() && global_level(bounds) < 32 {
+    if global_level(bounds) < 32 {
         2.0 * half_diagonal
     } else {
         half_diagonal

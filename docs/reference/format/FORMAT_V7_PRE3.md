@@ -1,5 +1,7 @@
 # Native `.oct` format, v7.3-pre
 
+> Histórico: formato retirado con la V8 (D4, 21-11-2026); la referencia vigente es [FORMAT_V8](FORMAT_V8.md).
+
 Development identity: major **7**, revision **3**, opt-in. The final [v7](FORMAT_V7.md) is the default output
 ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md)); later unimplemented revisions remain rejected. V7.1-pre and V7.2-pre retain their exact bytes.
 

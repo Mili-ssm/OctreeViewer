@@ -6,9 +6,7 @@
 #[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]
 mod async_reader;
 mod attribute_codec;
-mod attribute_scheme;
 mod block_encoder;
-mod checkpoint_record;
 mod codec;
 mod contracts;
 mod crc32;
@@ -35,19 +33,18 @@ mod read_budget;
 mod read_plan;
 mod reader;
 mod reader_limits;
+mod retired;
 mod slice_cursor;
 mod storage_reader;
+#[cfg(test)]
+mod test_support;
 mod version;
 mod writer;
 
 /// Largest attribute schema the writer emits and the default reader limit accepts (RF-27).
 pub(crate) const MAX_SCHEMA_ATTRIBUTES: usize = 256;
 
-pub use attribute_scheme::AttributeCodecScheme;
-pub use codec::{
-    BlockCodec, CodecError, EncodedBlock, EntropyCoder, compress_block, compress_block_with,
-    decompress_block,
-};
+pub use codec::{BlockCodec, CodecError, EncodedBlock, compress_block, decompress_block};
 pub use contracts::{BlockEncoder, OctreeReader, OctreeWriter, PreparedOctreeWriter};
 pub use crc32::{Crc32, crc32};
 pub use crs_unit::{CrsLinearUnit, CrsUnit};
@@ -62,7 +59,7 @@ pub use global_frame::{
     cell_origin_from_base, cell_origin_quanta, quanta_to_units, quantize_coordinate,
     round_to_quanta,
 };
-pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
+pub use layout::{HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
 pub use lazy_pages::{PageGraft, PageRange, PageSource};
 pub use metadata::{
     DisplayColourSource, FormatMetadata, MetadataError, NodeAttributeRange, PointDistanceQuantiles,
@@ -86,9 +83,10 @@ pub use writer::{
     FormatWriter, FormatWriterOptions, PreparedPointBlock, RowOrder, prepare_point_block,
 };
 
-pub use version::{
-    FileRole, FormatIdentity, FormatVersion, block_checkpoint_versions, probe_format,
+pub use retired::{
+    explain_open_failure, explain_retired, retired_format_name, retired_header_name,
 };
+pub use version::{FileRole, FormatIdentity, FormatVersion, probe_format};
 
 #[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]
 pub use async_reader::{AsyncFormatReader, AsyncReadError};

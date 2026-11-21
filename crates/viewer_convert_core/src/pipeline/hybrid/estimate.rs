@@ -44,7 +44,6 @@ pub fn estimate_spools(
     options: ConvertOptions,
     config: HybridConfig,
 ) -> Result<SpoolEstimate, ConvertError> {
-    let options = options.validate()?;
     let points = u128::from(source.point_count);
     let record = SpoolLayout::source(source).record_bytes() as u128;
     let divisions = u128::from(options.spatial_divisions()).max(1);
@@ -99,18 +98,19 @@ mod tests {
             has_crs: false,
             crs: viewer_format::CrsRecord::local(),
             scale_offset: None,
-            global: None,
+            global: crate::source::GlobalRoot::from_bounds(
+                SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                true,
+            )
+            .unwrap(),
             extra_byte_vlrs: Vec::new(),
             las_extra_bytes: None,
         }
     }
 
-    fn estimate(points: u64, format: u8, divisions: u8, budget: u64) -> SpoolEstimate {
-        let options = ConvertOptions::default()
-            .with_format_version(viewer_format::FormatVersion::V5)
-            .unwrap()
-            .with_spatial_divisions(divisions)
-            .unwrap();
+    fn estimate(points: u64, format: u8, budget: u64) -> SpoolEstimate {
+        // The record table was measured with 262 144-point leaves: pin them so it still applies.
+        let options = ConvertOptions::default().with_leaf_point_limit_for_tests(262_144);
         estimate_spools(&info(points, format), options, HybridConfig::web(budget)).unwrap()
     }
 
@@ -118,12 +118,11 @@ mod tests {
     fn matches_the_record_table() {
         let budget = 2 << 30;
         let cases = [
-            (BELVEDERE, 3, 2, 1496, 13, 5.58, 7.61),
-            (BELVEDERE, 3, 8, 5983, 10, 3.56, 5.54),
-            (MAJADAS, 2, 2, 7608, 49, 22.82, 31.2),
+            (BELVEDERE, 3, 1496, 13, 5.58, 7.61),
+            (MAJADAS, 2, 7608, 49, 22.82, 31.2),
         ];
-        for (points, format, divisions, nodes, zones, live, ram_only) in cases {
-            let e = estimate(points, format, divisions, budget);
+        for (points, format, nodes, zones, live, ram_only) in cases {
+            let e = estimate(points, format, budget);
             assert_eq!(e.nodes, nodes);
             assert_eq!(e.zones, zones);
             assert!((e.live_peak_bytes as f64 / GIB - live).abs() < 0.01);
@@ -133,20 +132,20 @@ mod tests {
 
     #[test]
     fn small_live_peak_needs_one_zone_and_no_spill() {
-        let e = estimate(1_000, 3, 2, 2 << 30);
+        let e = estimate(1_000, 3, 2 << 30);
         assert_eq!(e.spilled_peak_bytes, 0);
         assert_eq!(e.zones, 1);
     }
 
     #[test]
     fn estimates_grow_with_points_and_shrink_with_budget() {
-        let small = estimate(BELVEDERE, 3, 2, 2 << 30);
-        let large = estimate(2 * BELVEDERE, 3, 2, 2 << 30);
+        let small = estimate(BELVEDERE, 3, 2 << 30);
+        let large = estimate(2 * BELVEDERE, 3, 2 << 30);
         assert!(large.live_peak_bytes > small.live_peak_bytes);
         assert!(large.nodes >= small.nodes);
         assert!(large.zones >= small.zones);
         assert!(large.ram_only_bytes > small.ram_only_bytes);
-        let roomy = estimate(BELVEDERE, 3, 2, 16 << 30);
+        let roomy = estimate(BELVEDERE, 3, 16 << 30);
         assert_eq!(roomy.spilled_peak_bytes, 0);
         assert!(roomy.zones <= small.zones);
     }

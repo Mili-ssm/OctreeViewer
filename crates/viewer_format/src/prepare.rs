@@ -1,18 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use viewer_core::{
-    AttributeColumn, AttributeValues, BlockId, DatasetMetadata, NodeId, SpatialBounds,
-    SpatialHierarchy,
-};
+use viewer_core::{AttributeColumn, AttributeValues, BlockId, NodeId, SpatialHierarchy};
 
 use crate::geometry::{GeometryEncoding, encode_delta, encode_delta_iter};
 use crate::layout::{
     PayloadDirectoryEntry, StorageLayout, StoredColumn, attribute_payload_size, block_payload_size,
 };
-use crate::{
-    EntropyCoder, FormatError, FormatMetadata, FormatVersion, SourcePointBlock, compress_block,
-    crc32, quantize_local_positions,
-};
+use crate::{FormatError, FormatMetadata, FormatVersion, SourcePointBlock, compress_block, crc32};
 
 /// Encodes one block without appending it, allowing independent blocks to be prepared concurrently.
 pub fn prepare_point_block(
@@ -20,23 +14,14 @@ pub fn prepare_point_block(
     metadata: &FormatMetadata,
     options: FormatWriterOptions,
 ) -> Result<PreparedPointBlock, FormatError> {
-    prepare_point_block_for_version(FormatVersion::V5, block, metadata, options)
+    prepare_point_block_for_version(FormatVersion::V8, block, metadata, options)
 }
 
 /// Whether `block` belongs to a node with children, found by scanning the hierarchy. Callers that
 /// prepare many blocks build [`lod_block_ids`] once instead. Only the single-block entry points
-/// (V5 and tests) use it; the writer's `write_block` path takes the set built once in its
-/// constructor.
-fn block_is_lod_by_scan(
-    version: FormatVersion,
-    block: BlockId,
-    metadata: &FormatMetadata,
-) -> Result<bool, FormatError> {
-    // Only layouts that omit or derive columns for leaves need the answer; the others never look at it.
-    let layout = StorageLayout::from_version(version)?;
-    if !(layout.omits_lod_attributes() || layout.derives_display_attribute()) {
-        return Ok(false);
-    }
+/// (tests and [`prepare_point_block`]) use it; the writer's `write_block` path takes the set
+/// built once in its constructor.
+fn block_is_lod_by_scan(block: BlockId, metadata: &FormatMetadata) -> Result<bool, FormatError> {
     Ok(lod_block_ids(metadata.dataset().hierarchy())?.contains(&block))
 }
 
@@ -46,21 +31,9 @@ pub(crate) fn prepare_point_block_for_version(
     metadata: &FormatMetadata,
     options: FormatWriterOptions,
 ) -> Result<PreparedPointBlock, FormatError> {
-    let block_is_lod = block_is_lod_by_scan(version, block.id(), metadata)?;
+    let block_is_lod = block_is_lod_by_scan(block.id(), metadata)?;
     prepare_point_block_for_version_impl(version, block, metadata, options, block_is_lod, false)
         .map(|(block, _)| block)
-}
-
-#[cfg(test)]
-pub(crate) fn prepare_point_block_for_version_with_diagnostics(
-    version: FormatVersion,
-    block: SourcePointBlock,
-    metadata: &FormatMetadata,
-    options: FormatWriterOptions,
-) -> Result<(PreparedPointBlock, crate::GeometryCodecDiagnostics), FormatError> {
-    let block_is_lod = block_is_lod_by_scan(version, block.id(), metadata)?;
-    prepare_point_block_for_version_impl(version, block, metadata, options, block_is_lod, true)
-        .map(|(block, diagnostics)| (block, diagnostics.expect("diagnostics enabled")))
 }
 
 #[expect(
@@ -79,9 +52,6 @@ pub(crate) fn prepare_point_block_for_version_impl(
     let rules = metadata.column_rules();
     let column_rule = |column: usize| layout.stored_column(block_is_lod, column, rules);
     let row_order = options.resolved_row_order(version)?;
-    if options.attribute_codec != crate::AttributeCodecScheme::Lz4 && !layout.supports_zstd() {
-        return Err(FormatError::AttributeCodecUnsupported(version));
-    }
     let point_count = block.positions_local().len();
     if block.colors().len() != point_count {
         return Err(FormatError::ColorCountMismatch {
@@ -109,28 +79,19 @@ pub(crate) fn prepare_point_block_for_version_impl(
             limit: options.max_uncompressed_block_bytes,
         });
     }
-    ensure_global_frame_matches(layout, metadata)?;
-    let (quantized, origin_quanta, world_bounds) = if layout.uses_global_frame() {
-        let frame = metadata.global_frame().expect("checked above");
+    let frame = global_frame_of(metadata)?;
+    let (quantized, origin_quanta) = {
         let cell = frame
             .block_box(block.id())
             .ok_or(FormatError::UnreferencedBlock(block.id()))?;
-        let (quantized, origin) = crate::quantization::quantize_global_positions(
+        crate::quantization::quantize_global_positions(
             block.positions_local(),
             metadata.dataset().coordinate_frame().origin(),
             frame.frame_origin_quanta(),
             cell,
             options.max_quantization_error,
-        )?;
-        (quantized, origin, None)
-    } else {
-        let quantized =
-            quantize_local_positions(block.positions_local(), options.max_quantization_error)?;
-        let world_bounds =
-            block_world_bounds(block.positions_local(), &quantized, metadata.dataset())?;
-        (quantized, [0; 3], world_bounds)
+        )?
     };
-    let transform = quantized.transform();
     let quantization_error = quantized.max_error();
     let geometry_length = usize::try_from(
         (point_count as u64)
@@ -145,76 +106,61 @@ pub(crate) fn prepare_point_block_for_version_impl(
     let mut codec_diagnostics =
         collect_codec_diagnostics.then(crate::GeometryCodecDiagnostics::default);
     let mut candidates = Vec::new();
-    let (mut geometry_encoding, mut encoded_geometry, mut geometry_raw_length) =
-        if layout == StorageLayout::V5 {
-            let started = collect_codec_diagnostics.then(std::time::Instant::now);
-            let encoded = compress_block(&raw_geometry);
-            let elapsed = started.map_or(0, |started| started.elapsed().as_nanos());
-            if codec_diagnostics.is_some() {
-                candidates.push(candidate_metric(
-                    crate::GeometryCandidateKind::Raw,
-                    raw_encoding_ns,
-                    elapsed,
-                    raw_geometry_length,
-                    encoded.bytes().len(),
-                ));
-            }
-            (GeometryEncoding::RawU32, encoded, raw_geometry_length)
-        } else {
+    let (mut geometry_encoding, mut encoded_geometry, mut geometry_raw_length) = {
+        let delta_started = collect_codec_diagnostics.then(std::time::Instant::now);
+        let delta = encode_delta(quantized.coordinates())?;
+        let delta_encoding_ns = delta_started.map_or(0, |started| started.elapsed().as_nanos());
+        let delta_length = delta.len();
+        let other_raw_size = uncompressed_size
+            .checked_sub(geometry_length as u64)
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        let delta_total = other_raw_size
+            .checked_add(delta.len() as u64)
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        let raw_started = collect_codec_diagnostics.then(std::time::Instant::now);
+        let raw_encoded = compress_block(&raw_geometry);
+        let raw_compression_ns = raw_started.map_or(0, |started| started.elapsed().as_nanos());
+        if codec_diagnostics.is_some() {
+            candidates.push(candidate_metric(
+                crate::GeometryCandidateKind::Raw,
+                raw_encoding_ns,
+                raw_compression_ns,
+                raw_geometry_length,
+                raw_encoded.bytes().len(),
+            ));
+        }
+        if delta_total <= options.max_uncompressed_block_bytes {
             let delta_started = collect_codec_diagnostics.then(std::time::Instant::now);
-            let delta = encode_delta(quantized.coordinates())?;
-            let delta_encoding_ns = delta_started.map_or(0, |started| started.elapsed().as_nanos());
-            let delta_length = delta.len();
-            let other_raw_size = uncompressed_size
-                .checked_sub(geometry_length as u64)
-                .ok_or(FormatError::BlockSizeOverflow)?;
-            let delta_total = other_raw_size
-                .checked_add(delta.len() as u64)
-                .ok_or(FormatError::BlockSizeOverflow)?;
-            let raw_started = collect_codec_diagnostics.then(std::time::Instant::now);
-            let raw_encoded = compress_block(&raw_geometry);
-            let raw_compression_ns = raw_started.map_or(0, |started| started.elapsed().as_nanos());
+            let delta_encoded = compress_block(&delta);
+            let delta_compression_ns =
+                delta_started.map_or(0, |started| started.elapsed().as_nanos());
             if codec_diagnostics.is_some() {
                 candidates.push(candidate_metric(
-                    crate::GeometryCandidateKind::Raw,
-                    raw_encoding_ns,
-                    raw_compression_ns,
-                    raw_geometry_length,
-                    raw_encoded.bytes().len(),
+                    crate::GeometryCandidateKind::Delta,
+                    delta_encoding_ns,
+                    delta_compression_ns,
+                    delta_length,
+                    delta_encoded.bytes().len(),
                 ));
             }
-            if delta_total <= options.max_uncompressed_block_bytes {
-                let delta_started = collect_codec_diagnostics.then(std::time::Instant::now);
-                let delta_encoded = compress_block(&delta);
-                let delta_compression_ns =
-                    delta_started.map_or(0, |started| started.elapsed().as_nanos());
-                if codec_diagnostics.is_some() {
-                    candidates.push(candidate_metric(
-                        crate::GeometryCandidateKind::Delta,
-                        delta_encoding_ns,
-                        delta_compression_ns,
-                        delta_length,
-                        delta_encoded.bytes().len(),
-                    ));
-                }
-                if delta_encoded.bytes().len() < raw_encoded.bytes().len() {
-                    (GeometryEncoding::DeltaVarint, delta_encoded, delta_length)
-                } else {
-                    (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
-                }
+            if delta_encoded.bytes().len() < raw_encoded.bytes().len() {
+                (GeometryEncoding::DeltaVarint, delta_encoded, delta_length)
             } else {
-                if codec_diagnostics.is_some() {
-                    candidates.push(candidate_metric(
-                        crate::GeometryCandidateKind::Delta,
-                        delta_encoding_ns,
-                        0,
-                        delta_length,
-                        0,
-                    ));
-                }
                 (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
             }
-        };
+        } else {
+            if codec_diagnostics.is_some() {
+                candidates.push(candidate_metric(
+                    crate::GeometryCandidateKind::Delta,
+                    delta_encoding_ns,
+                    0,
+                    delta_length,
+                    0,
+                ));
+            }
+            (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
+        }
+    };
     let mut selected_candidate = match geometry_encoding {
         GeometryEncoding::RawU32 => crate::GeometryCandidateKind::Raw,
         GeometryEncoding::DeltaVarint => crate::GeometryCandidateKind::Delta,
@@ -226,10 +172,10 @@ pub(crate) fn prepare_point_block_for_version_impl(
             crate::GeometryCandidateKind::CompactOccupancy { residual_bits: 0 }
         }
     };
-    if layout.supports_occupancy() && point_count != 0 && u32::try_from(point_count).is_ok() {
+    if point_count != 0 && u32::try_from(point_count).is_ok() {
         let max_geometry_bytes =
             options.max_uncompressed_block_bytes - (uncompressed_size - geometry_length as u64);
-        if layout.restricts_occupancy_to_compact24() {
+        {
             let build_started = collect_codec_diagnostics.then(std::time::Instant::now);
             let candidate = crate::QuantizedOccupancy::new(&quantized, 24)
                 .map_err(|_| FormatError::BlockSizeOverflow)?;
@@ -269,109 +215,12 @@ pub(crate) fn prepare_point_block_for_version_impl(
                     0,
                 ));
             }
-        } else {
-            for bits in [24, 28] {
-                let build_started = collect_codec_diagnostics.then(std::time::Instant::now);
-                let candidate = crate::QuantizedOccupancy::new(&quantized, bits)
-                    .map_err(|_| FormatError::BlockSizeOverflow)?;
-                record_occupancy_build(&mut codec_diagnostics, bits, build_started);
-                for own_octant in [false, true] {
-                    let encoding_started = collect_codec_diagnostics.then(std::time::Instant::now);
-                    if let Some(raw) =
-                        crate::occupancy_codec::encode(&candidate, own_octant, max_geometry_bytes)?
-                    {
-                        let encoding_ns =
-                            encoding_started.map_or(0, |started| started.elapsed().as_nanos());
-                        let compression_started =
-                            collect_codec_diagnostics.then(std::time::Instant::now);
-                        let encoded = compress_block(&raw);
-                        let compression_ns =
-                            compression_started.map_or(0, |started| started.elapsed().as_nanos());
-                        if codec_diagnostics.is_some() {
-                            candidates.push(candidate_metric(
-                                crate::GeometryCandidateKind::Occupancy {
-                                    residual_bits: bits,
-                                    own_octant,
-                                },
-                                encoding_ns,
-                                compression_ns,
-                                raw.len(),
-                                encoded.bytes().len(),
-                            ));
-                        }
-                        if encoded.bytes().len() < encoded_geometry.bytes().len() {
-                            geometry_encoding = GeometryEncoding::Occupied;
-                            selected_candidate = crate::GeometryCandidateKind::Occupancy {
-                                residual_bits: bits,
-                                own_octant,
-                            };
-                            geometry_raw_length = raw.len();
-                            encoded_geometry = encoded;
-                        }
-                    } else if codec_diagnostics.is_some() {
-                        candidates.push(candidate_metric(
-                            crate::GeometryCandidateKind::Occupancy {
-                                residual_bits: bits,
-                                own_octant,
-                            },
-                            encoding_started.map_or(0, |started| started.elapsed().as_nanos()),
-                            0,
-                            0,
-                            0,
-                        ));
-                    }
-                }
-                if layout.supports_compact_occupancy() {
-                    let encoding_started = collect_codec_diagnostics.then(std::time::Instant::now);
-                    if let Some(raw) =
-                        crate::occupancy_codec::encode_compact(&candidate, max_geometry_bytes)?
-                    {
-                        let encoding_ns =
-                            encoding_started.map_or(0, |started| started.elapsed().as_nanos());
-                        let compression_started =
-                            collect_codec_diagnostics.then(std::time::Instant::now);
-                        let encoded = compress_block(&raw);
-                        let compression_ns =
-                            compression_started.map_or(0, |started| started.elapsed().as_nanos());
-                        if codec_diagnostics.is_some() {
-                            candidates.push(candidate_metric(
-                                crate::GeometryCandidateKind::CompactOccupancy {
-                                    residual_bits: bits,
-                                },
-                                encoding_ns,
-                                compression_ns,
-                                raw.len(),
-                                encoded.bytes().len(),
-                            ));
-                        }
-                        if encoded.bytes().len() < encoded_geometry.bytes().len() {
-                            geometry_encoding = GeometryEncoding::CompactOccupied;
-                            selected_candidate = crate::GeometryCandidateKind::CompactOccupancy {
-                                residual_bits: bits,
-                            };
-                            geometry_raw_length = raw.len();
-                            encoded_geometry = encoded;
-                        }
-                    } else if codec_diagnostics.is_some() {
-                        candidates.push(candidate_metric(
-                            crate::GeometryCandidateKind::CompactOccupancy {
-                                residual_bits: bits,
-                            },
-                            encoding_started.map_or(0, |started| started.elapsed().as_nanos()),
-                            0,
-                            0,
-                            0,
-                        ));
-                    }
-                }
-            }
         }
     }
     // Hybrid writer (ADR 0041/0042): a block whose source-order winner is CompactOccupied is
     // retried with its rows sorted by Morton key and DeltaVarint; ties keep source order.
     let mut row_permutation: Option<Vec<u32>> = None;
     if row_order == RowOrder::Hybrid
-        && layout.supports_hybrid_rows()
         && geometry_encoding == GeometryEncoding::CompactOccupied
         && u32::try_from(point_count).is_ok()
     {
@@ -447,15 +296,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
             std::mem::swap(&mut raw, &mut scratch);
         }
     }
-    append_stored_payload(
-        display_rule,
-        &raw,
-        &mut bytes,
-        &mut payloads,
-        layout,
-        3,
-        options.attribute_codec.coder_for("", true),
-    )?;
+    append_stored_payload(display_rule, &raw, &mut bytes, &mut payloads, 3)?;
     for (schema_index, column) in attributes.into_iter().enumerate() {
         let stored = column_rule(schema_index + 2);
         if !stored.is_present() {
@@ -476,29 +317,16 @@ pub(crate) fn prepare_point_block_for_version_impl(
             permute_rows(&raw, permutation, width, &mut scratch);
             std::mem::swap(&mut raw, &mut scratch);
         }
-        append_payload(
-            &raw,
-            &mut bytes,
-            &mut payloads,
-            layout,
-            width,
-            options
-                .attribute_codec
-                .coder_for(column.descriptor().name(), false),
-        )?;
+        append_payload(&raw, &mut bytes, &mut payloads, width)?;
     }
     Ok((
         PreparedPointBlock {
-            layout,
             geometry_encoding,
             id: block.id(),
             point_count: u64::try_from(point_count)
                 .map_err(|_| FormatError::PointCountOutOfRange)?,
             quantization_error,
-            origin: transform.origin(),
-            scale: transform.scale(),
             origin_quanta,
-            world_bounds,
             bytes,
             payloads,
             ranges,
@@ -662,29 +490,19 @@ pub(crate) struct BlockRecord {
     pub(crate) point_count: u64,
     pub(crate) geometry_encoding: GeometryEncoding,
     pub(crate) quantization_error: f64,
-    pub(crate) origin: [f64; 3],
-    pub(crate) scale: [f64; 3],
-    /// Block origin in quanta (`v7.4-pre`); zero in older layouts.
+    /// Block origin in quanta.
     pub(crate) origin_quanta: [i64; 3],
-    pub(crate) world_bounds: Option<SpatialBounds>,
     pub(crate) payloads: Vec<PayloadDirectoryEntry>,
     pub(crate) ranges: Vec<crate::NodeAttributeRange>,
 }
 
-/// The global frame belongs to `v7.4-pre` and to no other layout.
-pub(crate) fn ensure_global_frame_matches(
-    layout: StorageLayout,
+/// The global frame every `v8` file is written from.
+pub(crate) fn global_frame_of(
     metadata: &FormatMetadata,
-) -> Result<(), FormatError> {
-    match (layout.uses_global_frame(), metadata.global_frame()) {
-        (true, None) => Err(FormatError::InvalidMetadata(
-            "v7.4-pre needs a global frame in the metadata",
-        )),
-        (false, Some(_)) => Err(FormatError::InvalidMetadata(
-            "a global frame is only written by v7.4-pre",
-        )),
-        _ => Ok(()),
-    }
+) -> Result<&crate::GlobalFrame, FormatError> {
+    metadata.global_frame().ok_or(FormatError::InvalidMetadata(
+        "v8 needs a global frame in the metadata",
+    ))
 }
 
 pub(crate) fn build_block_nodes(
@@ -831,12 +649,10 @@ fn append_stored_payload(
     raw: &[u8],
     bytes: &mut Vec<u8>,
     payloads: &mut Vec<PayloadDirectoryEntry>,
-    layout: StorageLayout,
     width: usize,
-    coder: EntropyCoder,
 ) -> Result<(), FormatError> {
     if stored.is_present() {
-        append_payload(raw, bytes, payloads, layout, width, coder)
+        append_payload(raw, bytes, payloads, width)
     } else {
         payloads.push(PayloadDirectoryEntry::not_stored(
             stored,
@@ -851,24 +667,9 @@ pub(crate) fn append_payload(
     raw: &[u8],
     bytes: &mut Vec<u8>,
     payloads: &mut Vec<PayloadDirectoryEntry>,
-    layout: StorageLayout,
     width: usize,
-    coder: EntropyCoder,
 ) -> Result<(), FormatError> {
-    if coder == EntropyCoder::Zstd && !layout.supports_zstd() {
-        return Err(FormatError::MalformedBlock(
-            "zstd is not valid in this revision",
-        ));
-    }
-    let encoded = if layout.restricts_dictionary_tuples() {
-        crate::attribute_codec::encode_v7_pre3(raw, width, coder)?
-    } else if layout.supports_byte_planes() {
-        crate::attribute_codec::encode_pre4(raw, width, coder)?
-    } else if layout.supports_dictionary() {
-        crate::attribute_codec::encode(raw, width, coder)?
-    } else {
-        compress_block(raw)
-    };
+    let encoded = crate::attribute_codec::encode_v7_pre3(raw, width)?;
     append_encoded_payload(encoded, raw.len(), bytes, payloads)
 }
 
@@ -928,78 +729,6 @@ pub(crate) fn encode_values(values: &AttributeValues, output: &mut Vec<u8>) {
     }
 }
 
-pub(crate) fn block_world_bounds(
-    source_positions: &[[f64; 3]],
-    quantized: &crate::QuantizedCoordinates,
-    metadata: &DatasetMetadata,
-) -> Result<Option<SpatialBounds>, FormatError> {
-    let origin = metadata.coordinate_frame().origin();
-    let mut bounds = BoundsAccumulator::empty();
-    for local in source_positions {
-        bounds.include_point(std::array::from_fn(|axis| origin[axis] + local[axis]));
-    }
-    for local in quantized.decoded_local_positions() {
-        let local = local?;
-        bounds.include_point(std::array::from_fn(|axis| {
-            origin[axis] + f64::from(local[axis])
-        }));
-    }
-    if bounds.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(bounds.to_bounds()?))
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct BoundsAccumulator {
-    min: [f64; 3],
-    max: [f64; 3],
-    empty: bool,
-}
-
-impl BoundsAccumulator {
-    pub(crate) fn empty() -> Self {
-        Self {
-            min: [f64::INFINITY; 3],
-            max: [f64::NEG_INFINITY; 3],
-            empty: true,
-        }
-    }
-
-    pub(crate) fn from_bounds(bounds: SpatialBounds) -> Self {
-        Self {
-            min: bounds.min(),
-            max: bounds.max(),
-            empty: false,
-        }
-    }
-
-    pub(crate) fn include_point(&mut self, point: [f64; 3]) {
-        for (axis, coordinate) in point.into_iter().enumerate() {
-            self.min[axis] = self.min[axis].min(coordinate);
-            self.max[axis] = self.max[axis].max(coordinate);
-        }
-        self.empty = false;
-    }
-
-    pub(crate) fn include_bounds(&mut self, bounds: SpatialBounds) {
-        self.include_point(bounds.min());
-        self.include_point(bounds.max());
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.empty
-    }
-
-    pub(crate) fn to_bounds(self) -> Result<SpatialBounds, FormatError> {
-        if self.empty {
-            return Err(FormatError::InvalidMetadata("empty spatial bounds"));
-        }
-        Ok(SpatialBounds::new(self.min, self.max)?)
-    }
-}
-
 /// Bounds per-block allocations made by the writer.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FormatWriterOptions {
@@ -1008,7 +737,6 @@ pub struct FormatWriterOptions {
     page_target_bytes: usize,
     /// `None` takes the format's fixed order or `Source`.
     row_order: Option<RowOrder>,
-    attribute_codec: crate::AttributeCodecScheme,
 }
 
 impl FormatWriterOptions {
@@ -1029,16 +757,7 @@ impl FormatWriterOptions {
             max_uncompressed_block_bytes,
             page_target_bytes: crate::TARGET_PAGE_BYTES,
             row_order: None,
-            attribute_codec: crate::AttributeCodecScheme::Lz4,
         })
-    }
-
-    /// Experimental `v8.2-pre` coder policy per column class; any other scheme than `Lz4` fails
-    /// when blocks are prepared for a format that cannot store zstd.
-    #[must_use]
-    pub fn with_attribute_codec(mut self, scheme: crate::AttributeCodecScheme) -> Self {
-        self.attribute_codec = scheme;
-        self
     }
 
     /// `v7.5-pre` only: the size a page may reach before the writer lowers its level count `k`
@@ -1076,15 +795,11 @@ impl FormatWriterOptions {
 
 /// A fully encoded block ready for ordered append to a format writer.
 pub struct PreparedPointBlock {
-    pub(crate) layout: StorageLayout,
     pub(crate) geometry_encoding: GeometryEncoding,
     pub(crate) id: BlockId,
     pub(crate) point_count: u64,
     pub(crate) quantization_error: f64,
-    pub(crate) origin: [f64; 3],
-    pub(crate) scale: [f64; 3],
     pub(crate) origin_quanta: [i64; 3],
-    pub(crate) world_bounds: Option<SpatialBounds>,
     pub(crate) bytes: Vec<u8>,
     pub(crate) payloads: Vec<PayloadDirectoryEntry>,
     pub(crate) ranges: Vec<crate::NodeAttributeRange>,

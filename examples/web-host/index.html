@@ -245,22 +245,9 @@
                 <summary>Options</summary>
                 <fieldset id="convert-options-fields">
                     <legend class="visually-hidden">Conversion options</legend>
-                    <label for="opt-format-version">Format version</label>
-                    <select id="opt-format-version"></select>
-                    <label for="opt-points-per-block">Points per block</label>
-                    <input id="opt-points-per-block" type="number" inputmode="numeric" min="1" max="1000000" step="1" value="262144" aria-describedby="opt-points-per-block-fixed opt-points-per-block-error" />
-                    <small id="opt-points-per-block-fixed" hidden></small>
-                    <small id="opt-points-per-block-error" class="field-error" hidden></small>
                     <label for="opt-max-error">Max error</label>
                     <input id="opt-max-error" type="number" inputmode="decimal" min="0" step="any" value="0.01" aria-describedby="opt-max-error-error" />
                     <small id="opt-max-error-error" class="field-error" hidden></small>
-                    <label for="opt-spatial-divisions">Spatial divisions</label>
-                    <select id="opt-spatial-divisions" aria-describedby="opt-spatial-divisions-fixed">
-                        <option value="2" selected>2</option>
-                        <option value="4">4</option>
-                        <option value="8">8</option>
-                    </select>
-                    <small id="opt-spatial-divisions-fixed" hidden></small>
                     <label for="opt-planner-budget">Planner budget (MiB)</label>
                     <input id="opt-planner-budget" type="number" inputmode="numeric" min="1" max="4096" step="1" value="512" aria-describedby="opt-planner-budget-error" />
                     <small id="opt-planner-budget-error" class="field-error" hidden></small>

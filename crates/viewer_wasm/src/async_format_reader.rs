@@ -246,8 +246,8 @@ impl WasmAsyncFormatReader {
         let footer = tail[tail.len() - SPLIT_FOOTER_BYTES as usize..].to_vec();
         let (reader, metadata_reservation) = if PagedCore::is_paged_footer(&footer) {
             let limits = FormatReaderLimits::default();
-            let location =
-                PagedCore::locate_index(primary_len, &footer, &limits).map_err(format_error)?;
+            let location = PagedCore::locate_index(primary_len, &footer, &limits)
+                .map_err(|error| open_error(error, None, &footer))?;
             let metadata_reservation = budget
                 .try_reserve(location.length)
                 .map_err(format_error)?
@@ -262,34 +262,17 @@ impl WasmAsyncFormatReader {
                 read_range(&primary, location.offset, location.length).await?
             };
             let reader = Reader::paged_external(primary_len, &footer, &index, limits)
-                .map_err(format_error)?;
+                .map_err(|error| open_error(error, None, &footer))?;
             (reader, metadata_reservation)
         } else {
             drop(tail);
+            // Not a V8 footer: the header, read now, may still name a retired family.
             let header = read_range(&primary, 0, SPLIT_HEADER_BYTES).await?;
-            let (offset, length) = Reader::split_index_range(
-                primary_len,
-                &header,
+            return Err(open_error(
+                viewer_format::FormatError::InvalidFooter,
+                Some(&header),
                 &footer,
-                FormatReaderLimits::default(),
-            )
-            .map_err(format_error)?;
-            let metadata_reservation = budget
-                .try_reserve(length)
-                .map_err(format_error)?
-                .ok_or_else(|| {
-                    err("shared async read budget is unavailable for the resident format index")
-                })?;
-            let index = read_range(&primary, offset, length).await?;
-            let reader = Reader::from_split_buffers(
-                primary_len,
-                &header,
-                &footer,
-                &index,
-                FormatReaderLimits::default(),
-            )
-            .map_err(format_error)?;
-            (reader, metadata_reservation)
+            ));
         };
         let mut reader = reader;
         if let Some(blob) = attributes.as_ref() {
@@ -960,6 +943,12 @@ fn err(message: &str) -> JsValue {
 }
 fn format_error(error: impl std::fmt::Display) -> JsValue {
     err(&error.to_string())
+}
+
+/// Error of a failed open: a retired family is named from the header and footer already read, so
+/// the success path costs no request.
+fn open_error(error: viewer_format::FormatError, header: Option<&[u8]>, footer: &[u8]) -> JsValue {
+    format_error(viewer_format::explain_retired(error, header, Some(footer)))
 }
 
 impl WasmAsyncFormatReader {

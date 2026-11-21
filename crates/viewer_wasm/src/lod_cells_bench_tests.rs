@@ -124,13 +124,13 @@ fn stats_of(values: &[f64]) -> [f64; 3] {
 }
 
 #[test]
-#[ignore = "measurement; needs target/render-data/*-v7.oct"]
+#[ignore = "measurement; needs RENDER_DATA_DIR/*-v8.oct"]
 fn cells_bench() {
     let dataset = env_or("BENCH_DATASET", "majadas");
     let pose = env_or("BENCH_POSE", "py");
     let px: f64 = env_or("BENCH_PX", "4").parse().unwrap();
     let timeout_s: u64 = env_or("BENCH_TIMEOUT_S", "1500").parse().unwrap();
-    let file = format!("{dataset}-v7.oct");
+    let file = format!("{dataset}-v8.oct");
     let path = real_path(&file).unwrap_or_else(|| panic!("{file} is missing"));
     let frame = spike_frame(&path);
     let mut real = open_real(&file, px, 256 << 20).unwrap();
@@ -363,7 +363,7 @@ struct LeafRun {
 /// `frames` frames. Stops once settled (3 quiet frames) and then checks 100 more frames of
 /// nothing built or forgotten.
 fn leaf_run(dataset: &str, px: f64, cache_mb: usize, budget_mb: u64, frames: usize) -> LeafRun {
-    let file = format!("{dataset}-v7.oct");
+    let file = format!("{dataset}-v8.oct");
     let path = real_path(&file).unwrap_or_else(|| panic!("{file} is missing"));
     let frame = spike_frame(&path);
     let mut real = open_real_with_cache(&file, px, 256 << 20, cache_mb << 20).unwrap();
@@ -428,7 +428,7 @@ fn leaf_run(dataset: &str, px: f64, cache_mb: usize, budget_mb: u64, frames: usi
 /// waits for: built children of incomplete sibling groups lose their blocks again and the
 /// ladder never leaves its rung. Majadas at 1 px inside a leaf.
 #[test]
-#[ignore = "real data: needs target/render-data/majadas-v7.oct"]
+#[ignore = "real data: needs RENDER_DATA_DIR/majadas-v8.oct"]
 fn majadas_at_1px_settles_with_the_browser_block_cache() {
     let run = leaf_run("majadas", 1.0, 256, 512, 6_000);
     println!("{run:?}");

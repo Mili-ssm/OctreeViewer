@@ -1,11 +1,11 @@
 # Estado del proyecto
 
-Estado: vivo · 20-11-2026
+Estado: vivo · 21-11-2026
 
 Resumen de decisiones vigentes, estado por línea de trabajo y prioridades. El repositorio es público
 desde el 15-11-2026 como proyecto experimental pre-1.0 de un solo propietario; la portada está en el
 [README](../README.md) (inglés) y el índice de documentos en [docs/README.md](README.md). El trabajo
-pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) (lista actual con `gh issue list`). La demo experimental está publicada con una muestra V7 ([plan](records/archive/muestra-de-la-demo-en-v7.md); aviso transitorio de pérdida del dispositivo al cargar: [#36](https://github.com/Mili-ssm/OctreeViewer/issues/36)); [#35](https://github.com/Mili-ssm/OctreeViewer/issues/35) está cerrada: la fase 1 (niveles a demanda, [registro](records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md)) se fusionó en `main` ([PR #55](https://github.com/Mili-ssm/OctreeViewer/pull/55)), salvo el p95 de petición a residente ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)). [#44](https://github.com/Mili-ssm/OctreeViewer/issues/44) (el nivel cambiaba por octantes enteros) se cerró el 19-11-2026 ([ADR 0050](adr/0050-nivel-por-celda-segun-distancia.md); la fase 2a, LOD por celda, está fusionada ([PR #56](https://github.com/Mili-ssm/OctreeViewer/pull/56), [plan](records/archive/fase-2a-lod-por-celda-en-gpu.md)) y es el único modo: el modo octante se retiró (decidido el 18-11-2026, en `main` desde el 19-11-2026 ([ADR 0056](adr/0056-se-retira-el-modo-octante.md)); la 2b, rango por nodo y transiciones de un nivel, se cerró el 19-11-2026 con el [plan del ADR 0055](records/archive/adr-0055-rango-por-nodo.md); queda la 2c), y el selector de tamaño mínimo ([ADR 0049](adr/0049-tamano-minimo-del-voxel.md); implementado en la demo el 18-11-2026 con `setMinLength` y `setContinuity`; falta leer la unidad del CRS y desactivar el modo longitud con un CRS geográfico).
+pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) (lista actual con `gh issue list`). La demo experimental está publicada con una muestra V7 hasta que el propietario publique la V8 ([plan](records/archive/muestra-de-la-demo-en-v7.md); aviso transitorio de pérdida del dispositivo al cargar: [#36](https://github.com/Mili-ssm/OctreeViewer/issues/36)); [#35](https://github.com/Mili-ssm/OctreeViewer/issues/35) está cerrada: la fase 1 (niveles a demanda, [registro](records/benchmarks/R3_FASE1_NIVELES_A_DEMANDA_16-11-2026.md)) se fusionó en `main` ([PR #55](https://github.com/Mili-ssm/OctreeViewer/pull/55)), salvo el p95 de petición a residente ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)). [#44](https://github.com/Mili-ssm/OctreeViewer/issues/44) (el nivel cambiaba por octantes enteros) se cerró el 19-11-2026 ([ADR 0050](adr/0050-nivel-por-celda-segun-distancia.md); la fase 2a, LOD por celda, está fusionada ([PR #56](https://github.com/Mili-ssm/OctreeViewer/pull/56), [plan](records/archive/fase-2a-lod-por-celda-en-gpu.md)) y es el único modo: el modo octante se retiró (decidido el 18-11-2026, en `main` desde el 19-11-2026 ([ADR 0056](adr/0056-se-retira-el-modo-octante.md)); la 2b, rango por nodo y transiciones de un nivel, se cerró el 19-11-2026 con el [plan del ADR 0055](records/archive/adr-0055-rango-por-nodo.md); queda la 2c), y el selector de tamaño mínimo ([ADR 0049](adr/0049-tamano-minimo-del-voxel.md); implementado en la demo el 18-11-2026 con `setMinLength` y `setContinuity`; falta leer la unidad del CRS y desactivar el modo longitud con un CRS geográfico).
 
 ## Estado actual
 
@@ -15,27 +15,19 @@ pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) (lis
   esfuerzo; Safari y móvil, fuera de alcance (CON-01). Licencia: MIT OR Apache-2.0
   ([ADR 0026](adr/0026-api-publica-licencia-y-version-1.md); [README](../README.md#license)).
 
-- **V7 es la única línea de evolución**; V5 se conserva como heredado hasta V8 ([ADR 0047](adr/0047-v5-heredado-hasta-v8.md)) y la retirada de V5/V6 sigue pendiente. `v7.1-pre` hereda
-  pre4, `v7.2-pre` reduce la búsqueda de ocupación y `v7.3-pre` limita diccionarios a tuplas de
-  1/2/4 B. Son revisiones experimentales: su identidad por sí sola no reduce disco.
-  [Plan y criterios](records/archive/format-v7-plan.md).
-- **`v7.4-pre` (R4) y `v7.5-pre` (R5)** están implementados y son optativos (la disposición de `v7.5-pre` es la de `v7` final). `v7.5-pre` pagina el
-  índice (apertura local y por HTTP Range sin leer el índice entero), conserva flags LAS y Extra
-  Bytes (RF-24) y tiene el subcomando `viewer_convert verify`. Medido en RED-REF: primer frame 370–390 ms
-  y 4 px ≤ 1,3 s, dentro de RQ-04 ([registro](records/benchmarks/R5_P4_HTTP_RANGE_02-11-2026.md)).
-  El perfil `release` usa `opt-level = 3` ([conversor](records/benchmarks/EXPLORE_OPT_LEVEL_02-11-2026.md),
-  [WASM](records/benchmarks/EXPLORE_OPT_LEVEL_WASM_02-11-2026.md)).
-- Formato predeterminado: **`v7` final**, con `.oct` y `.octattrs` separados
-  ([identidad y diferencias](reference/format/FORMAT_V7.md),
-  [ADR 0044](adr/0044-v7-final-congelada-y-predeterminada.md); valores fijos del conversor en el
-  [inventario](reference/inventory.md#contrato-de-almacenamiento-y-atributos)). `v5`
-  (`OCTVFRM1`), `v6.N-pre` y `v7.N-pre` siguen legibles y escribibles con `--format-version`;
-  la entrada EPT y los checkpoints dependen del formato
-  ([regla](reference/inventory.md#entrada-checkpoints-y-formato)). Los archivos v1–v4 y v5
-  provisionales (`OCTVWFRM`) deben regenerarse desde sus fuentes.
-- `v6.1-pre`–`v6.4-pre` están implementados y son optativos (comparación y compatibilidad);
-  V6 final y pre5 permanecen rechazados. Identidades y qué añade cada una:
-  [inventario](reference/inventory.md#contrato-de-almacenamiento-y-atributos).
+- **La V8 está congelada y es el único formato** (D4, 21-11-2026): la lee y la escribe todo el producto, con `.oct` y `.octattrs` separados
+  ([referencia](reference/format/FORMAT_V8.md); [ADR 0058](adr/0058-formato-v8-experimental.md),
+  [0060](adr/0060-v8-solo-lz4.md) solo LZ4 y [0061](adr/0061-ept-y-checkpoints-se-retiran-con-la-v8.md) sin EPT ni
+  checkpoints; [plan](plans/formato-v8-congelado.md)). V5, v6, v7 y todas las revisiones previas, la entrada EPT, los
+  checkpoints y zstd se retiraron: abrir un fichero antiguo da un error que pide reconvertir desde el LAS/LAZ, y el
+  conversor rechaza sus opciones (`--format-version`, `--checkpoint`, `--resume`, `--attr-codec`, `--row-order`,
+  `--points-per-block`, `--spatial-divisions`). Salida −35 a −41 % frente a v7 en las tres nubes medidas
+  ([registro](records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md)). Las especificaciones antiguas se conservan como históricas
+  ([índice](README.md)); los checkpoints volverán sobre V8 solo con una decisión nueva (RF-26).
+- El subcomando `viewer_convert verify`, la lectura paginada local y por HTTP Range y los flags LAS y Extra Bytes (RF-24)
+  son de V8. Medido en RED-REF sobre su base v7.5-pre: primer frame 370–390 ms y 4 px ≤ 1,3 s, dentro de RQ-04
+  ([registro](records/benchmarks/R5_P4_HTTP_RANGE_02-11-2026.md)). El perfil `release` usa `opt-level = 3`
+  ([conversor](records/benchmarks/EXPLORE_OPT_LEVEL_02-11-2026.md), [WASM](records/benchmarks/EXPLORE_OPT_LEVEL_WASM_02-11-2026.md)).
 - Lectura: el reader async nativo admite concurrencia con cuota compartida; el viewer web
   solapa lecturas Blob priorizadas por LOD. Falta la caché del viewer y medir navegación
   concurrente.
@@ -45,8 +37,7 @@ pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) (lis
 - **wgpu/naga 30 y glam 0.34** compilan en nativo/WASM y pasan checks nativos y readback por
   software; la validación de navegador sigue parcial por pérdida de dispositivo
   ([límites](records/archive/RENDERER_DEPENDENCIES.md)).
-- `createViewer` libera worker y recursos si falla la inicialización; EPT rechaza presupuestos
-  estimados inviables antes de reservar planificación. No certifican GPU ni un límite RSS.
+- `createViewer` libera worker y recursos si falla la inicialización (el rechazo de presupuestos EPT es histórico: EPT se retiró, [ADR 0061](adr/0061-ept-y-checkpoints-se-retiran-con-la-v8.md)). No certifican GPU ni un límite RSS.
 - Límites de lectura por defecto (p. ej. 256 atributos; mayores requieren
   `FormatReader::with_limits`): [inventario](reference/inventory.md#límites). Las métricas
   son resultados de ejecuciones concretas, no límites garantizados ni objetivos cumplidos.
@@ -64,9 +55,9 @@ Hecho (19-11-2026, tarde): #95 (respuestas del propietario, ADR 0057), #97 (unid
 Pendiente (el detalle vive en issues y PR; los huecos transitorios del conjunto activo que cuenta el oráculo se aceptan, ver el [cierre](records/benchmarks/R3_CIERRE_RANGO_POR_NODO_19-11-2026.md)):
 
 - Temporales del CLI ([diseño](plans/temporales-del-conversor.md), RQ-06): la fase B (spools comprimidos) está fusionada ([PR #108](https://github.com/Mili-ssm/OctreeViewer/pull/108), [registro](records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md): Albuera 11,1 × → 3,5 × el LAZ, salida idéntica, +24 % de tiempo); falta la fase A (escritura por subárbol) y, después, la carga de varias nubes (RF-01).
-- Formato V8 ([diseño](plans/formato-v8.md), [plan](plans/formato-v8-pre1.md)): `v8.1-pre` está implementado y es optativo (`--format-version v8.1-pre`); medido contra v7 con el mismo binario, la salida baja −40,6 % en Albuera (V2 cumplido), −40,5 % en Majadas y −34,8 % en Belvedere sin cambio apreciable en el tiempo de conversión (una ejecución por caso) ni en la carga en el navegador (Belvedere, 4 ejecuciones por formato, serie bimodal) ([registro](records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md)). El experimento de D3, `v8.2-pre` ([plan](plans/formato-v8-pre2.md)), añade zstd en `.octattrs` con `--attr-codec lz4|cold|cold-rgb|all`: en Albuera la salida baja otro −3,08 / −5,69 / −9,45 % con apenas coste de conversión, y en el navegador la diferencia de carga entre `lz4` y `all` no es medible ([registro](records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md)). El propietario resolvió D3 el 21-11-2026: la V8 usa solo LZ4 ([ADR 0060](adr/0060-v8-solo-lz4.md)). Falta congelar la V8 sobre v8.1-pre y retirar v5, v6 y v7 (D4, #28); el predeterminado sigue siendo v7.
+- Formato V8: **hecho** (21-11-2026, [plan](plans/formato-v8-congelado.md)): congelada sobre `v8.1-pre` y único formato; medida en el [registro](records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md), solo LZ4 tras el experimento `v8.2-pre` ([registro](records/benchmarks/FORMATO_V8_PRE2_20-11-2026.md), [ADR 0060](adr/0060-v8-solo-lz4.md)). Pendiente: publicar la demo en V8 (acción externa, espera el visto bueno del propietario).
 - [OQ-17](https://github.com/Mili-ssm/OctreeViewer/issues/99): aceptar las puertas espacial y temporal de la fase 2c o investigar antes de cerrar el plan del LOD por celda.
-- Siguiente trabajo (propietario, 21-11-2026): congelar la V8 y retirar los demás formatos (D4 de la V8, [plan](plans/formato-v8-congelado.md), [#28](https://github.com/Mili-ssm/OctreeViewer/issues/28)); después, una nube densa y pesada para probar el render ([#112](https://github.com/Mili-ssm/OctreeViewer/issues/112)). Más adelante: el resto del [proyecto API pública](https://github.com/Mili-ssm/OctreeViewer/issues/27) (RF-10 a RF-15; la demo todavía no usa solo la API, RF-11) y el p95 de la fase 1 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)).
+- Siguiente trabajo (propietario, 21-11-2026): una nube densa y pesada para probar el render ([#112](https://github.com/Mili-ssm/OctreeViewer/issues/112)). Quedan abiertas las issues de la D4 [#113](https://github.com/Mili-ssm/OctreeViewer/issues/113), [#114](https://github.com/Mili-ssm/OctreeViewer/issues/114), [#115](https://github.com/Mili-ssm/OctreeViewer/issues/115), [#116](https://github.com/Mili-ssm/OctreeViewer/issues/116) y [#117](https://github.com/Mili-ssm/OctreeViewer/issues/117). Más adelante: el resto del [proyecto API pública](https://github.com/Mili-ssm/OctreeViewer/issues/27) (RF-10 a RF-15; la demo todavía no usa solo la API, RF-11) y el p95 de la fase 1 ([#54](https://github.com/Mili-ssm/OctreeViewer/issues/54)).
 - [PR #88](https://github.com/Mili-ssm/OctreeViewer/pull/88): experimento en borrador y aparcado (tramo único como fuente de la emisión y borrado de la maquinaria por octante).
 - Preguntas del propietario que aún no tocan (su condición no se cumple): OQ-01 a OQ-04 y OQ-07 ([#21](https://github.com/Mili-ssm/OctreeViewer/issues/21)–[#25](https://github.com/Mili-ssm/OctreeViewer/issues/25)). [#69](https://github.com/Mili-ssm/OctreeViewer/issues/69) (OQ-14) se cerró el 19-11-2026: Majadas cabe en el pool.
 
@@ -86,8 +77,7 @@ Revisión de técnicas del 13-11-2026 ([registro](records/benchmarks/REVIEW_TECH
 
 Orden acordado el 30-10-2026 ([requisitos](requirements.md#orden-de-trabajo-acordado)): etapa 4 integrada en la rama principal → R1 restante (R1-T1a es requisito de R3) → R4 → R3 ([ADR 0028](adr/0028-r4-antes-que-r3.md)) → R5 → V7 final → API pública y funciones →
 conversor web M6 (M4/M5 condicionales). Esta es la única lista activa. El [plan V7](records/archive/format-v7-plan.md) desarrolla contratos,
-alternativas y verificación. No se desarrollarán nuevas revisiones V5/V6: se conservan como
-compatibilidad y referencia de comparación: V5 sigue como heredado hasta V8 ([ADR 0047](adr/0047-v5-heredado-hasta-v8.md)) y su retirada, con la de V6, sigue pendiente.
+alternativas y verificación. V5, V6 y V7 se retiraron con la V8 (D4, 21-11-2026; [ADR 0047](adr/0047-v5-heredado-hasta-v8.md) cumplido): la tabla describe el orden histórico.
 
 | Fase | Resultado y cierre | Estado |
 | --- | --- | --- |
@@ -131,19 +121,11 @@ condicionadas en el inventario, sin convertirlos en compromisos nuevos.
 ## Uso y formato
 
 ```sh
-cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct --format-version v7.3-pre
-# v7 final es el default si se omite --format-version (EPT y checkpoints según el formato: docs/reference/inventory.md, «Entrada, checkpoints y formato»). También admite un directorio EPT local
-# laszip o su ept.json. --checkpoint conserva fases LAS/LAZ y bloques EPT (V7.1/V7.2/V7.3-pre);
-# --resume retoma la misma entrada/opciones. v7.2-pre limita ocupación a compact24; v7.3-pre
-# además limita diccionarios a tuplas de 1/2/4 B.
+cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct
+# Siempre escribe V8 (64 000 puntos por bloque, 2 divisiones, LZ4); entrada LAS, LAZ o COPC. Sin EPT, --checkpoint, --resume ni --format-version: docs/reference/inventory.md, «Entrada, checkpoints y formato».
 ```
 
-Cada `v7.N-pre` identifica una revisión exacta de desarrollo, aún provisional; `v7` final (identidad
-congelada, [spec](reference/format/FORMAT_V7.md)) es la salida predeterminada; las
-revisiones posteriores a `v7` final se rechazan, igual que versiones sin backend o checkpoints de otra
-identidad. Especificaciones:
-[V5](reference/format/FORMAT_V5.md), [V7](reference/format/FORMAT_V7.md), [V7.1-pre](reference/format/FORMAT_V7_PRE1.md),
-[V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](reference/format/FORMAT_V7_PRE4.md), [V7.5-pre](reference/format/FORMAT_V7_PRE5.md).
+Referencia vigente: [FORMAT_V8](reference/format/FORMAT_V8.md). Las especificaciones de V5, v7 y las revisiones previas son históricas ([índice](README.md)).
 
 | Archivo | Contenido | Uso |
 | --- | --- | --- |
@@ -158,7 +140,7 @@ doble clic, `artifacts/visor-web-local/index.html`. Contrato, regeneración y pr
 [README del host web](../examples/web-host/README.md).
 
 La conversión conserva intensidad, clasificación, retornos, ángulo, user data y point source ID;
-si existen, GPS time, RGB16 y NIR. Los flags LAS y los Extra Bytes se conservan en `v7.5-pre`; en las revisiones anteriores y para
+si existen, GPS time, RGB16 y NIR. Los flags LAS y los Extra Bytes se conservan; para
 el CRS las omisiones se notifican. El `.oct` conserva marco local `f64` y error de cuantización acotado; el
 render reconstruye posiciones locales `f32`.
 
@@ -169,7 +151,7 @@ render reconstruye posiciones locales `f32`.
 | `viewer_core` | Geometría, jerarquía, LOD, caché y contratos compartidos (incluido el contrato LAS en `las`). | El índice residente y la memoria estimada no equivalen a RSS. |
 | `viewer_format` | Formatos `.oct`/`.octattrs` (revisiones y versiones vigentes en el [inventario](reference/inventory.md#contrato-de-almacenamiento-y-atributos)); política de versiones, cuantización, codecs, checksums, lectura selectiva. | XYZ lógico ocupa 12 bytes/punto; los enteros de 64 bits conservan bits en disco, pero su proyección de color puede perder precisión. |
 | `viewer_convert_core` | Núcleo puro de la conversión (planificador, bloques, partición por rangos, API serie `convert_serial`); compila para wasm32. | Sin `fs`, hilos, reloj ni libm: lo vigila un lint de clippy y `check.sh`. |
-| `viewer_convert` | Shell nativo: CLI, ficheros, hilos, spools/checkpoints, EPT local y publicación. | EPT remoto y binary/zstandard no están soportados. Checkpoint EPT en V7.1/V7.2/V7.3-pre; identifica la fuente por metadatos, no por hash. |
+| `viewer_convert` | Shell nativo: CLI, ficheros, hilos, spools y publicación. | Entrada LAS/LAZ/COPC; sin EPT ni checkpoints (ADR 0061). |
 | `viewer_render_wgpu` | Cámara, voxelización, buffers GPU, HZB y presentación. | Los presupuestos propios no representan toda la VRAM. |
 | `viewer_wasm` | Worker, carga LOD y conversión web (`WasmCoreConverter` sobre `viewer_convert_core`, spools en segmentos de JS y zonas OPFS). | Lectura async por bloques con scheduler; convertir cientos de GB en navegador no es requisito. |
 | `examples/web-host` | Demo, API embebible, carga y descarga de archivos. | OPFS/cuota, pérdida de GPU, picking y cancelación requieren validación en navegadores objetivo. |

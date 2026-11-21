@@ -1,9 +1,9 @@
 use std::{io, path::PathBuf};
 
 use thiserror::Error;
-use viewer_format::{AttributeCodecScheme, FormatVersion};
+use viewer_format::FormatVersion;
 
-use crate::options::{MAX_BLOCKS, MAX_POINTS_PER_BLOCK, MAX_SPATIAL_WORKERS};
+use crate::options::{MAX_BLOCKS, MAX_SPATIAL_WORKERS};
 
 #[derive(Debug, Error)]
 pub enum ConvertError {
@@ -47,26 +47,16 @@ pub enum ConvertError {
     Dataset(#[from] viewer_core::DatasetError),
     #[error(transparent)]
     Metadata(#[from] viewer_format::MetadataError),
-    #[error("points per block must be between 1 and {MAX_POINTS_PER_BLOCK}, got {0}")]
-    InvalidBlockPointLimit(u64),
     #[error("maximum quantization error must be finite and non-negative, got {0}")]
     InvalidQuantizationError(f64),
     #[error("visual scale is outside the supported range: {0}")]
     InvalidVisualScale(f64),
-    #[error(
-        "checkpoint candidate has visual scale {actual}, expected {expected}; restart conversion with --checkpoint"
-    )]
-    StaleVisualScaleCheckpoint { expected: f64, actual: f64 },
     #[error("memory budget must be greater than zero")]
     InvalidMemoryBudget,
     #[error("spatial worker count must be between 1 and {MAX_SPATIAL_WORKERS}, got {0}")]
     InvalidSpatialWorkerCount(usize),
-    #[error("spatial divisions per axis must be 2, 4, or 8, got {0}")]
-    InvalidSpatialDivisions(u8),
     #[error("root partition ranges must be between 0 and 8, got {0}")]
     InvalidRootRanges(usize),
-    #[error("sample grid per axis must be between 1 and 256, got {0}")]
-    InvalidSampleGrid(usize),
     #[error("LAS dimensions do not match the planned output attribute schema")]
     InvalidAttributeSchema,
     #[error("estimated controlled memory is {requested} bytes, exceeding budget {limit} bytes")]
@@ -88,33 +78,14 @@ pub enum ConvertError {
     },
     #[error("LAS/LAZ point data ended after {actual} points; header declared {expected}")]
     PointCountMismatch { expected: u64, actual: u64 },
-    #[error("unsupported EPT dataset: {0}")]
-    UnsupportedEpt(String),
-    #[error("invalid EPT dataset: {0}")]
-    InvalidEpt(String),
-    #[error("{0} is fixed by the output format version and cannot be overridden")]
-    FixedByFormat(&'static str),
-    #[error("{what} cannot be written as {version}; pass --format-version v5 to convert it")]
-    UnsupportedForGlobalFormat {
-        what: &'static str,
-        version: FormatVersion,
-    },
-    #[error("{what} cannot be written as {version}; pass --format-version v5 to convert it")]
-    UnsupportedForPagedFormat {
-        what: &'static str,
-        version: FormatVersion,
-    },
-    #[error("attribute codec {0} needs format version v8.2-pre; {1} stores no zstd payloads")]
-    AttributeCodecUnsupported(AttributeCodecScheme, FormatVersion),
-    #[error("row order hybrid needs a v7 output format")]
-    HybridRowOrderUnsupported,
     #[error(
-        "coordinate magnitude {coordinate} exceeds the converter limit of 2^35 CRS units for {version}"
+        "EPT input was removed with V8 (ADR 0061); convert the LAS/LAZ files of the dataset instead"
     )]
-    GlobalCoordinateRange {
-        coordinate: f64,
-        version: FormatVersion,
-    },
+    EptRemoved,
+    #[error("input {0:?} is a directory; pass a LAS/LAZ/COPC file")]
+    InputIsDirectory(std::path::PathBuf),
+    #[error("coordinate magnitude {coordinate} exceeds the converter limit of 2^35 CRS units")]
+    GlobalCoordinateRange { coordinate: f64 },
     #[error("conversion size or identifier count overflowed")]
     SizeOverflow,
     #[error("point {point_index} at {position:?} is outside the LAS/LAZ header bounds")]
@@ -126,24 +97,4 @@ pub enum ConvertError {
     OutputExists(PathBuf),
     #[error("could not allocate a temporary output path beside {0}")]
     TemporaryPathUnavailable(PathBuf),
-    #[error(transparent)]
-    Checkpoint(#[from] CheckpointError),
-}
-
-#[derive(Debug, Error)]
-pub enum CheckpointError {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error("checkpoint already exists at {0}; use --resume to continue it")]
-    AlreadyExists(PathBuf),
-    #[error("no checkpoint exists at {0}; use --checkpoint to start a resumable conversion")]
-    Missing(PathBuf),
-    #[error("checkpoint is invalid: {0}")]
-    Invalid(String),
-    #[error("checkpoint does not match the source or conversion options")]
-    Mismatch,
-    #[error("checkpoint is already being used by another converter")]
-    Locked,
-    #[error("checkpoint cleanup failed at {path}: {source}")]
-    Cleanup { path: PathBuf, source: io::Error },
 }

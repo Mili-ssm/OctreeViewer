@@ -3,7 +3,7 @@
 //! the queues of the Task 10 protocol and a seeded random interleaving decides who steps next.
 //! At rest the applied cut must be the one the in-process path reaches (`cutDigestAtRest`).
 //! Real-data tests (`real_sim_*`, minutes each, so `#[ignore]`) need
-//! `target/render-data/belvedere-v7.oct`; run them with
+//! `belvedere-v8.oct` in `RENDER_DATA_DIR` (default `target/render-data`); run them with
 //! `R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --offline --profile perf -- --ignored real_sim`
 //! (`R3_REQUIRE_REAL_DATA=1` makes the file mandatory). The `sim_synthetic_*` tests run always.
 
@@ -1332,7 +1332,7 @@ fn real_views(real: &Real, orbit: bool) -> Vec<ViewProjection> {
 /// or less the in-process run itself never settles, it forgets and rebuilds two nodes per frame
 /// at stage 8 (a finding of R3 Task 10a2: the budget has no hysteresis below the working set).
 fn real_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64], inject: Inject) {
-    let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20);
+    let open = || open_real("belvedere-v8.oct", 4.0, 256 << 20);
     let Some(real) = open() else { return };
     let views = real_views(&real, orbit);
     // A fraction of what an unlimited run keeps.
@@ -1377,7 +1377,7 @@ fn real_sim_belvedere_dolly_reaches_the_in_process_digest() {
 /// (`LAG` and `LAGSUM` lines, see `print_lag`). The measurement only reads, so the sims behave as
 /// in `real_case`; the in-process digest is not recomputed.
 fn real_lag_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64]) {
-    let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20);
+    let open = || open_real("belvedere-v8.oct", 4.0, 256 << 20);
     let Some(real) = open() else { return };
     let views = real_views(&real, orbit);
     let mut unlimited = real.harness;

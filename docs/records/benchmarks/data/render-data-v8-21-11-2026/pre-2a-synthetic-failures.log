@@ -1,0 +1,167 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling pkg-config v0.3.34
+   Compiling cfg_aliases v0.2.2
+   Compiling thiserror v2.0.21
+   Compiling foldhash v0.2.0
+   Compiling equivalent v1.0.3
+   Compiling libm v0.2.16
+   Compiling autocfg v1.5.1
+   Compiling log v0.4.34
+   Compiling zerocopy v0.8.63
+   Compiling rustc-hash v1.1.0
+   Compiling bitflags v2.13.2
+   Compiling bit-vec v0.9.1
+   Compiling parking_lot_core v0.9.12
+   Compiling find-msvc-tools v0.1.15
+   Compiling unicode-width v0.2.3
+   Compiling libloading v0.8.9
+   Compiling naga v30.0.1
+   Compiling once_cell v1.21.4
+   Compiling shlex v2.0.1
+   Compiling ash v0.38.0+1.3.281
+   Compiling hashbrown v0.17.1
+   Compiling spirv v0.4.0+sdk-1.4.341.0
+   Compiling static_assertions v1.1.0
+   Compiling smallvec v1.16.4
+   Compiling codespan-reporting v0.13.1
+   Compiling raw-window-handle v0.6.2
+   Compiling allocator-api2 v0.2.21
+   Compiling arrayvec v0.7.8
+   Compiling bit-set v0.10.0
+   Compiling khronos-egl v6.0.0
+   Compiling scopeguard v1.2.0
+   Compiling dlib v0.5.3
+   Compiling wgpu-hal v30.0.1
+   Compiling lock_api v0.4.14
+   Compiling presser v0.3.1
+   Compiling serde_core v1.0.229
+   Compiling profiling v1.0.18
+   Compiling glow v0.17.0
+   Compiling renderdoc-sys v1.1.0
+   Compiling num-traits v0.2.19
+   Compiling serde v1.0.229
+   Compiling wgpu-core v30.0.1
+   Compiling litrs v1.0.1
+   Compiling zstd-safe v7.4.1
+   Compiling wgpu v30.0.1
+   Compiling wayland-sys v0.31.11
+   Compiling glam v0.34.1
+   Compiling twox-hash v2.1.5
+   Compiling lz4_flex v0.14.0 (<scratch-worktree>/vendor/lz4_flex)
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling hashbrown v0.16.1
+   Compiling document-features v0.2.12
+   Compiling jobserver v0.1.35
+   Compiling cc v1.10.0
+   Compiling indexmap v2.14.2
+   Compiling parking_lot v0.12.5
+   Compiling ordered-float v5.5.1
+   Compiling zerocopy-derive v0.8.63
+   Compiling thiserror-impl v2.0.21
+   Compiling bytemuck_derive v1.12.1
+   Compiling serde_derive v1.0.229
+   Compiling zstd-sys v2.1.3+zstd.1.5.7
+   Compiling naga-types v30.0.1
+   Compiling bytemuck v1.25.2
+   Compiling wgpu-types v30.0.1
+   Compiling viewer_core v0.1.0 (<scratch-worktree>/crates/viewer_core)
+   Compiling half v2.7.1
+   Compiling gpu-allocator v0.28.0
+   Compiling zstd v0.13.5
+   Compiling viewer_format v0.1.0 (<scratch-worktree>/crates/viewer_format)
+   Compiling wgpu-naga-bridge v30.0.1
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1
+   Compiling viewer_render_wgpu v0.1.0 (<scratch-worktree>/crates/viewer_render_wgpu)
+   Compiling viewer_wasm v0.1.0 (<scratch-worktree>/crates/viewer_wasm)
+    Finished `perf` profile [optimized] target(s) in 35.12s
+     Running unittests src/lib.rs (<scratch-worktree>-target/perf/build/viewer_wasm/4ae8ee132732725b/out/viewer_wasm-4ae8ee132732725b)
+
+running 2 tests
+test lod_dataset::cells_stream_tests::synthetic_zoom_in_lag ... FAILED
+test lod_dataset::cells_stream_tests::the_node_hi_contains_what_the_twin_wants_within_one_level ... FAILED
+
+failures:
+
+---- lod_dataset::cells_stream_tests::synthetic_zoom_in_lag stdout ----
+LAG zoom f=0 gen=0 judged=2202 off=71526 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2170
+LAG zoom f=1 gen=1 judged=1197 off=72531 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2170
+LAG zoom f=2 gen=1 judged=1197 off=72531 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2242
+LAG zoom f=3 gen=2 judged=646 off=73082 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2242
+LAG zoom f=4 gen=2 judged=646 off=73082 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2242
+LAG zoom f=5 gen=3 judged=345 off=73383 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2386
+LAG zoom f=6 gen=3 judged=345 off=73383 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2386
+LAG zoom f=7 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2386
+LAG zoom f=8 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2386
+LAG zoom f=9 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=10 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=11 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=12 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=13 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=14 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=15 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=16 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=17 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=18 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=19 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=20 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=21 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=22 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=23 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=24 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=25 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=26 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=27 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=28 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=29 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=30 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=31 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=32 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=33 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=34 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=35 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=36 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=37 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=38 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=39 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=40 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=41 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=42 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=43 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=44 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=45 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=46 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=47 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAG zoom f=48 gen=4 judged=183 off=73545 undrawn=0 b>=1,2,3=0,0,0 bmax=0 r>=1,2,3=0,0,0 rmax=0 finer_b=0 over_bound=0 over_max=0 req=0 pages=2530
+LAGSUM zoom | frames=49 judged_sum=14264 | settle_b=0 settle_r=0 | sample_frames_b1=0 b2=0 b3=0 | sample_frames_r1=0 r2=0 r3=0 | worst_b=0 at f=0 worst_r=0 at f=0 | over_bound_sample_frames=0 over_max=0 | requests min=0 med=0 max=0 | pages_end=2530
+LAGSPLIT zoom | in_clip: judged=14264 b1=0 b2=0 b3=0 r1=0 r2=0 r3=0 | out_clip: judged=0 b1=0 b2=0 b3=0 r1=0 r2=0 r3=0
+
+thread 'lod_dataset::cells_stream_tests::synthetic_zoom_in_lag' (2146104) panicked at crates/viewer_wasm/src/lod_cells_stream_tests.rs:5123:49:
+argument of integer logarithm must be positive
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- lod_dataset::cells_stream_tests::the_node_hi_contains_what_the_twin_wants_within_one_level stdout ----
+
+thread 'lod_dataset::cells_stream_tests::the_node_hi_contains_what_the_twin_wants_within_one_level' (2146128) panicked at crates/viewer_wasm/src/lod_cells_stream_tests.rs:3862:5:
+7 violations:
+P2 node 14: hi 11 < twin max 18
+P2 node 17: hi 11 < twin max 17
+P3 node 14: hi 12 < twin max 18
+P3 node 17: hi 12 < twin max 17
+P4 node 14: hi 11 < twin max 12
+P5 node 14: hi 12 < twin max 18
+P5 node 17: hi 12 < twin max 17
+
+
+failures:
+    lod_dataset::cells_stream_tests::synthetic_zoom_in_lag
+    lod_dataset::cells_stream_tests::the_node_hi_contains_what_the_twin_wants_within_one_level
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 200 filtered out; finished in 19.98s
+
+error: test failed, to rerun pass `-p viewer_wasm --lib`
+DONE

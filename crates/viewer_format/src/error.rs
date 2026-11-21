@@ -13,18 +13,16 @@ pub enum FormatError {
     FileTooShort,
     #[error("format header is malformed or has an invalid checksum")]
     InvalidHeader,
-    #[error("provisional format is no longer supported; regenerate from LAS/LAZ/EPT")]
+    #[error("provisional format is no longer supported; regenerate from LAS/LAZ")]
     ProvisionalFormat,
+    #[error("this file is format {0}, retired with V8: reconvert it from the LAS/LAZ source")]
+    RetiredFormat(&'static str),
     #[error("format version {0} is not supported")]
     UnsupportedVersion(u16),
     #[error("format version {0} is recognized but has no supported decoder")]
     UnsupportedFormatVersion(crate::FormatVersion),
     #[error("format version {0} fixes its row order; another order cannot be requested")]
     RowOrderFixedByFormat(crate::FormatVersion),
-    #[error(
-        "format version {0} cannot store zstd payloads; an attribute codec other than lz4 needs v8.2-pre"
-    )]
-    AttributeCodecUnsupported(crate::FormatVersion),
     #[error("prepared block version {block} does not match writer version {writer}")]
     PreparedVersionMismatch {
         writer: crate::FormatVersion,

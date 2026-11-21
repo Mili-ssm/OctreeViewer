@@ -1,0 +1,8 @@
+
+running 1 test
+test lod_dataset::cells_stream_tests::real_belvedere_cells_respect_the_minimum_side ... with min 40: 80 drawn octants, smallest side 64
+without min: 104 drawn octants, smallest side 0.25
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 201 filtered out; finished in 25.05s
+

@@ -15,7 +15,6 @@ use viewer_format::{
     PagedReader, SourcePointBlock,
 };
 
-const V8_PRE1: FormatVersion = FormatVersion::V8_PRE1;
 const ROOT_LEVEL: u32 = 40;
 const ROOT_PREFIX: [u64; 3] = [(1 << 39) + 3, (1 << 39) + 4, (1 << 39) + 5];
 /// Node 0 is the only LOD node; nodes 1 and 2 are its leaves. Source block id = node id + 1; the file
@@ -141,7 +140,7 @@ fn dataset() -> (FormatMetadata, Vec<SourcePointBlock>) {
 
 fn write_with(lod_columns: Option<Vec<u32>>) -> Result<(Vec<u8>, Vec<u8>), FormatError> {
     write_as(
-        V8_PRE1,
+        FormatVersion::V8,
         lod_columns,
         viewer_format::DisplayColourSource::None,
     )
@@ -326,20 +325,6 @@ fn the_writer_rejects_a_corrupt_or_missing_lod_set() {
     ));
 }
 
-#[test]
-fn revisions_without_a_lod_set_reject_one() {
-    let (metadata, _) = dataset();
-    let metadata = metadata.with_lod_attribute_columns(vec![0]);
-    let result = FormatWriter::new_split_for_version(
-        FormatVersion::V7,
-        Cursor::new(Vec::new()),
-        Cursor::new(Vec::new()),
-        metadata,
-        FormatWriterOptions::new(0.01, 1 << 24).unwrap(),
-    );
-    assert!(matches!(result, Err(FormatError::InvalidMetadata(_))));
-}
-
 /// Offset of the LOD list in the index: it follows the three f64 quantiles.
 fn lod_list_offset(bytes: &[u8]) -> usize {
     let footer = bytes.len() - 40;
@@ -408,21 +393,21 @@ fn corrupt_lod_set_is_rejected() {
     }
 }
 
-/// Rewrites the identity of a `v8.2-pre` pair as `v8.1-pre`: header revisions and checksums, footer
+/// Rewrites a final `v8` pair's identity as `v8.1-pre`'s: header revisions and checksums, footer
 /// magics, the primary file's index magic, and the index and footer checksums. The attributes
 /// file's footer repeats the primary file's index location and checksum.
-fn as_v8_pre1(primary: &mut [u8], attributes: &mut [u8]) {
+fn v8_as_pre1(primary: &mut [u8], attributes: &mut [u8]) {
     for bytes in [&mut *primary, &mut *attributes] {
         bytes[16..20].copy_from_slice(&1_u32.to_le_bytes());
         let crc = viewer_format::crc32(&bytes[..20]);
         bytes[20..24].copy_from_slice(&crc.to_le_bytes());
         let footer = bytes.len() - 40;
-        assert_eq!(&bytes[footer..footer + 8], b"OCTVE82P");
+        assert_eq!(&bytes[footer..footer + 8], b"OCTVEND8");
         bytes[footer..footer + 8].copy_from_slice(b"OCTVE81P");
     }
     let footer = primary.len() - 40;
     let index = u64::from_le_bytes(primary[footer + 8..footer + 16].try_into().unwrap()) as usize;
-    assert_eq!(&primary[index..index + 8], b"OCTVI82P");
+    assert_eq!(&primary[index..index + 8], b"OCTVIDX8");
     primary[index..index + 8].copy_from_slice(b"OCTVI81P");
     repair_index_and_footer(primary);
     let index_crc = primary[footer + 32..footer + 36].to_vec();
@@ -432,25 +417,70 @@ fn as_v8_pre1(primary: &mut [u8], attributes: &mut [u8]) {
     attributes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
 }
 
+/// Version, revision and magics of a file: header bytes 8..10 and 16..20, the footer magic and, for
+/// the primary file, the index magic.
+fn identity_of(bytes: &[u8], primary: bool) -> (u16, u32, [u8; 8], Option<[u8; 8]>) {
+    let footer = bytes.len() - 40;
+    let index = primary.then(|| {
+        let at = u64::from_le_bytes(bytes[footer + 8..footer + 16].try_into().unwrap()) as usize;
+        bytes[at..at + 8].try_into().unwrap()
+    });
+    (
+        u16::from_le_bytes(bytes[8..10].try_into().unwrap()),
+        u32::from_le_bytes(bytes[16..20].try_into().unwrap()),
+        bytes[footer..footer + 8].try_into().unwrap(),
+        index,
+    )
+}
+
 #[test]
-fn v8_pre2_without_zstd_differs_from_v8_pre1_only_in_identity() {
-    // LOD omission, derived display colour (the leaves' colour is intensity >> 8, not stored)
-    // and quantiles: every v8.1-pre feature at once.
-    let pre1 = write_as(
-        V8_PRE1,
-        Some(vec![0, 2]),
-        viewer_format::DisplayColourSource::Intensity(0),
-    )
-    .unwrap();
-    let mut pre2 = write_as(
-        FormatVersion::V8_PRE2,
-        Some(vec![0, 2]),
-        viewer_format::DisplayColourSource::Intensity(0),
-    )
-    .unwrap();
-    assert_ne!(pre1.0, pre2.0);
-    assert_ne!(pre1.1, pre2.1);
-    as_v8_pre1(&mut pre2.0, &mut pre2.1);
-    assert!(pre1.0 == pre2.0, "primary files differ beyond identity");
-    assert!(pre1.1 == pre2.1, "attribute files differ beyond identity");
+fn a_v8_pair_carries_the_final_identity_for_every_lod_set() {
+    use viewer_format::DisplayColourSource as Display;
+    let fixtures = [
+        (Some(vec![]), Display::None),
+        (Some(vec![0, 1, 2]), Display::None),
+        (Some(vec![0, 2]), Display::Intensity(0)),
+        (Some(vec![0]), Display::Intensity(0)),
+        (Some(vec![1, 2]), Display::None),
+    ];
+    for (columns, display) in fixtures {
+        let label = format!("{columns:?} {display:?}");
+        let (primary, attributes) = write_as(FormatVersion::V8, columns, display).unwrap();
+        for (bytes, is_primary) in [(&primary, true), (&attributes, false)] {
+            let (version, revision, footer, index) = identity_of(bytes, is_primary);
+            assert_eq!((version, revision), (8, 0), "{label}");
+            assert_eq!(&footer, b"OCTVEND8", "{label}");
+            assert_eq!(
+                index.as_ref().map(|m| &m[..]),
+                is_primary.then_some(&b"OCTVIDX8"[..]),
+                "{label}"
+            );
+        }
+        // The whole pair reads back.
+        let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
+        reader.attach_attributes(Cursor::new(attributes)).unwrap();
+    }
+}
+
+#[test]
+fn a_v8_file_with_a_retired_revision_companion_is_rejected_by_identity() {
+    let display = viewer_format::DisplayColourSource::Intensity(0);
+    let v8 = write_as(FormatVersion::V8, Some(vec![0, 2]), display).unwrap();
+    let mut pre1 = v8.clone();
+    v8_as_pre1(&mut pre1.0, &mut pre1.1);
+    assert_eq!(identity_of(&pre1.0, true).1, 1);
+    // A retired companion of a V8 primary is a mismatch.
+    let mut reader = FormatReader::new(Cursor::new(v8.0.clone())).unwrap();
+    assert!(matches!(
+        reader.attach_attributes(Cursor::new(pre1.1.clone())),
+        Err(FormatError::InvalidHeader)
+    ));
+    // A retired primary is named as such, whatever its companion.
+    let error = FormatReader::new(Cursor::new(pre1.0.clone()))
+        .err()
+        .expect("retired primary");
+    assert!(
+        matches!(error, FormatError::RetiredFormat("v8.1-pre")),
+        "{error:?}"
+    );
 }

@@ -9,7 +9,7 @@ use std::{
 };
 
 use viewer_core::{DatasetSource, Point};
-use viewer_format::{FormatReader, OctreeReader, PagedReader};
+use viewer_format::{FormatReader, PagedReader};
 use viewer_render_wgpu::{
     CHAIN_MIN_GROWTH, CellGrid, NodeCell, NodeCellSource, PointNodeCellSource, chain_keep_mask,
     representative_depth, representative_depth_for_spacing,
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // The paged hierarchy records the authoritative bit even for an unloaded anchor.
     let mut leaf_flags = BTreeMap::new();
-    if reader.format_version().uses_pages() {
+    {
         let mut paged = PagedReader::open(File::open(&args[0])?)?;
         let mut pages = vec![paged.root_page().clone()];
         let mut cursor = 0;
@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let nodes: Vec<_> = hierarchy.query(root).cloned().collect();
-    if reader.format_version().uses_pages() {
+    {
         let queried: BTreeSet<_> = nodes.iter().map(viewer_core::SpatialNode::id).collect();
         let paged: BTreeSet<_> = leaf_flags.keys().copied().collect();
         if queried.len() != nodes.len() || queried != paged {

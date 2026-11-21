@@ -83,11 +83,11 @@ def main() -> None:
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
     embed_wasm_js = wasm_js
     wasm_path = ROOT / "pkg" / "viewer_wasm_bg.wasm"
-    sample_path = HOST / "sample.oct"
+    sample_path = HOST / "sample-v8.oct"
 
     wasm_bytes = base64.b64encode(wasm_path.read_bytes()).decode("ascii")
     sample_bytes = base64.b64encode(sample_path.read_bytes()).decode("ascii")
-    attributes_bytes = base64.b64encode((HOST / "sample.octattrs").read_bytes()).decode("ascii")
+    attributes_bytes = base64.b64encode((HOST / "sample-v8.octattrs").read_bytes()).decode("ascii")
     worker_js = require_replace(worker_js, wasm_import_line(worker_js, "WASM import"), "", "WASM import")
     worker_js = require_replace(
         worker_js,
@@ -201,7 +201,7 @@ def main() -> None:
     converter_api_js = converter_api_js.replace("export function createConverter", "function createConverter")
     main_js = require_replace(
         main_js,
-        'import {\n    FORMAT_VERSIONS, OPTION_DEFAULTS, fixedFrameDisplayValue, fixedFrameHint, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,\n} from "./converter-ui.mjs";\n',
+        'import {\n    progressText, spoolText, timingsText, validateConverterOptions,\n} from "./converter-ui.mjs";\n',
         "",
         "converter UI import",
     )
@@ -232,7 +232,7 @@ def main() -> None:
         "worker module URL",
     )
     sample_fetch = re.compile(
-        r'const response = await fetch\(new URL\("\./sample\.oct", import\.meta\.url\),\s*'
+        r'const response = await fetch\(new URL\("\./sample-v8\.oct", import\.meta\.url\),\s*'
         r'\{\s*signal: controller\.signal,\s*\}\);'
     )
     main_js, sample_replacements = sample_fetch.subn(
@@ -243,7 +243,7 @@ def main() -> None:
         raise ValueError("expected exactly one sample file fetch")
 
     main_js = require_replace(main_js,
-        'await fetch(new URL("./sample.octattrs", import.meta.url), { signal: controller.signal })',
+        'await fetch(new URL("./sample-v8.octattrs", import.meta.url), { signal: controller.signal })',
         'new Response(window.__VIEWER_ATTRIBUTE_BYTES__.slice(), { status: 200 })',
         "attribute sample fetch")
     inline_runtime = (

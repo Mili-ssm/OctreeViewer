@@ -32,8 +32,8 @@ pub struct SourceInfo {
     pub crs: CrsRecord,
     /// LAS scale and offset, kept for the exact export of `v7.4-pre`.
     pub scale_offset: Option<SourceScaleOffset>,
-    /// Set by [`SourceInfo::for_options`] when the output is a global-octree format.
-    pub global: Option<GlobalRoot>,
+    /// Root node and lattice of the global octree, from the header box.
+    pub global: GlobalRoot,
     /// Payload of the Extra Bytes VLRs (`LASF_Spec`, record 4), concatenated; parsed only for a
     /// format that keeps them, so other formats never fail on exotic descriptors.
     pub extra_byte_vlrs: Vec<u8>,
@@ -60,20 +60,13 @@ const MAX_GLOBAL_COORDINATE: f64 = (1_u64 << 35) as f64;
 
 impl GlobalRoot {
     /// Smallest node containing both header corners, and the minimum quantized corner as origin.
-    fn from_bounds(
-        bounds: SpatialBounds,
-        local: bool,
-        version: FormatVersion,
-    ) -> Result<Self, ConvertError> {
+    pub(crate) fn from_bounds(bounds: SpatialBounds, local: bool) -> Result<Self, ConvertError> {
         let mut low = [0_i64; 3];
         let mut high = [0_i64; 3];
         for axis in 0..3 {
             for coordinate in [bounds.min()[axis], bounds.max()[axis]] {
                 if coordinate.is_nan() || coordinate.abs() >= MAX_GLOBAL_COORDINATE {
-                    return Err(ConvertError::GlobalCoordinateRange {
-                        coordinate,
-                        version,
-                    });
+                    return Err(ConvertError::GlobalCoordinateRange { coordinate });
                 }
             }
             let min =
@@ -145,35 +138,26 @@ impl SourceInfo {
         dimensions
     }
 
-    /// Adapts the source to the output format: for `v7.4-pre` the frame origin becomes the
-    /// minimum quantized corner and the root the smallest global node containing the header box.
-    pub fn for_options(mut self, options: ConvertOptions) -> Result<Self, ConvertError> {
-        let options = options.validate()?;
-        if options.format_version().uses_pages() {
-            let version = options.format_version();
-            let wrap = |source| ConvertError::LasExtraBytesForFormat { version, source };
-            let extras = parse_extra_byte_descriptors(&self.extra_byte_vlrs).map_err(wrap)?;
-            // Without any descriptor the bytes cannot be typed: they are dropped (and reported
-            // in `omitted_dimensions`); descriptors that do not cover the record are an error.
-            if !self.extra_byte_vlrs.is_empty() {
-                validate_extra_bytes(&extras, usize::from(self.point_format.extra_bytes))
-                    .map_err(wrap)?;
-            }
-            self.las_extra_bytes = Some(extras.into());
-            // Fails here, before any point is read, when the schema does not fit.
-            self.schema().map_err(|error| match error {
-                ConvertError::LasExtraBytes(source) => wrap(source),
-                other => other,
-            })?;
+    /// Adapts the source to V8: the frame origin becomes the minimum quantized corner and the
+    /// root the smallest global node containing the header box.
+    pub fn for_options(mut self, _options: ConvertOptions) -> Result<Self, ConvertError> {
+        let version = FormatVersion::DEFAULT_OUTPUT;
+        let wrap = |source| ConvertError::LasExtraBytesForFormat { version, source };
+        let extras = parse_extra_byte_descriptors(&self.extra_byte_vlrs).map_err(wrap)?;
+        // Without any descriptor the bytes cannot be typed: they are dropped (and reported
+        // in `omitted_dimensions`); descriptors that do not cover the record are an error.
+        if !self.extra_byte_vlrs.is_empty() {
+            validate_extra_bytes(&extras, usize::from(self.point_format.extra_bytes))
+                .map_err(wrap)?;
         }
-        if !options.format_version().uses_global_frame() {
-            return Ok(self);
-        }
-        let root =
-            GlobalRoot::from_bounds(self.bounds, self.crs.is_local(), options.format_version())?;
-        let origin = root.frame_origin_quanta.map(quanta_to_units);
+        self.las_extra_bytes = Some(extras.into());
+        // Fails here, before any point is read, when the schema does not fit.
+        self.schema().map_err(|error| match error {
+            ConvertError::LasExtraBytes(source) => wrap(source),
+            other => other,
+        })?;
+        let origin = self.global.frame_origin_quanta.map(quanta_to_units);
         self.frame = CoordinateFrame::new(origin)?;
-        self.global = Some(root);
         // Stored in the global frame, unless the projection records were unreadable and the CRS
         // fell back to local: then it is still lost and stays reported.
         self.has_crs &= self.crs.is_local();
@@ -283,6 +267,8 @@ pub fn inspect_header(header: &las::Header) -> Result<SourceInfo, ConvertError> 
         source_bounds.max.z,
     ];
     let bounds = SpatialBounds::new(min, max).map_err(|_| ConvertError::InvalidHeaderBounds)?;
+    let crs = crate::crs::read_crs(header);
+    let global = GlobalRoot::from_bounds(bounds, crs.is_local())?;
     Ok(SourceInfo {
         bounds,
         frame: CoordinateFrame::new(min)?,
@@ -291,9 +277,9 @@ pub fn inspect_header(header: &las::Header) -> Result<SourceInfo, ConvertError> 
         point_format: *header.point_format(),
         transforms: *header.transforms(),
         has_crs: header.has_crs_vlrs(),
-        crs: crate::crs::read_crs(header),
+        crs,
         scale_offset: scale_offset(header),
-        global: None,
+        global,
         extra_byte_vlrs: header
             .all_vlrs()
             .filter(|vlr| vlr.user_id == "LASF_Spec" && vlr.record_id == 4)

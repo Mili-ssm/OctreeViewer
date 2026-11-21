@@ -19,17 +19,16 @@ photogrammetric RGB cloud (a 600 × 600 m crop, 1.32 M points, 21 MB; Ioli et al
 `scripts/make-demo-belvedere.sh` into `target/demo-data/`, which `scripts/publish-demo.sh` copies to
 the site's `datasets/`; the button stays hidden where neither location answers. To try your own cloud, use **Convert a local LAS/LAZ file**
 in the side panel, press **Convert to .oct**, then open the result. Converted files default to the
-`v7` format.
+`v8` format.
 
-The built-in sample button opens `sample.oct`, a final `v7` file drawn by the cells path. The demo
+The built-in sample button opens `sample-v8.oct`, a final `V8` file drawn by the cells path. The demo
 sample always uses the latest stable format ([ADR 0047](../../docs/adr/0047-v5-heredado-hasta-v8.md)).
-`sample-v5.oct` (v5, legacy comparison) and `sample-v7.oct` (`v7.1-pre`, Blob-range probe) back
-older probes only.
+`sample-small.oct` (`V8`, 4,096 points) backs the `*.browser.mjs` tests.
 
 `?url=FILE.oct` opens a file over HTTP and needs a server with **HTTP Range and CORS**; python's
 `http.server` does not support Range. Locally use
 `node examples/web-host/red-ref-server.mjs DIR --port=8780` (it also adds CORS; flags `--rtt-ms`,
-`--mbps`, `--ignore-range`). The v7 format opens remotely too. Details in
+`--mbps`, `--ignore-range`). The V8 format opens remotely. Details in
 [Open a file over HTTP Range](#open-a-file-over-http-range). Probe procedures: [PROBES.md](PROBES.md).
 
 This folder demonstrates the embeddable contract for the viewer. The host owns the `canvas` and
@@ -43,21 +42,19 @@ rustup target add wasm32-unknown-unknown
 scripts/build-wasm-bindings.sh   # cargo build --release --target wasm32-unknown-unknown + wasm-bindgen into pkg/
 ```
 
-The repository includes `sample.oct` and `sample.octattrs`: a deterministic synthetic wave surface
-over 64×64 m on a 768×768 grid (≈ 8.3 cm spacing, 589,824 points, about 4.2 MiB) with fine relief.
-The example writes it as LAS and converts it with the converter defaults (`v7`). Regenerate it from the workspace root with:
+The repository includes `sample-v8.oct` and `sample-v8.octattrs`: a deterministic synthetic wave surface
+over 64×64 m on a 768×768 grid (≈ 8.3 cm spacing, 589,824 points, about 3.0 MiB) with fine relief.
+The example writes it as LAS and converts it with the converter defaults (`V8`). Regenerate it from the workspace root with:
 
 ```bash
 cargo run --offline --release -p viewer_convert --example create_web_sample
 ```
 
-The legacy pairs keep the old 4,096-point grid (1 m spacing). `sample-v5.oct` / `sample-v5.octattrs`
-(v5, `OCTVFRM1`, revision 0) back the CPU-path LOD probes; `sample-v7.oct` / `sample-v7.octattrs`
-(`v7.1-pre`) back the asynchronous Blob-reader probe. Regenerate them with:
+The browser tests use `sample-small.oct` / `sample-small.octattrs`: the same surface on a 64×64 grid
+(1 m spacing, 4,096 points, one block, about 22 KiB, paged `V8`). Regenerate it with:
 
 ```bash
-cargo run --offline -p viewer_format --example create_legacy_sample
-cargo run --offline -p viewer_format --example create_legacy_sample -- examples/web-host/sample-v7.oct v7.1-pre
+cargo run --offline -p viewer_convert --example create_web_sample -- examples/web-host/sample-small.oct 64
 ```
 
 ## Serve the demo
@@ -75,6 +72,16 @@ python3 -m http.server 8000 --bind 127.0.0.1
 and open **http://localhost:8000/examples/web-host/index.html**. Serve the whole repository root,
 including `pkg/`: serving only `examples/web-host/` leaves out the bindings and WASM. WebGPU and
 workers need a secure context such as localhost or HTTPS; plain HTTP from another machine may not work.
+
+### Cache busting on the published site
+
+Dataset files carry the format in their name (`sample-v8.oct`, `belvedere-crop-v8.oct`), so a new
+format never reuses a cached name. `scripts/publish-demo.sh` also stamps the short commit (`BUILD_ID`)
+into the bundle it assembles: `pkg/viewer_wasm-<id>.js` and `pkg/viewer_wasm_bg-<id>.wasm` (the glue
+points at the renamed wasm), `main.js?v=<id>` in `index.html`, and `?v=<id>` on the three worker URLs.
+A visitor holding an older cached wasm therefore never pairs it with newer data. The repository layout
+served by `scripts/serve-demo.sh` is left unversioned. The rewrite runs only at publish time and is
+guarded by checks that fail the script if an unversioned reference remains.
 
 ### Loading contract and CORS regression prevention
 
@@ -110,7 +117,7 @@ sample and check the console; also check startup from localhost.
 `index.html?url=FILE.oct[&attrs=FILE.octattrs|none][&px=4]` opens a file from a server that answers
 `Range` (single range, `206`) and sends CORS headers (`Access-Control-Allow-Headers: Range, If-Range`,
 `Access-Control-Expose-Headers: Content-Range, ETag`). The workers read it with
-`http-range-source.mjs`: one suffix request opens a `v7.5-pre` file, later reads are single ranges
+`http-range-source.mjs`: one suffix request opens a V8 file, later reads are single ranges
 pinned by `If-Range`, and a server that ignores `Range` (answers `200`) is an error.
 
 Failures are handled per request: network errors, `429` and `5xx` are retried three times with
@@ -132,7 +139,7 @@ one request (default `0`: only touching ranges; the over-read is counted as `gap
 and `&remoteReads=N` sets the concurrent LOD reads for that source: up to N block reads plus up to N
 hierarchy page reads, each counted apart (default `8`; values below 1 or not a finite number use the
 default, values above 64 are capped; local `Blob`s always use `4`). D2 measurements on RED-REF
-(Majadas and Belvedere v7.5, CPU path): 8 reads cut the median time to reached by 15-30 % against 4
+(Majadas and Belvedere v7.5, CPU path; historical evidence for a retired format): 8 reads cut the median time to reached by 15-30 % against 4
 with no frame regression, 16 gives no further gain (and more bytes on Belvedere), and gap merging
 (16-256 KiB) saved at most 3 of 31 requests for up to 6 % more bytes without changing the time, so
 `maxGap` stays `0` (record `docs/records/benchmarks/D2_GAP_CONCURRENCY_14-11-2026.md`).
@@ -184,8 +191,8 @@ are the target; Firefox, best effort; Safari and mobile, out of scope. Planned (
 implemented): the UI will announce "validated up to Majadas (~6 GB of LAZ)"; larger inputs are
 converted with the CLI.
 
-The target browsers support WebGPU and `OffscreenCanvas`. Firefox 157.0.1 has current v5
-XYZ/RGB/typed-attribute and visual evidence. Chrome 155 passes the small functional flows;
+The target browsers support WebGPU and `OffscreenCanvas`. Firefox 157.0.1 has v5
+XYZ/RGB/typed-attribute and visual evidence (historical, for a retired format). Chrome 155 passes the small functional flows;
 current headless captures still require investigation. Older Bunny/Outer Banks Chrome captures
 do not certify the current build. See [web measurements](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md).
 For a small independent presentation/picking diagnostic, serve the repository and open
@@ -276,7 +283,7 @@ interpret). The stats report `minLength`.
 The cells path never draws cubes smaller than a default length minimum of `1e-4` dataset units (0.1 mm when
 the unit is metres); continuity (cloud spacing x factor) wins when larger.
 The demo's default length (ADR 0059) is the file's p5 when it carries one: the open result has
-`recommendedMinSize` (p5 of the nearest-neighbour distance in dataset units; `null` for a v7 file, a file
+`recommendedMinSize` (p5 of the nearest-neighbour distance in dataset units; `null` for a file
 whose p5 was not measured, or the CPU path). The panel then shows it converted with `crsUnit` in mm, cm or m
 (3 significant digits) and sends the same value; with `null`, or a geographic CRS, it shows 0.1 mm.
 Both open paths (build worker and in-worker, `?buildWorker=0`) carry `recommendedMinSize`; only the cells path
@@ -358,18 +365,18 @@ The converter is separately embeddable from `converter-api.mjs`. It accepts a lo
 ```js
 import { createConverter } from "./converter-api.mjs";
 
-const converter = createConverter({ converterOptions: { pointsPerBlock: 4096 } });
+const converter = createConverter({ converterOptions: { maxMemoryMiB: 256 } });
 await converter.ready; // orphan `conversion-*.partial` files from earlier sessions are removed
 converter.on("progress", ({ processedPoints, totalPoints }) => console.log(processedPoints, totalPoints));
 converter.on("warning", ({ message }) => console.warn(message));
-const result = await converter.convert(lasFile, { options: { spatialDivisions: 8 } });
+const result = await converter.convert(lasFile, { options: { maxError: 0.05 } });
 console.log(result.name, result.points, result.file, result.timings);
 converter.dispose();
 ```
 
 | Item | Behaviour |
 | --- | --- |
-| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `formatVersion` (default `"v7"`, the final global-frame format), `rowOrder` (`"source"` or `"hybrid"`; the default depends on the format: v7, v8.1-pre and v8.2-pre fix hybrid, v7.N-pre defaults to source, and hybrid is rejected for formats without hybrid rows; V7 is frozen by ADR 0044), `pointsPerBlock` and `spatialDivisions` (global-frame formats `v7`, `v7.4-pre`, `v7.5-pre`, `v8.1-pre` and `v8.2-pre` fix them at 64000 and 2, so omit them; values other than the fixed ones, except the legacy default 262144 points per block, which is treated as unset, are errors), `maxError`, `maxMemoryMiB`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS), `attrCodec` (experimental, `v8.2-pre` only: `"lz4"` default, `"cold"`, `"cold-rgb"` or `"all"` pick zstd for `.octattrs` columns by class, see [FORMAT_V8_PRE2](../../docs/reference/format/FORMAT_V8_PRE2.md#esquemas-del-conversor---attr-codec); API only, no form field) |
+| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `maxError`, `maxMemoryMiB`, `spatialWorkers`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS). V8 is the only format and fixes the format, row order, points per block (64000) and spatial divisions (2): `formatVersion`, `rowOrder`, `pointsPerBlock` and `spatialDivisions` are refused with `option NAME was removed: V8 is the only format and fixes it` |
 | `ready` | Promise that settles once stale partial files are deleted; `convert()` waits for it on its own, so awaiting it is optional |
 | Events | `on("progress" \| "status" \| "warning" \| "complete" \| "cancelled" \| "error", callback)` returns an unsubscribe function |
 | `warning` | Emitted when OPFS is unavailable (Chrome `file://`): the conversion runs RAM-only and is limited by `ramBudget`; serve the page over `http://localhost` for large files |
@@ -382,7 +389,7 @@ The host decides whether to download or open `result.file`. Extra Bytes and CRS 
 `timings.totalMs` is a browser wall-clock measurement. Large-file behaviour and quotas per browser are
 recorded in the [stage 4 plan](../../docs/records/archive/conversor-web-paralelo-etapa4.md).
 
-Use the keyboard-accessible **Open built-in sample** button to load the included `v7` file, or focus
+Use the keyboard-accessible **Open built-in sample** button to load the included `V8` file, or focus
 the labeled file picker to choose another local dataset. The sample is a synthetic wave surface
 (see [Build the WASM package](#build-the-wasm-package)) and does not depend on external or licensed
 point-cloud data.
@@ -468,7 +475,7 @@ The collector separates timing triggers and uses refinement times, retaining leg
 ID; `workerRenderCallDuringLoadMs` is a legacy label for the active refinement's render samples.
 The window finisher waits for the full 10,000 ms even if the browser timer fires early.
 
-## Coordinate and attribute files (v5)
+## Coordinate and attribute files (V8)
 
 Open `.oct` alone for gray geometry. Select its optional `.octattrs` before opening coordinates or
 add it afterward using the companion picker (the host reopens the dataset and clears caches).
@@ -478,21 +485,17 @@ companions fail validation. Conversion returns two downloadable files and opens 
 The worker closes/cleans both OPFS files on ordinary cancellation or failure. Abrupt termination
 can leave partial entries. Successful output remains in site storage until removed by the user.
 
-The native stream format also permits monolithic v5 files for integrations, but the web
-converter produces pairs. Previous format versions require reconversion. The current range-progress events
+V8 is the only format: files in any older format are rejected with a message asking to reconvert them from the LAS/LAZ source. The current range-progress events
 count unique reads from the coordinate file; they do not include companion I/O. In contrast,
 `refinementWork.rangeReadBytes` includes repeated Blob-cache fills from both files inside LOD
 callbacks. Exports identify the sidecar as `dataset.attributes: {name, fileBytes}` or `null`;
 the collector separates absent, present and unknown legacy companions, and displays color/depth
 settings. Names/sizes describe inputs, not cryptographic content identity.
 
-The legacy 4,096-point fixture (`sample-v5.*`) includes typed intensity (`u16`, 0–65,016) and
-classification (`u8`, 0–3). Regenerate it with
-`cargo run --offline -p viewer_format --example create_legacy_sample`. The default `sample.*` carries
-the same columns (intensity 0–64,428).
+The default `sample.*` carries typed intensity (`u16`, 0–64,428) and classification (`u8`, 0–3).
 
 Majadas RGB pairing completed three Firefox runs with the same final geometry counters and a
-visibly colored capture. `tests/lod-attributes.browser.mjs` checks the typed legacy sample by default;
+visibly colored capture. `tests/lod-attributes.browser.mjs` checks the typed `sample-small` fixture by default;
 create it as a module Worker and post one message. Optionally supply coordinate/attribute Blobs,
 `modes` and an `incompatibleAttributes` Blob. It validates complete refinement, matching geometry
 counts, invalid-column rejection and retention after failed sidecar attachment. It requires

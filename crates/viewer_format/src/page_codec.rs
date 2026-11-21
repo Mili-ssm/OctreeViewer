@@ -1,4 +1,4 @@
-//! Page codec of the paged layouts (`v7.5-pre` and `v7`) ([spec](../../../docs/reference/format/FORMAT_V7_PRE5.md)): node
+//! Page codec of the paged V8 layout ([spec](../../../docs/reference/format/FORMAT_V8.md)): node
 //! identity as `(page number, index in the page)`, and encode/decode/validation of one page.
 
 use viewer_core::{AttributeDescriptor, BlockId, NodeId};
@@ -56,7 +56,7 @@ pub const fn page_node_id(page: u32, index: u32) -> NodeId {
     NodeId::new(((page as u64) << 32) | index as u64)
 }
 
-/// `(page number, index in the page)` of a `v7.5-pre` node id.
+/// `(page number, index in the page)` of a V8 node id.
 pub const fn split_node_id(id: NodeId) -> (u32, u32) {
     let value = id.get();
     ((value >> 32) as u32, value as u32)
@@ -756,7 +756,7 @@ fn decode_block(
             checksum,
             stored,
         };
-        validate_column_codec(layout, ctx.schema, payload_index, point_count, &column)?;
+        validate_column_codec(ctx.schema, payload_index, point_count, &column)?;
         if (payload_index == 0
             && geometry_encoding
                 .validate_raw_length(point_count, raw_length)
@@ -908,4 +908,82 @@ pub(crate) fn encode_page(page: &Page, frame: &GlobalFrame) -> Result<Vec<u8>, F
     let crc = out.checksum.finish();
     bytes.extend_from_slice(&crc.to_le_bytes());
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod companion_range_tests {
+    use super::*;
+
+    fn payload(offset: u64, length: u64) -> PayloadDirectoryEntry {
+        PayloadDirectoryEntry {
+            stored_length: length,
+            raw_length: length,
+            ..PayloadDirectoryEntry::not_stored(StoredColumn::Present, offset)
+        }
+    }
+
+    fn block(attribute_offset: u64, payloads: Vec<PayloadDirectoryEntry>) -> PageBlock {
+        PageBlock {
+            id: BlockId::new(0),
+            offset: 24,
+            payload_length: 12,
+            attribute_offset,
+            point_count: 1,
+            geometry_encoding: GeometryEncoding::RawU32,
+            quantization_error: 0.0,
+            origin_quanta: [0; 3],
+            payloads,
+        }
+    }
+
+    #[test]
+    fn an_absent_last_column_does_not_move_the_range_end() {
+        let block = block(
+            100,
+            vec![
+                payload(0, 12),
+                payload(100, 3),
+                payload(103, 5),
+                // Absent last column with a stale offset: ignored.
+                PayloadDirectoryEntry::not_stored(StoredColumn::Absent, 5000),
+            ],
+        );
+        assert_eq!(
+            (block.attribute_offset(), block.attribute_end()),
+            (100, 108)
+        );
+    }
+
+    #[test]
+    fn a_derived_display_colour_does_not_start_the_range() {
+        // The derived slot stores no bytes, so the columns that follow start the range.
+        let block = block(
+            100,
+            vec![
+                payload(0, 12),
+                PayloadDirectoryEntry::not_stored(StoredColumn::Derived { from: 3 }, 100),
+                payload(100, 3),
+                payload(103, 5),
+            ],
+        );
+        assert_eq!(
+            (block.attribute_offset(), block.attribute_end()),
+            (100, 108)
+        );
+    }
+
+    /// The decoder gives a block that stores nothing in the companion (derived colour, absent
+    /// columns) the offset its record carries, and the range stays empty rather than inventing bytes.
+    #[test]
+    fn a_block_without_stored_companion_columns_has_an_empty_range() {
+        let block = block(
+            24,
+            vec![
+                payload(0, 12),
+                PayloadDirectoryEntry::not_stored(StoredColumn::Derived { from: 2 }, 24),
+                PayloadDirectoryEntry::not_stored(StoredColumn::Absent, 24),
+            ],
+        );
+        assert_eq!(block.attribute_end(), block.attribute_offset());
+    }
 }

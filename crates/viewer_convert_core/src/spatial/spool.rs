@@ -29,16 +29,9 @@ pub struct SpoolLayout {
     pub(super) has_flags: bool,
     pub(super) extra_len: u8,
     pub(super) is_extended: bool,
-    /// `v7.4-pre`: source positions are snapped to the 2^-15 grid so that node and cell
-    /// membership is decided on exact integers.
-    snap_to_quanta: bool,
 }
 
 impl SpoolLayout {
-    pub const fn is_global(self) -> bool {
-        self.snap_to_quanta
-    }
-
     pub fn source(source: &SourceInfo) -> Self {
         Self {
             transforms: source.transforms,
@@ -52,7 +45,6 @@ impl SpoolLayout {
                 extras.iter().map(LasExtraByte::byte_len).sum::<usize>() as u8
             }),
             is_extended: source.point_format.is_extended,
-            snap_to_quanta: source.global.is_some(),
         }
     }
 
@@ -95,14 +87,10 @@ impl SpoolLayout {
     #[inline]
     pub(super) fn position(self, raw: [i32; 3]) -> [f64; 3] {
         let exact = self.exact_position(raw);
-        if self.snap_to_quanta {
-            exact.map(|value| {
-                viewer_format::quantize_coordinate(value)
-                    .map_or(value, viewer_format::quanta_to_units)
-            })
-        } else {
-            exact
-        }
+        // Snapped to the 2^-15 grid so that node and cell membership is decided on exact integers.
+        exact.map(|value| {
+            viewer_format::quantize_coordinate(value).map_or(value, viewer_format::quanta_to_units)
+        })
     }
 }
 

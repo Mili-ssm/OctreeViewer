@@ -1,0 +1,141 @@
+
+running 1 test
+test lod_dataset::cells_stream_tests::p4_border_levels ... == P4 eye [49.9999938885586, 60.640392395364714, 9.66464077269021] target [49.9999938885586, 49.9999938885586, 3.2205863811906457] (dataset frame of the close-pose test: eye [31.958, 38.760, 6.118] target [31.958, 31.958, 1.9995])
+-- far diagnosis: forward [0.0000, -0.8554, -0.5180] eye (relative, dataset units) [31.958, 38.760, 6.177] origin [0.0, 0.0, -0.058990478515625] target_px 4 min_side 0.0001564529 (scaled)
+node 14: node_depth 2 rep 5 leaf true buildable.0 5 (derived: rep; the pool does not expose it; buildable.1 not exposed, resident [5, 7, 8, 9, 10, 11]) range Some((10, 11)) wanted [Some(11), Some(11), Some(11), Some(11), Some(11), Some(11), Some(11), Some(11)]
+  anchor far corner: relative [16.000, 32.000, 0.000] view depth 14.052 in data bounds true on screen false screen px [-1174, 555]
+    depth  5: probe cell  521.72 px, smallest child  194.05 px (meets = child < target: false) | twin lattice cell  521.72 px, smallest child  194.05 px, refines true
+    depth  6: probe cell  205.24 px, smallest child   90.02 px (meets = child < target: false) | twin lattice cell  205.24 px, smallest child   90.02 px, refines true
+    depth  7: probe cell   92.49 px, smallest child   43.47 px (meets = child < target: false) | twin lattice cell   92.49 px, smallest child   43.47 px, refines true
+    depth  8: probe cell   44.05 px, smallest child   21.37 px (meets = child < target: false) | twin lattice cell   44.05 px, smallest child   21.37 px, refines true
+    depth  9: probe cell   21.51 px, smallest child   10.60 px (meets = child < target: false) | twin lattice cell   21.51 px, smallest child   10.60 px, refines true
+    depth 10: probe cell   10.63 px, smallest child    5.28 px (meets = child < target: false) | twin lattice cell   10.63 px, smallest child    5.28 px, refines true
+    depth 11: probe cell    5.28 px, smallest child    2.63 px (meets = child < target: true) | twin lattice cell    5.28 px, smallest child    2.63 px, refines false
+    depth 12: probe cell    2.63 px, smallest child    1.31 px (meets = child < target: true) | twin lattice cell    2.63 px, smallest child    1.32 px, refines false
+    depth 13: probe cell    1.32 px, smallest child    0.66 px (meets = child < target: true) | twin lattice cell    1.32 px, smallest child    0.66 px, refines false
+    first depth that meets (linear search of node_far_depth): Some(11)
+  anchor border centre on the ground: relative [24.000, 32.000, 0.059] view depth 14.005 in data bounds true on screen false screen px [-370, 550]
+    depth  5: probe cell  293.34 px, smallest child  119.47 px (meets = child < target: false) | twin lattice cell  346.73 px, smallest child  130.01 px, refines true
+    depth  6: probe cell  120.65 px, smallest child   54.77 px (meets = child < target: false) | twin lattice cell  130.01 px, smallest child   57.53 px, refines true
+    depth  7: probe cell   55.62 px, smallest child   26.31 px (meets = child < target: false) | twin lattice cell   57.53 px, smallest child   27.20 px, refines true
+    depth  8: probe cell   26.79 px, smallest child   13.04 px (meets = child < target: false) | twin lattice cell   27.20 px, smallest child   13.24 px, refines true
+    depth  9: probe cell   13.16 px, smallest child    6.49 px (meets = child < target: false) | twin lattice cell   13.24 px, smallest child    6.53 px, refines true
+    depth 10: probe cell    6.52 px, smallest child    3.24 px (meets = child < target: true) | twin lattice cell    6.53 px, smallest child    3.24 px, refines false
+    depth 11: probe cell    3.25 px, smallest child    1.62 px (meets = child < target: true) | twin lattice cell    3.25 px, smallest child    1.62 px, refines false
+    depth 12: probe cell    1.62 px, smallest child    0.81 px (meets = child < target: true) | twin lattice cell    1.62 px, smallest child    0.81 px, refines false
+    depth 13: probe cell    0.81 px, smallest child    0.40 px (meets = child < target: true) | twin lattice cell    0.81 px, smallest child    0.40 px, refines false
+    first depth that meets (linear search of node_far_depth): Some(10)
+  sweep along x at y = 32, z = 0 (probe, depths 9..=11):
+    x  16.00: view depth 14.005 screen x  -1179 on screen false child px ["d9 10.65", "d10 5.30", "d11 2.65"]
+    x  18.00: view depth 14.005 screen x   -977 on screen false child px ["d9 9.55", "d10 4.75", "d11 2.37"]
+    x  20.00: view depth 14.005 screen x   -774 on screen false child px ["d9 8.47", "d10 4.22", "d11 2.11"]
+    x  22.00: view depth 14.005 screen x   -572 on screen false child px ["d9 7.45", "d10 3.71", "d11 1.85"]
+    x  24.00: view depth 14.005 screen x   -370 on screen false child px ["d9 6.49", "d10 3.24", "d11 1.62"]
+    x  26.00: view depth 14.005 screen x   -168 on screen false child px ["d9 6.38", "d10 3.18", "d11 1.58"]
+    x  28.00: view depth 14.005 screen x     35 on screen true  child px ["d9 6.38", "d10 3.18", "d11 1.58"]
+    x  30.00: view depth 14.005 screen x    237 on screen true  child px ["d9 6.38", "d10 3.18", "d11 1.58"]
+    x  32.00: view depth 14.005 screen x    439 on screen true  child px ["d9 6.38", "d10 3.18", "d11 1.58"]
+  far corner view depth 8.982 (eye plane crossed: false)
+node 8: node_depth 2 rep 5 leaf true buildable.0 5 (derived: rep; the pool does not expose it; buildable.1 not exposed, resident [5, 9, 10, 11]) range Some((9, 11)) wanted [Some(9), Some(11), Some(10), Some(11), Some(10), Some(11), Some(11), Some(11)]
+  anchor far corner: relative [16.000, 16.000, 0.000] view depth 35.464 in data bounds true on screen false screen px [-202, 115]
+    depth  5: probe cell   96.91 px, smallest child   45.02 px (meets = child < target: false) | twin lattice cell   96.91 px, smallest child   45.02 px, refines true
+    depth  6: probe cell   45.37 px, smallest child   21.90 px (meets = child < target: false) | twin lattice cell   45.37 px, smallest child   21.90 px, refines true
+    depth  7: probe cell   21.99 px, smallest child   10.81 px (meets = child < target: false) | twin lattice cell   21.99 px, smallest child   10.81 px, refines true
+    depth  8: probe cell   10.83 px, smallest child    5.37 px (meets = child < target: false) | twin lattice cell   10.83 px, smallest child    5.37 px, refines true
+    depth  9: probe cell    5.37 px, smallest child    2.68 px (meets = child < target: true) | twin lattice cell    5.37 px, smallest child    2.68 px, refines false
+    depth 10: probe cell    2.68 px, smallest child    1.34 px (meets = child < target: true) | twin lattice cell    2.68 px, smallest child    1.34 px, refines false
+    depth 11: probe cell    1.34 px, smallest child    0.67 px (meets = child < target: true) | twin lattice cell    1.34 px, smallest child    0.67 px, refines false
+    depth 12: probe cell    0.67 px, smallest child    0.33 px (meets = child < target: true) | twin lattice cell    0.67 px, smallest child    0.33 px, refines false
+    depth 13: probe cell    0.33 px, smallest child    0.17 px (meets = child < target: true) | twin lattice cell    0.33 px, smallest child    0.17 px, refines false
+    first depth that meets (linear search of node_far_depth): Some(9)
+  anchor border centre on the ground: relative [24.000, 32.000, 0.059] view depth 14.005 in data bounds true on screen false screen px [-370, 550]
+    depth  5: probe cell  228.76 px, smallest child   97.47 px (meets = child < target: false) | twin lattice cell  227.88 px, smallest child   97.15 px, refines true
+    depth  6: probe cell  107.35 px, smallest child   49.63 px (meets = child < target: false) | twin lattice cell  106.96 px, smallest child   49.47 px, refines true
+    depth  7: probe cell   52.08 px, smallest child   25.05 px (meets = child < target: false) | twin lattice cell   52.16 px, smallest child   24.96 px, refines true
+    depth  8: probe cell   25.66 px, smallest child   12.58 px (meets = child < target: false) | twin lattice cell   25.91 px, smallest child   12.62 px, refines true
+    depth  9: probe cell   12.84 px, smallest child    6.34 px (meets = child < target: false) | twin lattice cell   12.92 px, smallest child    6.38 px, refines true
+    depth 10: probe cell    6.44 px, smallest child    3.20 px (meets = child < target: true) | twin lattice cell    6.45 px, smallest child    3.21 px, refines false
+    depth 11: probe cell    3.23 px, smallest child    1.61 px (meets = child < target: true) | twin lattice cell    3.23 px, smallest child    1.61 px, refines false
+    depth 12: probe cell    1.61 px, smallest child    0.81 px (meets = child < target: true) | twin lattice cell    1.62 px, smallest child    0.81 px, refines false
+    depth 13: probe cell    0.81 px, smallest child    0.40 px (meets = child < target: true) | twin lattice cell    0.81 px, smallest child    0.40 px, refines false
+    first depth that meets (linear search of node_far_depth): Some(10)
+  sweep along x at y = 32, z = 0 (probe, depths 9..=11):
+    x  16.00: view depth 14.005 screen x  -1179 on screen false child px ["d9 10.40", "d10 5.24", "d11 2.63"]
+    x  18.00: view depth 14.005 screen x   -977 on screen false child px ["d9 9.32", "d10 4.70", "d11 2.36"]
+    x  20.00: view depth 14.005 screen x   -774 on screen false child px ["d9 8.27", "d10 4.17", "d11 2.10"]
+    x  22.00: view depth 14.005 screen x   -572 on screen false child px ["d9 7.27", "d10 3.67", "d11 1.84"]
+    x  24.00: view depth 14.005 screen x   -370 on screen false child px ["d9 6.34", "d10 3.20", "d11 1.61"]
+    x  26.00: view depth 14.005 screen x   -168 on screen false child px ["d9 6.31", "d10 3.16", "d11 1.58"]
+    x  28.00: view depth 14.005 screen x     35 on screen true  child px ["d9 6.31", "d10 3.16", "d11 1.58"]
+    x  30.00: view depth 14.005 screen x    237 on screen true  child px ["d9 6.31", "d10 3.16", "d11 1.58"]
+    x  32.00: view depth 14.005 screen x    439 on screen true  child px ["d9 6.31", "d10 3.16", "d11 1.58"]
+  far corner view depth 22.668 (eye plane crossed: false)
+-- nodes of the cut (12)
+node   5 depth 2 bounds [0.0, 0.0, -0.1]..[16.0, 16.0, 15.9] active [8] resident [5, 8, 9] range Some((8, 8))
+          wanted [Some(8), Some(8), Some(8), Some(8), Some(8), Some(8), Some(8), Some(8)]
+          drawn [Some(8), Some(8), Some(8), Some(8), Some(8), Some(8), Some(8), Some(8)]
+node   6 depth 2 bounds [16.0, 0.0, -0.1]..[32.0, 16.0, 15.9] active [8, 9] resident [5, 8, 9] range Some((8, 9))
+          wanted [Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9)]
+          drawn [Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9)]
+node   7 depth 2 bounds [0.0, 16.0, -0.1]..[16.0, 32.0, 15.9] active [9] resident [5, 9] range Some((9, 9))
+          wanted [Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9)]
+          drawn [Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9)]
+node   8 depth 2 bounds [16.0, 16.0, -0.1]..[32.0, 32.0, 15.9] active [9, 10, 11] resident [5, 9, 10, 11] range Some((9, 11))
+          wanted [Some(9), Some(11), Some(10), Some(11), Some(10), Some(11), Some(11), Some(11)]
+          drawn [Some(9), Some(11), Some(10), Some(11), Some(10), Some(11), Some(11), Some(11)]
+node   9 depth 2 bounds [32.0, 0.0, -0.1]..[48.0, 16.0, 15.9] active [8, 9] resident [5, 8, 9] range Some((8, 9))
+          wanted [Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9)]
+          drawn [Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9)]
+node  10 depth 2 bounds [48.0, 0.0, -0.1]..[64.0, 16.0, 15.9] active [8] resident [5, 8, 9] range Some((8, 8))
+          wanted [Some(8), Some(8), Some(8), Some(8), Some(8), Some(8), Some(8), Some(8)]
+          drawn [Some(8), Some(8), Some(8), Some(8), Some(8), Some(8), Some(8), Some(8)]
+node  11 depth 2 bounds [32.0, 16.0, -0.1]..[48.0, 32.0, 15.9] active [9, 10, 11] resident [5, 9, 10, 11] range Some((9, 11))
+          wanted [Some(10), Some(11), Some(11), Some(11), Some(9), Some(11), Some(10), Some(11)]
+          drawn [Some(10), Some(11), Some(11), Some(11), Some(9), Some(11), Some(10), Some(11)]
+node  12 depth 2 bounds [48.0, 16.0, -0.1]..[64.0, 32.0, 15.9] active [9] resident [5, 9] range Some((9, 9))
+          wanted [Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9)]
+          drawn [Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9), Some(9)]
+node  13 depth 2 bounds [0.0, 32.0, -0.1]..[16.0, 48.0, 15.9] active [5] resident [5, 6, 7] range Some((5, 5))
+          wanted [Some(5), Some(5), Some(5), Some(5), Some(5), Some(5), Some(5), Some(5)]
+          drawn [Some(5), Some(5), Some(5), Some(5), Some(5), Some(5), Some(5), Some(5)]
+node  14 depth 2 bounds [16.0, 32.0, -0.1]..[32.0, 48.0, 15.9] active [10, 11] resident [5, 7, 8, 9, 10, 11] range Some((10, 11))
+          wanted [Some(11), Some(11), Some(11), Some(11), Some(11), Some(11), Some(11), Some(11)]
+          drawn [Some(11), Some(11), Some(11), Some(11), Some(11), Some(11), Some(11), Some(11)]
+node  17 depth 2 bounds [32.0, 32.0, -0.1]..[48.0, 48.0, 15.9] active [10, 11, 12] resident [5, 9, 10, 11, 12] range Some((10, 12))
+          wanted [Some(12), Some(12), Some(12), Some(12), Some(11), Some(12), Some(12), Some(12)]
+          drawn [Some(12), Some(12), Some(12), Some(12), Some(11), Some(12), Some(12), Some(12)]
+node  18 depth 2 bounds [48.0, 32.0, -0.1]..[64.0, 48.0, 15.9] active [5] resident [5, 6, 7, 8, 9] range Some((5, 5))
+          wanted [Some(5), Some(5), Some(5), Some(5), Some(5), Some(5), Some(5), Some(5)]
+          drawn [Some(5), Some(5), Some(5), Some(5), Some(5), Some(5), Some(5), Some(5)]
+data bounds [0.0, 0.0, -0.058990478515625]..[63.9169921875, 63.9169921875, 4.058013916015625]
+-- visible border pairs by level difference: {0: 3348, 1: 10}
+-- level differences per 50 px screen row band: {0: {0: 910}, 50: {0: 812}, 100: {0: 342}, 150: {0: 194}, 200: {0: 156}, 250: {0: 178}, 300: {0: 122}, 350: {0: 150}, 400: {0: 102}, 450: {0: 140}, 500: {0: 138, 1: 2}, 550: {0: 26}, 600: {0: 34, 1: 2}, 650: {0: 24, 1: 4}, 700: {0: 20, 1: 2}}
+diff 1 : node 14 @ depth 11 | node 17 @ depth 12 : 5 pairs, screen x 445..448 y 550..739
+diff 1 : node 17 @ depth 12 | node 14 @ depth 11 : 5 pairs, screen x 446..449 y 550..739
+diff 0 : node 8 @ depth 10 | node 11 @ depth 10 : 269 pairs, screen x 437..440 y 1..531
+diff 0 : node 11 @ depth 10 | node 8 @ depth 10 : 269 pairs, screen x 438..440 y 1..531
+diff 0 : node 8 @ depth 9 | node 11 @ depth 9 : 257 pairs, screen x 437..438 y 1..276
+diff 0 : node 11 @ depth 9 | node 8 @ depth 9 : 257 pairs, screen x 437..438 y 1..276
+diff 0 : node 6 @ depth 9 | node 8 @ depth 9 : 254 pairs, screen x 2..430 y 9..108
+diff 0 : node 8 @ depth 9 | node 6 @ depth 9 : 254 pairs, screen x 2..430 y 9..108
+diff 0 : node 9 @ depth 9 | node 11 @ depth 9 : 252 pairs, screen x 443..868 y 9..108
+diff 0 : node 11 @ depth 9 | node 9 @ depth 9 : 252 pairs, screen x 443..868 y 9..108
+diff 0 : node 6 @ depth 9 | node 9 @ depth 9 : 159 pairs, screen x 436..437 y 1..107
+diff 0 : node 9 @ depth 9 | node 6 @ depth 9 : 159 pairs, screen x 436..437 y 1..107
+diff 0 : node 8 @ depth 10 | node 14 @ depth 10 : 128 pairs, screen x 7..422 y 222..542
+diff 0 : node 14 @ depth 10 | node 8 @ depth 10 : 128 pairs, screen x 7..422 y 222..542
+diff 0 : node 11 @ depth 10 | node 17 @ depth 10 : 125 pairs, screen x 456..863 y 222..542
+diff 0 : node 17 @ depth 10 | node 11 @ depth 10 : 125 pairs, screen x 456..863 y 222..542
+diff 0 : node 14 @ depth 11 | node 17 @ depth 11 : 91 pairs, screen x 440..445 y 189..750
+diff 0 : node 17 @ depth 11 | node 14 @ depth 11 : 91 pairs, screen x 441..446 y 189..750
+diff 0 : node 6 @ depth 8 | node 9 @ depth 8 : 52 pairs, screen x 436..436 y 1..42
+diff 0 : node 9 @ depth 8 | node 6 @ depth 8 : 52 pairs, screen x 436..436 y 1..42
+diff 0 : node 14 @ depth 10 | node 17 @ depth 10 : 37 pairs, screen x 439..440 y 269..695
+diff 0 : node 17 @ depth 10 | node 14 @ depth 10 : 37 pairs, screen x 439..441 y 269..695
+diff 0 : node 5 @ depth 8 | node 6 @ depth 8 : 16 pairs, screen x 1..35 y 1..18
+diff 0 : node 6 @ depth 8 | node 5 @ depth 8 : 16 pairs, screen x 1..35 y 1..18
+diff 0 : node 9 @ depth 8 | node 10 @ depth 8 : 14 pairs, screen x 837..868 y 1..16
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 201 filtered out; finished in 1.03s
+

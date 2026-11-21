@@ -1,10 +1,13 @@
 //! R3 Task 9b2a: the px ladder of the cells path, streamed block by block (R3-Q19), with a
 //! strict recording `CellTarget` and a cell-level coverage oracle. The real-data tests need
-//! `target/render-data/belvedere-v7.oct` and skip with a message without it, unless
+//! `belvedere-v8.oct` in `RENDER_DATA_DIR` (default `target/render-data`, see
+//! `cells_tests::render_data_dir`) and skip with a message without it, unless
 //! `R3_REQUIRE_REAL_DATA=1` makes the missing file a failure.
 
 use super::cells::MAX_CELL_CUT_GAP;
-use super::cells_tests::{SIDE, driver_for, node_block, octree_dataset, octree_nodes};
+use super::cells_tests::{
+    SIDE, driver_for, node_block, octree_dataset, octree_nodes, render_data_dir,
+};
 use super::*;
 use crate::lod_driver::{CellStep, update_cells_staged};
 use std::fmt::Write as _;
@@ -18,7 +21,7 @@ use viewer_core::{
     BlockId, ColorRgb, HierarchySemantics, Point, PointBatch, PointBlock, SpatialBounds,
     SpatialHierarchy, SpatialNode,
 };
-use viewer_format::{FormatReader, FormatReaderLimits, OctreeReader};
+use viewer_format::{FormatReader, FormatReaderLimits};
 use viewer_render_wgpu::cell_lod::{
     LodView, MAX_NODE_SPAN, NodeLod, cell_lo, drawn_depth_at, edge_px, min_child_edge_px, refines,
 };
@@ -2066,9 +2069,7 @@ struct Real {
 }
 
 fn real_path(name: &str) -> Option<std::path::PathBuf> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/render-data")
-        .join(name);
+    let path = render_data_dir().join(name);
     if path.exists() {
         Some(path)
     } else {
@@ -2107,7 +2108,6 @@ fn open_real_with_cache(
     let reader: RealReader =
         FormatReader::open_lazy(std::io::BufReader::new(file), FormatReaderLimits::default())
             .unwrap();
-    assert!(reader.format_version().uses_global_frame());
     let source = reader.page_source().expect("paged").clone();
     let scale = reader.format_metadata().visual_scale();
     let dataset = LodDataset::from_shared_metadata_and_visual_scale(
@@ -2217,7 +2217,7 @@ impl Real {
 
 #[test]
 fn real_streaming_ladder_belvedere() {
-    let Some(mut real) = open_real("belvedere-v7.oct", 4.0, 256 << 20) else {
+    let Some(mut real) = open_real("belvedere-v8.oct", 4.0, 256 << 20) else {
         return;
     };
     let anchors = real.anchors_near([0.5, 0.5, 0.5]);
@@ -2254,7 +2254,7 @@ fn real_streaming_ladder_belvedere() {
 /// for the cut, the pool for the depths), after a dolly toward the data. Returns the number of
 /// drawn octants not drawn by the root and the smallest cell side among them (dataset units).
 fn drawn_cubes_after_dolly(min_side: Option<f64>) -> (usize, f64) {
-    let mut real = open_real("belvedere-v7.oct", 1.0, 256 << 20).expect("real data required");
+    let mut real = open_real("belvedere-v8.oct", 1.0, 256 << 20).expect("real data required");
     real.harness.dataset.set_min_side(min_side);
     real.harness.driver.set_min_side(min_side);
     let (centre, side) = real.anchors_near([0.5, 0.5, 0.5])[0];
@@ -2306,13 +2306,15 @@ fn region_views(real: &Real) -> (ViewProjection, ViewProjection) {
     (look(anchors[0]), look(*anchors.last().unwrap()))
 }
 
-/// Resident page budget for the regraft tests: a little above what region A needs (A needs 47 398 bytes in 8 pages;
-/// see the printout of `real_regraft_belvedere`), so region B must evict A's pages.
-const REGRAFT_PAGE_BUDGET: usize = 60_000;
+/// Resident page budget for the regraft tests: a little above what region A needs, so region B must evict A's pages.
+/// V8 pages are smaller than v7's (no attribute directory entries for LOD columns): A needs 41 934 bytes with
+/// `belvedere-v8` against 47 398 with v7 (see the printout of `real_regraft_belvedere`), so the v7 budget of 60 000
+/// scales by the same ratio to 53 000 and keeps the same headroom (record `RENDER_DATA_V8_21-11-2026.md`).
+const REGRAFT_PAGE_BUDGET: usize = 53_000;
 
 #[test]
 fn real_regraft_belvedere() {
-    let Some(mut real) = open_real("belvedere-v7.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
+    let Some(mut real) = open_real("belvedere-v8.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
         return;
     };
     let (a, b) = region_views(&real);
@@ -2371,7 +2373,7 @@ fn real_regraft_belvedere() {
 
 #[test]
 fn real_pages_with_drawn_nodes_are_not_evicted() {
-    let Some(mut real) = open_real("belvedere-v7.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
+    let Some(mut real) = open_real("belvedere-v8.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
         return;
     };
     let (a, b) = region_views(&real);
@@ -2608,8 +2610,8 @@ fn a_late_node_of_an_older_colour_generation_is_dropped_by_the_driver() {
 
 /// The built-in sample loaded in a harness, with its coordinate origin and visual scale.
 fn sample_harness() -> (Harness, [f64; 3], f64) {
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/web-host/sample.oct");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/web-host/sample-v8.oct");
     let file = std::fs::File::open(path).unwrap();
     let reader: RealReader =
         FormatReader::open_lazy(std::io::BufReader::new(file), FormatReaderLimits::default())
@@ -2620,7 +2622,7 @@ fn sample_harness() -> (Harness, [f64; 3], f64) {
         scale,
         256 << 20,
     )
-    .with_global_frame(reader.format_version().uses_global_frame());
+    .with_global_frame(true);
     if let Some(source) = reader.page_source().cloned() {
         dataset = dataset
             .with_pages(

@@ -17,10 +17,10 @@ use super::{
 use crate::ConvertError;
 use crate::source::SourceInfo;
 use crate::spatial::{
-    ChildSpool, GlobalCellFrame, MAX_SPATIAL_DEPTH, MAX_SPOOL_RECORD_BYTES as MAX_RECORD_BYTES,
-    NearestRecords, SampleAccumulator, SpoolLayout, SpoolPoint, StoreWriter, center_rounding_error,
-    cube_side, decode_position, global_level, lod_sample_error, read_records, sample_cell,
-    visit_source_points, voxel_center, voxel_center_global, write_point, write_source_points,
+    ChildSpool, GlobalCellFrame, MAX_SPOOL_RECORD_BYTES as MAX_RECORD_BYTES, NearestRecords,
+    SampleAccumulator, SpoolLayout, SpoolPoint, StoreWriter, center_rounding_error,
+    decode_position, global_level, lod_sample_error, read_records, visit_source_points,
+    voxel_center_global, write_point, write_source_points,
 };
 
 /// Nodes at an absolute level below this are larger than one block (2^32 quanta).
@@ -63,17 +63,14 @@ pub struct JobContext {
 
 impl JobContext {
     /// Whether a node with these values is partitioned; the root (level 0) uses the same rule.
-    pub fn splits(&self, point_count: u64, level: u32, bounds: SpatialBounds) -> bool {
-        if self.layout.is_global() {
-            // Nodes larger than 2^32 quanta (`a < 32`) hold several blocks; a multi-point node
-            // there is split so that every leaf block lies in one 2^32-quanta cell. Internal
-            // nodes stop at `a = 54`: a sample cell must span at least two quanta.
-            let absolute = global_level(bounds);
-            return point_count > 1
-                && (point_count > self.point_limit || absolute < GLOBAL_BLOCK_LEVEL)
-                && absolute < GLOBAL_MAX_INTERNAL_LEVEL;
-        }
-        point_count > self.point_limit && level < MAX_SPATIAL_DEPTH && cube_side(bounds) > 0.0
+    pub fn splits(&self, point_count: u64, bounds: SpatialBounds) -> bool {
+        // Nodes larger than 2^32 quanta (`a < 32`) hold several blocks; a multi-point node
+        // there is split so that every leaf block lies in one 2^32-quanta cell. Internal
+        // nodes stop at `a = 54`: a sample cell must span at least two quanta.
+        let absolute = global_level(bounds);
+        point_count > 1
+            && (point_count > self.point_limit || absolute < GLOBAL_BLOCK_LEVEL)
+            && absolute < GLOBAL_MAX_INTERNAL_LEVEL
     }
 
     fn child_count(&self) -> usize {
@@ -254,8 +251,6 @@ pub struct SampleGrid {
     cells: SampleCells,
     /// Nearest source records of the cells' accumulators.
     records: NearestRecords,
-    /// Exact integer cells of a `v7.4-pre` node.
-    global: bool,
     /// Constants of the node, taken from the first point added (all share the same bounds).
     frame: Option<GlobalCellFrame>,
 }
@@ -263,7 +258,6 @@ pub struct SampleGrid {
 impl SampleGrid {
     /// `expected_points` sizes the sparse table up front (0 when unknown).
     fn new(grid: usize, expected_points: u64, layout: SpoolLayout) -> Self {
-        let global = layout.is_global();
         let cell_count = grid.pow(3);
         let cells = if cell_count <= DENSE_SAMPLE_CELLS {
             SampleCells::Dense(std::iter::repeat_with(|| None).take(cell_count).collect())
@@ -276,7 +270,6 @@ impl SampleGrid {
             layout,
             cells,
             records: NearestRecords::new(layout, reserve),
-            global,
             frame: None,
         }
     }
@@ -306,14 +299,11 @@ impl SampleGrid {
     )]
     #[inline(always)]
     fn add(&mut self, record: &[u8], position: [f64; 3], bounds: SpatialBounds) {
-        let (voxel_key, center) = if self.global {
-            let grid = self.grid;
-            self.frame
-                .get_or_insert_with(|| GlobalCellFrame::new(bounds, grid))
-                .cell(position)
-        } else {
-            sample_cell(position, bounds, self.grid)
-        };
+        let grid = self.grid;
+        let (voxel_key, center) = self
+            .frame
+            .get_or_insert_with(|| GlobalCellFrame::new(bounds, grid))
+            .cell(position);
         let accumulator = match &mut self.cells {
             SampleCells::Dense(slots) => {
                 slots[voxel_key].get_or_insert_with(SampleAccumulator::default)
@@ -363,7 +353,7 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
     progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
 ) -> Result<NodeJobOutput, ConvertError> {
     let mut metrics = ctx.collect_diagnostics.then(JobMetrics::default);
-    if !ctx.splits(job.point_count, job.level, job.bounds) {
+    if !ctx.splits(job.point_count, job.bounds) {
         return leaf_output(ctx, job, store, Vec::new(), metrics);
     }
     // A leaf job gets `SOURCE` as a placeholder; a splitting one must have reserved ids.
@@ -374,7 +364,7 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
     let mut samples = SampleGrid::new(ctx.sample_grid, job.point_count, ctx.layout);
-    let sample_error = lod_sample_error(job.bounds, ctx.sample_grid, ctx.layout);
+    let sample_error = lod_sample_error(job.bounds, ctx.sample_grid);
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(job.bounds, ctx.spatial_divisions)
         .expect("converter subdivisions are validated");
@@ -910,7 +900,7 @@ pub fn write_lod(
     let mut encoded = Vec::new();
     let mut count = 0;
     let mut runs = Vec::new();
-    if samples.global && global_level(bounds) < GLOBAL_BLOCK_LEVEL {
+    if global_level(bounds) < GLOBAL_BLOCK_LEVEL {
         // Group the samples by 2^32-quanta cell (stable, so key order holds inside a group).
         let mut grouped: Vec<([i64; 3], SpoolPoint)> = samples
             .iter()
@@ -933,11 +923,7 @@ pub fn write_lod(
         }
     } else {
         for (key, accumulator) in samples.iter() {
-            let center = if samples.global {
-                voxel_center_global(key, bounds, samples.grid)
-            } else {
-                voxel_center(key, bounds, samples.grid)
-            };
+            let center = voxel_center_global(key, bounds, samples.grid);
             write_point(
                 &mut encoded,
                 &accumulator.finish(&samples.records, samples.layout, center),
@@ -1209,7 +1195,7 @@ fn leaf_output<S: SpoolStore>(
     if job.point_count == 0 {
         release.push(job.input);
     }
-    let (spacing, nn_samples) = if ctx.layout.is_global() && job.point_count > 0 {
+    let (spacing, nn_samples) = if job.point_count > 0 {
         measure_leaf_spacing(ctx, job, store)?
     } else {
         (0.0, Vec::new())

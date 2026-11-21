@@ -9,7 +9,7 @@ import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
 import {
-    FORMAT_VERSIONS, OPTION_DEFAULTS, fixedFrameDisplayValue, fixedFrameHint, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
+    progressText, spoolText, timingsText, validateConverterOptions,
 } from "./converter-ui.mjs";
 
 let canvas = document.getElementById("viewer-canvas");
@@ -34,10 +34,7 @@ const convertResult = document.getElementById("convert-result");
 const convertDetails = document.getElementById("convert-details");
 const convertOptionsFields = document.getElementById("convert-options-fields");
 const optionFields = {
-    formatVersion: document.getElementById("opt-format-version"),
-    pointsPerBlock: document.getElementById("opt-points-per-block"),
     maxError: document.getElementById("opt-max-error"),
-    spatialDivisions: document.getElementById("opt-spatial-divisions"),
     plannerBudgetMiB: document.getElementById("opt-planner-budget"),
     ramBudgetGB: document.getElementById("opt-ram-budget"),
 };
@@ -1033,28 +1030,6 @@ minLengthValue.addEventListener("input", () => {
     minLengthValue.setAttribute("aria-invalid", String(Number.isNaN(lengthToDatasetUnits(Number(minLengthValue.value), minLengthUnit.value, unitPolicy.metresPerUnit))));
 });
 syncMinLengthMode();
-for (const version of FORMAT_VERSIONS) {
-    optionFields.formatVersion.append(new Option(version, version, false, version === OPTION_DEFAULTS.formatVersion));
-}
-
-// Global-frame formats fix these two values: disable the controls and say why (aria-describedby).
-const savedFixedFrameValues = {};
-function syncFixedFrameControls() {
-    const fixed = isGlobalFrameFormat(optionFields.formatVersion.value);
-    for (const name of ["pointsPerBlock", "spatialDivisions"]) {
-        const field = optionFields[name];
-        // Rewrite the value only when the fixed state flips, so typing in an enabled field sticks.
-        if (fixed !== field.disabled) {
-            if (fixed) savedFixedFrameValues[name] = field.value;
-            field.value = fixedFrameDisplayValue(name, optionFields.formatVersion.value, savedFixedFrameValues[name]);
-            if (!fixed) delete savedFixedFrameValues[name];
-        }
-        field.disabled = fixed;
-        const hint = document.getElementById(`${field.id}-fixed`);
-        hint.textContent = fixedFrameHint(name);
-        hint.hidden = !fixed;
-    }
-}
 
 function readConverterOptions() {
     return validateConverterOptions(Object.fromEntries(
@@ -1064,7 +1039,6 @@ function readConverterOptions() {
 
 // Shows each field's message next to it (aria-describedby) and returns the options, or null if any is invalid.
 function refreshConverterOptions() {
-    syncFixedFrameControls();
     const { errors, options } = readConverterOptions();
     for (const [name, element] of Object.entries(optionFields)) {
         const message = document.getElementById(`${element.id}-error`);
@@ -1298,7 +1272,7 @@ sampleButton.addEventListener("click", async () => {
     const controller = new AbortController();
     sampleFetchController = controller;
     try {
-        const response = await fetch(new URL("./sample.oct", import.meta.url), {
+        const response = await fetch(new URL("./sample-v8.oct", import.meta.url), {
             signal: controller.signal,
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1306,7 +1280,7 @@ sampleButton.addEventListener("click", async () => {
             type: "application/octet-stream",
         });
         if (sampleFetchController !== controller) return;
-        const attrsResponse = await fetch(new URL("./sample.octattrs", import.meta.url), { signal: controller.signal });
+        const attrsResponse = await fetch(new URL("./sample-v8.octattrs", import.meta.url), { signal: controller.signal });
         if (!attrsResponse.ok) throw new Error(`Attributes HTTP ${attrsResponse.status}`);
         const attrs = new File([await attrsResponse.arrayBuffer()], "sample.octattrs");
         if (sampleFetchController !== controller) return;
@@ -1331,8 +1305,8 @@ sampleButton.addEventListener("click", async () => {
 // (scripts/make-demo-belvedere.sh). The button stays hidden where neither answers. Relative to
 // the page, not to the module URL, which the offline package cannot reference.
 const belvedereCandidates = [
-    new URL("./datasets/belvedere-crop.oct", document.baseURI),
-    new URL("../../target/demo-data/belvedere-crop.oct", document.baseURI),
+    new URL("./datasets/belvedere-crop-v8.oct", document.baseURI),
+    new URL("../../target/demo-data/belvedere-crop-v8.oct", document.baseURI),
 ];
 let belvedereUrl = null;
 (async () => {
@@ -1366,8 +1340,8 @@ belvedereButton.addEventListener("click", async () => {
             if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
             return new File([await response.arrayBuffer()], name, { type: "application/octet-stream" });
         };
-        const file = await fetchFile(belvedereUrl, "belvedere-crop.oct");
-        const attrs = await fetchFile(new URL(`${belvedereUrl.href}attrs`), "belvedere-crop.octattrs");
+        const file = await fetchFile(belvedereUrl, "belvedere-crop-v8.oct");
+        const attrs = await fetchFile(new URL(`${belvedereUrl.href}attrs`), "belvedere-crop-v8.octattrs");
         if (sampleFetchController !== controller) return;
         sampleFetchController = null;
         openProjectFile(file, "Belvedere Glacier crop", attrs);

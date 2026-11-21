@@ -14,7 +14,6 @@ import sys
 import time
 from typing import Any
 
-from storage_suite import FORMAT_VERSIONS
 
 
 DEFAULT_BINARY = Path("target/perf/examples/real_dataset_bench")
@@ -326,9 +325,8 @@ def internal_phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any
             "spatial_phase_timings": spatial_phases or None}
 
 
-def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisions: int,
-            interval_ms: int, points_per_block: int = 262144,
-            format_version: str = "v5") -> int:
+def profile(input_path: Path, run_dir: Path, binary: Path, workers: int,
+            interval_ms: int) -> int:
     if not input_path.is_file():
         raise ValueError(f"input is not a regular file: {input_path}")
     if run_dir.exists():
@@ -336,7 +334,7 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisio
     run_dir.mkdir(parents=True)
     output_path = run_dir / "output.oct"
     command = [str(binary.resolve()), "convert-profile", str(input_path), str(output_path),
-               str(workers), str(divisions), str(points_per_block), format_version]
+               str(workers)]
     input_metadata = {
         "path": str(input_path.resolve()),
         "bytes": input_path.stat().st_size,
@@ -348,9 +346,7 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisio
         "input": input_metadata,
         "options": {
             "workers": workers,
-            "divisions": divisions,
-            "points_per_block": points_per_block,
-            "format_version": format_version,
+            "format_version": "v8",
         },
         "exit_code": None,
         "status": "incomplete",
@@ -474,17 +470,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--divisions", type=int, default=2)
     parser.add_argument("--interval-ms", type=int, default=100)
-    parser.add_argument("--points-per-block", type=int, default=262144)
-    parser.add_argument("--format-version", choices=FORMAT_VERSIONS, default="v5")
     args = parser.parse_args(argv)
-    if (args.workers < 1 or args.divisions not in (2, 4, 8) or args.interval_ms < 1
-            or not 1 <= args.points_per_block <= 1_000_000):
-        parser.error(
-            "workers, interval-ms and points-per-block must be positive; "
-            "divisions must be 2, 4, or 8"
-        )
+    if args.workers < 1 or args.interval_ms < 1:
+        parser.error("workers and interval-ms must be positive")
     return args
 
 
@@ -492,8 +481,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         return profile(args.input, args.run_dir, args.binary, args.workers,
-                       args.divisions, args.interval_ms, args.points_per_block,
-                       args.format_version)
+                       args.interval_ms)
     except (ValueError, FileExistsError, OSError) as error:
         print(error, file=sys.stderr)
         return 2

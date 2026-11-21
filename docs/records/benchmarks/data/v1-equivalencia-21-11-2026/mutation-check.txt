@@ -1,0 +1,48 @@
+== V1_EQUIVALENCE_MUTATE=leaf-column (fs_e430_n4008_18)
+v7: V7  v8.1-pre: V8Pre(1)
+schema (9 columns): intensity, classification, return_number, number_of_returns, scan_angle_degrees, user_data, point_source_id, gps_time, las_flags
+LOD set: intensity, classification
+MUTATION: flipped one bit of the first byte of a column in memory (node 47244640257 block 63 (leaf))
+DIFFERENCE: node 47244640257 block 63 (leaf): column 0 (intensity) differs
+summary: nodes=75 blocks=76 (leaf 5, LOD 71) points=123534 (leaf 111190, LOD 12344) columns_compared=339 row_order=identical resorted_blocks=0 differences=1
+exit 1
+== V1_EQUIVALENCE_MUTATE=display (fs_e430_n4008_18)
+v7: V7  v8.1-pre: V8Pre(1)
+schema (9 columns): intensity, classification, return_number, number_of_returns, scan_angle_degrees, user_data, point_source_id, gps_time, las_flags
+LOD set: intensity, classification
+MUTATION: flipped one bit of a display colour byte in memory (node 47244640257 block 63 (leaf))
+DIFFERENCE: node 47244640257 block 63 (leaf): display colour differs
+summary: nodes=75 blocks=76 (leaf 5, LOD 71) points=123534 (leaf 111190, LOD 12344) columns_compared=339 row_order=identical resorted_blocks=0 differences=1
+exit 1
+== V1_EQUIVALENCE_MUTATE=lod-column (fs_e430_n4008_18)
+v7: V7  v8.1-pre: V8Pre(1)
+schema (9 columns): intensity, classification, return_number, number_of_returns, scan_angle_degrees, user_data, point_source_id, gps_time, las_flags
+LOD set: intensity, classification
+MUTATION: flipped one bit of the first byte of a column in memory (node 0 block 0 (LOD))
+DIFFERENCE: node 0 block 0 (LOD): column 0 (intensity) differs
+summary: nodes=75 blocks=76 (leaf 5, LOD 71) points=123534 (leaf 111190, LOD 12344) columns_compared=339 row_order=identical resorted_blocks=0 differences=1
+exit 1
+== V1_EQUIVALENCE_MUTATE=stored-set (fs_e430_n4008_18)
+v7: V7  v8.1-pre: V8Pre(1)
+schema (9 columns): intensity, classification, return_number, number_of_returns, scan_angle_degrees, user_data, point_source_id, gps_time, las_flags
+LOD set: intensity, classification
+MUTATION: dropped the last stored column in memory (node 47244640257 block 63 (leaf))
+DIFFERENCE: node 47244640257 block 63 (leaf): v8.1-pre stores columns [0, 1, 2, 3, 4, 5, 6, 7], expected [0, 1, 2, 3, 4, 5, 6, 7, 8]
+DIFFERENCE: node 47244640257 block 63 (leaf): column 8 missing in v8.1-pre
+summary: nodes=75 blocks=76 (leaf 5, LOD 71) points=123534 (leaf 111190, LOD 12344) columns_compared=339 row_order=identical resorted_blocks=0 differences=2
+exit 1
+== V1_EQUIVALENCE_MUTATE=reorder (fs_e430_n4008_18)
+v7: V7  v8.1-pre: V8Pre(1)
+schema (9 columns): intensity, classification, return_number, number_of_returns, scan_angle_degrees, user_data, point_source_id, gps_time, las_flags
+LOD set: intensity, classification
+MUTATION: swapped rows 0 and 1 in memory (node 47244640257 block 63 (leaf))
+summary: nodes=75 blocks=76 (leaf 5, LOD 71) points=123534 (leaf 111190, LOD 12344) columns_compared=339 row_order=multiset resorted_blocks=1 differences=0
+exit 0
+== V1_EQUIVALENCE_MUTATE=reorder-corrupt (fs_e430_n4008_18)
+v7: V7  v8.1-pre: V8Pre(1)
+schema (9 columns): intensity, classification, return_number, number_of_returns, scan_angle_degrees, user_data, point_source_id, gps_time, las_flags
+LOD set: intensity, classification
+MUTATION: swapped rows 0 and 1 and flipped one bit of a column byte in memory (node 47244640257 block 63 (leaf))
+DIFFERENCE: node 47244640257 block 63 (leaf): sorted row multisets differ
+summary: nodes=75 blocks=76 (leaf 5, LOD 71) points=123534 (leaf 111190, LOD 12344) columns_compared=339 row_order=multiset resorted_blocks=1 differences=1
+exit 1

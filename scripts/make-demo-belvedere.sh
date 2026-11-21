@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds the second web-demo dataset: an XY crop of the Belvedere Glacier LAZ (CC BY 4.0,
 # Ioli et al., https://doi.org/10.5281/zenodo.19265915; see data/datasets/README.md), converted
-# with the converter defaults (final v7, as sample.oct). Output (not committed):
-#   target/demo-data/belvedere-crop.{laz,oct,octattrs}
+# with the converter defaults (V8, as sample-v8.oct). Output (not committed):
+#   target/demo-data/belvedere-crop-v8.{laz,oct,octattrs}
 # The window (EPSG:32632 metres) covers relief, moraine edges and vegetation borders, ~1.3 M points.
 #   scripts/make-demo-belvedere.sh [INPUT.laz]
 set -euo pipefail
@@ -15,10 +15,10 @@ xmin=417100 xmax=417700 ymin=5087300 ymax=5087900
 mkdir -p "$out"
 
 cargo build -p viewer_convert --release --offline
-rm -f "$out"/belvedere-crop.{laz,oct,octattrs}
+rm -f "$out"/belvedere-crop-v8.{laz,oct,octattrs}
 
 echo "window: x [$xmin, $xmax] y [$ymin, $ymax]"
-uv run --with 'laspy[lazrs]' python -I - "$src" "$out/belvedere-crop.laz" $xmin $xmax $ymin $ymax <<'PY'
+uv run --with 'laspy[lazrs]' python -I - "$src" "$out/belvedere-crop-v8.laz" $xmin $xmax $ymin $ymax <<'PY'
 import sys, laspy, numpy as np
 src, dst = sys.argv[1], sys.argv[2]
 x0, x1, y0, y1 = map(float, sys.argv[3:7])
@@ -45,10 +45,10 @@ if kept == 0:
 print(f"crop points: {kept}")
 PY
 
-target/release/viewer_convert "$out/belvedere-crop.laz" "$out/belvedere-crop.oct"
-target/release/viewer_convert verify "$out/belvedere-crop.oct"
+target/release/viewer_convert "$out/belvedere-crop-v8.laz" "$out/belvedere-crop-v8.oct"
+target/release/viewer_convert verify "$out/belvedere-crop-v8.oct"
 
-total=$(( $(stat -c %s "$out/belvedere-crop.oct") + $(stat -c %s "$out/belvedere-crop.octattrs") ))
+total=$(( $(stat -c %s "$out/belvedere-crop-v8.oct") + $(stat -c %s "$out/belvedere-crop-v8.octattrs") ))
 ls -l "$out"
 echo "oct+octattrs: $total bytes"
 [ "$total" -le $((40 * 1024 * 1024)) ] || { echo "over the 40 MB target" >&2; exit 1; }

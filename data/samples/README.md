@@ -1,9 +1,9 @@
 # Muestras de nubes de puntos
 
 Datasets pequeños para probar importación, conversión LAS/LAZ y el formato `.oct`. Los `.oct`
-versionados de Outer Banks y sus `.octattrs` están en formato V5 definitivo (`OCTVFRM1`, revisión 0), que
-sigue siendo legible; el conversor escribe hoy V7 por defecto. Los archivos locales v5 provisionales
-(`OCTVWFRM`) ya no se leen: hay que volver a convertirlos desde sus LAS.
+versionados de Outer Banks y sus `.octattrs` están en formato V8 (`OCTVFRM1`, mayor 8, revisión 0), el que
+escribe el conversor por defecto; se regeneraron el 21-11-2026 desde sus LAS (antes eran V5). Los archivos locales
+v5 provisionales (`OCTVWFRM`) ya no se leen: hay que volver a convertirlos desde sus LAS.
 
 | Archivo | Contenido | Puntos | Fuente |
 | --- | --- | ---: | --- |

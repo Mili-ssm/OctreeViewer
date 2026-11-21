@@ -1,69 +1,6 @@
 use std::{fs, process::Command};
 
 use las::{Builder, Point, Writer, point::Format};
-use viewer_core::HierarchySemantics;
-use viewer_format::{FormatReader, OctreeReader};
-
-#[test]
-fn ept_cli_preserves_implicit_workers_and_rejects_explicit_repartitioning() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().to_owned();
-    fs::create_dir_all(root.join("ept-data")).unwrap();
-    fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
-    fs::write(
-        root.join("ept.json"),
-        r#"{"dataType":"laszip","hierarchyType":"json","points":1,"bounds":[0,0,0,8,8,8],"schema":[{"name":"X","type":"signed","size":4},{"name":"Y","type":"signed","size":4},{"name":"Z","type":"signed","size":4}]}"#,
-    )
-    .unwrap();
-    fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":1}"#).unwrap();
-    let mut builder = Builder::from((1, 2));
-    builder.point_format = Format::new(0).unwrap();
-    builder.point_format.is_compressed = true;
-    let mut writer = Writer::from_path(
-        root.join("ept-data/0-0-0-0.laz"),
-        builder.into_header().unwrap(),
-    )
-    .unwrap();
-    writer
-        .write_point(Point {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0,
-            ..Point::default()
-        })
-        .unwrap();
-    writer.close().unwrap();
-
-    let output_path = root.join("result.oct");
-    let output = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-        .arg(&root)
-        .arg(&output_path)
-        .args(["--format-version", "v5"])
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let reader = FormatReader::new(fs::File::open(&output_path).unwrap()).unwrap();
-    assert_eq!(
-        reader.format_metadata().dataset().hierarchy().semantics(),
-        HierarchySemantics::Additive
-    );
-    drop(reader);
-
-    let rejected_path = root.join("rejected.oct");
-    let rejected = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-        .arg(&root)
-        .arg(&rejected_path)
-        .args(["--format-version", "v5", "--spatial-workers", "2"])
-        .output()
-        .unwrap();
-    assert!(!rejected.status.success());
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("EPT topology is preserved"));
-    assert!(!rejected_path.exists());
-}
 
 #[test]
 fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
@@ -87,7 +24,6 @@ fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
     let converted = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
         .arg(&input)
         .arg(&output)
-        .args(["--format-version", "v7.5-pre"])
         .output()
         .unwrap();
     assert!(
@@ -106,7 +42,7 @@ fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
     };
     let ok = verify(&output);
     assert_eq!(ok.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&ok.stdout).starts_with("OK v7.5-pre"));
+    assert!(String::from_utf8_lossy(&ok.stdout).starts_with("OK v8"));
 
     // The root page sits just before the 40-byte footer: damaging it breaks the index CRC.
     let mut bytes = fs::read(&output).unwrap();
@@ -156,51 +92,56 @@ fn las_with_points(path: &std::path::Path, count: u32) {
 }
 
 #[test]
-fn format_fixed_options_are_checked_independently_of_flag_order() {
+fn cli_refuses_the_options_v8_fixes_before_any_work() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
     small_las(&input);
-    let run = |name: &str, args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-            .arg(&input)
-            .arg(tmp.path().join(name))
-            .args(args)
-            .output()
-            .unwrap()
-    };
-    let rejected = run(
-        "v7.oct",
-        &["--format-version", "v7", "--row-order", "source"],
-    );
-    assert!(!rejected.status.success());
-    assert!(
-        String::from_utf8_lossy(&rejected.stderr)
-            .contains("row order is fixed by the output format"),
-        "{}",
-        String::from_utf8_lossy(&rejected.stderr)
-    );
-    assert!(!tmp.path().join("v7.oct").exists());
-
-    for (name, args) in [
-        (
-            "a.oct",
-            ["--spatial-divisions", "4", "--format-version", "v5"],
-        ),
-        (
-            "b.oct",
-            ["--format-version", "v5", "--spatial-divisions", "4"],
-        ),
-    ] {
-        let ok = run(name, &args);
+    for (index, flags) in [
+        vec!["--format-version", "v8"],
+        vec!["--format-version", "v5"],
+        vec!["--format-version"],
+        vec!["--row-order", "hybrid"],
+        vec!["--points-per-block", "64000"],
+        vec!["--spatial-divisions", "2"],
+        // A removed option wins over a valid one placed before it.
+        vec!["--max-error", "0.01", "--spatial-divisions", "4"],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let output = tmp.path().join(format!("out{index}.oct"));
+        let run = run_cli(&[&input, &output], &flags);
+        assert!(!run.status.success(), "{flags:?}");
+        let removed = flags
+            .iter()
+            .copied()
+            .find(|flag| {
+                [
+                    "--format-version",
+                    "--row-order",
+                    "--points-per-block",
+                    "--spatial-divisions",
+                ]
+                .contains(flag)
+            })
+            .unwrap();
+        let message = stderr(&run);
         assert!(
-            ok.status.success(),
-            "{}",
-            String::from_utf8_lossy(&ok.stderr)
+            message.contains(&format!(
+                "option {removed} was removed: V8 is the only format and fixes it"
+            )),
+            "{flags:?}: {message}"
+        );
+        assert!(!output.exists(), "{flags:?} left an output");
+        assert!(
+            !output.with_extension("octattrs").exists(),
+            "{flags:?} left attributes"
         );
     }
     assert_eq!(
-        fs::read(tmp.path().join("a.oct")).unwrap(),
-        fs::read(tmp.path().join("b.oct")).unwrap()
+        fs::read_dir(tmp.path()).unwrap().count(),
+        1,
+        "partial output"
     );
 }
 
@@ -221,106 +162,29 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[test]
-fn cli_accepts_v8_pre2() {
+fn cli_refuses_the_removed_attr_codec_option() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
     small_las(&input);
-    let output = tmp.path().join("out.oct");
-    let run = run_cli(&[&input, &output], &["--format-version", "v8.2-pre"]);
-    assert!(run.status.success(), "{}", stderr(&run));
-    let primary = fs::read(&output).unwrap();
-    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVE82P");
-    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
-    assert_eq!(
-        reader.format_version(),
-        viewer_format::FormatVersion::V8_PRE2
-    );
-    let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-        .arg("verify")
-        .arg(&output)
-        .output()
-        .unwrap();
-    assert!(verify.status.success(), "{}", stderr(&verify));
-}
-
-#[test]
-fn cli_converts_and_verifies_each_scheme() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("in.las");
-    las_with_points(&input, 5000);
-    for scheme in ["lz4", "cold", "cold-rgb", "all"] {
-        let output = tmp.path().join(format!("{scheme}.oct"));
-        let run = run_cli(
-            &[&input, &output],
-            &["--format-version", "v8.2-pre", "--attr-codec", scheme],
-        );
-        assert!(run.status.success(), "{scheme}: {}", stderr(&run));
-        let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-            .arg("verify")
-            .arg(&output)
-            .output()
-            .unwrap();
-        assert!(verify.status.success(), "{scheme}: {}", stderr(&verify));
-    }
-    // The scheme is not part of the file identity: the same input with another scheme still
-    // writes a v8.2-pre pair, and an unknown scheme or a format without zstd is refused.
-    let refused = |name: &str, flags: &[&str]| {
+    for (name, flags) in [
+        ("lz4.oct", vec!["--attr-codec", "lz4"]),
+        ("cold.oct", vec!["--attr-codec", "cold"]),
+        ("bare.oct", vec!["--attr-codec"]),
+    ] {
         let output = tmp.path().join(name);
-        let run = run_cli(&[&input, &output], flags);
+        let run = run_cli(&[&input, &output], &flags);
         assert!(!run.status.success(), "{name}");
         assert!(!output.exists(), "{name} left an output");
-        stderr(&run)
-    };
-    assert!(
-        refused(
-            "bad.oct",
-            &["--format-version", "v8.2-pre", "--attr-codec", "zstd"]
-        )
-        .contains("unknown attribute codec")
-    );
-    for version in ["v8.1-pre", "v7"] {
+        let message = stderr(&run);
         assert!(
-            refused(
-                &format!("{version}.oct"),
-                &["--format-version", version, "--attr-codec", "cold"]
-            )
-            .contains("v8.2-pre"),
-            "{version}"
+            message.contains("--attr-codec") && message.contains("removed (ADR 0060)"),
+            "{name}: {message}"
         );
     }
-    assert!(refused("default.oct", &["--attr-codec", "all"]).contains("v8.2-pre"));
 }
 
 #[test]
-fn cli_converts_and_verifies_v8_pre1() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("in.las");
-    small_las(&input);
-    let output = tmp.path().join("out.oct");
-    let run = run_cli(&[&input, &output], &["--format-version", "v8.1-pre"]);
-    assert!(run.status.success(), "{}", stderr(&run));
-    let primary = fs::read(&output).unwrap();
-    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVE81P");
-    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
-    assert_eq!(
-        reader.format_version(),
-        viewer_format::FormatVersion::V8_PRE1
-    );
-    // The LAS schema starts with intensity and classification: those are the LOD set.
-    assert_eq!(
-        reader.format_metadata().lod_attribute_columns(),
-        Some(&[0, 1][..])
-    );
-    let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-        .arg("verify")
-        .arg(&output)
-        .output()
-        .unwrap();
-    assert!(verify.status.success(), "{}", stderr(&verify));
-}
-
-#[test]
-fn default_conversion_writes_v7_pair() {
+fn default_conversion_writes_v8_pair() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
     small_las(&input);
@@ -329,51 +193,9 @@ fn default_conversion_writes_v7_pair() {
     assert!(run.status.success(), "{}", stderr(&run));
     let primary = fs::read(&output).unwrap();
     let attributes = fs::read(tmp.path().join("out.octattrs")).unwrap();
-    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVEND7");
-    assert_eq!(&attributes[attributes.len() - 40..][..8], b"OCTVEND7");
+    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVEND8");
+    assert_eq!(&attributes[attributes.len() - 40..][..8], b"OCTVEND8");
     assert!(contains(&primary, b"leaf:64000"));
-}
-
-#[test]
-fn default_checkpoint_points_to_v5() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("in.las");
-    small_las(&input);
-    let output = tmp.path().join("c.oct");
-    let run = run_cli(&[&input, &output], &["--checkpoint"]);
-    assert!(!run.status.success());
-    let message = stderr(&run);
-    assert!(message.contains("v7"), "{message}");
-    assert!(message.contains("--format-version v5"), "{message}");
-    assert!(!output.exists());
-    assert!(!tmp.path().join("c.octattrs").exists());
-    assert_eq!(
-        fs::read_dir(tmp.path()).unwrap().count(),
-        1,
-        "partial output"
-    );
-}
-
-#[test]
-fn default_ept_points_to_v5() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().join("ept");
-    fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("ept.json"), "{}").unwrap();
-    let output = tmp.path().join("e.oct");
-    let run = run_cli(&[&root, &output], &[]);
-    assert!(!run.status.success());
-    let message = stderr(&run);
-    assert!(message.contains("EPT"), "{message}");
-    assert!(message.contains("--format-version v5"), "{message}");
-    assert!(!output.exists());
-    assert!(!tmp.path().join("e.octattrs").exists());
-    // Only the EPT directory remains next to the missing output.
-    assert_eq!(
-        fs::read_dir(tmp.path()).unwrap().count(),
-        1,
-        "partial output"
-    );
 }
 
 #[test]
@@ -403,7 +225,7 @@ fn default_extra_bytes_error_names_version() {
     assert!(!run.status.success());
     let message = stderr(&run);
     assert!(message.contains("Extra Bytes"), "{message}");
-    assert!(message.contains("v7"), "{message}");
+    assert!(message.contains("v8"), "{message}");
     assert!(!message.contains("v7.5-pre"), "{message}");
     assert!(!output.exists());
     assert_eq!(
@@ -414,144 +236,103 @@ fn default_extra_bytes_error_names_version() {
 }
 
 #[test]
-fn v5_without_points_per_block_keeps_262144() {
+fn cli_refuses_ept_input_before_any_work() {
     let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("in.las");
-    // More points than the 64000 a wrong default would cap blocks at.
-    las_with_points(&input, 150_000);
-    let implicit = tmp.path().join("implicit.oct");
-    let explicit = tmp.path().join("explicit.oct");
-    let run = run_cli(&[&input, &implicit], &["--format-version", "v5"]);
-    assert!(run.status.success(), "{}", stderr(&run));
-    let run = run_cli(
-        &[&input, &explicit],
-        &["--format-version", "v5", "--points-per-block", "262144"],
-    );
-    assert!(run.status.success(), "{}", stderr(&run));
-    // `assert!`, not `assert_eq!`, so a failure does not dump megabytes.
-    assert!(
-        fs::read(&implicit).unwrap() == fs::read(&explicit).unwrap(),
-        ".oct differs"
-    );
-    assert!(
-        fs::read(tmp.path().join("implicit.octattrs")).unwrap()
-            == fs::read(tmp.path().join("explicit.octattrs")).unwrap(),
-        ".octattrs differs"
+    let root = tmp.path().join("ept");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("ept.json"), "{}").unwrap();
+    for (name, input, flags) in [
+        ("dir.oct", root.clone(), vec![]),
+        ("json.oct", root.join("ept.json"), vec![]),
+    ] {
+        let output = tmp.path().join(name);
+        let run = run_cli(&[&input, &output], &flags);
+        assert!(!run.status.success(), "{name}");
+        let message = stderr(&run);
+        assert!(
+            message.contains("EPT") && message.contains("removed with V8 (ADR 0061)"),
+            "{name}: {message}"
+        );
+        assert!(message.contains("LAS/LAZ"), "{name}: {message}");
+        assert!(!output.exists(), "{name} left an output");
+    }
+    // Only the EPT directory remains next to the missing outputs.
+    assert_eq!(
+        fs::read_dir(tmp.path()).unwrap().count(),
+        1,
+        "partial output"
     );
 }
 
 #[test]
-fn resume_v5_checkpoint_without_format_is_rejected() {
-    use viewer_convert::{
-        CheckpointMode, ConversionStage, ConvertError, convert_file_with_checkpoint,
-    };
-    use viewer_convert_core::ConvertOptions;
-
+fn cli_does_not_call_a_plain_directory_an_ept_input() {
     let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("in.las");
-    small_las(&input);
-    let output = tmp.path().join("r.oct");
-    // Built like the CLI does, so the positive control below matches the checkpoint identity.
-    let defaults = ConvertOptions::default();
-    let v5 = ConvertOptions::with_requested_points_per_block(
-        None,
-        defaults.max_quantization_error(),
-        defaults.max_memory_budget_bytes(),
-    )
-    .unwrap()
-    .with_format_version("v5".parse().unwrap())
-    .unwrap();
-    // Cancel while writing blocks so the checkpoint stays on disk.
-    let cancelled =
-        convert_file_with_checkpoint(&input, &output, v5, CheckpointMode::Create, |progress| {
-            !(progress.stage == ConversionStage::ReadingAndWritingBlocks
-                && progress.points_processed > 0)
-        });
-    assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
-    let files = |dir: &std::path::Path| {
-        let mut names: Vec<_> = fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        names.sort();
-        names
-    };
-    let before = files(tmp.path());
-    assert!(before.len() > 1, "a checkpoint remains: {before:?}");
-
-    // Without --format-version the resume resolves to v7: it must not mix formats.
-    let resumed = run_cli(&[&input, &output], &["--resume"]);
-    assert!(!resumed.status.success());
-    assert!(
-        stderr(&resumed).contains("checkpoint"),
-        "{}",
-        stderr(&resumed)
-    );
+    let plain = tmp.path().join("plain");
+    fs::create_dir_all(&plain).unwrap();
+    let output = tmp.path().join("plain.oct");
+    let run = run_cli(&[&plain, &output], &[]);
+    assert!(!run.status.success());
+    let message = stderr(&run);
+    assert!(!message.contains("EPT"), "{message}");
+    assert!(message.contains("is a directory"), "{message}");
     assert!(!output.exists());
-    assert_eq!(files(tmp.path()), before);
-
-    // Positive control: the same checkpoint resumes when the format matches.
-    let resumed = run_cli(&[&input, &output], &["--resume", "--format-version", "v5"]);
-    assert!(resumed.status.success(), "{}", stderr(&resumed));
 }
 
 #[test]
-fn resume_v5_checkpoint_with_other_options_is_rejected_by_identity() {
-    use viewer_convert::{
-        CheckpointMode, ConversionStage, ConvertError, convert_file_with_checkpoint,
-    };
-    use viewer_convert_core::ConvertOptions;
-
+fn cli_refuses_checkpoint_and_resume_before_any_work() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
     small_las(&input);
-    let output = tmp.path().join("r.oct");
-    // Built like the CLI does, so the positive control below matches the checkpoint identity.
-    let defaults = ConvertOptions::default();
-    let v5 = ConvertOptions::with_requested_points_per_block(
-        None,
-        defaults.max_quantization_error(),
-        defaults.max_memory_budget_bytes(),
-    )
-    .unwrap()
-    .with_format_version("v5".parse().unwrap())
-    .unwrap();
-    // Cancel while writing blocks so the checkpoint stays on disk.
-    let cancelled =
-        convert_file_with_checkpoint(&input, &output, v5, CheckpointMode::Create, |progress| {
-            !(progress.stage == ConversionStage::ReadingAndWritingBlocks
-                && progress.points_processed > 0)
-        });
-    assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
-    let files = |dir: &std::path::Path| {
-        let mut names: Vec<_> = fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        names.sort();
-        names
-    };
-    let before = files(tmp.path());
-    assert!(before.len() > 1, "a checkpoint remains: {before:?}");
+    for (name, flags) in [("c.oct", vec!["--checkpoint"]), ("r.oct", vec!["--resume"])] {
+        let output = tmp.path().join(name);
+        let run = run_cli(&[&input, &output], &flags);
+        assert!(!run.status.success(), "{name}");
+        let message = stderr(&run);
+        assert!(
+            message.contains(flags[0]) && message.contains("removed with V8 (ADR 0061)"),
+            "{name}: {message}"
+        );
+        assert!(!output.exists(), "{name} left an output");
+        assert!(
+            !output.with_extension("octattrs").exists(),
+            "{name} left attributes"
+        );
+    }
+    assert_eq!(
+        fs::read_dir(tmp.path()).unwrap().count(),
+        1,
+        "partial output"
+    );
+}
 
-    // Another block-checkpoint format fails the manifest version check, before the identity
-    // check; the same format with another option value reaches the identity check.
-    let resumed = run_cli(
-        &[&input, &output],
-        &[
-            "--resume",
-            "--format-version",
-            "v5",
-            "--points-per-block",
-            "4096",
-        ],
-    );
-    assert!(!resumed.status.success());
-    assert!(
-        stderr(&resumed).contains("checkpoint does not match the source or conversion options"),
-        "{}",
-        stderr(&resumed)
-    );
-    assert!(!output.exists());
-    assert_eq!(files(tmp.path()), before);
+/// A file of a retired family says which one it is and to reconvert it, not a header or footer
+/// error (A4 of the V8 freeze). The fixtures are the real envelopes of the retired writers.
+#[test]
+fn verify_subcommand_tells_to_reconvert_a_retired_format() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../viewer_format/tests/fixtures/retired");
+    let tmp = tempfile::tempdir().unwrap();
+    let names = [
+        "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v7.1-pre", "v7.2-pre", "v7.3-pre",
+        "v7.4-pre", "v7.5-pre", "v7", "v8.1-pre", "v8.2-pre",
+    ];
+    for name in names {
+        let mut bytes = fs::read(fixtures.join(format!("{name}.head"))).unwrap();
+        bytes.resize(bytes.len() + 200, 0);
+        bytes.extend(fs::read(fixtures.join(format!("{name}.foot"))).unwrap());
+        let path = tmp.path().join(format!("{name}.oct"));
+        fs::write(&path, bytes).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
+            .arg("verify")
+            .arg(&path)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{name}: {stderr}");
+        assert!(
+            stderr.contains(&format!("this file is format {name}, retired with V8"))
+                && stderr.contains("reconvert"),
+            "{name}: {stderr}"
+        );
+    }
 }

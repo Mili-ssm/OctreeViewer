@@ -1,0 +1,22 @@
+
+running 1 test
+test lod_dataset::cells_stream_tests::the_node_hi_contains_what_the_twin_wants_within_one_level ... 
+thread 'lod_dataset::cells_stream_tests::the_node_hi_contains_what_the_twin_wants_within_one_level' (2142965) panicked at crates/viewer_wasm/src/lod_cells_stream_tests.rs:3863:5:
+7 violations:
+P2 node 14: hi 11 < twin max 18
+P2 node 17: hi 11 < twin max 17
+P3 node 14: hi 12 < twin max 18
+P3 node 17: hi 12 < twin max 17
+P4 node 14: hi 11 < twin max 12
+P5 node 14: hi 12 < twin max 18
+P5 node 17: hi 12 < twin max 17
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    lod_dataset::cells_stream_tests::the_node_hi_contains_what_the_twin_wants_within_one_level
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 201 filtered out; finished in 19.53s
+
