@@ -121,7 +121,7 @@ pub(crate) fn plan_sample_blocks(
 }
 
 /// An EPT dataset is its `ept.json` or a directory containing it; its input was removed with V8
-/// (ADR 0061). Any other directory is not EPT and fails like any non-LAS/LAZ input.
+/// (ADR 0061). Any other directory is not an input at all (`InputIsDirectory`).
 fn is_ept_input(path: &Path) -> bool {
     if path.is_dir() {
         path.join("ept.json").is_file()
@@ -144,6 +144,9 @@ pub(crate) fn convert_file_inner(
     }
     if is_ept_input(input_path) {
         return Err(ConvertError::EptRemoved);
+    }
+    if input_path.is_dir() {
+        return Err(ConvertError::InputIsDirectory(input_path.to_owned()));
     }
     let requested_attributes_path = output_attributes_path(output_path);
     if output_path.exists() {

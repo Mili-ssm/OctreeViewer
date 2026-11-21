@@ -339,6 +339,7 @@ fn cli_does_not_call_a_plain_directory_an_ept_input() {
     assert!(!run.status.success());
     let message = stderr(&run);
     assert!(!message.contains("EPT"), "{message}");
+    assert!(message.contains("is a directory"), "{message}");
     assert!(!output.exists());
 }
 

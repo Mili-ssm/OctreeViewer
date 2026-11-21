@@ -90,6 +90,8 @@ pub enum ConvertError {
         "EPT input was removed with V8 (ADR 0061); convert the LAS/LAZ files of the dataset instead"
     )]
     EptRemoved,
+    #[error("input {0:?} is a directory; pass a LAS/LAZ/COPC file")]
+    InputIsDirectory(std::path::PathBuf),
     #[error("row order hybrid needs a v7 or v8 output format")]
     HybridRowOrderUnsupported,
     #[error(
