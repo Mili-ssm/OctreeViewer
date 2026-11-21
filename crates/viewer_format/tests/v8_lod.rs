@@ -514,7 +514,6 @@ fn v8_has_the_v8_pre1_capabilities() {
     assert_eq!(a.derives_display_attribute(), b.derives_display_attribute());
     assert_eq!(a.omits_lod_attributes(), b.omits_lod_attributes());
     assert_eq!(a.stores_distance_quantiles(), b.stores_distance_quantiles());
-    assert_eq!(a.supports_block_checkpoint(), b.supports_block_checkpoint());
     assert!(b.uses_global_frame() && b.uses_pages() && b.stores_distance_quantiles());
 }
 

@@ -17,7 +17,6 @@ use crate::diagnostics::{SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::pipeline::{
     clock::Clock,
     executor::{BatchPlanner, RangeRunner},
-    node_job::NodePath,
     point_source::SourceFactory,
     spool_store::{PlanStore, SpoolId, SpoolStore},
 };
@@ -33,45 +32,6 @@ pub struct SpatialPlan {
     pub omitted_dimensions: Vec<String>,
     pub spool_diagnostics: Option<SpatialSpoolDiagnostics>,
     pub spatial_phases: Option<SpatialPhaseDiagnostics>,
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
-)]
-pub fn build_spatial_plan<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
-    source: &SourceInfo,
-    options: ConvertOptions,
-    store: &S,
-    clock: &C,
-    executor: &X,
-    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
-    collect_spool_diagnostics: bool,
-    source_spool_bytes_written: u64,
-) -> Result<SpatialPlan, ConvertError> {
-    build_spatial_plan_inner(
-        source,
-        options,
-        store,
-        clock,
-        executor,
-        // `SpoolId::SOURCE` already holds the closed source spool.
-        true,
-        |builder, bounds| {
-            let job = builder.node_job(
-                NodePath(Vec::new()),
-                0,
-                bounds,
-                SpoolId::SOURCE,
-                source.point_count,
-                false,
-            );
-            builder.build_node(job, None).map(|_| ())
-        },
-        on_progress,
-        collect_spool_diagnostics,
-        source_spool_bytes_written,
-    )
 }
 
 /// Plans from `first`, a source positioned at the start of the points; `factory` reopens the
@@ -103,7 +63,6 @@ where
         store,
         clock,
         executor,
-        false,
         |builder, bounds| builder.build_root_from_source(first, factory, source, bounds),
         on_progress,
         collect_spool_diagnostics,
@@ -122,7 +81,6 @@ fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     store: &S,
     clock: &C,
     executor: &X,
-    keep_source: bool,
     build_root: impl FnOnce(&mut SpatialBuilder<'_, S, C, X>, SpatialBounds) -> Result<(), ConvertError>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
@@ -156,17 +114,16 @@ fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         &spool_ids,
     );
     if result.is_err() {
-        discard_spools(store, spool_ids.load(Ordering::Relaxed), keep_source);
+        discard_spools(store, spool_ids.load(Ordering::Relaxed));
     }
     result
 }
 
 /// Deletes every spool a failed plan may have left (open ones are closed first), so a store
 /// without a workspace directory (`MemSpoolStore`, the web) holds none after an error. Ids that
-/// were never created or are already deleted are rejected by the store and skipped. A checkpoint
-/// `SOURCE` belongs to the caller and is kept.
-fn discard_spools(store: &impl SpoolStore, next_id: u64, keep_source: bool) {
-    for id in (u64::from(keep_source)..next_id).map(SpoolId) {
+/// were never created or are already deleted are rejected by the store and skipped.
+fn discard_spools(store: &impl SpoolStore, next_id: u64) {
+    for id in (0..next_id).map(SpoolId) {
         let _ = store.close(id);
         let _ = store.delete(id);
     }

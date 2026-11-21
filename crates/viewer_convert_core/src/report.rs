@@ -52,7 +52,7 @@ pub struct ConversionReport {
     pub output_bytes: u64,
     pub estimated_peak_memory_bytes: u64,
     pub omitted_dimensions: Vec<String>,
-    /// None when this invocation skips batched preparation (resume or serial EPT ingestion).
+    /// Always `Some` since checkpoint resume was removed (ADR 0061); kept optional for API stability.
     pub block_preparation: Option<ConversionWorkerStats>,
     pub output_validation: ConversionWorkerStats,
 }

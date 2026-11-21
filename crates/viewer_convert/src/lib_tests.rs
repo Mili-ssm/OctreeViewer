@@ -1,12 +1,8 @@
 use crate::publish::{
     OutputValidation, output_attributes_path, output_block_ids, validate_output_pair,
-    verify_candidate_visual_scale, visual_scale_for_bounds,
+    visual_scale_for_bounds,
 };
-use std::{
-    fs,
-    io::{Read, Seek, SeekFrom, Write},
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 use las::{Builder, Color, Point, Writer, point::Format};
 use viewer_convert_core::options::{DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS};
@@ -14,8 +10,8 @@ use viewer_core::{AttributeValues, BlockId, DatasetSource, NodeId, SpatialBounds
 use viewer_format::{FormatReader, OctreeReader};
 
 use super::{
-    CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions, convert_file,
-    convert_file_with_checkpoint, convert_file_with_diagnostics, convert_file_with_progress,
+    ConversionStage, ConvertError, ConvertOptions, convert_file, convert_file_with_diagnostics,
+    convert_file_with_progress,
 };
 use crate::test_options::{v5_budget, v5_default, v5_new};
 
@@ -32,21 +28,6 @@ fn visual_scale_normalizes_bounds_without_changing_coordinates() {
             SpatialBounds::new([0.0; 3], [f64::MIN_POSITIVE, 0.0, 0.0]).unwrap()
         ),
         Err(ConvertError::InvalidVisualScale(_))
-    ));
-}
-
-#[test]
-fn rejects_checkpoint_candidates_with_a_stale_visual_scale() {
-    let tmp = test_dir();
-    let dir = tmp.path().to_owned();
-    let input = dir.join("source.las");
-    let output = dir.join("result.oct");
-    fixture(&input, false, false, 3);
-    convert_file(&input, &output, v5_new(2, 0.01).unwrap()).unwrap();
-
-    assert!(matches!(
-        verify_candidate_visual_scale(&output, 25.0),
-        Err(ConvertError::StaleVisualScaleCheckpoint { .. })
     ));
 }
 
@@ -1188,207 +1169,6 @@ fn cancellation_removes_the_temporary_file_without_publishing_output() {
 }
 
 #[test]
-fn resumes_from_the_completed_source_spool_and_rejects_changed_options() {
-    let tmp = test_dir();
-    let dir = tmp.path().to_owned();
-    let input = dir.join("source.las");
-    let output = dir.join("result.oct");
-    let expected = dir.join("expected.oct");
-    let mut checkpoint_dir = output.as_os_str().to_owned();
-    checkpoint_dir.push(".checkpoint");
-    let checkpoint_dir = PathBuf::from(checkpoint_dir);
-    coincident_fixture(&input);
-    let options = v5_new(2, 0.01).unwrap().with_spatial_workers(2).unwrap();
-
-    let mut checkpoint_source = None;
-    let cancelled =
-        convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Create, |event| {
-            if event.stage == ConversionStage::ReadingAndWritingBlocks {
-                checkpoint_source
-                    .get_or_insert_with(|| fs::read(checkpoint_dir.join("source.spool")).unwrap());
-                if event.points_processed == 5 {
-                    assert_eq!(spool_file_count(&checkpoint_dir.join("plan")), 0);
-                    return false;
-                }
-            }
-            true
-        });
-    assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
-    assert!(checkpoint_dir.join("source.spool").is_file());
-    assert_eq!(
-        fs::read(checkpoint_dir.join("source.spool")).unwrap(),
-        checkpoint_source.expect("cancelled after consuming some planned spools")
-    );
-    assert!(!output.exists());
-
-    let changed_options = v5_new(3, 0.01).unwrap();
-    assert!(matches!(
-        convert_file_with_checkpoint(
-            &input,
-            &output,
-            changed_options,
-            CheckpointMode::Resume,
-            |_| true
-        ),
-        Err(ConvertError::Checkpoint(CheckpointError::Mismatch))
-    ));
-    assert!(checkpoint_dir.join("source.spool").is_file());
-
-    let mut reread_source = false;
-    let resume_options = options.with_spatial_workers(1).unwrap();
-    let report = convert_file_with_checkpoint(
-        &input,
-        &output,
-        resume_options,
-        CheckpointMode::Resume,
-        |event| {
-            reread_source |= event.stage == ConversionStage::PlanningSpatialIndex;
-            true
-        },
-    )
-    .unwrap();
-    assert_eq!(report.point_count, 5);
-    assert!(!reread_source);
-    assert!(output.exists());
-    assert!(!checkpoint_dir.exists());
-
-    convert_file(&input, &expected, options).unwrap();
-    assert_eq!(fs::read(&output).unwrap(), fs::read(&expected).unwrap());
-    assert_eq!(
-        fs::read(output_attributes_path(&output)).unwrap(),
-        fs::read(output_attributes_path(&expected)).unwrap()
-    );
-}
-
-#[test]
-fn resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_run() {
-    for version in [
-        viewer_format::FormatVersion::V6_PRE1,
-        viewer_format::FormatVersion::V6_PRE2,
-        viewer_format::FormatVersion::V6_PRE3,
-        viewer_format::FormatVersion::V6_PRE4,
-        viewer_format::FormatVersion::V7_PRE1,
-        viewer_format::FormatVersion::V7_PRE2,
-        viewer_format::FormatVersion::V7_PRE3,
-    ] {
-        let tmp = test_dir();
-        let dir = tmp.path().to_owned();
-        let input = dir.join("source.las");
-        let output = dir.join("result.oct");
-        let expected = dir.join("expected.oct");
-        let mut checkpoint_dir = output.as_os_str().to_owned();
-        checkpoint_dir.push(".checkpoint");
-        let checkpoint_dir = PathBuf::from(checkpoint_dir);
-        fixture(&input, false, false, 5);
-        let options = v5_new(2, 0.01)
-            .unwrap()
-            .with_format_version(version)
-            .unwrap();
-
-        let cancelled = convert_file_with_checkpoint(
-            &input,
-            &output,
-            options,
-            CheckpointMode::Create,
-            |event| event.stage != ConversionStage::ValidatingOutput,
-        );
-        assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
-        let candidate = checkpoint_dir.join("candidate.oct");
-        assert!(candidate.is_file());
-        let candidate_bytes = fs::read(&candidate).unwrap();
-        assert!(matches!(
-            convert_file_with_checkpoint(
-                &input,
-                &output,
-                v5_new(2, 0.01).unwrap(),
-                CheckpointMode::Resume,
-                |_| true
-            ),
-            Err(ConvertError::Checkpoint(CheckpointError::Invalid(reason)))
-                if reason == "unsupported output major version"
-        ));
-        assert!(!output.exists());
-        assert!(candidate.is_file());
-        let mut corrupted = candidate_bytes.clone();
-        *corrupted.last_mut().unwrap() ^= 1;
-        fs::write(&candidate, corrupted).unwrap();
-        assert!(matches!(
-            convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
-                true
-            }),
-            Err(ConvertError::Checkpoint(CheckpointError::Invalid(_)))
-        ));
-        assert!(candidate.exists());
-        fs::write(&candidate, candidate_bytes).unwrap();
-        fs::hard_link(&candidate, &output).unwrap();
-
-        let report =
-            convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
-                true
-            })
-            .unwrap();
-        assert_eq!(report.point_count, 5);
-        assert_eq!(report.block_preparation, None);
-        assert!(report.output_validation.worker_limit > 0);
-        assert!(!checkpoint_dir.exists());
-
-        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
-        assert_eq!(reader.format_version(), version);
-        reader
-            .attach_attributes(fs::File::open(output_attributes_path(&output)).unwrap())
-            .unwrap();
-        assert_eq!(
-            reader.metadata().hierarchy().stats().source_point_count,
-            Some(5)
-        );
-        let block_id = reader.block_storage_stats().unwrap()[0].id;
-        assert!(!reader.read_block(block_id).unwrap().attributes().is_empty());
-
-        convert_file(&input, &expected, options).unwrap();
-        assert_eq!(fs::read(output).unwrap(), fs::read(expected).unwrap());
-    }
-}
-
-#[test]
-fn rejects_changed_input_and_preserves_the_checkpoint() {
-    let tmp = test_dir();
-    let dir = tmp.path().to_owned();
-    let input = dir.join("source.las");
-    let output = dir.join("result.oct");
-    let mut checkpoint_dir = output.as_os_str().to_owned();
-    checkpoint_dir.push(".checkpoint");
-    let checkpoint_dir = PathBuf::from(checkpoint_dir);
-    fixture(&input, false, false, 5);
-    let options = v5_new(2, 0.01).unwrap();
-
-    let cancelled =
-        convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Create, |event| {
-            event.stage != ConversionStage::BuildingSpatialHierarchy
-        });
-    assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
-    let mut file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&input)
-        .unwrap();
-    file.seek(SeekFrom::End(-1)).unwrap();
-    let mut last_byte = [0];
-    file.read_exact(&mut last_byte).unwrap();
-    last_byte[0] ^= 1;
-    file.seek(SeekFrom::End(-1)).unwrap();
-    file.write_all(&last_byte).unwrap();
-    file.sync_all().unwrap();
-
-    assert!(matches!(
-        convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
-            true
-        }),
-        Err(ConvertError::Checkpoint(CheckpointError::Mismatch))
-    ));
-    assert!(checkpoint_dir.join("source.spool").is_file());
-    assert!(!output.exists());
-}
-#[test]
 fn pair_output_refuses_existing_companion_and_geometry_alone_is_gray() {
     let tmp = test_dir();
     let dir = tmp.path().to_owned();
@@ -1420,45 +1200,6 @@ fn pair_output_refuses_existing_companion_and_geometry_alone_is_gray() {
                 .all(|p| p.color == viewer_core::ColorRgb::new(160, 160, 160))
         );
     }
-}
-
-#[test]
-fn checkpoint_resumes_companion_only_publication_and_rejects_foreign_companion() {
-    let tmp = test_dir();
-    let dir = tmp.path().to_owned();
-    let input = dir.join("source.las");
-    let output = dir.join("result.oct");
-    fixture(&input, false, false, 5);
-    let options = v5_default();
-    assert!(matches!(
-        convert_file_with_checkpoint(
-            &input,
-            &output,
-            options,
-            CheckpointMode::Create,
-            |event| event.stage != ConversionStage::PublishingOutput
-        ),
-        Err(ConvertError::Cancelled { .. })
-    ));
-    let candidate_dir = dir.join("result.oct.checkpoint");
-    let attrs = output_attributes_path(&output);
-    fs::write(&attrs, b"foreign").unwrap();
-    assert!(matches!(
-        convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
-            true
-        }),
-        Err(ConvertError::OutputExists(_))
-    ));
-    assert_eq!(fs::read(&attrs).unwrap(), b"foreign");
-    fs::remove_file(&attrs).unwrap();
-    fs::hard_link(candidate_dir.join("candidate.octattrs"), &attrs).unwrap();
-    convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| true)
-        .unwrap();
-    let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
-    reader
-        .attach_attributes(fs::File::open(&attrs).unwrap())
-        .unwrap();
-    assert!(!candidate_dir.exists());
 }
 
 /// Opt-in check against local datasets: `LAS_REAL_FILES` is newline-separated.

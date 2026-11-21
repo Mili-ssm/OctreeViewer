@@ -1,6 +1,6 @@
 //! Native spool store: one file per spool under a work directory.
 //!
-//! `SOURCE` is stored raw (checkpoint and resume read and fingerprint it as is); every other spool
+//! `SOURCE` is stored raw (range reads address it by record offset); every other spool
 //! is a sequence of byte-plane LZ4 frames (see `spool_frame`), so its file is smaller than its
 //! logical length. Offsets in `SpoolExtent` and `len` are always logical.
 
@@ -317,25 +317,6 @@ impl FileSpoolStore {
         }
     }
 
-    /// Checkpoint path: `SOURCE` already exists and is closed; the ledger starts at `source_len`.
-    pub fn with_closed_source(
-        root: &Path,
-        source_len: u64,
-        record_bytes: usize,
-        diagnostics: bool,
-    ) -> Self {
-        let store = Self {
-            root: root.to_owned(),
-            ledger: diagnostics.then(|| SpoolLedger::with_live(source_len)),
-            open: Mutex::new(OpenSpools::default()),
-        };
-        let len = fs::metadata(store.path(SpoolId::SOURCE)).map_or(source_len, |meta| meta.len());
-        let mut entry = FileEntry::new(Phase::Closed, true, len, record_bytes);
-        entry.physical_len = len;
-        lock(&store.open).entries.insert(SpoolId::SOURCE, entry);
-        store
-    }
-
     fn path(&self, id: SpoolId) -> PathBuf {
         if id == SpoolId::SOURCE {
             self.root.join("source.spool")
@@ -622,17 +603,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = FileSpoolStore::new(dir.path(), false);
         assert!(message(store.create(SpoolId(3), 0)).contains("record size"));
-    }
-
-    #[test]
-    fn file_store_resumes_from_a_closed_source() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("source.spool"), b"12345").unwrap();
-        let store = FileSpoolStore::with_closed_source(dir.path(), 5, 1, true);
-        assert_eq!(store.len(SpoolId::SOURCE).unwrap(), 5);
-        assert!(message(store.create(SpoolId::SOURCE, 1)).contains("already used"));
-        store.delete(SpoolId::SOURCE).unwrap();
-        assert!(!dir.path().join("source.spool").exists());
     }
 
     const RECORD: usize = 42;

@@ -17,13 +17,13 @@ las = { workspace = true, features = ["laz-parallel"] }
 laz = "0.13"
 rayon.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 thiserror.workspace = true
 viewer_core = { path = "../viewer_core", features = ["laz"] }
 viewer_convert_core = { path = "../viewer_convert_core" }
 viewer_format = { path = "../viewer_format" }
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile = "3"
 viewer_render_wgpu = { path = "../viewer_render_wgpu" }
 

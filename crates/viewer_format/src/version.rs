@@ -68,12 +68,6 @@ impl FormatVersion {
         Self::V8_PRE1,
     ];
 
-    /// Whether block-level EPT checkpoint/resume can target this revision.
-    pub fn supports_block_checkpoint(self) -> bool {
-        crate::layout::StorageLayout::from_version(self)
-            .is_ok_and(crate::layout::StorageLayout::supports_block_checkpoint)
-    }
-
     /// Whether the writer needs a [`crate::GlobalFrame`] in the metadata (the global integer
     /// octree of `v7.4-pre`) and `i64` block origins instead of per-block `f64` transforms.
     pub fn uses_global_frame(self) -> bool {
@@ -195,13 +189,6 @@ impl std::str::FromStr for FormatVersion {
                 .ok_or("expected v5, v6, v7, v8 or a positive pre-release revision (v6.N-pre, v7.N-pre, v8.N-pre)"),
         }
     }
-}
-
-/// Writable revisions that support block-level EPT checkpoint/resume, in listing order.
-pub fn block_checkpoint_versions() -> impl Iterator<Item = FormatVersion> {
-    FormatVersion::WRITABLE
-        .into_iter()
-        .filter(|version| version.supports_block_checkpoint())
 }
 
 /// Recognized header identity does not imply that a payload decoder is available.
@@ -393,23 +380,6 @@ mod tests {
     }
 
     #[test]
-    fn block_checkpoint_is_supported_only_by_v7_pre1_to_3() {
-        let supported: Vec<FormatVersion> = FormatVersion::WRITABLE
-            .into_iter()
-            .filter(|version| version.supports_block_checkpoint())
-            .collect();
-        assert_eq!(
-            supported,
-            [
-                FormatVersion::V7_PRE1,
-                FormatVersion::V7_PRE2,
-                FormatVersion::V7_PRE3
-            ]
-        );
-        assert!(!FormatVersion::V7.supports_block_checkpoint());
-    }
-
-    #[test]
     fn identifies_exact_revisions_without_consuming_the_stream() {
         for (major, revision, label) in [
             (5, 0, "v5"),
@@ -480,7 +450,7 @@ mod tests {
         bytes[20..24].copy_from_slice(&checksum.to_le_bytes());
         let error = probe_format(&mut Cursor::new(bytes)).unwrap_err();
         assert!(matches!(error, FormatError::ProvisionalFormat));
-        assert!(error.to_string().contains("regenerate from LAS/LAZ/EPT"));
+        assert!(error.to_string().contains("regenerate from LAS/LAZ"));
     }
 
     #[test]

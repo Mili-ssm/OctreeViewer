@@ -39,22 +39,8 @@ impl Workspace {
         ))
     }
 
-    pub fn file(&self, name: &str) -> PathBuf {
-        self.path.join(name)
-    }
-
     pub fn root(&self) -> &Path {
         &self.path
-    }
-
-    pub fn create_at(path: &Path) -> Result<Self, ConvertError> {
-        if path.exists() {
-            fs::remove_dir_all(path)?;
-        }
-        fs::create_dir(path)?;
-        Ok(Self {
-            path: path.to_owned(),
-        })
     }
 }
 

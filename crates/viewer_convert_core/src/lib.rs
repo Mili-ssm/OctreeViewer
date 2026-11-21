@@ -34,7 +34,7 @@ pub use diagnostics::{
     ConversionDiagnostics, DiagnosticWindow, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics,
     ValidationWorkerDiagnostics,
 };
-pub use error::{CheckpointError, ConvertError};
+pub use error::ConvertError;
 pub use options::ConvertOptions;
 pub use pipeline::clock::NoClock;
 pub use pipeline::hybrid::{

@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     path::{Path, PathBuf},
     sync::{Condvar, Mutex, MutexGuard, PoisonError},
     thread,
@@ -15,32 +15,25 @@ use viewer_convert_core::{
         prepare_planned_block_with_diagnostics, write_prepared,
     },
     error::ConvertError,
-    limits::visual_scale_for_bounds,
     options::ESTIMATED_WORKING_BYTES_PER_POINT,
     report::{
         ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats,
         aggregate_geometry_codec_diagnostics, emit_progress,
     },
-    spatial::{
-        PlannedBlock, build_spatial_plan, build_spatial_plan_from_source, emit_source_progress,
-    },
+    spatial::{PlannedBlock, build_spatial_plan_from_source},
 };
 use viewer_format::{BlockEncoder, OctreeWriter, PreparedOctreeWriter};
 
-use crate::checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 use crate::diagnostics::DiagnosticTimer;
-use crate::ept;
 use crate::executor::ThreadedExecutor;
 use crate::pipeline::clock::SystemClock;
-use crate::pipeline::node_job::{JobProgress, spool_source};
 use crate::pipeline::point_source::{ByteSource, LasFactory, LasPointSource, RangeSource};
-use crate::pipeline::spool_store::{FileSpoolStore, SpoolId, SpoolStore};
+use crate::pipeline::spool_store::{FileSpoolStore, SpoolStore};
 use crate::publish::{
-    OutputValidation, create_temporary_pair, link_or_copy, output_attributes_path,
-    output_block_ids, publish_output_pair, validate_output_pair, verify_candidate_visual_scale,
+    OutputValidation, create_temporary_pair, output_attributes_path, publish_output_pair,
 };
 use crate::workspace::Workspace;
-use crate::{CheckpointMode, ConversionDiagnostics, ConvertOptions};
+use crate::{ConversionDiagnostics, ConvertOptions};
 
 // The pure source helpers live in `source`; these are their old paths.
 #[allow(unused_imports, reason = "old paths of the pure source helpers")]
@@ -70,6 +63,7 @@ impl ByteSource for FileBytes {
 
 /// Bounds header-declared allocations by the file length and decoded LAZ chunk
 /// table entries by the header, then opens the reader.
+#[cfg(test)]
 pub(crate) fn open_las_reader(path: &Path) -> Result<Reader, ConvertError> {
     open_las_reader_with_len(path).map(|(reader, _)| reader)
 }
@@ -126,11 +120,15 @@ pub(crate) fn plan_sample_blocks(
         .collect()
 }
 
+/// An EPT dataset is a directory or its `ept.json`; its input was removed with V8 (ADR 0061).
+fn is_ept_input(path: &Path) -> bool {
+    path.is_dir() || path.file_name().is_some_and(|name| name == "ept.json")
+}
+
 pub(crate) fn convert_file_inner(
     input_path: &Path,
     output_path: &Path,
     options: ConvertOptions,
-    checkpoint_mode: Option<CheckpointMode>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
@@ -139,30 +137,15 @@ pub(crate) fn convert_file_inner(
     if output_path == output_attributes_path(output_path) {
         return Err(ConvertError::ConflictingOutputPaths);
     }
-    if ept::is_ept_input(input_path) {
-        return ept::convert(
-            input_path,
-            output_path,
-            options,
-            checkpoint_mode,
-            on_progress,
-            diagnostics.as_deref_mut(),
-        );
-    }
-    if checkpoint_mode.is_some() && options.format_version().uses_pages() {
-        return Err(ConvertError::UnsupportedForPagedFormat {
-            what: "a checkpointed or resumed conversion",
-            version: options.format_version(),
-        });
+    if is_ept_input(input_path) {
+        return Err(ConvertError::EptRemoved);
     }
     let requested_attributes_path = output_attributes_path(output_path);
-    if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
+    if output_path.exists() {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
     }
-    if requested_attributes_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
-        return Err(ConvertError::OutputExists(
-            requested_attributes_path.clone(),
-        ));
+    if requested_attributes_path.exists() {
+        return Err(ConvertError::OutputExists(requested_attributes_path));
     }
 
     emit_progress(
@@ -175,27 +158,8 @@ pub(crate) fn convert_file_inner(
         },
         0,
     )?;
-    let (mut reader, len) = open_las_reader_with_len(input_path)?;
+    let (reader, len) = open_las_reader_with_len(input_path)?;
     let source = inspect_source(&reader)?.for_options(options)?;
-    let expected_visual_scale = visual_scale_for_bounds(source.bounds)?;
-    let mut checkpoint = if let Some(mode) = checkpoint_mode {
-        let source_fingerprint = fingerprint_file(input_path)?;
-        Some(Checkpoint::open(
-            output_path,
-            mode,
-            source_fingerprint,
-            options,
-        )?)
-    } else {
-        None
-    };
-    if (output_path.exists() || requested_attributes_path.exists())
-        && checkpoint.as_ref().is_none_or(|checkpoint| {
-            !matches!(checkpoint.stage(), CheckpointStage::OutputReady { .. })
-        })
-    {
-        return Err(ConvertError::OutputExists(output_path.to_owned()));
-    }
     emit_progress(
         on_progress,
         ConversionProgress {
@@ -206,167 +170,25 @@ pub(crate) fn convert_file_inner(
         },
         0,
     )?;
-    if checkpoint
-        .as_ref()
-        .is_some_and(|checkpoint| matches!(checkpoint.stage(), CheckpointStage::OutputReady { .. }))
-    {
-        let checkpoint = checkpoint.expect("output-ready conversion has a checkpoint");
-        checkpoint.verify_output()?;
-        checkpoint.verify_input(input_path)?;
-        let (
-            candidate_fingerprint,
-            attributes_fingerprint,
-            point_count,
-            block_count,
-            estimated_memory_bytes,
-        ) = checkpoint
-            .output_ready_details()
-            .expect("output-ready checkpoint has report details");
-        let candidate_path = checkpoint.candidate_path();
-        verify_candidate_visual_scale(&candidate_path, expected_visual_scale)?;
-        let (block_ids, source_block_ids) = output_block_ids(&candidate_path)?;
-        let candidate_length = candidate_fingerprint.bytes;
-        let validation = OutputValidation {
-            total_points: point_count,
-            block_ids: &block_ids,
-            source_block_ids: &source_block_ids,
-            file_length: candidate_length,
-            attributes_length: attributes_fingerprint.bytes,
-            requested_workers: options.spatial_workers(),
-            memory_budget_bytes: options.max_memory_budget_bytes(),
-            reserved_memory_bytes: estimated_memory_bytes,
-        };
-        let attributes_path = output_attributes_path(output_path);
-        if output_path.exists() && fingerprint_file(output_path)? != candidate_fingerprint {
-            return Err(ConvertError::OutputExists(output_path.to_owned()));
-        }
-        if attributes_path.exists() && fingerprint_file(&attributes_path)? != attributes_fingerprint
-        {
-            return Err(ConvertError::OutputExists(attributes_path));
-        }
-        let (output_bytes, output_validation) = if output_path.exists() && attributes_path.exists()
-        {
-            let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
-            let output_validation = validate_output_pair(
-                output_path,
-                &attributes_path,
-                &validation,
-                on_progress,
-                diagnostics.as_deref_mut(),
-            )?;
-            if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), validation_timer)
-            {
-                diagnostics.output_validation = Some(timer.finish());
-            }
-            (
-                candidate_length
-                    .checked_add(attributes_fingerprint.bytes)
-                    .ok_or(ConvertError::SizeOverflow)?,
-                output_validation,
-            )
-        } else {
-            publish_output_pair(
-                &candidate_path,
-                &checkpoint.candidate_attributes_path(),
-                output_path,
-                validation,
-                on_progress,
-                diagnostics.as_deref_mut(),
-            )?
-        };
-        checkpoint.complete()?;
-        let _ = on_progress(ConversionProgress {
-            stage: ConversionStage::Complete,
-            points_processed: point_count,
-            total_points: point_count,
-            bytes_written: output_bytes,
-        });
-        return Ok(ConversionReport {
-            point_count,
-            block_count,
-            output_bytes,
-            estimated_peak_memory_bytes: estimated_memory_bytes,
-            omitted_dimensions: source.omitted_dimensions(),
-            block_preparation: None,
-            output_validation,
-        });
-    }
 
-    let workspace = if let Some(checkpoint) = checkpoint.as_ref() {
-        Workspace::create_at(&checkpoint.root().join("plan"))?
-    } else {
-        Workspace::create(output_path)?
-    };
+    let workspace = Workspace::create(output_path)?;
     let spatial_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
-    let mut source_spool_bytes_written = 0;
-    let spool_store;
-    let spatial_plan = if let Some(checkpoint) = checkpoint.as_mut() {
-        match checkpoint.stage() {
-            CheckpointStage::Started => {
-                // `SOURCE` of a store rooted at the checkpoint is `checkpoint.source_path()`.
-                let bytes = spool_source(
-                    &mut LasPointSource::full(&mut reader),
-                    &source,
-                    viewer_convert_core::options::input_batch_point_limit(
-                        options.points_per_block(),
-                        source.record_length,
-                    ),
-                    &FileSpoolStore::new(checkpoint.root(), false),
-                    SpoolId::SOURCE,
-                    &mut |progress| match progress {
-                        JobProgress::SourcePoints(processed) => {
-                            emit_source_progress(on_progress, source.point_count, processed)
-                        }
-                        JobProgress::NodeHeartbeat => Ok(()),
-                    },
-                )?;
-                // Only the diagnostics ledger reads it.
-                source_spool_bytes_written = if diagnostics.is_some() { bytes } else { 0 };
-                checkpoint.commit_source()?;
-            }
-            CheckpointStage::SourceReady(_) => checkpoint.verify_source()?,
-            CheckpointStage::OutputReady { .. } => {
-                unreachable!("output-ready checkpoint was handled above");
-            }
-        }
-        let path = workspace.file("source.spool");
-        if matches!(checkpoint.stage(), CheckpointStage::SourceReady(_)) {
-            link_or_copy(&checkpoint.source_path(), &path)?;
-        }
-        spool_store = FileSpoolStore::with_closed_source(
-            workspace.root(),
-            source_spool_bytes_written,
-            viewer_convert_core::spatial::SpoolLayout::source(&source).record_bytes(),
-            diagnostics.is_some(),
-        );
-        build_spatial_plan(
-            &source,
-            options,
-            &spool_store,
-            &SystemClock,
-            &ThreadedExecutor,
-            on_progress,
-            diagnostics.is_some(),
-            source_spool_bytes_written,
-        )?
-    } else {
-        spool_store = FileSpoolStore::new(workspace.root(), diagnostics.is_some());
-        let factory = LasFactory::new(FileBytes {
-            path: input_path.to_owned(),
-            len,
-        });
-        build_spatial_plan_from_source(
-            &mut RangeSource::Las(LasPointSource::full(reader)),
-            &factory,
-            &source,
-            options,
-            &spool_store,
-            &SystemClock,
-            &ThreadedExecutor,
-            on_progress,
-            diagnostics.is_some(),
-        )?
-    };
+    let spool_store = FileSpoolStore::new(workspace.root(), diagnostics.is_some());
+    let factory = LasFactory::new(FileBytes {
+        path: input_path.to_owned(),
+        len,
+    });
+    let spatial_plan = build_spatial_plan_from_source(
+        &mut RangeSource::Las(LasPointSource::full(reader)),
+        &factory,
+        &source,
+        options,
+        &spool_store,
+        &SystemClock,
+        &ThreadedExecutor,
+        on_progress,
+        diagnostics.is_some(),
+    )?;
     if let (Some(diagnostics), Some(spools)) = (
         diagnostics.as_deref_mut(),
         spatial_plan.spool_diagnostics.as_ref(),
@@ -383,55 +205,18 @@ pub(crate) fn convert_file_inner(
         diagnostics.spatial_planning = Some(timer.finish());
     }
     let plan = ConversionPlan::from_spatial(spatial_plan, source.frame);
-    let mut temporary = if checkpoint.is_none() {
-        Some(create_temporary_pair(output_path)?)
-    } else {
-        None
-    };
-    let temporary_path = if let Some(checkpoint) = checkpoint.as_ref() {
-        let candidate = checkpoint.candidate_path();
-        let _ = fs::remove_file(&candidate);
-        let _ = fs::remove_file(checkpoint.candidate_attributes_path());
-        candidate
-    } else {
-        temporary
-            .as_ref()
-            .expect("non-checkpoint conversion has a temporary output")
-            .geometry
-            .path
-            .clone()
-    };
-    let file = if let Some(temporary) = temporary.as_mut() {
-        temporary
-            .geometry
-            .file
-            .take()
-            .expect("temporary output file is present")
-    } else {
-        OpenOptions::new()
-            .create_new(true)
-            .read(true)
-            .write(true)
-            .open(&temporary_path)?
-    };
-    let attributes_file = if let Some(temporary) = temporary.as_mut() {
-        temporary
-            .attributes
-            .file
-            .take()
-            .expect("temporary attributes file is present")
-    } else {
-        OpenOptions::new()
-            .create_new(true)
-            .read(true)
-            .write(true)
-            .open(
-                checkpoint
-                    .as_ref()
-                    .expect("checkpoint candidate is present")
-                    .candidate_attributes_path(),
-            )?
-    };
+    let mut temporary = create_temporary_pair(output_path)?;
+    let temporary_path = temporary.geometry.path.clone();
+    let file = temporary
+        .geometry
+        .file
+        .take()
+        .expect("temporary output file is present");
+    let attributes_file = temporary
+        .attributes
+        .file
+        .take()
+        .expect("temporary attributes file is present");
     let (mut writer, encoder) = output_writer(options, &plan.metadata, file, attributes_file)?;
     let block_preparation = stream_blocks(
         &mut writer,
@@ -458,25 +243,8 @@ pub(crate) fn convert_file_inner(
     drop(output);
     drop(attributes);
     let file_length = fs::metadata(&temporary_path)?.len();
-    let attributes_path = if let Some(checkpoint) = checkpoint.as_ref() {
-        checkpoint.candidate_attributes_path()
-    } else {
-        temporary
-            .as_ref()
-            .expect("temporary pair exists")
-            .attributes
-            .path
-            .clone()
-    };
+    let attributes_path = temporary.attributes.path.clone();
     let attributes_length = fs::metadata(&attributes_path)?.len();
-    if let Some(checkpoint) = checkpoint.as_mut() {
-        checkpoint.verify_input(input_path)?;
-        checkpoint.commit_output(
-            plan.point_count,
-            plan.block_count,
-            plan.estimated_peak_memory_bytes,
-        )?;
-    }
     // `v7.5-pre` numbers blocks by page when it writes them, so read the ids back from the file.
     let (output_block_ids, source_block_ids) = if options.format_version().uses_pages() {
         crate::publish::output_block_ids(&temporary_path)?
@@ -505,9 +273,6 @@ pub(crate) fn convert_file_inner(
         diagnostics,
     )?;
     drop(temporary);
-    if let Some(checkpoint) = checkpoint {
-        checkpoint.complete()?;
-    }
 
     let _ = on_progress(ConversionProgress {
         stage: ConversionStage::Complete,

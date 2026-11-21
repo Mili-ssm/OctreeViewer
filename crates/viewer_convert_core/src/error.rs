@@ -53,10 +53,6 @@ pub enum ConvertError {
     InvalidQuantizationError(f64),
     #[error("visual scale is outside the supported range: {0}")]
     InvalidVisualScale(f64),
-    #[error(
-        "checkpoint candidate has visual scale {actual}, expected {expected}; restart conversion with --checkpoint"
-    )]
-    StaleVisualScaleCheckpoint { expected: f64, actual: f64 },
     #[error("memory budget must be greater than zero")]
     InvalidMemoryBudget,
     #[error("spatial worker count must be between 1 and {MAX_SPATIAL_WORKERS}, got {0}")]
@@ -88,22 +84,12 @@ pub enum ConvertError {
     },
     #[error("LAS/LAZ point data ended after {actual} points; header declared {expected}")]
     PointCountMismatch { expected: u64, actual: u64 },
-    #[error("unsupported EPT dataset: {0}")]
-    UnsupportedEpt(String),
-    #[error("invalid EPT dataset: {0}")]
-    InvalidEpt(String),
     #[error("{0} is fixed by the output format version and cannot be overridden")]
     FixedByFormat(&'static str),
-    #[error("{what} cannot be written as {version}; pass --format-version v5 to convert it")]
-    UnsupportedForGlobalFormat {
-        what: &'static str,
-        version: FormatVersion,
-    },
-    #[error("{what} cannot be written as {version}; pass --format-version v5 to convert it")]
-    UnsupportedForPagedFormat {
-        what: &'static str,
-        version: FormatVersion,
-    },
+    #[error(
+        "EPT input was removed with V8 (ADR 0061); convert the LAS/LAZ files of the dataset instead"
+    )]
+    EptRemoved,
     #[error("row order hybrid needs a v7 or v8 output format")]
     HybridRowOrderUnsupported,
     #[error(
@@ -124,24 +110,4 @@ pub enum ConvertError {
     OutputExists(PathBuf),
     #[error("could not allocate a temporary output path beside {0}")]
     TemporaryPathUnavailable(PathBuf),
-    #[error(transparent)]
-    Checkpoint(#[from] CheckpointError),
-}
-
-#[derive(Debug, Error)]
-pub enum CheckpointError {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error("checkpoint already exists at {0}; use --resume to continue it")]
-    AlreadyExists(PathBuf),
-    #[error("no checkpoint exists at {0}; use --checkpoint to start a resumable conversion")]
-    Missing(PathBuf),
-    #[error("checkpoint is invalid: {0}")]
-    Invalid(String),
-    #[error("checkpoint does not match the source or conversion options")]
-    Mismatch,
-    #[error("checkpoint is already being used by another converter")]
-    Locked,
-    #[error("checkpoint cleanup failed at {path}: {source}")]
-    Cleanup { path: PathBuf, source: io::Error },
 }

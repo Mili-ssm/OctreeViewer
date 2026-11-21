@@ -152,23 +152,7 @@ fn paged_output_is_byte_identical_and_opens_lazily() {
 }
 
 #[test]
-fn paged_format_refuses_ept_checkpoints_and_keeps_fixed_parameters() {
-    let dir = tempfile::tempdir().unwrap();
-    write_las(
-        &dir.path().join("in.las"),
-        &cloud(100, [0.0; 3], 5.0, 3),
-        Vec::new(),
-    );
-    assert!(matches!(
-        crate::convert_file_with_checkpoint(
-            &dir.path().join("in.las"),
-            &dir.path().join("c.oct"),
-            options(FormatVersion::V7_PRE5),
-            crate::CheckpointMode::Create,
-            &mut |_| true,
-        ),
-        Err(ConvertError::UnsupportedForPagedFormat { .. })
-    ));
+fn paged_format_keeps_fixed_parameters_and_ept_input_is_removed() {
     let ept = tempfile::tempdir().unwrap();
     fs::write(ept.path().join("ept.json"), "{}").unwrap();
     let out = tempfile::tempdir().unwrap();
@@ -177,10 +161,7 @@ fn paged_format_refuses_ept_checkpoints_and_keeps_fixed_parameters() {
         &out.path().join("o.oct"),
         options(FormatVersion::V7_PRE5),
     );
-    assert!(matches!(
-        result,
-        Err(ConvertError::UnsupportedForPagedFormat { .. })
-    ));
+    assert!(matches!(result, Err(ConvertError::EptRemoved)));
     assert!(matches!(
         ConvertOptions::new(1000, 0.01)
             .unwrap()

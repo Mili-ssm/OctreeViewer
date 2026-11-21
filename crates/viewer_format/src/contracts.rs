@@ -52,7 +52,7 @@ pub trait OctreeReader: DatasetSource {
 ///
 /// Construction chooses metadata/options and output sinks. Finalization validates
 /// completeness and returns all sinks, including an optional attribute companion;
-/// publication, syncing durable files and checkpoints remain the caller's responsibility.
+/// publication and syncing durable files remain the caller's responsibility.
 /// On failure, callers must not publish partially written output.
 pub trait OctreeWriter {
     type Error;

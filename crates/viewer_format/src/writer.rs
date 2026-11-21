@@ -6,14 +6,11 @@ use std::{
 use viewer_core::{BlockId, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode};
 
 use crate::MAX_SCHEMA_ATTRIBUTES;
-use crate::layout::{FOOTER_SIZE, HEADER_SIZE, StorageLayout};
+use crate::layout::{FOOTER_SIZE, StorageLayout};
 use crate::metadata::validate_metadata;
 use crate::version::FileRole;
 use crate::{FormatError, FormatMetadata, FormatVersion, SourcePointBlock};
 
-use crate::checkpoint_record::{
-    decode_checkpoint_record, encode_checkpoint_record, validate_checkpoint_record,
-};
 use crate::index_codec::{footer_bytes, header_for_role, write_index};
 #[cfg(test)]
 pub(crate) use crate::prepare::prepare_point_block_for_version;
@@ -36,177 +33,9 @@ pub struct FormatWriter<W> {
     lod_blocks: BTreeSet<BlockId>,
     blocks: BTreeMap<BlockId, BlockRecord>,
     failed: bool,
-    resume_boundary_pending: bool,
 }
 
 impl<W: Write + Seek> FormatWriter<W> {
-    /// Encodes one committed block directory record for an external append-only journal.
-    /// The caller owns journal durability and candidate stream syncing.
-    pub fn checkpoint_record(&self, id: BlockId) -> Result<Vec<u8>, FormatError> {
-        if self.failed {
-            return Err(FormatError::WriterPoisoned);
-        }
-        if self.layout.uses_global_frame() {
-            return Err(FormatError::UnsupportedFormatVersion(self.layout.version()));
-        }
-        let record = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
-        encode_checkpoint_record(id, record)
-    }
-
-    /// Returns the candidate streams so the caller can flush/sync and reopen them.
-    pub fn into_candidate_streams(self) -> (W, Option<W>) {
-        (self.writer, self.attributes)
-    }
-
-    /// Opens existing candidate streams for journal replay. This checks both headers and
-    /// performs no writes. Replay records in append order before writing another block.
-    pub fn resume_for_version(
-        version: FormatVersion,
-        mut writer: W,
-        mut attributes: Option<W>,
-        metadata: FormatMetadata,
-        options: FormatWriterOptions,
-    ) -> Result<Self, FormatError>
-    where
-        W: std::io::Read,
-    {
-        let layout = StorageLayout::from_version(version)?;
-        if layout.uses_global_frame() {
-            return Err(FormatError::UnsupportedFormatVersion(version));
-        }
-        ensure_global_frame_matches(layout, &metadata)?;
-        ensure_distance_quantiles_match(layout, &metadata)?;
-        ensure_lod_columns_match(layout, &metadata)?;
-        ensure_display_source_match(layout, &metadata)?;
-        validate_metadata(&metadata)?;
-        let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
-        let lod_blocks = lod_block_ids(metadata.dataset().hierarchy())?;
-        let primary_end = writer.seek(SeekFrom::End(0))?;
-        let attr_end = attributes
-            .as_mut()
-            .map(|s| s.seek(SeekFrom::End(0)))
-            .transpose()?;
-        let expected_header = header_for_role(
-            version,
-            if attributes.is_some() {
-                FileRole::SplitPrimary
-            } else {
-                FileRole::Monolithic
-            },
-        )?;
-        writer.seek(SeekFrom::Start(0))?;
-        let mut header = vec![0; HEADER_SIZE as usize];
-        std::io::Read::read_exact(&mut writer, &mut header)?;
-        if header.as_slice() != expected_header {
-            return Err(FormatError::InvalidHeader);
-        }
-        if let Some(stream) = attributes.as_mut() {
-            stream.seek(SeekFrom::Start(0))?;
-            let mut attr_header = vec![0; HEADER_SIZE as usize];
-            std::io::Read::read_exact(stream, &mut attr_header)?;
-            if attr_header.as_slice() != header_for_role(version, FileRole::Attributes)? {
-                return Err(FormatError::InvalidHeader);
-            }
-        }
-        if primary_end < HEADER_SIZE || attr_end.is_some_and(|end| end < HEADER_SIZE) {
-            return Err(FormatError::MalformedIndex("writer resume stream length"));
-        }
-        writer.seek(SeekFrom::Start(HEADER_SIZE))?;
-        if let Some(stream) = attributes.as_mut() {
-            stream.seek(SeekFrom::Start(HEADER_SIZE))?;
-        }
-        Ok(Self {
-            writer,
-            attributes,
-            metadata,
-            options,
-            layout,
-            block_nodes,
-            lod_blocks,
-            blocks: BTreeMap::new(),
-            failed: false,
-            resume_boundary_pending: true,
-        })
-    }
-
-    /// Restores one validated journal record. Payload bytes must already be present.
-    pub fn restore_committed_record(&mut self, bytes: &[u8]) -> Result<BlockId, FormatError>
-    where
-        W: std::io::Read,
-    {
-        if self.failed {
-            return Err(FormatError::WriterPoisoned);
-        }
-        let (id, record) = decode_checkpoint_record(
-            bytes,
-            self.metadata.dataset().hierarchy().attributes(),
-            self.attributes.is_some(),
-        )?;
-        self.ensure_block_available(id)?;
-        if record.offset != self.writer.stream_position()?
-            || record.payload_length != record.payloads[0].stored_length
-            || record.payloads.len() != self.metadata.dataset().hierarchy().attributes().len() + 2
-        {
-            return Err(FormatError::MalformedIndex(
-                "writer checkpoint block order or identity",
-            ));
-        }
-        validate_checkpoint_record(
-            &record,
-            self.attributes.is_some(),
-            self.metadata.dataset().hierarchy().attributes(),
-        )?;
-        let primary_end = self.writer.seek(SeekFrom::End(0))?;
-        let primary_next = record
-            .offset
-            .checked_add(record.payload_length)
-            .ok_or(FormatError::FileSizeOverflow)?;
-        if primary_next > primary_end {
-            return Err(FormatError::MalformedIndex(
-                "writer checkpoint primary bounds",
-            ));
-        }
-        self.writer.seek(SeekFrom::Start(primary_next))?;
-        if let Some(attributes) = self.attributes.as_mut() {
-            let mut next = attributes.stream_position()?;
-            for payload in record.payloads.iter().skip(1) {
-                if payload.offset != next {
-                    return Err(FormatError::MalformedIndex(
-                        "writer checkpoint companion order",
-                    ));
-                }
-                next = next
-                    .checked_add(payload.stored_length)
-                    .ok_or(FormatError::FileSizeOverflow)?;
-            }
-            let end = attributes.seek(SeekFrom::End(0))?;
-            if next > end {
-                return Err(FormatError::MalformedIndex(
-                    "writer checkpoint companion bounds",
-                ));
-            }
-            attributes.seek(SeekFrom::Start(next))?;
-        } else {
-            let end = self.writer.seek(SeekFrom::End(0))?;
-            let total = record.payloads.iter().try_fold(0u64, |n, payload| {
-                n.checked_add(payload.stored_length)
-                    .ok_or(FormatError::FileSizeOverflow)
-            })?;
-            let next = record
-                .offset
-                .checked_add(total)
-                .ok_or(FormatError::FileSizeOverflow)?;
-            if next > end {
-                return Err(FormatError::MalformedIndex(
-                    "writer checkpoint block bounds",
-                ));
-            }
-            self.writer.seek(SeekFrom::Start(next))?;
-        }
-        self.blocks.insert(id, record);
-        Ok(id)
-    }
-
     pub fn format_version(&self) -> FormatVersion {
         self.layout.version()
     }
@@ -284,7 +113,6 @@ impl<W: Write + Seek> FormatWriter<W> {
             lod_blocks,
             blocks: BTreeMap::new(),
             failed: false,
-            resume_boundary_pending: false,
         })
     }
 
@@ -344,7 +172,6 @@ impl<W: Write + Seek> FormatWriter<W> {
                 block: prepared.layout.version(),
             });
         }
-        self.ensure_append_boundary()?;
         self.ensure_block_available(prepared.id)?;
         self.ensure_columns_follow_the_rule(&prepared)?;
         let offset = self.writer.stream_position()?;
@@ -430,30 +257,6 @@ impl<W: Write + Seek> FormatWriter<W> {
         if !self.block_nodes.contains_key(&id) {
             return Err(FormatError::UnreferencedBlock(id));
         }
-        Ok(())
-    }
-
-    fn ensure_append_boundary(&mut self) -> Result<(), FormatError> {
-        if !self.resume_boundary_pending {
-            return Ok(());
-        }
-        let primary = self.writer.stream_position()?;
-        if self.writer.seek(SeekFrom::End(0))? != primary {
-            return Err(FormatError::MalformedIndex(
-                "writer candidate primary cursor",
-            ));
-        }
-        self.writer.seek(SeekFrom::Start(primary))?;
-        if let Some(attributes) = self.attributes.as_mut() {
-            let cursor = attributes.stream_position()?;
-            if attributes.seek(SeekFrom::End(0))? != cursor {
-                return Err(FormatError::MalformedIndex(
-                    "writer candidate companion cursor",
-                ));
-            }
-            attributes.seek(SeekFrom::Start(cursor))?;
-        }
-        self.resume_boundary_pending = false;
         Ok(())
     }
 

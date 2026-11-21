@@ -13,7 +13,7 @@ pub enum FormatError {
     FileTooShort,
     #[error("format header is malformed or has an invalid checksum")]
     InvalidHeader,
-    #[error("provisional format is no longer supported; regenerate from LAS/LAZ/EPT")]
+    #[error("provisional format is no longer supported; regenerate from LAS/LAZ")]
     ProvisionalFormat,
     #[error("format version {0} is not supported")]
     UnsupportedVersion(u16),

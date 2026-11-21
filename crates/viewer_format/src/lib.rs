@@ -7,7 +7,6 @@
 mod async_reader;
 mod attribute_codec;
 mod block_encoder;
-mod checkpoint_record;
 mod codec;
 mod contracts;
 mod crc32;
@@ -81,9 +80,7 @@ pub use writer::{
     FormatWriter, FormatWriterOptions, PreparedPointBlock, RowOrder, prepare_point_block,
 };
 
-pub use version::{
-    FileRole, FormatIdentity, FormatVersion, block_checkpoint_versions, probe_format,
-};
+pub use version::{FileRole, FormatIdentity, FormatVersion, probe_format};
 
 #[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]
 pub use async_reader::{AsyncFormatReader, AsyncReadError};

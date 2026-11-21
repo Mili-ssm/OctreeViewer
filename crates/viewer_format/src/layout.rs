@@ -113,11 +113,6 @@ impl StorageLayout {
         }
     }
 
-    /// Only the v7 pre-releases up to v7.3 can be resumed block by block.
-    pub(crate) const fn supports_block_checkpoint(self) -> bool {
-        matches!(self, Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3)
-    }
-
     /// Global `i64` integer frame, node prefixes, CRS record and `u32` offsets (v7.4-pre onward).
     pub(crate) const fn uses_global_frame(self) -> bool {
         matches!(

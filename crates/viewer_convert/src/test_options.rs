@@ -1,4 +1,4 @@
-//! Test-only constructors that pin `v5`, so tests of V5, EPT or checkpoint behavior do not
+//! Test-only constructors that pin `v5`, so tests of V5 behavior do not
 //! depend on `FormatVersion::DEFAULT_OUTPUT`.
 
 use crate::{ConvertError, ConvertOptions};

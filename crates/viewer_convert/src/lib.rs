@@ -1,17 +1,14 @@
-//! Native LAS/LAZ and local EPT conversion with bounded staging and validated publication.
-//! The `convert_file*` entry points share `ConvertOptions`; progress callbacks can cancel,
-//! and checkpoint entry points retain completed LAS/LAZ phases for resumption.
+//! Native LAS/LAZ conversion with bounded staging and validated publication.
+//! The `convert_file*` entry points share `ConvertOptions`; progress callbacks can cancel.
+//! EPT input and checkpoints were removed with V8 (ADR 0061).
 
 use std::path::Path;
 
 use las_source::convert_file_inner;
 
 mod allocator;
-mod checkpoint;
 mod diagnostic_timer;
 mod diagnostics;
-mod ept;
-mod ept_checkpoint;
 mod executor;
 mod file_spool_store;
 mod fs_util;
@@ -24,16 +21,14 @@ mod test_options;
 mod verify;
 mod workspace;
 
-pub use checkpoint::CheckpointMode;
 pub use verify::{VerifyReport, verify_file};
 pub use viewer_convert_core::{
-    CheckpointError, ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage,
+    ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage,
     ConversionWorkerStats, ConvertError, ConvertOptions, DiagnosticWindow, SpatialPhaseDiagnostics,
     SpatialSpoolDiagnostics, ValidationWorkerDiagnostics,
 };
 
-/// Converts LAS/LAZ or a local laszip EPT dataset to the native format.
-/// LAS/LAZ output uses replacement hierarchy samples; EPT output preserves its additive hierarchy.
+/// Converts LAS/LAZ to the native format with replacement hierarchy samples.
 /// Point payload memory is bounded by the configured block size and spatial-index workspace.
 pub fn convert_file(
     input_path: &Path,
@@ -68,21 +63,13 @@ pub fn convert_file_with_progress<F>(
 where
     F: FnMut(ConversionProgress) -> bool,
 {
-    convert_file_inner(
-        input_path,
-        output_path,
-        options,
-        None,
-        &mut on_progress,
-        None,
-    )
+    convert_file_inner(input_path, output_path, options, &mut on_progress, None)
 }
 
 /// Converts LAS/LAZ while collecting bounded aggregate phase timings for diagnostics.
 ///
 /// External RSS and temporary-file samples may be correlated with the returned windows, but
-/// remain process-wide observations. EPT reports phase windows but no internal worker or spool
-/// attribution because its current reader pipeline is serial per block.
+/// remain process-wide observations.
 pub fn convert_file_with_diagnostics<F>(
     input_path: &Path,
     output_path: &Path,
@@ -97,32 +84,10 @@ where
         input_path,
         output_path,
         options,
-        None,
         &mut on_progress,
         Some(&mut diagnostics),
     )?;
     Ok((report, diagnostics))
-}
-
-/// Converts a file while retaining completed phase checkpoints for explicit resume.
-pub fn convert_file_with_checkpoint<F>(
-    input_path: &Path,
-    output_path: &Path,
-    options: ConvertOptions,
-    mode: CheckpointMode,
-    mut on_progress: F,
-) -> Result<ConversionReport, ConvertError>
-where
-    F: FnMut(ConversionProgress) -> bool,
-{
-    convert_file_inner(
-        input_path,
-        output_path,
-        options,
-        Some(mode),
-        &mut on_progress,
-        None,
-    )
 }
 
 #[cfg(test)]
