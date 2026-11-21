@@ -317,7 +317,7 @@ fn a_corrupt_laz_chunk_in_a_later_range_fails_like_the_default_scan() {
 fn a_small_root_and_a_root_that_does_not_divide_match_the_default_scan() {
     // Fewer points than a block: the root is a leaf and ranges are ignored.
     let small = las_bytes(&random_points(3_000, 0.0), false, |i| i as u16);
-    // The "all equal" and "flat" cases live in the ignored test below (issue #114).
+    // The "all equal" and "flat" cases live in the ignored tests below (issue #114).
     for (label, bytes) in [("small", small)] {
         let expected = convert(&bytes, options(64_000, 0)).expect(label);
         for ranges in [1, 2, 4, 8] {
@@ -331,23 +331,33 @@ fn a_small_root_and_a_root_that_does_not_divide_match_the_default_scan() {
 
 #[test]
 #[ignore = "issue #114: equal points fail in the V8 paged index (\"node below the deepest page level has children\")"]
-fn equal_and_flat_roots_match_the_default_scan() {
+fn an_all_equal_root_matches_the_default_scan() {
     // Every point equal inside wider header bounds: the root splits, then becomes a leaf.
-    let equal = with_header_bounds(
+    let bytes = with_header_bounds(
         las_bytes(&vec![[50.0; 3]; 10_000], false, |i| i as u16),
         [0.0; 3],
         [100.0; 3],
     );
+    let expected = convert(&bytes, options(4096, 0)).expect("all equal");
+    for ranges in [1, 2, 4, 8] {
+        assert!(
+            convert(&bytes, options(4096, ranges)).unwrap() == expected,
+            "all equal ranges {ranges}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "issue #114: equal points fail in the V8 paged index (\"node below the deepest page level has children\")"]
+fn a_flat_root_matches_the_default_scan() {
     // Degenerate header bounds: the root cube has no size and cannot divide.
-    let flat = las_bytes(&vec![[5.0; 3]; 10_000], false, |i| i as u16);
-    for (label, bytes) in [("all equal", equal), ("flat", flat)] {
-        let expected = convert(&bytes, options(4096, 0)).expect(label);
-        for ranges in [1, 2, 4, 8] {
-            assert!(
-                convert(&bytes, options(4096, ranges)).unwrap() == expected,
-                "{label} ranges {ranges}"
-            );
-        }
+    let bytes = las_bytes(&vec![[5.0; 3]; 10_000], false, |i| i as u16);
+    let expected = convert(&bytes, options(4096, 0)).expect("flat");
+    for ranges in [1, 2, 4, 8] {
+        assert!(
+            convert(&bytes, options(4096, ranges)).unwrap() == expected,
+            "flat ranges {ranges}"
+        );
     }
 }
 

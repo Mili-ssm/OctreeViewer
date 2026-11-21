@@ -178,7 +178,7 @@ fn print_help() {
         "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--max-error E] [--max-memory-mib MIB] [--spatial-workers N] [--pipeline-writes]\n\
          Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both.\n\
          viewer_convert verify FILE.oct reads every index page of a paged file and runs the global checks (and the companion footer when FILE.octattrs exists); exit code 0 if valid, 1 otherwise.\n\
-         The output is always V8, which fixes 64000 points per block, 2 spatial divisions per axis and hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key); --format-version, --row-order, --points-per-block and --spatial-divisions were removed and are refused.\n\
+         The output is always V8, which fixes 64000 points per block, 2 spatial divisions per axis and hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key); --format-version, --row-order, --points-per-block, --spatial-divisions and --attr-codec (attributes are LZ4 only, ADR 0060) were removed and are refused.\n\
          Defaults: maximum quantization error 0.01 in source units, estimated memory budget 512 MiB.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget.\n\

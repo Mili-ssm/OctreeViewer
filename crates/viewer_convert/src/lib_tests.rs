@@ -136,6 +136,36 @@ fn diagnostics_report_internal_windows_without_changing_output_bytes() {
 }
 
 #[test]
+fn codec_diagnostics_preserve_output_and_separate_winner_from_attempts() {
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
+    let input = dir.join("source.las");
+    let baseline = dir.join("baseline.oct");
+    let profiled = dir.join("profiled.oct");
+    fixture(&input, false, true, 24);
+    let options = leaf_new(8, 0.01).unwrap();
+    convert_file(&input, &baseline, options).unwrap();
+    let (_, diagnostics) =
+        convert_file_with_diagnostics(&input, &profiled, options, |_| true).unwrap();
+    assert_eq!(fs::read(&baseline).unwrap(), fs::read(&profiled).unwrap());
+    assert_eq!(
+        fs::read(output_attributes_path(&baseline)).unwrap(),
+        fs::read(output_attributes_path(&profiled)).unwrap()
+    );
+    let candidates = diagnostics
+        .geometry_candidates
+        .expect("codec candidate rows");
+    let winners: u64 = candidates
+        .iter()
+        .map(|candidate| candidate.selected_winners)
+        .sum();
+    let attempts: u64 = candidates.iter().map(|candidate| candidate.attempts).sum();
+    assert!(winners > 0);
+    assert!(attempts > winners);
+    assert!(diagnostics.occupancy_builds.is_some());
+}
+
+#[test]
 fn diagnostics_count_partition_and_lod_spool_payloads() {
     let tmp = test_dir();
     let dir = tmp.path().to_owned();
