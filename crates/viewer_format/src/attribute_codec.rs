@@ -1,9 +1,7 @@
 //! Pre3 attribute-only transforms. Width/row count come from the existing schema/directory.
 use std::{collections::HashMap, hash::Hash};
 
-use crate::{
-    BlockCodec, EncodedBlock, EntropyCoder, FormatError, compress_block_with, decompress_block,
-};
+use crate::{BlockCodec, EncodedBlock, FormatError, compress_block, decompress_block};
 
 const HEADER: usize = 10;
 
@@ -82,15 +80,11 @@ fn byte_dictionary(raw: &[u8], table: &mut Vec<u8>) -> [u16; 256] {
     lookup
 }
 
-fn encode_raw_or_constant(
-    raw: &[u8],
-    width: usize,
-    coder: EntropyCoder,
-) -> Result<EncodedBlock, FormatError> {
+fn encode_raw_or_constant(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
     if width == 0 || !raw.len().is_multiple_of(width) {
         return Err(malformed());
     }
-    let best = compress_block_with(raw, coder)?;
+    let best = compress_block(raw);
     let rows = raw.len() / width;
     if rows < 2 || rows > u32::MAX as usize {
         return Ok(best);
@@ -104,12 +98,8 @@ fn encode_raw_or_constant(
     Ok(best)
 }
 
-pub(crate) fn encode(
-    raw: &[u8],
-    width: usize,
-    coder: EntropyCoder,
-) -> Result<EncodedBlock, FormatError> {
-    let mut best = encode_raw_or_constant(raw, width, coder)?;
+pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
+    let mut best = encode_raw_or_constant(raw, width)?;
     let rows = raw.len() / width;
     if rows < 2 || rows > u32::MAX as usize || best.codec() == BlockCodec::Constant {
         return Ok(best);
@@ -130,9 +120,9 @@ pub(crate) fn encode(
     } else {
         dictionary_ids(raw, width, &mut table, |row| row)?
     };
-    let compressed_table = compress_block_with(&table, coder)?;
+    let compressed_table = compress_block(&table);
     drop(table);
-    let compressed_packed = compress_block_with(&packed, coder)?;
+    let compressed_packed = compress_block(&packed);
     drop(packed);
     let length = HEADER
         .checked_add(compressed_table.bytes().len())
@@ -154,13 +144,12 @@ pub(crate) fn encode(
     Ok(best)
 }
 
-/// Dictionary inner tag: 0 raw, 1 LZ4, 2 zstd (v8.2-pre only).
+/// Dictionary inner tag: 0 raw, 1 LZ4.
 fn inner_tag(codec: BlockCodec) -> u8 {
     match codec {
         BlockCodec::None => 0,
         BlockCodec::Lz4 => 1,
-        BlockCodec::Zstd => 2,
-        _ => unreachable!("dictionary parts are stored raw, LZ4 or zstd"),
+        _ => unreachable!("dictionary parts are stored raw or LZ4"),
     }
 }
 
@@ -209,34 +198,25 @@ fn row_key(row: &[u8]) -> u64 {
 }
 
 /// Pre4 keeps every pre3 candidate, adding a reversible independent byte-plane transform.
-pub(crate) fn encode_pre4(
-    raw: &[u8],
-    width: usize,
-    coder: EntropyCoder,
-) -> Result<EncodedBlock, FormatError> {
-    encode_byte_planes(raw, width, encode(raw, width, coder)?, coder)
+pub(crate) fn encode_pre4(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
+    encode_byte_planes(raw, width, encode(raw, width)?)
 }
 
 /// V7.3 keeps dictionary candidates only for narrow 1/2/4-byte tuples.
 /// The alternative candidates and their tie order stay identical to pre4.
-pub(crate) fn encode_v7_pre3(
-    raw: &[u8],
-    width: usize,
-    coder: EntropyCoder,
-) -> Result<EncodedBlock, FormatError> {
+pub(crate) fn encode_v7_pre3(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
     let best = if matches!(width, 1 | 2 | 4) {
-        encode(raw, width, coder)?
+        encode(raw, width)?
     } else {
-        encode_raw_or_constant(raw, width, coder)?
+        encode_raw_or_constant(raw, width)?
     };
-    encode_byte_planes(raw, width, best, coder)
+    encode_byte_planes(raw, width, best)
 }
 
 fn encode_byte_planes(
     raw: &[u8],
     width: usize,
     best: EncodedBlock,
-    coder: EntropyCoder,
 ) -> Result<EncodedBlock, FormatError> {
     if width <= 1 || raw.len() / width < 2 || best.codec() == BlockCodec::Constant {
         return Ok(best);
@@ -249,10 +229,10 @@ fn encode_byte_planes(
             planes[byte * rows + row] = raw[row * width + byte];
         }
     }
-    let encoded = compress_block_with(&planes, coder)?;
-    if encoded.codec() == coder.codec() && encoded.bytes().len() < best.bytes().len() {
+    let encoded = compress_block(&planes);
+    if encoded.codec() == BlockCodec::Lz4 && encoded.bytes().len() < best.bytes().len() {
         Ok(EncodedBlock {
-            codec: coder.byte_planes_codec(),
+            codec: BlockCodec::BytePlanes,
             bytes: encoded.into_bytes(),
         })
     } else {
@@ -260,26 +240,12 @@ fn encode_byte_planes(
     }
 }
 
-/// Decodes a payload of a layout without zstd.
-#[cfg(test)]
 pub(crate) fn decode(
     codec: BlockCodec,
     stored: &[u8],
     raw_size: usize,
     width: usize,
     limit: usize,
-) -> Result<Vec<u8>, FormatError> {
-    decode_with(codec, stored, raw_size, width, limit, false)
-}
-
-/// `allow_zstd` is whether the layout supports zstd: otherwise a zstd codec or tag is malformed.
-pub(crate) fn decode_with(
-    codec: BlockCodec,
-    stored: &[u8],
-    raw_size: usize,
-    width: usize,
-    limit: usize,
-    allow_zstd: bool,
 ) -> Result<Vec<u8>, FormatError> {
     if raw_size > limit {
         return Err(crate::CodecError::BlockExceedsLimit {
@@ -291,10 +257,7 @@ pub(crate) fn decode_with(
     if width == 0 || !raw_size.is_multiple_of(width) {
         return Err(malformed());
     }
-    if matches!(codec, BlockCodec::Zstd | BlockCodec::BytePlanesZstd) && !allow_zstd {
-        return Err(malformed());
-    }
-    if matches!(codec, BlockCodec::None | BlockCodec::Lz4 | BlockCodec::Zstd) {
+    if matches!(codec, BlockCodec::None | BlockCodec::Lz4) {
         return Ok(decompress_block(codec, stored, raw_size, limit)?);
     }
     let rows = raw_size / width;
@@ -311,16 +274,11 @@ pub(crate) fn decode_with(
         }
         return Ok(output);
     }
-    if matches!(codec, BlockCodec::BytePlanes | BlockCodec::BytePlanesZstd) {
+    if codec == BlockCodec::BytePlanes {
         if width <= 1 {
             return Err(malformed());
         }
-        let entropy = if codec == BlockCodec::BytePlanes {
-            BlockCodec::Lz4
-        } else {
-            BlockCodec::Zstd
-        };
-        let planes = decompress_block(entropy, stored, raw_size, limit)?;
+        let planes = decompress_block(BlockCodec::Lz4, stored, raw_size, limit)?;
         let mut output = allocate(raw_size)?;
         output.resize(raw_size, 0);
         for byte in 0..width {
@@ -355,7 +313,6 @@ pub(crate) fn decode_with(
     let inner = |tag| match tag {
         0 => Ok(BlockCodec::None),
         1 => Ok(BlockCodec::Lz4),
-        2 if allow_zstd => Ok(BlockCodec::Zstd),
         _ => Err(malformed()),
     };
     let table = decompress_block(inner(stored[4])?, &stored[HEADER..split], table_size, limit)?;

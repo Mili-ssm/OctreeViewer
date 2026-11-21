@@ -1,7 +1,7 @@
 use std::{io, path::PathBuf};
 
 use thiserror::Error;
-use viewer_format::{AttributeCodecScheme, FormatVersion};
+use viewer_format::FormatVersion;
 
 use crate::options::{MAX_BLOCKS, MAX_POINTS_PER_BLOCK, MAX_SPATIAL_WORKERS};
 
@@ -104,8 +104,6 @@ pub enum ConvertError {
         what: &'static str,
         version: FormatVersion,
     },
-    #[error("attribute codec {0} needs format version v8.2-pre; {1} stores no zstd payloads")]
-    AttributeCodecUnsupported(AttributeCodecScheme, FormatVersion),
     #[error("row order hybrid needs a v7 or v8 output format")]
     HybridRowOrderUnsupported,
     #[error(

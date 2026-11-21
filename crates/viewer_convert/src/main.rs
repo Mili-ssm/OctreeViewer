@@ -12,7 +12,7 @@ use viewer_convert::{
     CheckpointMode, ConversionStage, ConvertOptions, convert_file_with_checkpoint,
     convert_file_with_progress,
 };
-use viewer_format::{AttributeCodecScheme, FormatVersion, RowOrder, block_checkpoint_versions};
+use viewer_format::{FormatVersion, RowOrder, block_checkpoint_versions};
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -52,7 +52,6 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     let mut format_version = None;
     let mut page_target_bytes = None;
     let mut row_order: Option<RowOrder> = None;
-    let mut attribute_codec = AttributeCodecScheme::Lz4;
     let mut index = 2;
     while index < arguments.len() {
         let flag = arguments[index].to_string_lossy();
@@ -73,11 +72,16 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
             index += 1;
             continue;
         }
+        if flag == "--attr-codec" {
+            return Err(
+                "option --attr-codec was removed (ADR 0060): attribute payloads are stored with LZ4 only"
+                    .into(),
+            );
+        }
         let value = arguments.get(index + 1).ok_or("missing value for option")?;
         match flag.as_ref() {
             "--format-version" => format_version = Some(value.to_string_lossy().parse()?),
             "--row-order" => row_order = Some(value.to_string_lossy().parse()?),
-            "--attr-codec" => attribute_codec = value.to_string_lossy().parse()?,
             // Hidden: tests and benchmarks that need several pages in a small file.
             "--page-target-bytes" => page_target_bytes = Some(value.to_string_lossy().parse()?),
             "--points-per-block" => points_per_block = Some(value.to_string_lossy().parse()?),
@@ -111,10 +115,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     if let Some(order) = row_order {
         options = options.with_row_order(order)?;
     }
-    options = options
-        .with_attribute_codec(attribute_codec)
-        .validate()?
-        .with_pipelined_writes(pipelined_writes);
+    options = options.validate()?.with_pipelined_writes(pipelined_writes);
     if let Some(bytes) = page_target_bytes {
         options = options.with_page_target_bytes(bytes);
     }
@@ -227,14 +228,13 @@ fn print_help() {
         .join("/");
     let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
-        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--row-order source|hybrid] [--attr-codec lz4|cold|cold-rgb|all] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
-         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both. Global-frame formats (v7.4-pre, v7.5-pre, v7, v8, v8.1-pre, v8.2-pre) refuse EPT input, and the paged ones (v7.5-pre, v7, v8, v8.1-pre, v8.2-pre) also refuse --checkpoint and --resume: pass --format-version v5 (EPT with checkpoints needs one of {checkpoint_versions}).\n\
+        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--row-order source|hybrid] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
+         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both. Global-frame formats (v7.4-pre, v7.5-pre, v7, v8, v8.1-pre) refuse EPT input, and the paged ones (v7.5-pre, v7, v8, v8.1-pre) also refuse --checkpoint and --resume: pass --format-version v5 (EPT with checkpoints needs one of {checkpoint_versions}).\n\
          viewer_convert verify FILE.oct reads every index page of a paged v7 file and runs the global checks (and the companion footer when FILE.octattrs exists); exit code 0 if valid, 1 otherwise.\n\
          Defaults: format {default_version}, points per block 64000 (fixed by global-frame formats such as the default v8; 262144 for the others), maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
-         v7, v8, v8.1-pre and v8.2-pre fix hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key) and reject any other --row-order. --row-order hybrid needs a v7 or v8 format; v7.N-pre default to source (hybrid is for measurement); older formats keep source.\n\
-         --attr-codec (experimental, v8.2-pre only; default lz4) picks zstd instead of LZ4 for .octattrs payloads by column class: cold = return number, number of returns, scan angle, user data, point source ID, GPS time, NIR, LAS flags, extra bytes and any unknown column name; cold-rgb = cold + RGB; all = every .octattrs payload. The file does not record it and any reader decodes every scheme; .oct geometry stays LZ4.\n\
+         v7, v8 and v8.1-pre fix hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key) and reject any other --row-order. --row-order hybrid needs a v7 or v8 format; v7.N-pre default to source (hybrid is for measurement); older formats keep source.\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget (LAS/LAZ only).\n\
          --checkpoint preserves completed phases; repeat with --resume to continue the same output. Checkpoint and resume flags are mutually exclusive.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. Local EPT JSON datasets with dataType=laszip preserve their additive hierarchy; remote datasets and other codecs are unsupported. Spatial repartition options apply only to LAS/LAZ inputs; EPT checkpoint/resume requires one of {checkpoint_versions}.\n\

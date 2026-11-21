@@ -3,13 +3,11 @@
 
 const GB = 1e9;
 
-/** Writable output revisions: v8 (the default) first, then v7, the v7.N-pre revisions in ascending order, then v5, the v6.N-pre revisions and the experimental v8.1-pre and v8.2-pre. */
-export const FORMAT_VERSIONS = ["v8", "v7", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v8.1-pre", "v8.2-pre"];
+/** Writable output revisions: v8 (the default) first, then v7, the v7.N-pre revisions in ascending order, then v5, the v6.N-pre revisions and the experimental v8.1-pre. */
+export const FORMAT_VERSIONS = ["v8", "v7", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v8.1-pre"];
 export const SPATIAL_DIVISIONS = [2, 4, 8];
-/** Experimental per-column-class entropy coder of `v8.2-pre` (`--attr-codec`); reachable by API only, with no form field. */
-export const ATTR_CODECS = ["lz4", "cold", "cold-rgb", "all"];
 
-const GLOBAL_FRAME_FORMATS = new Set(["v8", "v7", "v7.4-pre", "v7.5-pre", "v8.1-pre", "v8.2-pre"]);
+const GLOBAL_FRAME_FORMATS = new Set(["v8", "v7", "v7.4-pre", "v7.5-pre", "v8.1-pre"]);
 
 /** Global-frame formats fix points per block and spatial divisions; the core rejects other values. */
 export const isGlobalFrameFormat = (formatVersion) => GLOBAL_FRAME_FORMATS.has(formatVersion);
@@ -69,12 +67,8 @@ export function validateConverterOptions(raw = {}) {
     if (FORMAT_VERSIONS.includes(input.formatVersion)) options.formatVersion = input.formatVersion;
     else errors.formatVersion = "Choose one of the listed format versions.";
 
-    // Absent or `lz4` is the default and is not sent; any other scheme needs v8.2-pre.
-    if (input.attrCodec !== undefined && input.attrCodec !== "lz4") {
-        if (!ATTR_CODECS.includes(input.attrCodec)) errors.attrCodec = `unknown attribute codec "${input.attrCodec}" (expected lz4, cold, cold-rgb or all)`;
-        else if (input.formatVersion !== "v8.2-pre") errors.attrCodec = `attribute codec ${input.attrCodec} needs format version v8.2-pre`;
-        else options.attrCodec = input.attrCodec;
-    }
+    // Removed with the zstd codecs (ADR 0060): attribute payloads are LZ4 only, so no value is valid.
+    if (input.attrCodec !== undefined) errors.attrCodec = "option attrCodec was removed (ADR 0060): attribute payloads are stored with LZ4 only";
 
     const fixedFrame = isGlobalFrameFormat(input.formatVersion);
 

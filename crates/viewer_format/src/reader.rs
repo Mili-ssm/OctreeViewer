@@ -682,18 +682,12 @@ impl<R: Read + Seek> IndexedReader<R> {
                     &range,
                     points_bytes()?,
                     Some((block.geometry_encoding, block.point_count)),
-                    self.layout.supports_zstd(),
                 )?;
                 ranges.push(range);
                 if selection == ReadSelection::Geometry && self.has_attributes() {
                     let (payload, _) = self.display_colour_payload(&block, id)?;
                     let range = self.payload_range(&block, payload, true)?;
-                    let colors = crate::read_plan::estimate_payload(
-                        &range,
-                        colors_bytes()?,
-                        None,
-                        self.layout.supports_zstd(),
-                    )?;
+                    let colors = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
                     ranges.push(range);
                     crate::read_plan::combine_geometry(positions, colors)?
                 } else {
@@ -704,12 +698,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                 // A derived colour reads its source column, so the estimate counts that payload.
                 let (payload, _) = self.display_colour_payload(&block, id)?;
                 let range = self.payload_range(&block, payload, true)?;
-                let memory = crate::read_plan::estimate_payload(
-                    &range,
-                    colors_bytes()?,
-                    None,
-                    self.layout.supports_zstd(),
-                )?;
+                let memory = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
                 ranges.push(range);
                 memory
             }
@@ -727,12 +716,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                     stored_payload(&block, id, schema_index as usize + 2)?,
                     true,
                 )?;
-                let memory = crate::read_plan::estimate_payload(
-                    &range,
-                    output_bytes,
-                    None,
-                    self.layout.supports_zstd(),
-                )?;
+                let memory = crate::read_plan::estimate_payload(&range, output_bytes, None)?;
                 ranges.push(range);
                 memory
             }
@@ -1331,13 +1315,12 @@ impl<R: Read + Seek> IndexedReader<R> {
         if range.codec() == BlockCodec::None {
             Ok(stored)
         } else if let Some(width) = attribute_width {
-            crate::attribute_codec::decode_with(
+            crate::attribute_codec::decode(
                 range.codec(),
                 &stored,
                 raw_size,
                 width,
                 usize::try_from(self.limits.max_block_bytes).unwrap_or(usize::MAX),
-                self.layout.supports_zstd(),
             )
         } else {
             Ok(decompress_block(

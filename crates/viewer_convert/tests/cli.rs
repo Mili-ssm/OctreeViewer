@@ -221,74 +221,37 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 #[test]
-fn cli_accepts_v8_pre2() {
+fn cli_refuses_the_removed_attr_codec_option() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    for (name, flags) in [
+        ("lz4.oct", vec!["--attr-codec", "lz4"]),
+        ("cold.oct", vec!["--attr-codec", "cold"]),
+        ("bare.oct", vec!["--attr-codec"]),
+    ] {
+        let output = tmp.path().join(name);
+        let run = run_cli(&[&input, &output], &flags);
+        assert!(!run.status.success(), "{name}");
+        assert!(!output.exists(), "{name} left an output");
+        let message = stderr(&run);
+        assert!(
+            message.contains("--attr-codec") && message.contains("removed (ADR 0060)"),
+            "{name}: {message}"
+        );
+    }
+}
+
+#[test]
+fn cli_refuses_the_retired_v8_pre2_version() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("in.las");
     small_las(&input);
     let output = tmp.path().join("out.oct");
     let run = run_cli(&[&input, &output], &["--format-version", "v8.2-pre"]);
-    assert!(run.status.success(), "{}", stderr(&run));
-    let primary = fs::read(&output).unwrap();
-    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVE82P");
-    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
-    assert_eq!(
-        reader.format_version(),
-        viewer_format::FormatVersion::V8_PRE2
-    );
-    let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-        .arg("verify")
-        .arg(&output)
-        .output()
-        .unwrap();
-    assert!(verify.status.success(), "{}", stderr(&verify));
-}
-
-#[test]
-fn cli_converts_and_verifies_each_scheme() {
-    let tmp = tempfile::tempdir().unwrap();
-    let input = tmp.path().join("in.las");
-    las_with_points(&input, 5000);
-    for scheme in ["lz4", "cold", "cold-rgb", "all"] {
-        let output = tmp.path().join(format!("{scheme}.oct"));
-        let run = run_cli(
-            &[&input, &output],
-            &["--format-version", "v8.2-pre", "--attr-codec", scheme],
-        );
-        assert!(run.status.success(), "{scheme}: {}", stderr(&run));
-        let verify = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
-            .arg("verify")
-            .arg(&output)
-            .output()
-            .unwrap();
-        assert!(verify.status.success(), "{scheme}: {}", stderr(&verify));
-    }
-    // The scheme is not part of the file identity: the same input with another scheme still
-    // writes a v8.2-pre pair, and an unknown scheme or a format without zstd is refused.
-    let refused = |name: &str, flags: &[&str]| {
-        let output = tmp.path().join(name);
-        let run = run_cli(&[&input, &output], flags);
-        assert!(!run.status.success(), "{name}");
-        assert!(!output.exists(), "{name} left an output");
-        stderr(&run)
-    };
-    assert!(
-        refused(
-            "bad.oct",
-            &["--format-version", "v8.2-pre", "--attr-codec", "zstd"]
-        )
-        .contains("unknown attribute codec")
-    );
-    for version in ["v8.1-pre", "v7"] {
-        assert!(
-            refused(
-                &format!("{version}.oct"),
-                &["--format-version", version, "--attr-codec", "cold"]
-            )
-            .contains("v8.2-pre"),
-            "{version}"
-        );
-    }
-    assert!(refused("default.oct", &["--attr-codec", "all"]).contains("v8.2-pre"));
+    assert!(!run.status.success());
+    assert!(!output.exists());
+    assert!(stderr(&run).contains("v8.2-pre"), "{}", stderr(&run));
 }
 
 #[test]

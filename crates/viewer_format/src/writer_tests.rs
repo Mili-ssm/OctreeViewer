@@ -149,66 +149,6 @@ fn split_writer_resumes_from_committed_checkpoint_byte_identically() {
 }
 
 #[test]
-fn checkpoint_record_rejects_zstd_codecs_on_layouts_without_zstd() {
-    use crate::checkpoint_record::{decode_checkpoint_record, validate_checkpoint_record};
-    use crate::{BlockCodec, layout::StorageLayout};
-
-    let metadata = two_block_metadata();
-    let mut writer = FormatWriter::new_split_for_version(
-        FormatVersion::V7_PRE1,
-        Cursor::new(Vec::new()),
-        Cursor::new(Vec::new()),
-        metadata.clone(),
-        options(),
-    )
-    .unwrap();
-    writer.write_block(sample_block()).unwrap();
-    let bytes = writer.checkpoint_record(BlockId::new(7)).unwrap();
-    let schema = metadata.dataset().hierarchy().attributes();
-    let layout = StorageLayout::from_version(FormatVersion::V7_PRE1).unwrap();
-    let (_, mut record) = decode_checkpoint_record(&bytes, schema, layout, true).unwrap();
-    for codec in [BlockCodec::Zstd, BlockCodec::BytePlanesZstd] {
-        record.payloads[1].codec = codec;
-        record.payloads[1].stored_length = record.payloads[1].raw_length - 1;
-        assert!(validate_checkpoint_record(&record, layout, true, schema).is_err());
-        let zstd = StorageLayout::from_version(FormatVersion::V8_PRE2).unwrap();
-        assert!(validate_checkpoint_record(&record, zstd, true, schema).is_ok());
-    }
-}
-
-#[test]
-fn checkpoint_record_rejects_zstd_on_geometry_and_non_shrinking_payloads() {
-    use crate::checkpoint_record::{decode_checkpoint_record, validate_checkpoint_record};
-    use crate::{BlockCodec, layout::StorageLayout};
-
-    let metadata = two_block_metadata();
-    let mut writer = FormatWriter::new_split_for_version(
-        FormatVersion::V7_PRE1,
-        Cursor::new(Vec::new()),
-        Cursor::new(Vec::new()),
-        metadata.clone(),
-        options(),
-    )
-    .unwrap();
-    writer.write_block(sample_block()).unwrap();
-    let bytes = writer.checkpoint_record(BlockId::new(7)).unwrap();
-    let schema = metadata.dataset().hierarchy().attributes();
-    let v7 = StorageLayout::from_version(FormatVersion::V7_PRE1).unwrap();
-    let (_, record) = decode_checkpoint_record(&bytes, schema, v7, true).unwrap();
-    let layout = StorageLayout::from_version(FormatVersion::V8_PRE2).unwrap();
-    for codec in [BlockCodec::Zstd, BlockCodec::BytePlanesZstd] {
-        let mut geometry = record.clone();
-        geometry.payloads[0].codec = codec;
-        assert!(validate_checkpoint_record(&geometry, layout, true, schema).is_err());
-
-        let mut grown = record.clone();
-        grown.payloads[1].codec = codec;
-        grown.payloads[1].raw_length = grown.payloads[1].stored_length;
-        assert!(validate_checkpoint_record(&grown, layout, true, schema).is_err());
-    }
-}
-
-#[test]
 fn v72_and_v73_use_exact_identities_and_roundtrip_geometry() {
     for (version, revision, index_magic, footer_magic) in [
         (FormatVersion::V7_PRE2, 2, b"OCTVI72P", b"OCTVE72P"),

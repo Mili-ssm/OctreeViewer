@@ -45,7 +45,6 @@ fn run(
     workers: usize,
     format: Option<viewer_format::FormatVersion>,
     row_order: Option<viewer_format::RowOrder>,
-    attribute_codec: viewer_format::AttributeCodecScheme,
 ) -> Result<Outcome, String> {
     let mut options =
         ConvertOptions::new(points_per_block, 0.01).map_err(|error| error.to_string())?;
@@ -62,10 +61,7 @@ fn run(
             .with_row_order(order)
             .map_err(|error| error.to_string())?;
     }
-    options = options
-        .with_attribute_codec(attribute_codec)
-        .validate()
-        .map_err(|error| error.to_string())?;
+    options = options.validate().map_err(|error| error.to_string())?;
     if workers != 0 {
         options = options
             .with_spatial_workers(workers)
@@ -110,14 +106,13 @@ fn parse_format(code: u32) -> Result<Option<viewer_format::FormatVersion>, Strin
         3 => Some(FormatVersion::V5),
         4 => Some(FormatVersion::V7),
         5 => Some(FormatVersion::V8_PRE1),
-        6 => Some(FormatVersion::V8_PRE2),
         7 => Some(FormatVersion::V8),
         other => return Err(format!("unknown format code {other}")),
     })
 }
 
 /// Converts and validates the buffer from `convert_parity_alloc`; `workers == 0` keeps the core
-/// default. `format` is 0 for the default revision (`v8`), 1 for `v7.4-pre`, 2 for `v7.5-pre`, 3 for `v5`, 4 for `v7` and 5 for `v8.1-pre`, 6 for `v8.2-pre` and 7 for `v8`; any other code fails. `row_order` is 0 for the format default, 1 for hybrid and 2 for source; `attr_codec` is 0 for `lz4`, 1 for `cold`, 2 for `cold-rgb` and 3 for `all`. Returns 1
+/// default. `format` is 0 for the default revision (`v8`), 1 for `v7.4-pre`, 2 for `v7.5-pre`, 3 for `v5`, 4 for `v7` and 5 for `v8.1-pre`, 6 for `v8.2-pre` and 7 for `v8`; any other code fails. `row_order` is 0 for the format default, 1 for hybrid and 2 for source. Returns 1
 /// on success; on failure returns 0 and the message is at `error_ptr`.
 ///
 /// # Safety
@@ -131,15 +126,11 @@ pub unsafe extern "C" fn convert_parity_run(
     workers: u32,
     format: u32,
     row_order: u32,
-    attr_codec: u32,
 ) -> u32 {
     // SAFETY: the caller passes a buffer from `convert_parity_alloc` of exactly `len` bytes.
     let input = unsafe { std::slice::from_raw_parts(ptr, len) };
     let divisions = u8::try_from(divisions).unwrap_or(u8::MAX);
     let result = parse_format(format).and_then(|format| {
-        let attribute_codec = *viewer_format::AttributeCodecScheme::ALL
-            .get(attr_codec as usize)
-            .ok_or_else(|| format!("unknown attribute codec code {attr_codec}"))?;
         run(
             input,
             points_per_block,
@@ -152,7 +143,6 @@ pub unsafe extern "C" fn convert_parity_run(
                 1 => Some(viewer_format::RowOrder::Hybrid),
                 _ => Some(viewer_format::RowOrder::Source),
             },
-            attribute_codec,
         )
     });
     let succeeded = result.is_ok();

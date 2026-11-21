@@ -12,8 +12,6 @@ experimental = ["viewer_core/experimental"]
 [dependencies]
 lz4_flex = "0.14"
 thiserror.workspace = true
-# C zstd, level 3, magicless frames: the same bytes on native and wasm32 (v8.2-pre).
-zstd = { version = "0.13.5", default-features = false, features = ["experimental"] }
 viewer_core = { path = "../viewer_core" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

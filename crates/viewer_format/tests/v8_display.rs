@@ -11,10 +11,9 @@ use viewer_core::{
     CoordinateFrame, DatasetMetadata, DatasetSource, NodeId, SpatialHierarchy, SpatialNode,
 };
 use viewer_format::{
-    AttributeCodecScheme, BlockCodec, BlockPayloadKind, CrsRecord, DisplayColourSource,
-    EntropyCoder, FormatError, FormatMetadata, FormatReader, FormatVersion, FormatWriter,
-    FormatWriterOptions, GlobalFrame, NodeCell, PagedReader, ReadSelection, SelectedRead,
-    SourcePointBlock,
+    BlockPayloadKind, CrsRecord, DisplayColourSource, FormatError, FormatMetadata, FormatReader,
+    FormatVersion, FormatWriter, FormatWriterOptions, GlobalFrame, NodeCell, PagedReader,
+    ReadSelection, SelectedRead, SourcePointBlock,
 };
 
 const ROOT_LEVEL: u32 = 40;
@@ -31,11 +30,6 @@ enum Cloud {
     IntensityOnly,
     /// Schema `classification` only: nothing to derive the colour from.
     Neither,
-    /// `Colour` plus the cold columns `return_number`, `user_data` and the extra bytes column
-    /// `las_flags`, with low-entropy values so every entropy coder has something to gain.
-    Cold,
-    /// The `Colour` schema (no cold column) with low-entropy values.
-    Compressible,
 }
 
 impl Cloud {
@@ -43,27 +37,19 @@ impl Cloud {
         let d = |name: &str, ty, n| AttributeDescriptor::new(name, ty, n).unwrap();
         let classification = d("classification", AttributeDataType::U8, 1);
         match self {
-            Self::Colour | Self::Compressible => vec![
+            Self::Colour => vec![
                 d("intensity", AttributeDataType::U16, 1),
                 d("rgb", AttributeDataType::U16, 3),
                 classification,
             ],
             Self::IntensityOnly => vec![d("intensity", AttributeDataType::U16, 1), classification],
             Self::Neither => vec![classification],
-            Self::Cold => vec![
-                d("intensity", AttributeDataType::U16, 1),
-                d("rgb", AttributeDataType::U16, 3),
-                classification,
-                d("return_number", AttributeDataType::U8, 1),
-                d("user_data", AttributeDataType::U8, 1),
-                d("las_flags", AttributeDataType::U8, 1),
-            ],
         }
     }
 
     fn source(self) -> DisplayColourSource {
         match self {
-            Self::Colour | Self::Cold | Self::Compressible => DisplayColourSource::Rgb(1),
+            Self::Colour => DisplayColourSource::Rgb(1),
             Self::IntensityOnly => DisplayColourSource::Intensity(0),
             Self::Neither => DisplayColourSource::None,
         }
@@ -71,7 +57,7 @@ impl Cloud {
 
     fn lod_columns(self) -> Vec<u32> {
         match self {
-            Self::Colour | Self::Cold | Self::Compressible => vec![0, 2],
+            Self::Colour => vec![0, 2],
             Self::IntensityOnly => vec![0, 1],
             Self::Neither => vec![0],
         }
@@ -100,7 +86,7 @@ fn lcg(state: &mut u64) -> u64 {
 /// The leaf display colour the converter produces, written independently of the format crate.
 fn display_of(cloud: Cloud, intensity: &[u16], rgb: &[u16], row: usize) -> ColorRgb {
     match cloud {
-        Cloud::Colour | Cloud::Cold | Cloud::Compressible => ColorRgb::new(
+        Cloud::Colour => ColorRgb::new(
             (rgb[row * 3] >> 8) as u8,
             (rgb[row * 3 + 1] >> 8) as u8,
             (rgb[row * 3 + 2] >> 8) as u8,
@@ -191,37 +177,9 @@ fn dataset(
                 })
             })
             .collect();
-        // The `Cold` cloud draws from small alphabets so that zstd and LZ4 both compress.
-        let skewed = matches!(cloud, Cloud::Cold | Cloud::Compressible);
-        let intensity: Vec<u16> = (0..POINTS)
-            .map(|_| {
-                let v = lcg(&mut state) as u16;
-                if skewed { v % 24 } else { v }
-            })
-            .collect();
-        let rgb: Vec<u16> = (0..POINTS * 3)
-            .map(|_| {
-                let v = lcg(&mut state) as u16;
-                if skewed { ((v % 16) << 8) | (v % 5) } else { v }
-            })
-            .collect();
-        let classification: Vec<u8> = (0..POINTS)
-            .map(|_| {
-                let v = lcg(&mut state) as u8;
-                if skewed { v % 7 } else { v }
-            })
-            .collect();
-        // Many distinct values with a skewed distribution: a dictionary gains nothing, entropy coding does.
-        let cold_values: Vec<u8> = if cloud == Cloud::Cold {
-            (0..POINTS)
-                .map(|_| {
-                    let v = lcg(&mut state) as u32 % 256;
-                    ((v * v) >> 8) as u8
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let intensity: Vec<u16> = (0..POINTS).map(|_| lcg(&mut state) as u16).collect();
+        let rgb: Vec<u16> = (0..POINTS * 3).map(|_| lcg(&mut state) as u16).collect();
+        let classification: Vec<u8> = (0..POINTS).map(|_| lcg(&mut state) as u8).collect();
         let mut colors: Vec<ColorRgb> = (0..POINTS)
             .map(|row| {
                 if i == 0 {
@@ -242,9 +200,6 @@ fn dataset(
                 let values = match descriptor.name() {
                     "intensity" => AttributeValues::U16(intensity.clone()),
                     "rgb" => AttributeValues::U16(rgb.clone()),
-                    "return_number" | "user_data" | "las_flags" => {
-                        AttributeValues::U8(cold_values.clone())
-                    }
                     _ => AttributeValues::U8(classification.clone()),
                 };
                 AttributeColumn::new(descriptor.clone(), values, POINTS).unwrap()
@@ -298,7 +253,7 @@ fn write_with(
     options: FormatWriterOptions,
 ) -> Result<Pair, FormatError> {
     let (metadata, blocks) = dataset(cloud, tamper);
-    let metadata = if matches!(version, FormatVersion::V8_PRE1 | FormatVersion::V8_PRE2) {
+    let metadata = if matches!(version, FormatVersion::V8_PRE1) {
         let metadata = metadata
             .with_point_distance_quantiles(
                 viewer_format::PointDistanceQuantiles::new(0.25, 0.5, 1.5).unwrap(),
@@ -735,158 +690,5 @@ fn parallel_and_budgeted_reads_return_the_v7_display_colours() {
             };
             assert_eq!(*colors, old.read_display_colors(id).unwrap());
         }
-    }
-}
-
-fn v82(cloud: Cloud, scheme: AttributeCodecScheme) -> Pair {
-    write_with(
-        FormatVersion::V8_PRE2,
-        cloud,
-        None,
-        Some(cloud.source()),
-        FormatWriterOptions::new(0.01, 1 << 24)
-            .unwrap()
-            .with_attribute_codec(scheme),
-    )
-    .unwrap()
-}
-
-fn is_zstd(codec: BlockCodec) -> bool {
-    matches!(codec, BlockCodec::Zstd | BlockCodec::BytePlanesZstd)
-}
-
-#[test]
-fn cold_without_cold_columns_matches_lz4() {
-    // Intensity and classification are never cold: `cold` writes the very same files as `lz4`.
-    for cloud in [Cloud::IntensityOnly, Cloud::Colour, Cloud::Compressible] {
-        let lz4 = v82(cloud, AttributeCodecScheme::Lz4);
-        assert_eq!(v82(cloud, AttributeCodecScheme::Cold), lz4, "{cloud:?}");
-    }
-    // The comparison can tell schemes apart: `rgb` and `all` change the bytes.
-    let lz4 = v82(Cloud::Compressible, AttributeCodecScheme::Lz4);
-    for scheme in [AttributeCodecScheme::ColdRgb, AttributeCodecScheme::All] {
-        assert_ne!(v82(Cloud::Compressible, scheme).1, lz4.1, "{scheme}");
-    }
-}
-
-#[test]
-fn every_scheme_reads_back_the_same_values() {
-    let cloud = Cloud::Cold;
-    let reference = v82(cloud, AttributeCodecScheme::Lz4);
-    let mut expected = open(&reference);
-    let mut attribute_files = vec![reference.1.clone()];
-    for scheme in [
-        AttributeCodecScheme::Cold,
-        AttributeCodecScheme::ColdRgb,
-        AttributeCodecScheme::All,
-    ] {
-        let file = v82(cloud, scheme);
-        // The geometry never depends on the scheme.
-        assert_eq!(file.0.len(), reference.0.len(), "{scheme}");
-        assert!(
-            !attribute_files.contains(&file.1),
-            "{scheme} wrote the bytes of another scheme"
-        );
-        attribute_files.push(file.1.clone());
-        // A zstd payload only where the scheme asks for it, and somewhere at all.
-        let stats = open(&file).block_payload_storage_stats().unwrap();
-        let mut zstd_payloads = 0;
-        for stat in &stats {
-            let (name, display) = match &stat.kind {
-                BlockPayloadKind::Geometry => {
-                    assert!(!is_zstd(stat.codec), "{scheme}: geometry in zstd");
-                    continue;
-                }
-                BlockPayloadKind::DisplayColor => ("", true),
-                BlockPayloadKind::Attribute { name, .. } => (name.as_str(), false),
-            };
-            if is_zstd(stat.codec) {
-                zstd_payloads += 1;
-                assert_eq!(
-                    scheme.coder_for(name, display),
-                    EntropyCoder::Zstd,
-                    "{scheme}: {name:?} block {:?}",
-                    stat.id
-                );
-            }
-        }
-        assert!(zstd_payloads > 0, "{scheme} wrote no zstd payload");
-        let mut reader = open(&file);
-        for block in 0..NODES as u64 {
-            let id = BlockId::new(block);
-            // Leaf display colour is derived from `rgb` read through zstd under `cold-rgb` and `all`.
-            assert_eq!(
-                reader.read_display_colors(id).unwrap(),
-                expected.read_display_colors(id).unwrap(),
-                "{scheme} block {block} display colours"
-            );
-            assert_eq!(
-                reader.read_geometry(id).unwrap().points(),
-                expected.read_geometry(id).unwrap().points(),
-                "{scheme} block {block} geometry"
-            );
-            let (got, want) = (
-                reader.read_block(id).unwrap(),
-                expected.read_block(id).unwrap(),
-            );
-            assert_eq!(got.points().points(), want.points().points());
-            for column in 0..cloud.schema().len() as u32 {
-                let present = reader.attribute_present(id, column).unwrap();
-                assert_eq!(present, expected.attribute_present(id, column).unwrap());
-                if present {
-                    assert_eq!(
-                        reader.read_attribute(id, column).unwrap(),
-                        expected.read_attribute(id, column).unwrap(),
-                        "{scheme} block {block} column {column}"
-                    );
-                }
-            }
-        }
-    }
-    // The fixture is only useful if the reference really has no zstd.
-    assert!(
-        !open(&reference)
-            .block_payload_storage_stats()
-            .unwrap()
-            .iter()
-            .any(|stat| is_zstd(stat.codec))
-    );
-}
-
-#[test]
-fn attr_codec_is_rejected_on_other_versions() {
-    for version in [FormatVersion::V7, FormatVersion::V8_PRE1] {
-        for scheme in [
-            AttributeCodecScheme::Cold,
-            AttributeCodecScheme::ColdRgb,
-            AttributeCodecScheme::All,
-        ] {
-            let result = write_with(
-                version,
-                Cloud::Colour,
-                None,
-                Some(Cloud::Colour.source()),
-                FormatWriterOptions::new(0.01, 1 << 24)
-                    .unwrap()
-                    .with_attribute_codec(scheme),
-            );
-            assert!(
-                matches!(result, Err(FormatError::AttributeCodecUnsupported(v)) if v == version),
-                "{version} {scheme}"
-            );
-        }
-        // `lz4` is the default everywhere.
-        assert!(
-            write_with(
-                version,
-                Cloud::Colour,
-                None,
-                Some(Cloud::Colour.source()),
-                FormatWriterOptions::new(0.01, 1 << 24)
-                    .unwrap()
-                    .with_attribute_codec(AttributeCodecScheme::Lz4)
-            )
-            .is_ok()
-        );
     }
 }

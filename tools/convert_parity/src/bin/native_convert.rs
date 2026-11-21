@@ -1,5 +1,5 @@
 //! Native reference for the conversion parity check: `native_convert INPUT OUTPUT.oct
-//! POINTS_PER_BLOCK DIVISIONS [FORMAT [ROW_ORDER]] [--attr-codec SCHEME] [--workers N]` runs the `viewer_convert` CLI path, writes the `.oct` /
+//! POINTS_PER_BLOCK DIVISIONS [FORMAT [ROW_ORDER]] [--workers N]` runs the `viewer_convert` CLI path, writes the `.oct` /
 //! `.octattrs` pair and prints the block count.
 use std::path::Path;
 
@@ -9,19 +9,15 @@ fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let [input, output, points_per_block, divisions, tail @ ..] = arguments.as_slice() else {
         eprintln!(
-            "usage: native_convert INPUT OUTPUT.oct POINTS_PER_BLOCK DIVISIONS [FORMAT [source|hybrid]] [--attr-codec lz4|cold|cold-rgb|all] [--workers N]"
+            "usage: native_convert INPUT OUTPUT.oct POINTS_PER_BLOCK DIVISIONS [FORMAT [source|hybrid]] [--workers N]"
         );
         std::process::exit(2);
     };
     let mut rest = Vec::new();
-    let mut attr_codec = None;
     let mut workers = None;
     let mut tail = tail.iter();
     while let Some(argument) = tail.next() {
         match argument.as_str() {
-            "--attr-codec" => {
-                attr_codec = Some(tail.next().expect("--attr-codec needs a scheme"));
-            }
             "--workers" => workers = Some(tail.next().expect("--workers needs a count")),
             _ => rest.push(argument),
         }
@@ -41,9 +37,6 @@ fn main() {
         options = options
             .with_row_order(order.parse().expect("row order"))
             .expect("row order options");
-    }
-    if let Some(scheme) = attr_codec {
-        options = options.with_attribute_codec(scheme.parse().expect("attribute codec"));
     }
     if let Some(workers) = workers {
         options = options

@@ -48,14 +48,11 @@ impl FormatVersion {
     /// First experimental v8 revision: the v7 layout plus the v8 header fields and column rules.
     pub const V8_PRE1: Self = Self::V8Pre(NonZeroU32::new(1).expect("nonzero revision"));
 
-    /// Second experimental v8 revision: v8.1-pre plus the zstd entropy stage for `.octattrs` payloads (geometry, index and checkpoint records never use zstd).
-    pub const V8_PRE2: Self = Self::V8Pre(NonZeroU32::new(2).expect("nonzero revision"));
-
     /// Revision written when the caller does not choose one.
     pub const DEFAULT_OUTPUT: Self = Self::V8;
 
     /// Every revision the writer implements, in user-facing listing order.
-    pub const WRITABLE: [Self; 14] = [
+    pub const WRITABLE: [Self; 13] = [
         Self::V7_PRE1,
         Self::V7_PRE2,
         Self::V7_PRE3,
@@ -69,7 +66,6 @@ impl FormatVersion {
         Self::V7,
         Self::V8,
         Self::V8_PRE1,
-        Self::V8_PRE2,
     ];
 
     /// Whether block-level EPT checkpoint/resume can target this revision.
@@ -109,12 +105,6 @@ impl FormatVersion {
             .is_ok_and(crate::layout::StorageLayout::omits_lod_attributes)
     }
 
-    /// Whether the zstd payload codec may be written (`v8.2-pre`).
-    pub fn supports_zstd(self) -> bool {
-        crate::layout::StorageLayout::from_version(self)
-            .is_ok_and(crate::layout::StorageLayout::supports_zstd)
-    }
-
     /// Whether nodes store nearest-neighbour distance quantiles (`v8` and `v8.N-pre`).
     pub fn stores_distance_quantiles(self) -> bool {
         crate::layout::StorageLayout::from_version(self)
@@ -122,7 +112,7 @@ impl FormatVersion {
     }
 
     /// Row order the format fixes: `v7`, `v8` and the implemented `v8.N-pre` revisions (today
-    /// `v8.1-pre` and `v8.2-pre`) always write hybrid (ADR 0044); every other revision
+    /// `v8.1-pre`) always write hybrid (ADR 0044); every other revision
     /// leaves the choice to the caller (`Source` by default).
     pub fn fixed_row_order(self) -> Option<crate::RowOrder> {
         match self {
@@ -338,7 +328,7 @@ mod tests {
             .collect();
         assert_eq!(
             names.join("|"),
-            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre|v7.5-pre|v7|v8|v8.1-pre|v8.2-pre"
+            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre|v7.5-pre|v7|v8|v8.1-pre"
         );
     }
 
@@ -361,34 +351,10 @@ mod tests {
     }
 
     #[test]
-    fn v8_pre2_parses_and_prints() {
+    fn retired_v8_pre2_is_not_writable() {
         let version: FormatVersion = "v8.2-pre".parse().unwrap();
-        assert_eq!(version, FormatVersion::V8_PRE2);
-        assert_eq!(version.to_string(), "v8.2-pre");
-    }
-
-    #[test]
-    fn v8_pre2_is_writable() {
-        assert!(FormatVersion::WRITABLE.contains(&FormatVersion::V8_PRE2));
-        assert!(FormatVersion::V8_PRE2.ensure_writable().is_ok());
-    }
-
-    #[test]
-    fn v8_pre2_has_the_v8_pre1_capabilities_plus_zstd() {
-        let (a, b) = (FormatVersion::V8_PRE1, FormatVersion::V8_PRE2);
-        assert_eq!(a.uses_global_frame(), b.uses_global_frame());
-        assert_eq!(a.uses_pages(), b.uses_pages());
-        assert_eq!(a.supports_hybrid_rows(), b.supports_hybrid_rows());
-        assert_eq!(a.fixed_row_order(), b.fixed_row_order());
-        assert_eq!(a.derives_display_attribute(), b.derives_display_attribute());
-        assert_eq!(a.omits_lod_attributes(), b.omits_lod_attributes());
-        assert_eq!(a.stores_distance_quantiles(), b.stores_distance_quantiles());
-        assert_eq!(a.supports_block_checkpoint(), b.supports_block_checkpoint());
-        assert!(b.uses_global_frame() && b.uses_pages() && b.stores_distance_quantiles());
-        assert!(b.supports_zstd());
-        for other in FormatVersion::WRITABLE {
-            assert_eq!(other.supports_zstd(), other == b, "{other}");
-        }
+        assert!(!FormatVersion::WRITABLE.contains(&version));
+        assert!(version.ensure_writable().is_err());
     }
 
     #[test]

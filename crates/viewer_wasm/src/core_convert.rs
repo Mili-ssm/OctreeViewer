@@ -9,7 +9,7 @@ use viewer_convert_core::{
     HybridSpoolStore, HybridStats, LasFactory, NoClock, SpoolEstimate, convert_serial,
     estimate_spools, inspect_source, validate_output_serial,
 };
-use viewer_format::{AttributeCodecScheme, FormatVersion, RowOrder};
+use viewer_format::{FormatVersion, RowOrder};
 use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::Blob;
 
@@ -54,8 +54,7 @@ fn number(options: &JsValue, key: &str) -> Result<Option<f64>, JsValue> {
 }
 
 /// Builds the options from a JS object; absent keys keep the CLI defaults (R2). Keys:
-/// `formatVersion`, `rowOrder` (`source`|`hybrid`; hybrid needs a v7 or v8 format; `v7`, `v8`, `v8.1-pre` and `v8.2-pre` fix hybrid and reject source; `v7.N-pre` default to source),
-/// `attrCodec` (`lz4`|`cold`|`cold-rgb`|`all`; experimental, `v8.2-pre` only),
+/// `formatVersion`, `rowOrder` (`source`|`hybrid`; hybrid needs a v7 or v8 format; `v7`, `v8` and `v8.1-pre` fix hybrid and reject source; `v7.N-pre` default to source),
 /// `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB` and `spatialWorkers`. The
 /// format resolves and checks the values it fixes, whatever the key order.
 fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
@@ -99,12 +98,9 @@ fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
         }
         let codec = js_sys::Reflect::get(options, &"attrCodec".into())?;
         if !codec.is_undefined() && !codec.is_null() {
-            let scheme: AttributeCodecScheme = codec
-                .as_string()
-                .ok_or_else(|| JsValue::from_str("option attrCodec must be a string"))?
-                .parse()
-                .map_err(|error: String| JsValue::from_str(&error))?;
-            converted = converted.with_attribute_codec(scheme);
+            return Err(JsValue::from_str(
+                "option attrCodec was removed (ADR 0060): attribute payloads are stored with LZ4 only",
+            ));
         }
     }
     converted.validate().map_err(invalid)

@@ -438,17 +438,6 @@ fn retag(
     attributes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
 }
 
-/// Rewrites the identity of a `v8.2-pre` pair as `v8.1-pre`.
-fn as_v8_pre1(primary: &mut [u8], attributes: &mut [u8]) {
-    retag(
-        primary,
-        attributes,
-        1,
-        (b"OCTVI82P", b"OCTVE82P"),
-        (b"OCTVI81P", b"OCTVE81P"),
-    );
-}
-
 /// Rewrites the identity of a final `v8` pair as `v8.1-pre`.
 fn v8_as_pre1(primary: &mut [u8], attributes: &mut [u8]) {
     retag(
@@ -458,29 +447,6 @@ fn v8_as_pre1(primary: &mut [u8], attributes: &mut [u8]) {
         (b"OCTVIDX8", b"OCTVEND8"),
         (b"OCTVI81P", b"OCTVE81P"),
     );
-}
-
-#[test]
-fn v8_pre2_without_zstd_differs_from_v8_pre1_only_in_identity() {
-    // LOD omission, derived display colour (the leaves' colour is intensity >> 8, not stored)
-    // and quantiles: every v8.1-pre feature at once.
-    let pre1 = write_as(
-        V8_PRE1,
-        Some(vec![0, 2]),
-        viewer_format::DisplayColourSource::Intensity(0),
-    )
-    .unwrap();
-    let mut pre2 = write_as(
-        FormatVersion::V8_PRE2,
-        Some(vec![0, 2]),
-        viewer_format::DisplayColourSource::Intensity(0),
-    )
-    .unwrap();
-    assert_ne!(pre1.0, pre2.0);
-    assert_ne!(pre1.1, pre2.1);
-    as_v8_pre1(&mut pre2.0, &mut pre2.1);
-    assert!(pre1.0 == pre2.0, "primary files differ beyond identity");
-    assert!(pre1.1 == pre2.1, "attribute files differ beyond identity");
 }
 
 /// Revision of a file's header and its magics: header bytes 16..20, the footer magic and, for the
@@ -539,7 +505,7 @@ fn v8_differs_from_v8_pre1_only_in_identity() {
 }
 
 #[test]
-fn v8_has_the_v8_pre1_capabilities_and_no_zstd() {
+fn v8_has_the_v8_pre1_capabilities() {
     let (a, b) = (FormatVersion::V8_PRE1, FormatVersion::V8);
     assert_eq!(a.uses_global_frame(), b.uses_global_frame());
     assert_eq!(a.uses_pages(), b.uses_pages());
@@ -550,7 +516,6 @@ fn v8_has_the_v8_pre1_capabilities_and_no_zstd() {
     assert_eq!(a.stores_distance_quantiles(), b.stores_distance_quantiles());
     assert_eq!(a.supports_block_checkpoint(), b.supports_block_checkpoint());
     assert!(b.uses_global_frame() && b.uses_pages() && b.stores_distance_quantiles());
-    assert!(!b.supports_zstd());
 }
 
 #[test]

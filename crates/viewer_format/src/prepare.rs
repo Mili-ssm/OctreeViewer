@@ -10,8 +10,8 @@ use crate::layout::{
     PayloadDirectoryEntry, StorageLayout, StoredColumn, attribute_payload_size, block_payload_size,
 };
 use crate::{
-    EntropyCoder, FormatError, FormatMetadata, FormatVersion, SourcePointBlock, compress_block,
-    crc32, quantize_local_positions,
+    FormatError, FormatMetadata, FormatVersion, SourcePointBlock, compress_block, crc32,
+    quantize_local_positions,
 };
 
 /// Encodes one block without appending it, allowing independent blocks to be prepared concurrently.
@@ -79,9 +79,6 @@ pub(crate) fn prepare_point_block_for_version_impl(
     let rules = metadata.column_rules();
     let column_rule = |column: usize| layout.stored_column(block_is_lod, column, rules);
     let row_order = options.resolved_row_order(version)?;
-    if options.attribute_codec != crate::AttributeCodecScheme::Lz4 && !layout.supports_zstd() {
-        return Err(FormatError::AttributeCodecUnsupported(version));
-    }
     let point_count = block.positions_local().len();
     if block.colors().len() != point_count {
         return Err(FormatError::ColorCountMismatch {
@@ -447,15 +444,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
             std::mem::swap(&mut raw, &mut scratch);
         }
     }
-    append_stored_payload(
-        display_rule,
-        &raw,
-        &mut bytes,
-        &mut payloads,
-        layout,
-        3,
-        options.attribute_codec.coder_for("", true),
-    )?;
+    append_stored_payload(display_rule, &raw, &mut bytes, &mut payloads, layout, 3)?;
     for (schema_index, column) in attributes.into_iter().enumerate() {
         let stored = column_rule(schema_index + 2);
         if !stored.is_present() {
@@ -476,16 +465,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
             permute_rows(&raw, permutation, width, &mut scratch);
             std::mem::swap(&mut raw, &mut scratch);
         }
-        append_payload(
-            &raw,
-            &mut bytes,
-            &mut payloads,
-            layout,
-            width,
-            options
-                .attribute_codec
-                .coder_for(column.descriptor().name(), false),
-        )?;
+        append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
     }
     Ok((
         PreparedPointBlock {
@@ -833,10 +813,9 @@ fn append_stored_payload(
     payloads: &mut Vec<PayloadDirectoryEntry>,
     layout: StorageLayout,
     width: usize,
-    coder: EntropyCoder,
 ) -> Result<(), FormatError> {
     if stored.is_present() {
-        append_payload(raw, bytes, payloads, layout, width, coder)
+        append_payload(raw, bytes, payloads, layout, width)
     } else {
         payloads.push(PayloadDirectoryEntry::not_stored(
             stored,
@@ -853,19 +832,13 @@ pub(crate) fn append_payload(
     payloads: &mut Vec<PayloadDirectoryEntry>,
     layout: StorageLayout,
     width: usize,
-    coder: EntropyCoder,
 ) -> Result<(), FormatError> {
-    if coder == EntropyCoder::Zstd && !layout.supports_zstd() {
-        return Err(FormatError::MalformedBlock(
-            "zstd is not valid in this revision",
-        ));
-    }
     let encoded = if layout.restricts_dictionary_tuples() {
-        crate::attribute_codec::encode_v7_pre3(raw, width, coder)?
+        crate::attribute_codec::encode_v7_pre3(raw, width)?
     } else if layout.supports_byte_planes() {
-        crate::attribute_codec::encode_pre4(raw, width, coder)?
+        crate::attribute_codec::encode_pre4(raw, width)?
     } else if layout.supports_dictionary() {
-        crate::attribute_codec::encode(raw, width, coder)?
+        crate::attribute_codec::encode(raw, width)?
     } else {
         compress_block(raw)
     };
@@ -1008,7 +981,6 @@ pub struct FormatWriterOptions {
     page_target_bytes: usize,
     /// `None` takes the format's fixed order or `Source`.
     row_order: Option<RowOrder>,
-    attribute_codec: crate::AttributeCodecScheme,
 }
 
 impl FormatWriterOptions {
@@ -1029,16 +1001,7 @@ impl FormatWriterOptions {
             max_uncompressed_block_bytes,
             page_target_bytes: crate::TARGET_PAGE_BYTES,
             row_order: None,
-            attribute_codec: crate::AttributeCodecScheme::Lz4,
         })
-    }
-
-    /// Experimental `v8.2-pre` coder policy per column class; any other scheme than `Lz4` fails
-    /// when blocks are prepared for a format that cannot store zstd.
-    #[must_use]
-    pub fn with_attribute_codec(mut self, scheme: crate::AttributeCodecScheme) -> Self {
-        self.attribute_codec = scheme;
-        self
     }
 
     /// `v7.5-pre` only: the size a page may reach before the writer lowers its level count `k`

@@ -123,9 +123,9 @@ if (singleInput) {
 const small = join(root, "data/samples/fs_e430_n4008_18.las");
 const synthetic = join(root, "tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
 
-function nativeConvert(name, input, ppb, divisions, format, rowOrder, attrCodec) {
+function nativeConvert(name, input, ppb, divisions, format, rowOrder) {
   const output = join(workDir, `${name}.native.oct`);
-  const extra = [...(format ? [format, ...(rowOrder ? [rowOrder] : [])] : []), ...(attrCodec ? ["--attr-codec", attrCodec] : [])];
+  const extra = format ? [format, ...(rowOrder ? [rowOrder] : [])] : [];
   const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...extra], { encoding: "utf8" });
   if (run.status !== 0) throw new Error(`native conversion failed: ${run.stderr}`);
   return { oct: sha256(readFileSync(output)), attrs: sha256(readFileSync(`${output}attrs`)) };
@@ -222,16 +222,16 @@ for (const rowOrder of ["source", "hybrid"]) {
 }
 report(rowOrderResults.source !== rowOrderResults.hybrid, "rowOrder hybrid differs from source");
 
-// `attrCodec` reaches the bindings: each v8.2-pre scheme matches native, and `all` differs from `lz4`.
-const attrResults = {};
-for (const attrCodec of ["lz4", "cold", "cold-rgb", "all"]) {
-  const name = `small-v82-${attrCodec}`;
-  const native = nativeConvert(name, small, 262144, 2, "v8.2-pre", undefined, attrCodec);
-  const { attrs } = bindingConvert(name, small, 262144, 2, { formatVersion: "v8.2-pre", attrCodec });
-  attrResults[attrCodec] = attrs;
-  report(attrs === native.attrs, `${name} bindings=${attrs.slice(0, 12)} native=${native.attrs.slice(0, 12)}`);
+// `attrCodec` was removed (ADR 0060): the bindings refuse it with a message that names it.
+{
+  let message = "";
+  try {
+    bindingConvert("small-attr-codec", small, 262144, 2, { attrCodec: "lz4" });
+  } catch (error) {
+    message = String(error?.message ?? error);
+  }
+  report(message.includes("attrCodec was removed (ADR 0060)"), `attrCodec is refused by the bindings (${message.slice(0, 60)})`);
 }
-report(attrResults.lz4 !== attrResults.all, "attrCodec all differs from lz4");
 
 // A full spill zone or a full output surfaces as a `QuotaExceededError`.
 const quotaCases = [

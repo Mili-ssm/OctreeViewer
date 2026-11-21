@@ -566,21 +566,9 @@ pub(crate) fn validate_column_codec(
     point_count: u64,
     column: &PayloadDirectoryEntry,
 ) -> Result<(), FormatError> {
-    if matches!(column.codec, BlockCodec::Zstd | BlockCodec::BytePlanesZstd)
-        && (!layout.supports_zstd()
-            || payload_index == 0
-            || column.stored_length >= column.raw_length)
-    {
-        return Err(FormatError::MalformedIndex(
-            "zstd codec not valid in this revision or column",
-        ));
-    }
     if matches!(
         column.codec,
-        BlockCodec::Constant
-            | BlockCodec::Dictionary
-            | BlockCodec::BytePlanes
-            | BlockCodec::BytePlanesZstd
+        BlockCodec::Constant | BlockCodec::Dictionary | BlockCodec::BytePlanes
     ) {
         let width = match payload_index {
             0 => 0,
@@ -597,10 +585,8 @@ pub(crate) fn validate_column_codec(
             || column.stored_length >= column.raw_length
             || (column.codec == BlockCodec::Constant && column.stored_length != width)
             || (column.codec == BlockCodec::Dictionary && column.stored_length < 10)
-            || (matches!(
-                column.codec,
-                BlockCodec::BytePlanes | BlockCodec::BytePlanesZstd
-            ) && (!layout.supports_byte_planes() || width <= 1 || column.stored_length == 0))
+            || (column.codec == BlockCodec::BytePlanes
+                && (!layout.supports_byte_planes() || width <= 1 || column.stored_length == 0))
         {
             return Err(FormatError::MalformedIndex(
                 "attribute codec not valid in this revision or column",

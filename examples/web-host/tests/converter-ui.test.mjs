@@ -26,7 +26,7 @@ test("v5 and v7.5-pre are accepted; only v5 sends leaf size and divisions", () =
 });
 
 test("global-frame formats send neither points per block nor divisions, even if invalid", () => {
-    for (const formatVersion of ["v8", "v7", "v7.4-pre", "v7.5-pre", "v8.1-pre", "v8.2-pre"]) {
+    for (const formatVersion of ["v8", "v7", "v7.4-pre", "v7.5-pre", "v8.1-pre"]) {
         assert.ok(isGlobalFrameFormat(formatVersion));
         const { errors, options } = validateConverterOptions({ formatVersion, pointsPerBlock: "0", spatialDivisions: "3" });
         assert.deepEqual(errors, {});
@@ -94,14 +94,20 @@ test("fixed-frame fields show the fixed values for global-frame formats and rest
     assert.equal(fixedFrameHint("spatialDivisions"), "Fixed by the selected format (2).");
 });
 
-test("attr codec is optional, API-only and valid only for v8.2-pre", () => {
+test("attr codec was removed (ADR 0060): any value is an error that names it", () => {
     assert.ok(!("attrCodec" in validateConverterOptions(OPTION_DEFAULTS).options));
-    assert.ok(!("attrCodec" in validateConverterOptions({ formatVersion: "v5", attrCodec: "lz4" }).options));
-    for (const attrCodec of ["cold", "cold-rgb", "all"]) {
-        const ok = validateConverterOptions({ formatVersion: "v8.2-pre", attrCodec });
-        assert.deepEqual(ok.errors, {});
-        assert.equal(ok.options.attrCodec, attrCodec);
-        assert.deepEqual(Object.keys(validateConverterOptions({ formatVersion: "v8.1-pre", attrCodec }).errors), ["attrCodec"]);
+    for (const formatVersion of ["v8", "v5"]) {
+        for (const attrCodec of ["lz4", "cold", "cold-rgb", "all", "zstd"]) {
+            const { errors, options } = validateConverterOptions({ formatVersion, attrCodec });
+            assert.deepEqual(Object.keys(errors), ["attrCodec"]);
+            assert.match(errors.attrCodec, /attrCodec was removed \(ADR 0060\)/);
+            assert.ok(!("attrCodec" in options));
+        }
     }
-    assert.deepEqual(Object.keys(validateConverterOptions({ formatVersion: "v8.2-pre", attrCodec: "zstd" }).errors), ["attrCodec"]);
+});
+
+test("v8.2-pre is no longer a listed format version", () => {
+    assert.ok(!FORMAT_VERSIONS.includes("v8.2-pre"));
+    assert.deepEqual(Object.keys(validateConverterOptions({ formatVersion: "v8.2-pre" }).errors), ["formatVersion"]);
+    assert.ok(!isGlobalFrameFormat("v8.2-pre"));
 });
