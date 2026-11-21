@@ -139,7 +139,7 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
   | `lod_cells_*_tests.rs` | Portado en 2b | Leen `$RENDER_DATA_DIR/*-v8.oct` (ignorados); mismos valores que con v7, nada que rehacer ([registro](../records/benchmarks/RENDER_DATA_V8_21-11-2026.md)) |
   | `viewer_render_wgpu` (`cell_pool/plan.rs`, `examples/coverage_spike.rs`) | Sin cambio | No fijan versión ni leen fixtures versionados; `coverage_spike` recibe el `.oct` por argumento (su texto cita «v7.5») |
   | `PROBES.md` y READMEs | Portado en lo barato | Se corrigen las frases sobre `sample.oct` y los fixtures V5; quedan los comandos con `formatVersion`/`--attr-codec` (en `PROBES.md`, `web-host/README.md`, `converter-ui.mjs`, `tools/convert_parity`) para las tareas 3 a 5, cada una con su opción |
-- [ ] Commit `test: fixtures and seeds as V8`.
+- [x] Commit `test: fixtures and seeds as V8`.
 
 ### Task 3: Retire zstd, v8.2-pre and --attr-codec (ADR 0060)
 
