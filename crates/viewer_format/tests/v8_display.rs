@@ -309,9 +309,7 @@ fn is_permutation(stored: &AttributeValues, source: &AttributeValues) -> bool {
         values
     }
     match (stored, source) {
-        (AttributeValues::U16(a), AttributeValues::U16(b)) => {
-            sorted(a) == sorted(b)
-        }
+        (AttributeValues::U16(a), AttributeValues::U16(b)) => sorted(a) == sorted(b),
         (AttributeValues::U8(a), AttributeValues::U8(b)) => sorted(a) == sorted(b),
         _ => panic!("unexpected column type"),
     }
@@ -540,7 +538,11 @@ fn the_writer_rejects_a_wrong_or_missing_source() {
         matches!(result, Err(FormatError::DisplayColourNotDerivable(_))),
         "intensity on the colour cloud: {result:?}"
     );
-    let result = write(Cloud::IntensityOnly, None, Some(DisplayColourSource::Rgb(1)));
+    let result = write(
+        Cloud::IntensityOnly,
+        None,
+        Some(DisplayColourSource::Rgb(1)),
+    );
     assert!(
         matches!(result, Err(FormatError::InvalidMetadata(_))),
         "rgb naming the u8 column: {result:?}"
