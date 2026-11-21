@@ -2,6 +2,8 @@
 //! one bit flipped at every offset, and extreme values in every index/footer integer field.
 
 mod common;
+#[path = "common/v8_fixture.rs"]
+mod v8_fixture;
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -9,6 +11,7 @@ use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use common::{global_metadata, options};
+use v8_fixture::with_v8_extras;
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
     CoordinateFrame, DatasetMetadata, NodeId, PointBatch, SpatialBounds, SpatialHierarchy,
@@ -16,7 +19,7 @@ use viewer_core::{
 };
 use viewer_format::{
     CrsRaw, CrsRecord, FormatError, FormatMetadata, FormatReader, FormatReaderLimits,
-    FormatVersion, FormatWriter, SourcePointBlock, SourceScaleOffset, crc32,
+    FormatVersion, FormatWriter, PagedReader, SourcePointBlock, SourceScaleOffset, crc32,
 };
 
 const BLOCKS: u64 = 3;
@@ -164,7 +167,9 @@ fn global_fixture_metadata() -> FormatMetadata {
 }
 
 fn multi_block_metadata_for(version: FormatVersion) -> FormatMetadata {
-    if version.uses_global_frame() {
+    if version == FormatVersion::V8 {
+        with_v8_extras(global_fixture_metadata())
+    } else if version.uses_global_frame() {
         global_fixture_metadata()
     } else {
         multi_block_metadata()
@@ -199,6 +204,11 @@ fn multi_block_metadata() -> FormatMetadata {
 struct Fixture {
     primary: Vec<u8>,
     attributes: Option<Vec<u8>>,
+    /// Id of the first block in the file: `v8` numbers blocks from 0, earlier revisions keep the
+    /// source ids.
+    first_id: u64,
+    /// Encoded length of the root page of a paged primary file (it ends at the footer).
+    root_page: Option<usize>,
 }
 
 fn monolithic(version: FormatVersion) -> Fixture {
@@ -215,6 +225,8 @@ fn monolithic(version: FormatVersion) -> Fixture {
     Fixture {
         primary: writer.finish().unwrap().into_inner(),
         attributes: None,
+        first_id: 1,
+        root_page: None,
     }
 }
 
@@ -231,17 +243,31 @@ fn split(version: FormatVersion) -> Fixture {
         writer.write_block(source_block(index)).unwrap();
     }
     let (primary, attributes) = writer.finish_pair().unwrap();
+    let primary = primary.into_inner();
+    let root_page = version.uses_pages().then(|| {
+        PagedReader::open(Cursor::new(primary.clone()))
+            .unwrap()
+            .root_page()
+            .encoded_len()
+    });
     Fixture {
-        primary: primary.into_inner(),
+        primary,
         attributes: Some(attributes.unwrap().into_inner()),
+        first_id: u64::from(version != FormatVersion::V8),
+        root_page,
     }
 }
 
-fn fixtures(version: FormatVersion) -> [(&'static str, Fixture); 2] {
-    [
-        ("monolithic", monolithic(version)),
-        ("split", split(version)),
-    ]
+/// Paged revisions have no monolithic layout.
+fn fixtures(version: FormatVersion) -> Vec<(&'static str, Fixture)> {
+    if version.uses_pages() {
+        vec![("split", split(version))]
+    } else {
+        vec![
+            ("monolithic", monolithic(version)),
+            ("split", split(version)),
+        ]
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -261,7 +287,7 @@ fn read_all(fixture: &Fixture) -> Result<Vec<BlockData>, FormatError> {
     }
     (0..BLOCKS)
         .map(|index| {
-            let id = block_id(index);
+            let id = BlockId::new(fixture.first_id + index);
             let positions = reader.read_positions(id)?;
             let colors = reader.read_display_colors(id)?;
             let columns = (0..descriptors().len() as u32)
@@ -304,8 +330,16 @@ fn targets(fixture: &Fixture) -> Vec<Target> {
 
 /// Recomputes the footer and (when the footer still points inside the file) index checksums.
 /// Unlike the shared helper it tolerates footers that were deliberately made nonsensical.
-fn repair(bytes: &mut [u8], target: Target) {
+///
+/// `root_page` is the encoded length of the root page of a paged primary file: its own checksum is
+/// recomputed first, so that only the semantic checks can reject the edit.
+fn repair(bytes: &mut [u8], target: Target, root_page: Option<usize>) {
     let footer = bytes.len() - FOOTER;
+    if let (Target::Primary, Some(length)) = (target, root_page) {
+        let start = footer - length;
+        let crc = crc32(&bytes[start..footer - 4]);
+        bytes[footer - 4..footer].copy_from_slice(&crc.to_le_bytes());
+    }
     if matches!(target, Target::Primary) {
         let index = u64::from_le_bytes(bytes[footer + 8..footer + 16].try_into().unwrap());
         let length = u64::from_le_bytes(bytes[footer + 16..footer + 24].try_into().unwrap());
@@ -324,10 +358,10 @@ fn sweep_versions(body: impl Fn(FormatVersion) -> Vec<String> + Sync) {
     let findings: Vec<String> = std::thread::scope(|scope| {
         let body = &body;
         // `v7.5-pre` and `v7` have no monolithic layout and a paged index: `tests/v7_5.rs` covers
-        // their corruption.
+        // their corruption. `v8` is paged too and is swept here as a pair.
         let handles: Vec<_> = FormatVersion::WRITABLE
             .into_iter()
-            .filter(|version| !version.uses_pages())
+            .filter(|version| !version.uses_pages() || *version == FormatVersion::V8)
             .map(|version| scope.spawn(move || body(version)))
             .collect();
         handles
@@ -383,7 +417,7 @@ fn flip_sweep(repaired: bool) {
                     let bytes = file_mut(&mut broken, target);
                     bytes[offset] ^= 1 << (offset % 8);
                     if repaired {
-                        repair(bytes, target);
+                        repair(bytes, target, fixture.root_page);
                     }
                     if let Ok(decoded) = read_all(&broken)
                         && !repaired
@@ -574,6 +608,26 @@ fn index_fields(index: &[u8], version: FormatVersion) -> Vec<Field> {
     walker.fields
 }
 
+/// Integer fields of a paged index that the sweep mutates: the root level and prefix in the
+/// metadata block (after the magic and the dataset origin), then the node count and the first block
+/// id in the header of the root page (after its anchor level, prefix and level count).
+fn paged_fields(index_offset: usize, root_start: usize) -> Vec<Field> {
+    let field = |name, offset, width, max_is_fatal| Field {
+        name,
+        offset,
+        width,
+        integer: true,
+        max_is_fatal,
+    };
+    let mut fields = vec![field("root_level", index_offset + 32, 4, true)];
+    for axis in 0..3 {
+        fields.push(field("root_prefix", index_offset + 36 + axis * 8, 8, true));
+    }
+    fields.push(field("page_node_count", root_start + 26, 4, true));
+    fields.push(field("page_first_block_id", root_start + 30, 8, false));
+    fields
+}
+
 fn max_for(width: usize) -> u64 {
     if width == 4 {
         u64::from(u32::MAX)
@@ -612,13 +666,18 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
             let footer = length - FOOTER;
             let index_offset = get_int(&fixture.primary, footer + 8, 8) as usize;
             let index_length = get_int(&fixture.primary, footer + 16, 8) as usize;
-            let mut fields = index_fields(
-                &fixture.primary[index_offset..index_offset + index_length],
-                version,
-            );
-            for field in &mut fields {
-                field.offset += index_offset;
-            }
+            let mut fields = if let Some(root_page) = fixture.root_page {
+                paged_fields(index_offset, length - FOOTER - root_page)
+            } else {
+                let mut fields = index_fields(
+                    &fixture.primary[index_offset..index_offset + index_length],
+                    version,
+                );
+                for field in &mut fields {
+                    field.offset += index_offset;
+                }
+                fields
+            };
             fields.retain(|field| field.integer);
             // Footer: offset, length and declared file length of the primary (checksums are
             // recomputed by the repair, so they cannot hold an independent value).
@@ -675,7 +734,7 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
                         let crc = crc32(&bytes[footer..footer + 36]);
                         bytes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
                     } else {
-                        repair(bytes, target);
+                        repair(bytes, target, fixture.root_page);
                     }
                     mutations.fetch_add(1, Ordering::Relaxed);
                     let result = read_all(&broken);
@@ -726,6 +785,36 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
 fn node_count_beyond_index_bytes_is_rejected_without_reserving() {
     let default_max_nodes = 2_000_000_u64;
     for version in FormatVersion::WRITABLE {
+        if version == FormatVersion::V8 {
+            // The root page declares its node count as a u32 after its anchor, level count and
+            // before the first block id; both a count above the page maximum and a valid one
+            // that the page bytes cannot hold must fail before the node vectors are reserved.
+            let fixture = split(version);
+            let root_page = fixture.root_page.unwrap();
+            let at = fixture.primary.len() - FOOTER - root_page + 26;
+            for node_count in [default_max_nodes as u32, 30_000] {
+                let mut bytes = fixture.primary.clone();
+                bytes[at..at + 4].copy_from_slice(&node_count.to_le_bytes());
+                repair(&mut bytes, Target::Primary, Some(root_page));
+                LARGEST_ALLOCATION.with(|largest| largest.set(0));
+                let result =
+                    FormatReader::with_limits(Cursor::new(bytes), FormatReaderLimits::default());
+                assert!(
+                    matches!(
+                        result,
+                        Err(FormatError::MalformedIndex("page node count is invalid"))
+                    ),
+                    "{version:?}: root page declaring {node_count} nodes: {:?}",
+                    result.err()
+                );
+                assert!(
+                    largest_allocation() < ALLOCATION_CEILING,
+                    "{version:?}: allocated {} bytes",
+                    largest_allocation()
+                );
+            }
+            continue;
+        }
         if version.uses_pages() {
             continue; // paged index: covered by `tests/v7_5.rs`
         }
@@ -740,7 +829,7 @@ fn node_count_beyond_index_bytes_is_rejected_without_reserving() {
             .unwrap();
         let at = index_offset + node_count.offset;
         bytes[at..at + 8].copy_from_slice(&default_max_nodes.to_le_bytes());
-        repair(bytes, Target::Primary);
+        repair(bytes, Target::Primary, None);
 
         LARGEST_ALLOCATION.with(|largest| largest.set(0));
         let result = FormatReader::with_limits(
