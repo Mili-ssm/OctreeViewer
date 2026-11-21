@@ -193,11 +193,11 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
 
 ### Task 6: Demo and browser verification
 
-- [ ] Se regeneran la muestra y el recorte de Belvedere (`scripts/make-demo-belvedere.sh`) en V8, con nombres
+- [x] Se regeneran la muestra y el recorte de Belvedere (`scripts/make-demo-belvedere.sh`) en V8, con nombres
   versionados (`sample-v8.oct`, `belvedere-crop-v8.oct`) y el wasm con `?v=<sha>`, para que una caché antigua no mezcle
   ficheros (A10). El README de la demo y `PROBES.md` se actualizan.
-- [ ] Se ejecuta la suite `*.browser.mjs` sobre la muestra V8 (A5).
-- [ ] Playwright (`ui-verifier`) con la demo servida en local, en escritorio y móvil:
+- [x] Se ejecuta la suite `*.browser.mjs` sobre la muestra V8 (A5).
+- [x] Playwright (`ui-verifier`) con la demo servida en local, en escritorio y móvil:
   - abrir la muestra;
   - los modos de color;
   - el conversor web en V8;
@@ -205,7 +205,7 @@ pasa de unas 3 000 líneas que no sean borrados, o de dos veces su estimación, 
   - el caso de un wasm antiguo en caché;
   - la consola.
 - [ ] **No se publica:** se pregunta al propietario antes de `scripts/publish-demo.sh`.
-- [ ] Commit `chore(web): V8 demo sample`.
+- [x] Commit `chore(web): V8 demo sample`.
 
 ### Task 7: Documentation, requirements and trackers
 
