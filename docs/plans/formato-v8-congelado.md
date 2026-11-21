@@ -155,14 +155,14 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
 
 ### Task 4: Retire EPT input and checkpoints (ADR 0061)
 
-- [ ] Fuera:
+- [x] Fuera:
   - `ept.rs`, `ept_checkpoint.rs`, `ept_tests.rs` y `checkpoint_record.rs`;
   - las partes de `checkpoint.rs` que solo usan los checkpoints (lo que use la ruta LAS sin checkpoints se queda; hoy
     `las_source.rs:327` llama a `verify_source`);
   - `--checkpoint` y `--resume`, `CheckpointMode`, los errores `UnsupportedEpt` e `InvalidEpt`;
   - `serde_json`, si solo lo usa EPT.
-- [ ] Test: una entrada EPT, `--checkpoint` y `--resume` dan un error claro.
-- [ ] Commit `refactor(convert)!: drop EPT input and checkpoints (ADR 0061)`.
+- [x] Test: una entrada EPT, `--checkpoint` y `--resume` dan un error claro.
+- [x] Commit `refactor(convert)!: drop EPT input and checkpoints (ADR 0061)`.
 
 ### Task 5: Retire v5, v6, v7 and every pre-revision
 
