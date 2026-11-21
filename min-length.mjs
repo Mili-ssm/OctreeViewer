@@ -26,6 +26,21 @@ export function crsUnitPolicy(crsUnit) {
     return { metresPerUnit, lengthDisabled: false, note };
 }
 
+// Default panel length of an opened dataset (ADR 0059): the file's p5 (`recommendedMinSize`, dataset
+// units) shown in the unit that reads best, else 0.1 mm (ADR 0054). The value is rounded to 3
+// significant digits, so the control and the viewer apply the same number. A geographic CRS has no
+// length in metres: it keeps 0.1 mm (the Length option is disabled there anyway).
+export const FALLBACK_LENGTH = Object.freeze({ value: 0.1, unit: "mm" });
+export function defaultLength(recommendedMinSize, crsUnit) {
+    if (!Number.isFinite(recommendedMinSize) || recommendedMinSize <= 0) return FALLBACK_LENGTH;
+    const policy = crsUnitPolicy(crsUnit);
+    if (policy.lengthDisabled) return FALLBACK_LENGTH;
+    const metres = recommendedMinSize * policy.metresPerUnit;
+    const unit = metres >= 1 ? "m" : metres >= 1e-2 ? "cm" : "mm";
+    const value = Number((metres / UNIT_METRES[unit]).toPrecision(3));
+    return Number.isFinite(value) && value > 0 ? { value, unit } : FALLBACK_LENGTH;
+}
+
 // Cloud-spacing factor; NaN below the demo's minimum or when not finite.
 export function parseSpacingFactor(value) {
     return Number.isFinite(value) && value >= MIN_CELL_FACTOR ? value : Number.NaN;

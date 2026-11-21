@@ -1,4 +1,4 @@
-import init, { WasmCoreConverter } from "./pkg/viewer_wasm.js";
+import init, { WasmCoreConverter } from "./pkg/viewer_wasm-82416ae.js";
 import { createMemorySyncHandle, createSpoolHost, removeWithRetry } from "./spool-tiers.mjs";
 
 // One call site: package-local.py swaps it for the embedded-bytes initializer.

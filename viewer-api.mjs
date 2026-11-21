@@ -104,7 +104,7 @@ export function createViewer(hostCanvas, options = {}) {
         throw new Error("Web Workers and OffscreenCanvas are required");
     }
 
-    const worker = new Worker(options.workerUrl ?? new URL("./viewer-worker.js", import.meta.url), {
+    const worker = new Worker(options.workerUrl ?? new URL("./viewer-worker.js?v=82416ae", import.meta.url), {
         type: "module",
     });
     const listeners = new Map();
@@ -284,7 +284,7 @@ export function createViewer(hostCanvas, options = {}) {
             canvasReplacement: true,
             cellNodeBytesPerFrame: options.cellNodeBytesPerFrame,
             buildWorker: options.buildWorker !== false ? {
-                url: String(options.buildWorkerUrl ?? new URL("./build-worker.js", import.meta.url)),
+                url: String(options.buildWorkerUrl ?? new URL("./build-worker.js?v=82416ae", import.meta.url)),
                 type: "module",
             } : undefined,
         }, [offscreen]);

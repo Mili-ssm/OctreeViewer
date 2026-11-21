@@ -1,4 +1,4 @@
-import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer } from "./pkg/viewer_wasm.js";
+import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer } from "./pkg/viewer_wasm-82416ae.js";
 import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./http-range-source.mjs";
 import { WINDOW_MS as PX_WINDOW_MS, createPxController } from "./px-controller.mjs";
 
@@ -1215,6 +1215,9 @@ function startAsyncDataset(data, requestId = null) {
                 sourcePointCount: descriptor.sourcePointCount ?? null,
                 crsUnit: descriptor.crsUnit ?? null,
             };
+            // The file's p5 in dataset units (ADR 0059), as the build worker reports it; `cellsInfo` exists
+            // only when the cells path is enabled here, so without it the page keeps 0.1 mm.
+            opened.recommendedMinSize = opened.cellsInfo?.recommendedMinSize ?? null;
             asyncFormatReader = reader;
             asyncHasAttributes = descriptor.hasAttributes;
             asyncAttributeIndices = new Map(descriptor.attributeSchema.map(
