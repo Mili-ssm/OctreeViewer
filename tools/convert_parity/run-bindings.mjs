@@ -10,9 +10,8 @@
 // that is not named `QuotaExceededError`.
 //
 // Single-input mode (the Node gate of the web converter, no native comparison, one JSON line):
-//   node run-bindings.mjs --input FILE --divisions D [--points-per-block P] \
-//     [--spool-budget-bytes B] [--work-dir DIR]
-// Defaults: P = 262144, B = 2 GiB, DIR = target/convert_parity/single. The zone count comes from
+//   node run-bindings.mjs --input FILE [--spool-budget-bytes B] [--work-dir DIR]
+// V8 options only (V8 fixes the format, points per block and divisions). Defaults: B = 2 GiB, DIR = target/convert_parity/single. The zone count comes from
 // `WasmCoreConverter.estimate`, like the web host. Prints the elapsed `convert()` time, the SHA-256
 // of both outputs, `exports.memory.buffer.byteLength`, the spool counters and the process RSS.
 import { spawnSync } from "node:child_process";
@@ -81,11 +80,8 @@ async function sha256Stream(path) {
 }
 
 if (singleInput) {
-  const ppb = Number(cli["points-per-block"] ?? 262144);
-  const divisions = Number(cli.divisions);
   const budget = Number(cli["spool-budget-bytes"] ?? 2 * 1024 ** 3);
-  if (!Number.isInteger(divisions)) throw new Error("--divisions is required");
-  const options = { pointsPerBlock: ppb, spatialDivisions: divisions, maxError: 0.01, spoolBudgetBytes: budget };
+  const options = { maxError: 0.01, spoolBudgetBytes: budget };
   const fd = openSync(cli.input, "r");
   const paths = ["single.oct", "single.octattrs"].map((file) => join(workDir, file));
   const estimate = WasmCoreConverter.estimate(fdBlob(fd), options);
@@ -123,16 +119,15 @@ if (singleInput) {
 const small = join(root, "data/samples/fs_e430_n4008_18.las");
 const synthetic = join(root, "tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
 
-function nativeConvert(name, input, ppb, divisions, format, rowOrder) {
+function nativeConvert(name, input) {
   const output = join(workDir, `${name}.native.oct`);
-  const extra = format ? [format, ...(rowOrder ? [rowOrder] : [])] : [];
-  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...extra], { encoding: "utf8" });
+  const run = spawnSync(nativeBin, [input, output], { encoding: "utf8" });
   if (run.status !== 0) throw new Error(`native conversion failed: ${run.stderr}`);
   return { oct: sha256(readFileSync(output)), attrs: sha256(readFileSync(`${output}attrs`)) };
 }
 
 // Runs one binding conversion; `outputQuota` and `zoneQuota` (bytes) make the fakes write short.
-function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, zoneQuota = Infinity, formatVersion, rowOrder, attrCodec, omitPointsPerBlock = false } = {}) {
+function bindingConvert(name, input, { outputQuota = Infinity, zoneQuota = Infinity, removed = {} } = {}) {
   const paths = [`${name}.oct`, `${name}.octattrs`].map((file) => join(workDir, file));
   const handles = [
     openFsSyncHandle(paths[0], { quotaBytes: outputQuota }),
@@ -149,13 +144,9 @@ function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, z
       handles[0],
       handles[1],
       {
-        ...(omitPointsPerBlock ? {} : { pointsPerBlock: ppb }),
-        spatialDivisions: divisions,
         maxError: 0.01,
         spoolBudgetBytes: SPOOL_BUDGET_BYTES,
-        ...(formatVersion ? { formatVersion } : {}),
-        ...(rowOrder ? { rowOrder } : {}),
-        ...(attrCodec ? { attrCodec } : {}),
+        ...removed,
       },
       undefined,
       createSpoolHost({ zones }),
@@ -176,13 +167,12 @@ const report = (ok, line) => {
 };
 
 const cases = [
-  { name: "small-default", input: small, ppb: 262144, divisions: 2 },
-  { name: "synthetic-4096-d2", input: synthetic, ppb: 4096, divisions: 2 },
-  { name: "synthetic-4096-d8", input: synthetic, ppb: 4096, divisions: 8 },
+  { name: "small-v8", input: small },
+  { name: "synthetic-v8", input: synthetic },
 ];
-for (const { name, input, ppb, divisions } of cases) {
-  const native = nativeConvert(name, input, ppb, divisions, "v5");
-  const { summary, oct, attrs } = bindingConvert(name, input, ppb, divisions, { formatVersion: "v5" });
+for (const { name, input } of cases) {
+  const native = nativeConvert(name, input);
+  const { summary, oct, attrs } = bindingConvert(name, input);
   const problems = [];
   if (oct !== native.oct) problems.push("oct differs");
   if (attrs !== native.attrs) problems.push("octattrs differs");
@@ -196,51 +186,27 @@ for (const { name, input, ppb, divisions } of cases) {
   );
 }
 
-// An absent `pointsPerBlock` keeps the engine default (262144) for a v5 conversion, as the web UI relies on.
-{
-  const native = nativeConvert("small-no-ppb", small, 262144, 2, "v5");
-  const { oct, attrs } = bindingConvert("small-no-ppb", small, 262144, 2, { formatVersion: "v5", omitPointsPerBlock: true });
-  const problems = [];
-  if (oct !== native.oct) problems.push("oct differs");
-  if (attrs !== native.attrs) problems.push("octattrs differs");
-  report(problems.length === 0, `small-no-ppb bindings=${oct.slice(0, 12)} native=${native.oct.slice(0, 12)}` + (problems.length ? ` (${problems.join(", ")})` : ""));
-}
-
-// `rowOrder` reaches the bindings: the v7.5-pre hybrid pair matches native hybrid and differs from
-// the source-order pair. The source twin's hashes come from the same run.
-const rowOrderOptions = { formatVersion: "v7.5-pre" };
-const rowOrderResults = {};
-for (const rowOrder of ["source", "hybrid"]) {
-  const name = `synthetic-v75-${rowOrder}`;
-  const native = nativeConvert(name, synthetic, 262144, 2, "v7.5-pre", rowOrder);
-  const { oct, attrs } = bindingConvert(name, synthetic, 262144, 2, { ...rowOrderOptions, rowOrder });
-  rowOrderResults[rowOrder] = oct;
-  const problems = [];
-  if (oct !== native.oct) problems.push("oct differs");
-  if (attrs !== native.attrs) problems.push("octattrs differs");
-  report(problems.length === 0, `${name} bindings=${oct.slice(0, 12)} native=${native.oct.slice(0, 12)}` + (problems.length ? ` (${problems.join(", ")})` : ""));
-}
-report(rowOrderResults.source !== rowOrderResults.hybrid, "rowOrder hybrid differs from source");
-
-// `attrCodec` was removed (ADR 0060): the bindings refuse it with a message that names it.
-{
+// V8 fixes the format, row order, points per block and divisions, and `attrCodec` was removed
+// (ADR 0060): the bindings refuse each of them with a message that names it, before any work.
+for (const [name, value] of [["formatVersion", "v8"], ["formatVersion", "v5"], ["rowOrder", "hybrid"], ["pointsPerBlock", 64000], ["spatialDivisions", 2], ["attrCodec", "lz4"]]) {
   let message = "";
   try {
-    bindingConvert("small-attr-codec", small, 262144, 2, { attrCodec: "lz4" });
+    bindingConvert(`refused-${name}`, small, { removed: { [name]: value } });
   } catch (error) {
     message = String(error?.message ?? error);
   }
-  report(message.includes("attrCodec was removed (ADR 0060)"), `attrCodec is refused by the bindings (${message.slice(0, 60)})`);
+  const expected = name === "attrCodec" ? "attrCodec was removed (ADR 0060)" : `option ${name} was removed: V8 is the only format and fixes it`;
+  report(message.includes(expected), `${name}=${value} is refused by the bindings (${message.slice(0, 70)})`);
 }
 
 // A full spill zone or a full output surfaces as a `QuotaExceededError`.
 const quotaCases = [
-  { name: "zone-quota", options: { formatVersion: "v5", zoneQuota: 256 * 1024 } },
-  { name: "output-quota", options: { formatVersion: "v5", outputQuota: 64 * 1024 } },
+  { name: "zone-quota", options: { zoneQuota: 256 * 1024 } },
+  { name: "output-quota", options: { outputQuota: 64 * 1024 } },
 ];
 for (const { name, options } of quotaCases) {
   try {
-    bindingConvert(name, synthetic, 4096, 8, options);
+    bindingConvert(name, small, options);
     report(false, `${name}: the conversion succeeded`);
   } catch (error) {
     report(error?.name === "QuotaExceededError", `${name}: ${error?.name ?? typeof error}: ${error?.message ?? error}`);

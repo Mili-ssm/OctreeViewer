@@ -38,30 +38,10 @@ pub extern "C" fn convert_parity_alloc(len: usize) -> *mut u8 {
     ptr
 }
 
-fn run(
-    input: &[u8],
-    points_per_block: u64,
-    divisions: u8,
-    workers: usize,
-    format: Option<viewer_format::FormatVersion>,
-    row_order: Option<viewer_format::RowOrder>,
-) -> Result<Outcome, String> {
-    let mut options =
-        ConvertOptions::new(points_per_block, 0.01).map_err(|error| error.to_string())?;
-    if let Some(version) = format {
-        options = options
-            .with_format_version(version)
-            .map_err(|error| error.to_string())?;
-    }
-    options = options
-        .with_spatial_divisions(divisions)
+fn run(input: &[u8], workers: usize) -> Result<Outcome, String> {
+    let mut options = ConvertOptions::default()
+        .validate()
         .map_err(|error| error.to_string())?;
-    if let Some(order) = row_order {
-        options = options
-            .with_row_order(order)
-            .map_err(|error| error.to_string())?;
-    }
-    options = options.validate().map_err(|error| error.to_string())?;
     if workers != 0 {
         options = options
             .with_spatial_workers(workers)
@@ -96,55 +76,17 @@ fn run(
     })
 }
 
-/// An unknown code is an error, never a silent fallback to another revision.
-fn parse_format(code: u32) -> Result<Option<viewer_format::FormatVersion>, String> {
-    use viewer_format::FormatVersion;
-    Ok(match code {
-        0 => None,
-        1 => Some(FormatVersion::V7_PRE4),
-        2 => Some(FormatVersion::V7_PRE5),
-        3 => Some(FormatVersion::V5),
-        4 => Some(FormatVersion::V7),
-        5 => Some(FormatVersion::V8_PRE1),
-        7 => Some(FormatVersion::V8),
-        other => return Err(format!("unknown format code {other}")),
-    })
-}
-
-/// Converts and validates the buffer from `convert_parity_alloc`; `workers == 0` keeps the core
-/// default. `format` is 0 for the default revision (`v8`), 1 for `v7.4-pre`, 2 for `v7.5-pre`, 3 for `v5`, 4 for `v7` and 5 for `v8.1-pre`, 6 for `v8.2-pre` and 7 for `v8`; any other code fails. `row_order` is 0 for the format default, 1 for hybrid and 2 for source. Returns 1
-/// on success; on failure returns 0 and the message is at `error_ptr`.
+/// Converts and validates the buffer from `convert_parity_alloc` as V8 (its fixed parameters);
+/// `workers == 0` keeps the core default. Returns 1 on success; on failure returns 0 and the
+/// message is at `error_ptr`.
 ///
 /// # Safety
 /// `ptr` must come from `convert_parity_alloc(len)` and stay unmodified during the call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn convert_parity_run(
-    ptr: *const u8,
-    len: usize,
-    points_per_block: u64,
-    divisions: u32,
-    workers: u32,
-    format: u32,
-    row_order: u32,
-) -> u32 {
+pub unsafe extern "C" fn convert_parity_run(ptr: *const u8, len: usize, workers: u32) -> u32 {
     // SAFETY: the caller passes a buffer from `convert_parity_alloc` of exactly `len` bytes.
     let input = unsafe { std::slice::from_raw_parts(ptr, len) };
-    let divisions = u8::try_from(divisions).unwrap_or(u8::MAX);
-    let result = parse_format(format).and_then(|format| {
-        run(
-            input,
-            points_per_block,
-            divisions,
-            workers as usize,
-            format,
-            // 0 leaves the order to the format; 1 requests hybrid, 2 requests source explicitly.
-            match row_order {
-                0 => None,
-                1 => Some(viewer_format::RowOrder::Hybrid),
-                _ => Some(viewer_format::RowOrder::Source),
-            },
-        )
-    });
+    let result = run(input, workers as usize);
     let succeeded = result.is_ok();
     OUTCOME.with(|outcome| {
         *outcome.borrow_mut() = result.unwrap_or_else(|error| Outcome {

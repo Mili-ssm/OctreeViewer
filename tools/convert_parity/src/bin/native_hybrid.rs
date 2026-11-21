@@ -1,5 +1,5 @@
-//! Native 4x reference for the wasm time gate: `native_hybrid INPUT OUTPUT.oct --divisions D
-//! --points-per-block P --spool-budget-bytes B --zones-dir DIR [--store mem]` runs the serial core
+//! Native 4x reference for the wasm time gate: `native_hybrid INPUT OUTPUT.oct
+//! --spool-budget-bytes B --zones-dir DIR [--store mem]` (V8 options) runs the serial core
 //! path with one spatial worker over `HybridSpoolStore<VecRamTier, FilePageTier>` (or
 //! `MemSpoolStore` with `--store mem`), so the wasm build and this build run the same code. The
 //! input is read through a 256 KiB `BufReader`, like the browser's Blob cache. Prints one JSON
@@ -236,8 +236,6 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
 struct Args {
     input: PathBuf,
     output: PathBuf,
-    divisions: u8,
-    points_per_block: u64,
     budget: u64,
     zones_dir: PathBuf,
     mem: bool,
@@ -245,14 +243,11 @@ struct Args {
 
 fn parse_args() -> Result<Args, String> {
     let mut positional = Vec::new();
-    let (mut divisions, mut ppb, mut budget, mut zones_dir, mut mem) =
-        (None, None, None, None, false);
+    let (mut budget, mut zones_dir, mut mem) = (None, None, false);
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         let mut value = |name: &str| args.next().ok_or_else(|| format!("{name} needs a value"));
         match arg.as_str() {
-            "--divisions" => divisions = Some(value(&arg)?),
-            "--points-per-block" => ppb = Some(value(&arg)?),
             "--spool-budget-bytes" => budget = Some(value(&arg)?),
             "--zones-dir" => zones_dir = Some(value(&arg)?),
             "--store" => match value(&arg)?.as_str() {
@@ -273,9 +268,6 @@ fn parse_args() -> Result<Args, String> {
     Ok(Args {
         input: input.into(),
         output: output.into(),
-        divisions: u8::try_from(number("--divisions", divisions)?)
-            .map_err(|_| "--divisions is too large".to_string())?,
-        points_per_block: number("--points-per-block", ppb)?,
         budget: number("--spool-budget-bytes", budget)?,
         zones_dir: zones_dir.ok_or("--zones-dir is required")?.into(),
         mem,
@@ -312,9 +304,8 @@ fn estimate_json(estimate: &SpoolEstimate) -> String {
 }
 
 fn run(args: &Args) -> Result<String, Box<dyn std::error::Error>> {
-    let options = ConvertOptions::new(args.points_per_block, 0.01)?
-        .with_format_version("v5".parse()?)?
-        .with_spatial_divisions(args.divisions)?
+    let options = ConvertOptions::default()
+        .validate()?
         .with_spatial_workers(1)?;
     let factory = LasFactory::new(FileBytes {
         path: args.input.clone(),
@@ -384,7 +375,7 @@ fn main() {
     let args = parse_args().unwrap_or_else(|message| {
         eprintln!("{message}");
         eprintln!(
-            "usage: native_hybrid INPUT OUTPUT.oct --divisions D --points-per-block P --spool-budget-bytes B --zones-dir DIR [--store mem]"
+            "usage: native_hybrid INPUT OUTPUT.oct --spool-budget-bytes B --zones-dir DIR [--store mem]"
         );
         std::process::exit(2);
     });
