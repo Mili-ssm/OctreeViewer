@@ -79,9 +79,9 @@ V7 deja de escribirse en la tarea 5, así que la comparación con v7 se cierra a
   paso. Va en un registro nuevo fechado, con la orden exacta. Una diferencia para el plan y se lleva al propietario.
   Resultado: [registro del 21-11-2026](../records/benchmarks/V1_EQUIVALENCIA_V8_PRE1_21-11-2026.md), 0 diferencias en
   las cuatro entradas (ejemplo `v1_equivalence`).
-- [ ] **V4 (coste de conversión):** se enlaza la medida v7 frente a `v8.1-pre` del
+- [x] **V4 (coste de conversión):** se enlaza la medida v7 frente a `v8.1-pre` del
   [registro del 20-11-2026](../records/benchmarks/FORMATO_V8_PRE1_20-11-2026.md) (mismo binario). Si el propietario la
-  da por buena como RQ-07, no se repite. Enlazada (mismo binario); pendiente de confirmar por el propietario.
+  da por buena como RQ-07, no se repite. El propietario la da por buena el 21-11-2026: no se repite.
 - [x] Commit `docs: V1 equivalence of v8.1-pre against v7 before retiring v7`.
 
 ### Task 1: Final V8 identity, default output and web default
