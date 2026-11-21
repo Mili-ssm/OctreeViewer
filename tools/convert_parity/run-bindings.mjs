@@ -69,7 +69,7 @@ globalThis.FileReaderSync = class {
   }
 };
 
-const { initSync, WasmCoreConverter } = await import(pathToFileURL(join(pkg, "viewer_wasm.js")).href);
+const { initSync, WasmCoreConverter, WasmAsyncFormatReader } = await import(pathToFileURL(join(pkg, "viewer_wasm.js")).href);
 if (readdirSync(pkg).includes("snippets")) throw new Error("wasm-bindgen generated snippets");
 const wasmExports = initSync({ module: readFileSync(join(pkg, "viewer_wasm_bg.wasm")) });
 
@@ -197,6 +197,26 @@ for (const [name, value] of [["formatVersion", "v8"], ["formatVersion", "v5"], [
   }
   const expected = name === "attrCodec" ? "attrCodec was removed (ADR 0060)" : `option ${name} was removed: V8 is the only format and fixes it`;
   report(message.includes(expected), `${name}=${value} is refused by the bindings (${message.slice(0, 70)})`);
+}
+
+// Opening a file of a retired family names it and says to reconvert (A4 of the V8 freeze). The
+// fixtures are the real header and footer of each retired writer; the async reader decides from
+// the footer it already read, so a V8 open costs no extra request.
+const retiredDir = join(root, "crates/viewer_format/tests/fixtures/retired");
+for (const name of ["v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v7", "v8.1-pre", "v8.2-pre"]) {
+  const head = readFileSync(join(retiredDir, `${name}.head`));
+  const foot = readFileSync(join(retiredDir, `${name}.foot`));
+  const bytes = Buffer.concat([head, Buffer.alloc(200), foot]);
+  let message = "";
+  try {
+    await WasmAsyncFormatReader.open(new Blob([bytes]), undefined, undefined);
+  } catch (error) {
+    message = String(error?.message ?? error);
+  }
+  report(
+    message.includes(`this file is format ${name}, retired with V8`) && message.includes("reconvert"),
+    `${name} is refused by the async reader as retired (${message.slice(0, 80)})`,
+  );
 }
 
 // A full spill zone or a full output surfaces as a `QuotaExceededError`.

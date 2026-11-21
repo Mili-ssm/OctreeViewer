@@ -304,3 +304,35 @@ fn cli_refuses_checkpoint_and_resume_before_any_work() {
         "partial output"
     );
 }
+
+/// A file of a retired family says which one it is and to reconvert it, not a header or footer
+/// error (A4 of the V8 freeze). The fixtures are the real envelopes of the retired writers.
+#[test]
+fn verify_subcommand_tells_to_reconvert_a_retired_format() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../viewer_format/tests/fixtures/retired");
+    let tmp = tempfile::tempdir().unwrap();
+    let names = [
+        "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v7.1-pre", "v7.2-pre", "v7.3-pre",
+        "v7.4-pre", "v7.5-pre", "v7", "v8.1-pre", "v8.2-pre",
+    ];
+    for name in names {
+        let mut bytes = fs::read(fixtures.join(format!("{name}.head"))).unwrap();
+        bytes.resize(bytes.len() + 200, 0);
+        bytes.extend(fs::read(fixtures.join(format!("{name}.foot"))).unwrap());
+        let path = tmp.path().join(format!("{name}.oct"));
+        fs::write(&path, bytes).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
+            .arg("verify")
+            .arg(&path)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{name}: {stderr}");
+        assert!(
+            stderr.contains(&format!("this file is format {name}, retired with V8"))
+                && stderr.contains("reconvert"),
+            "{name}: {stderr}"
+        );
+    }
+}

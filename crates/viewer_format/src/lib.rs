@@ -33,6 +33,7 @@ mod read_budget;
 mod read_plan;
 mod reader;
 mod reader_limits;
+mod retired;
 mod slice_cursor;
 mod storage_reader;
 mod version;
@@ -80,6 +81,9 @@ pub use writer::{
     FormatWriter, FormatWriterOptions, PreparedPointBlock, RowOrder, prepare_point_block,
 };
 
+pub use retired::{
+    explain_open_failure, explain_retired, retired_format_name, retired_header_name,
+};
 pub use version::{FileRole, FormatIdentity, FormatVersion, probe_format};
 
 #[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]

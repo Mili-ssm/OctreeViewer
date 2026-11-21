@@ -47,12 +47,22 @@ pub struct VerifyReport {
 /// verifying them is opening them. Payload bytes are not read.
 pub fn verify_file(path: &Path) -> Result<VerifyReport, ConvertError> {
     let mut file = File::open(path)?;
-    let version = probe_format(&mut file)?.version;
+    // A retired family fails somewhere in the checks below; the envelope then names it.
+    verify_open(path, &mut file).map_err(|error| match error {
+        ConvertError::Format(error) => {
+            ConvertError::Format(viewer_format::explain_open_failure(&mut file, error))
+        }
+        other => other,
+    })
+}
+
+fn verify_open(path: &Path, file: &mut File) -> Result<VerifyReport, ConvertError> {
+    let version = probe_format(file)?.version;
     if version.uses_pages() {
-        let stats = viewer_format::verify_paged(&mut file, &verify_limits()?)?;
+        let stats = viewer_format::verify_paged(file, &verify_limits()?)?;
         let companion = crate::publish::output_attributes_path(path);
         if companion.exists() {
-            check_companion_footer(&mut file, &mut File::open(companion)?)?;
+            check_companion_footer(file, &mut File::open(companion)?)?;
         }
         return Ok(VerifyReport {
             version,
@@ -60,7 +70,7 @@ pub fn verify_file(path: &Path) -> Result<VerifyReport, ConvertError> {
             paged: Some(stats),
         });
     }
-    let reader = FormatReader::with_limits(file, verify_limits()?)?;
+    let reader = FormatReader::with_limits(file.try_clone()?, verify_limits()?)?;
     Ok(VerifyReport {
         version,
         block_count: reader.block_storage_stats()?.len() as u64,

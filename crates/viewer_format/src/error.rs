@@ -15,6 +15,8 @@ pub enum FormatError {
     InvalidHeader,
     #[error("provisional format is no longer supported; regenerate from LAS/LAZ")]
     ProvisionalFormat,
+    #[error("this file is format {0}, retired with V8: reconvert it from the LAS/LAZ source")]
+    RetiredFormat(&'static str),
     #[error("format version {0} is not supported")]
     UnsupportedVersion(u16),
     #[error("format version {0} is recognized but has no supported decoder")]

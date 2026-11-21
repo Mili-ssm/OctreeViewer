@@ -1,10 +1,11 @@
-use std::io::{Cursor, Read, Seek};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetMetadata, DatasetSource,
     PointBatch, PointBlock,
 };
 
+use crate::layout::{FOOTER_SIZE, HEADER_SIZE};
 use crate::reader::{
     BlockPayloadStorageStats, BlockStorageStats, FormatReaderLimits, IndexedReader,
 };
@@ -23,10 +24,33 @@ impl<R: Read + Seek> FormatReader<R> {
     }
 
     pub fn with_limits(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
-        let identity = probe_format(&mut reader)?;
-        validate_identity(identity)?;
-        let backend = IndexedReader::with_identity(reader, limits, identity)?;
-        Ok(Self { backend })
+        let identity = probe_format(&mut reader)
+            .map_err(|error| crate::explain_open_failure(&mut reader, error))?;
+        // The reader moves into the backend, so the envelope that may name a retired family is
+        // read first. Final V8 never needs it.
+        let envelope = (identity.version != FormatVersion::V8).then(|| {
+            let header =
+                crate::retired::read_at(&mut reader, SeekFrom::Start(0), HEADER_SIZE as usize);
+            let footer = crate::retired::read_at(
+                &mut reader,
+                SeekFrom::End(-(FOOTER_SIZE as i64)),
+                FOOTER_SIZE as usize,
+            );
+            (header, footer)
+        });
+        let opened = validate_identity(identity)
+            .and_then(|()| IndexedReader::with_identity(reader, limits, identity));
+        match opened {
+            Ok(backend) => Ok(Self { backend }),
+            Err(error) => {
+                let (header, footer) = envelope.unwrap_or_default();
+                Err(crate::retired::explain_retired(
+                    error,
+                    header.as_deref(),
+                    footer.as_deref(),
+                ))
+            }
+        }
     }
 
     fn backend(&self) -> &IndexedReader<R> {

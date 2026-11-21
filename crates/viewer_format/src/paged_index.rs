@@ -769,11 +769,9 @@ pub(crate) fn open_core<R: Read + Seek>(
     reader.seek(SeekFrom::Start(file_length - tail_length))?;
     let mut tail = vec![0; tail_length as usize];
     reader.read_exact(&mut tail)?;
-    let location = PagedCore::locate_index(
-        file_length,
-        &tail[tail.len() - FOOTER_SIZE as usize..],
-        &limits,
-    )?;
+    let footer = &tail[tail.len() - FOOTER_SIZE as usize..];
+    let location = PagedCore::locate_index(file_length, footer, &limits)
+        .map_err(|error| crate::retired::explain_retired(error, None, Some(footer)))?;
     let index_size = usize::try_from(location.length)
         .map_err(|_| FormatError::SizeOutOfRange(location.length))?;
     let index = if location.length + FOOTER_SIZE <= tail_length {
@@ -789,8 +787,10 @@ pub(crate) fn open_core<R: Read + Seek>(
         reader.read_exact(&mut index)?;
         index
     };
+    let footer = tail[tail.len() - FOOTER_SIZE as usize..].to_vec();
     drop(tail);
     PagedCore::from_index(&index, location, limits)
+        .map_err(|error| crate::retired::explain_retired(error, None, Some(&footer)))
 }
 
 /// Every page of a file in breadth-first order (root first) with the pointer each child page was
