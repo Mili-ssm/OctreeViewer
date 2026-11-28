@@ -111,10 +111,12 @@ Hecho 28-11-2026: GATE PASS, nombres hoja idénticos (1315 tests), 1 `pub(super)
 
 **Files:** Create `docs/records/README.md`; Modify `docs/README.md:48-209`, `scripts/check_docs_index.py`.
 
-- [ ] Mover la tabla de registros de `docs/README.md` a `docs/records/README.md` (índice vivo, no registro), agrupada por línea de trabajo con encabezados que la nombran; corregir los prefijos de los enlaces. `docs/README.md` deja una línea con el enlace y la regla en «Dónde va cada cosa».
-- [ ] `check_docs_index.py`: los ficheros de `docs/records/` se buscan en `docs/records/README.md`.
-- [ ] `python3 scripts/check_docs_index.py` y `python3 scripts/check_docs_links.py` pasan; ninguna fila perdida (contar enlaces antes y después). Commit `docs: give the records their own index`.
+- [x] Mover la tabla de registros de `docs/README.md` a `docs/records/README.md` (índice vivo, no registro), agrupada por línea de trabajo con encabezados que la nombran; corregir los prefijos de los enlaces. `docs/README.md` deja una línea con el enlace y la regla en «Dónde va cada cosa».
+- [x] `check_docs_index.py`: los ficheros de `docs/records/` se buscan en `docs/records/README.md`.
+- [x] `python3 scripts/check_docs_index.py` y `python3 scripts/check_docs_links.py` pasan; ninguna fila perdida (contar enlaces antes y después). Commit `docs: give the records their own index`.
 - [ ] La PR #122 añade 4 filas a la tabla vieja (`CONVERSION_PARALELA_T0/T1/T2/T2_SPIKE`): comentar en #122 que, al rebasar, esas filas van a `docs/records/README.md`.
+
+Hecho 28-11-2026: 155 filas movidas a `docs/records/README.md` en 8 grupos (18, 12, 13, 8, 50, 10, 13 y 31), 170 enlaces de tabla antes y después; `check_docs_index.py` ok (falla con un fichero sin enlazar, comprobado), `check_docs_links.py` ok, tests de `scripts/tests` ok. Pendiente el comentario en #122.
 
 ### Task 7: check de organización y convención escrita
 
