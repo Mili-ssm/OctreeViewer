@@ -54,9 +54,10 @@ internos `doc(hidden)` del núcleo que usa `viewer_wasm` (ADR 0026: los crates s
 
 **Interfaces:** Produces `viewer_convert_core::spatial::{node_job, nn_distance, executor, estimate}` (los que hoy usan otros crates, `pub` + `#[doc(hidden)]`); las reexportaciones de la raíz (`estimate_spools`, `inspect_source`, `SpoolEstimate`, `NoClock`…) no cambian de nombre.
 
-- [ ] `git mv` de los cuatro ficheros y de los dos `mod.rs`; ajustar `use`, `mod` y visibilidad.
-- [ ] Regla nueva en `check_layout.py`: ningún fichero de `crates/viewer_convert_core/src/pipeline.rs` ni de `pipeline/` menciona `crate::spatial` ni `super::super::spatial` fuera de comentarios, también dentro de grupos `use {…}` de varias líneas (probarla con una infracción temporal).
-- [ ] Gate `viewer_convert_core viewer_convert viewer_wasm` + `format parity wasm32` + `convert parity wasm32` + `cargo check` en `fuzz/`; commit `refactor(convert): spatial planning leaves the pipeline seams`.
+- [x] `git mv` de los cuatro ficheros y de los dos `mod.rs`; ajustar `use`, `mod` y visibilidad.
+- [x] Regla nueva en `check_layout.py`: ningún fichero de `crates/viewer_convert_core/src/pipeline.rs` ni de `pipeline/` menciona `crate::spatial` ni `super::super::spatial` fuera de comentarios, también dentro de grupos `use {…}` de varias líneas (probarla con una infracción temporal).
+- [x] Gate `viewer_convert_core viewer_convert viewer_wasm` + `format parity wasm32` + `convert parity wasm32` + `cargo check` en `fuzz/`; commit `refactor(convert): spatial planning leaves the pipeline seams`.
+  Hecho 28-11-2026 (`51f0990`): `GATE PASS` (`viewer_convert_core viewer_convert viewer_wasm`; `docs index` exigía enlazar este plan en `docs/README.md`, se comprobó con la fila temporal y queda para la tarea 6), `format parity wasm32` y `convert parity wasm32` ok, `cargo check` en `fuzz/` ok.
 
 ### Task 2: sin shims de reexportación en `viewer_convert`
 
