@@ -32,7 +32,7 @@ run() { # name outer-timeout-s probe-args...
   local name=$1 limit=$2; shift 2
   echo "== $(date +%T) $name"
   # The probe marks the run "functional" when a foreign Chrome is running; it does not kill it.
-  timeout "$limit" node examples/web-host/probe-orbit-load.mjs "$@" "$OUT/$name.json" >"$OUT/$name.log" 2>&1 &
+  timeout "$limit" node examples/web-host/probes/probe-orbit-load.mjs "$@" "$OUT/$name.json" >"$OUT/$name.log" 2>&1 &
   PROBE_PID=$!
   wait "$PROBE_PID"
   PROBE_PID=

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 
 import { HttpRangeError, HttpRangeSource, readConcurrency, resolveSource, sidecarUrl } from "../http-range-source.mjs";
-import { parseRange, startServer } from "../red-ref-server.mjs";
+import { parseRange, startServer } from "../probes/red-ref-server.mjs";
 
 const SIZE = 3000;
 const content = Uint8Array.from({ length: SIZE }, (_, i) => (i * 7) % 251);

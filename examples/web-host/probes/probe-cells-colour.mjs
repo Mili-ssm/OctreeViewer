@@ -1,6 +1,6 @@
 // R3 Task 12 (B2.5): browser probe of the colour modes on the GPU cells path (cells + build worker).
 // Run from the repository root while a static server serves the worktree root (with pkg/), over http:
-//   node examples/web-host/probe-cells-colour.mjs DATASET.oct OUT.json [--shots=target/r3-b2] [--attributes=FILE|none]
+//   node examples/web-host/probes/probe-cells-colour.mjs DATASET.oct OUT.json [--shots=target/r3-b2] [--attributes=FILE|none]
 //        [--url=URL] [--px=4] [--timeout-s=120] [--chrome-bin=PATH]
 // Opens the dataset with cells at --px, settles in rgb, then selects each colour mode the dataset offers
 // (the enabled options of #color-mode: intensity, elevation, classification and the first attribute:N:M, or --attribute=)
@@ -22,7 +22,7 @@ const positional = args.filter(arg => !arg.startsWith("--"));
 const option = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
 const [input, output] = positional;
 if (!input || !output) {
-    throw new Error("Usage: node examples/web-host/probe-cells-colour.mjs DATASET.oct OUT.json [--shots=DIR] [--attributes=FILE|none] [--attribute=attribute:N:M] [--url=URL] [--px=4] [--timeout-s=120]");
+    throw new Error("Usage: node examples/web-host/probes/probe-cells-colour.mjs DATASET.oct OUT.json [--shots=DIR] [--attributes=FILE|none] [--attribute=attribute:N:M] [--url=URL] [--px=4] [--timeout-s=120]");
 }
 const baseUrl = option("url", "http://127.0.0.1:8767/examples/web-host/index.html");
 const targetPixels = Number(option("px", "4"));

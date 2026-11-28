@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
-    "sample_process_memory", Path(__file__).parents[1] / "sample-process-memory.py"
+    "sample_process_memory", Path(__file__).parents[1] / "probes" / "sample-process-memory.py"
 )
 memory = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(memory)

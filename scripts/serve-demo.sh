@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the wasm bindings (unless --no-build) and serves the repository root for the web-host demo.
 # Note: python's http.server does not implement HTTP Range, so `?url=` remote files need
-# examples/web-host/red-ref-server.mjs instead (see examples/web-host/README.md).
+# examples/web-host/probes/red-ref-server.mjs instead (see examples/web-host/README.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

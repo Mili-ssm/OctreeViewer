@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import zlib from "node:zlib";
 
-import { BACKGROUND_RGB, convexHull, countEmptyPixels, decodePng, projectBounds } from "../pixel-metrics.mjs";
+import { BACKGROUND_RGB, convexHull, countEmptyPixels, decodePng, projectBounds } from "../probes/pixel-metrics.mjs";
 
 function chunk(type, body) {
     const head = Buffer.alloc(8);

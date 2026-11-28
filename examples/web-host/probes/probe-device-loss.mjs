@@ -3,7 +3,7 @@
 // reload: a `deviceLost` event with a non-destroyed reason, the same pose, the same cutDigestAtRest
 // after settling, no page errors. Run from the repository root with a static server on the worktree
 // root (python3 -m http.server 8767 --bind 127.0.0.1):
-//   node examples/web-host/probe-device-loss.mjs DATASET.oct OUT.json [--method=gpucrash|cdp|auto]
+//   node examples/web-host/probes/probe-device-loss.mjs DATASET.oct OUT.json [--method=gpucrash|cdp|auto]
 //        [--url=URL] [--px=4] [--timeout-s=120] [--chrome-bin=PATH]
 // `--method`: `gpucrash` navigates a second tab to chrome://gpucrash, `cdp` calls Browser.crashGpuProcess
 // on the browser session; `auto` tries them in that order and records which one produced a loss.
@@ -16,7 +16,7 @@ const args = process.argv.slice(2);
 const positional = args.filter(arg => !arg.startsWith("--"));
 const option = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
 const [input, output] = positional;
-if (!input || !output) throw new Error("Usage: node examples/web-host/probe-device-loss.mjs DATASET.oct OUT.json [--method=auto]");
+if (!input || !output) throw new Error("Usage: node examples/web-host/probes/probe-device-loss.mjs DATASET.oct OUT.json [--method=auto]");
 const baseUrl = option("url", "http://127.0.0.1:8767/examples/web-host/index.html");
 const targetPixels = Number(option("px", "4"));
 const timeoutMs = Number(option("timeout-s", "120")) * 1000;

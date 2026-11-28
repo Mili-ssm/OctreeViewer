@@ -2,7 +2,7 @@
 // and records first-frame time, time to the pixel target, and the requests and bytes the server
 // saw (R5 P4, RQ-04, ASM-02). Serve the repository root (with pkg/) on --app first:
 //   python3 -m http.server 8767
-//   node examples/web-host/probe-remote-open.mjs DATA_DIR NAME.oct OUTPUT.json [--app=http://127.0.0.1:8767]
+//   node examples/web-host/probes/probe-remote-open.mjs DATA_DIR NAME.oct OUTPUT.json [--app=http://127.0.0.1:8767]
 //        [--px=4] [--rtt-ms=50] [--mbps=100] [--max-s=120] [--ignore-range] [--width=1280 --height=720]
 // Times come from the page (`firstCoarseFrameMs`, `targetLodMs`, measured from the open); the
 // request log is the server's, so it also counts requests made by both workers.

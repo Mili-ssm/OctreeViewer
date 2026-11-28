@@ -3,7 +3,7 @@
 // cells + build worker against itself across two loads.
 // Run from the repository root while a static server serves the worktree root (with pkg/), over http:
 // the nested build worker disables itself on file://.
-//   node examples/web-host/probe-cells-parity.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4]
+//   node examples/web-host/probes/probe-cells-parity.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4]
 //        [--rest-timeout-s=180] [--chrome-bin=PATH]
 // The report's `cellLod` is the constant "cell" (the only level selection); it keeps old and new reports comparable.
 // Runs four arms on the same dataset and two fixed poses (the fitted pose, then a deterministic
@@ -21,7 +21,7 @@ const positional = args.filter(arg => !arg.startsWith("--"));
 const option = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
 const [input, output] = positional;
 if (!input || !output) {
-    throw new Error("Usage: node examples/web-host/probe-cells-parity.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--rest-timeout-s=180]");
+    throw new Error("Usage: node examples/web-host/probes/probe-cells-parity.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--rest-timeout-s=180]");
 }
 const baseUrl = option("url", "http://127.0.0.1:8767/examples/web-host/index.html");
 const targetPixels = Number(option("px", "4"));

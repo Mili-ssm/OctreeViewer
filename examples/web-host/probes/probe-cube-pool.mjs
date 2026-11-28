@@ -1,5 +1,5 @@
 // THROWAWAY SPIKE CODE (R3 Task 5a): GPU timing probe for the cube-pool spike page.
-//   node examples/web-host/probe-cube-pool.mjs OUTPUT.json CASE_DIR... [--rounds=3] [--warmup-s=2] [--frames=30]  [--diag]
+//   node examples/web-host/probes/probe-cube-pool.mjs OUTPUT.json CASE_DIR... [--rounds=3] [--warmup-s=2] [--frames=30]  [--diag]
 //   T16a (compaction + Hi-Z, W16 only): add --t16 to time the T16 variant set instead of the T5 one, or --t16-check
 //   for the untimed correctness check (compacted counts, bit-identical depth against w16-ranges); both are opt-in.
 // Case directories (format: spike-cube-pool-format.md) must live inside the repository root, which is served
@@ -14,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const args = process.argv.slice(2);
 const positional = args.filter(arg => !arg.startsWith("--"));
 const option = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
@@ -26,7 +26,7 @@ const rounds = diag || t16Check ? 1 : Number(option("rounds", "3"));
 const warmupMs = Number(option("warmup-s", "2")) * 1000;
 const frames = Number(option("frames", "30"));
 if (!output || !caseDirs.length || !(rounds >= 1) || warmupMs < 0 || !(frames >= 1)) {
-    throw new Error("Usage: node examples/web-host/probe-cube-pool.mjs OUTPUT.json CASE_DIR... [--rounds=3] [--warmup-s=2] [--frames=30]");
+    throw new Error("Usage: node examples/web-host/probes/probe-cube-pool.mjs OUTPUT.json CASE_DIR... [--rounds=3] [--warmup-s=2] [--frames=30]");
 }
 const CHROME_BIN = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 const PLAYWRIGHT_CORE = process.env.PLAYWRIGHT_CORE ?? "/usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/";
@@ -86,7 +86,7 @@ try {
     const page = await (await instance.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 })).newPage();
     page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
     page.on("pageerror", error => consoleErrors.push(String(error)));
-    await page.goto(`${origin}/examples/web-host/spike-cube-pool.html`, { waitUntil: "load" });
+    await page.goto(`${origin}/examples/web-host/probes/spike-cube-pool.html`, { waitUntil: "load" });
     result.device = await page.evaluate(() => window.__cubePool.init());
     const { adapterInfo } = result.device;
     const software = !adapterInfo.vendor || adapterInfo.isFallbackAdapter

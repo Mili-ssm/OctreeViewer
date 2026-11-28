@@ -1,6 +1,6 @@
 // R3 Task 13 (B3.2): browser probe of continuity (RF-05) on the GPU cells path (cells + build worker).
 // Run from the repository root while a static server serves the worktree root (with pkg/), over http:
-//   node examples/web-host/probe-cells-continuity.mjs DATASET.oct OUT.json [--shots=target/r3-b3] [--px=4]
+//   node examples/web-host/probes/probe-cells-continuity.mjs DATASET.oct OUT.json [--shots=target/r3-b3] [--px=4]
 //        [--poses=fitted,leaf] [--url=URL] [--timeout-s=120] [--chrome-bin=PATH]
 // Per pose: settles literal (repeated non-null cutDigestAtRest), screenshots, turns continuity on through
 // the demo's minimum-size selector (spacing mode), settles again, screenshots and records the effective minimum side, the nodes the
@@ -14,7 +14,7 @@ const args = process.argv.slice(2);
 const positional = args.filter(arg => !arg.startsWith("--"));
 const option = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
 const [input, output] = positional;
-if (!input || !output) throw new Error("Usage: node examples/web-host/probe-cells-continuity.mjs DATASET.oct OUT.json [--shots=DIR] [--px=4] [--poses=fitted,leaf]");
+if (!input || !output) throw new Error("Usage: node examples/web-host/probes/probe-cells-continuity.mjs DATASET.oct OUT.json [--shots=DIR] [--px=4] [--poses=fitted,leaf]");
 const baseUrl = option("url", "http://127.0.0.1:8767/examples/web-host/index.html");
 const targetPixels = Number(option("px", "4"));
 const timeoutMs = Number(option("timeout-s", "120")) * 1000;

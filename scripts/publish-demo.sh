@@ -46,9 +46,8 @@ elif [ "$push" = "1" ]; then
 else
   echo "note: $crop.oct missing; the site is built without the Belvedere crop" >&2
 fi
-# The page and its workers; probes, spikes, tests and the RED-REF server stay out.
+# The page and its workers; probes/ (probes, spike, RED-REF server) and tests/ stay out: the glob is not recursive.
 for f in "$host"/*.js "$host"/*.mjs; do
-  case "$(basename "$f")" in probe-*|spike-*|red-ref-server.mjs|pixel-metrics.mjs|collect-*) continue ;; esac
   cp "$f" "$site"/
 done
 cp pkg/viewer_wasm.js pkg/viewer_wasm_bg.wasm "$site/pkg/"

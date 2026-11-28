@@ -8,7 +8,7 @@ const [input, output, url = "http://127.0.0.1:8767/examples/web-host/index.html?
 const targetPixels = Number(targetArg);
 if (!input || !output || !Number.isFinite(targetPixels)
     || targetPixels < 0.5 || targetPixels > 16 || !Number.isInteger(targetPixels * 2)) {
-    throw new Error("Usage: node examples/web-host/probe-cache-camera.mjs INPUT.oct OUTPUT_DIR [URL] [TARGET_PIXELS=4]");
+    throw new Error("Usage: node examples/web-host/probes/probe-cache-camera.mjs INPUT.oct OUTPUT_DIR [URL] [TARGET_PIXELS=4]");
 }
 fs.mkdirSync(output, { recursive: true });
 const save = (name, value) => fs.writeFileSync(path.join(output, name), JSON.stringify(value, null, 2) + "\n");

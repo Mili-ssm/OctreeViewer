@@ -2,7 +2,7 @@
 // with HTTP Range, CORS, a strong ETag + If-Range, and simulated latency and bandwidth, so the
 // HTTP page/block source can be measured and tested without a real network.
 //
-//   node examples/web-host/red-ref-server.mjs ROOT [--port=8780] [--rtt-ms=50] [--mbps=100]
+//   node examples/web-host/probes/red-ref-server.mjs ROOT [--port=8780] [--rtt-ms=50] [--mbps=100]
 //        [--ignore-range]
 //
 // Latency: every response waits `rttMs` before its headers (one round trip per request, CORS

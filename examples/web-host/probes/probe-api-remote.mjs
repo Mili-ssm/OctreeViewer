@@ -1,8 +1,8 @@
 // Browser-only, bounded probe of `load({ url })` in the embeddable API (D4, issue #11). Run it from
 // probe-api-remote.html; the procedure is in PROBES.md ("Remote source through the embeddable API").
-import { lodTargetReached } from "./benchmark-metrics.mjs";
-import { sidecarUrl } from "./http-range-source.mjs";
-import { createViewer } from "./viewer-api.mjs";
+import { lodTargetReached } from "../benchmark-metrics.mjs";
+import { sidecarUrl } from "../http-range-source.mjs";
+import { createViewer } from "../viewer-api.mjs";
 
 const TIMEOUT_MS = 60_000;
 const withTimeout = (promise, label) => Promise.race([

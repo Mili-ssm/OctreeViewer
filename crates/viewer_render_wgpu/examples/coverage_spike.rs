@@ -13,7 +13,7 @@
 //!
 //! `--export DIR` writes, for the `octant_tight` variant only and for the poses/targets in
 //! `EXPORT_POSES`/`EXPORT_TARGETS` plus the 4 px `DIRECTION_POSES`, the cube-pool files of
-//! `examples/web-host/spike-cube-pool-format.md`, and skips every other case and the CPU baseline.
+//! `examples/web-host/probes/spike-cube-pool-format.md`, and skips every other case and the CPU baseline.
 //! `--check-cell-pages` (with `--export`) packs every exported W16 level with the library's
 //! `pack_level` and compares it with the spike's own packing (pages, slots, words 0, 2, 3 and z),
 //! and measures the eye-frame pixel error of the decoded cells; it exits non-zero on a mismatch.
@@ -1586,7 +1586,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// ---- `--export`: cube-pool files for the WebGPU spike (examples/web-host/spike-cube-pool-format.md) ----
+// ---- `--export`: cube-pool files for the WebGPU spike (examples/web-host/probes/spike-cube-pool-format.md) ----
 
 const SENTINEL: u32 = u32::MAX;
 const MISSING_INTENSITY: u16 = u16::MAX;

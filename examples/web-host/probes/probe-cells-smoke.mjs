@@ -1,7 +1,7 @@
 // R3 Task 11: browser smoke of the GPU cells path (cells + build worker, R3-Q24) on one dataset.
 // Run from the repository root while a static server serves the worktree root (with pkg/), over http
 // (see docs/records/benchmarks/data/r3-t10-workers-07-11-2026/command.sh for the build and server):
-//   node examples/web-host/probe-cells-smoke.mjs DATASET.oct OUT.json [--poses=fitted,orbit,jump,leaf]
+//   node examples/web-host/probes/probe-cells-smoke.mjs DATASET.oct OUT.json [--poses=fitted,orbit,jump,leaf]
 //        [--url=URL] [--px=4] [--timeout-s=120] [--rest-s=5] [--chrome-bin=PATH]
 // Poses (in order): `fitted`; `orbit` (fitted turned 35 degrees about the vertical through the target);
 // `jump` (dolly to 10% of the distance to the target: a cut that may fail with DescendantTooFine and
@@ -26,7 +26,7 @@ const positional = args.filter(arg => !arg.startsWith("--"));
 const option = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
 const [input, output] = positional;
 if (!input || !output) {
-    throw new Error("Usage: node examples/web-host/probe-cells-smoke.mjs DATASET.oct OUT.json [--poses=fitted,orbit,jump,leaf] [--url=URL] [--px=4] [--timeout-s=120] [--rest-s=5]");
+    throw new Error("Usage: node examples/web-host/probes/probe-cells-smoke.mjs DATASET.oct OUT.json [--poses=fitted,orbit,jump,leaf] [--url=URL] [--px=4] [--timeout-s=120] [--rest-s=5]");
 }
 const baseUrl = option("url", "http://127.0.0.1:8767/examples/web-host/index.html");
 const targetPixels = Number(option("px", "4"));

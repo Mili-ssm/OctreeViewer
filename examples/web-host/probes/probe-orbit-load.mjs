@@ -3,7 +3,7 @@
 // ANGLE-Vulkan WebGPU flags (hardware adapter). --browser=firefox instead drives a fresh Firefox
 // with WebGPU enabled and --remote-debugging-port 9222 over raw WebDriver BiDi (software adapter on
 // the reference machine, so functional only):
-//   node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4]
+//   node examples/web-host/probes/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4]
 //        [--max-load-s=120] [--orbit-s=10] [--pixels] [--force-timing] [--browser=chrome|firefox]
 //        [--build-worker | --no-build-worker] [--cells=0|1] [--remote [--rtt-ms=50] [--mbps=100]] [--attrs]
 //        [--pixels=final] [--pss-out=FILE.jsonl] [--jump-after-ms=N] [--color=rgb|intensity|classification|attribute:COLUMN]
@@ -32,7 +32,7 @@ import path from "node:path";
 
 import { createRequire } from "node:module";
 
-import { lodTargetReached } from "./benchmark-metrics.mjs";
+import { lodTargetReached } from "../benchmark-metrics.mjs";
 import { startServer } from "./red-ref-server.mjs";
 import { countEmptyPixels, convexHull, decodePng, projectBounds } from "./pixel-metrics.mjs";
 
@@ -69,7 +69,7 @@ const CHROME_BIN = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 const PLAYWRIGHT_CORE = process.env.PLAYWRIGHT_CORE ?? "/usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/";
 if (!["chrome", "firefox"].includes(browser) || !input || !output || !Number.isInteger(targetPixels * 2) || targetPixels < 0.5 || targetPixels > 16
     || !/^(rgb|intensity|classification|attribute:.+)$/.test(colorRequest)) {
-    throw new Error("Usage: node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] [--browser=chrome|firefox] [--build-worker|--no-build-worker] [--color=rgb|intensity|classification|attribute:COLUMN]");
+    throw new Error("Usage: node examples/web-host/probes/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] [--browser=chrome|firefox] [--build-worker|--no-build-worker] [--color=rgb|intensity|classification|attribute:COLUMN]");
 }
 const ORBIT_STEP_MS = 16;
 
