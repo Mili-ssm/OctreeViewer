@@ -3,9 +3,12 @@ use viewer_format::FormatVersion;
 use crate::error::ConvertError;
 
 pub const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
-pub const MAX_SPATIAL_WORKERS: usize = 8;
+/// Sanity bound of the core; hosts cap lower (the CLI at the available parallelism, the browser at 8).
+pub const MAX_SPATIAL_WORKERS: usize = 256;
 pub const DEFAULT_SPATIAL_WORKERS: usize = 4;
 pub const MAX_ROOT_PARTITION_RANGES: usize = 8;
+/// A node job of at least this many points is scanned by range jobs when it has several workers.
+pub const RANGE_SPLIT_POINTS: u64 = 1 << 20;
 /// Default root scan split; `admitted_root_ranges` still bounds it by the memory budget.
 const DEFAULT_ROOT_PARTITION_RANGES: usize = 4;
 /// Leaf point limit fixed by V8 (owner resolution 02-11-2026, ADR 0051).
@@ -29,6 +32,13 @@ pub fn default_spatial_workers() -> usize {
         .map_or(1, |workers| workers.get().min(DEFAULT_SPATIAL_WORKERS))
 }
 
+/// Threads this host offers (1 where it cannot tell, as on wasm32); the CLI's cap for
+/// `--spatial-workers`.
+#[expect(clippy::disallowed_methods, reason = "native cap; Err on wasm32 → 1")]
+pub fn available_spatial_workers() -> usize {
+    std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+}
+
 /// Conversion options. V8 is the only output: its format, leaf limit, sample grid, spatial
 /// divisions and hybrid row order are constants, so only the settings below vary.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,6 +53,8 @@ pub struct ConvertOptions {
     pub(crate) page_target_bytes: Option<usize>,
     /// Test-only override of the leaf limit; `None` keeps the V8 value.
     pub(crate) leaf_point_limit: Option<u64>,
+    /// Test-only override of [`RANGE_SPLIT_POINTS`]; `None` keeps the production value.
+    pub(crate) range_split_points: Option<u64>,
 }
 
 impl ConvertOptions {
@@ -62,6 +74,22 @@ impl ConvertOptions {
     pub const fn with_leaf_point_limit_for_tests(mut self, limit: u64) -> Self {
         self.leaf_point_limit = Some(if limit == 0 { 1 } else { limit });
         self
+    }
+
+    /// For tests: lowers the point count from which a node job is range-split (at least 1), so
+    /// small inputs still exercise the split. Production output always uses [`RANGE_SPLIT_POINTS`].
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn with_range_split_points_for_tests(mut self, points: u64) -> Self {
+        self.range_split_points = Some(if points == 0 { 1 } else { points });
+        self
+    }
+
+    pub const fn range_split_points(self) -> u64 {
+        match self.range_split_points {
+            Some(points) => points,
+            None => RANGE_SPLIT_POINTS,
+        }
     }
 
     pub const fn format_version(self) -> FormatVersion {
@@ -93,6 +121,7 @@ impl ConvertOptions {
             root_partition_ranges: DEFAULT_ROOT_PARTITION_RANGES,
             page_target_bytes: None,
             leaf_point_limit: None,
+            range_split_points: None,
         })
     }
 
@@ -177,6 +206,7 @@ impl Default for ConvertOptions {
             root_partition_ranges: DEFAULT_ROOT_PARTITION_RANGES,
             page_target_bytes: None,
             leaf_point_limit: None,
+            range_split_points: None,
         }
     }
 }

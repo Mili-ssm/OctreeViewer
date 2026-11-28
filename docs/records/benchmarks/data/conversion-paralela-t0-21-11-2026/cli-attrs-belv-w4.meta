@@ -1,0 +1,4 @@
+load=1.05 1.64 2.59
+exit=0
+8518efc04b4a052172350014525fc4981b1b12cd92a80774817836e861b91cfc  target/t0scratch/attrs/out.oct
+20d08de06a7c4c02851ea7d1078f80f65b0ebb423f4f102a05e26922cec5b8f3  target/t0scratch/attrs/out.octattrs

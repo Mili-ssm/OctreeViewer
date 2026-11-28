@@ -9,6 +9,7 @@ use std::{
 };
 
 use viewer_convert::{ConversionStage, ConvertOptions, convert_file_with_progress};
+use viewer_convert_core::options::available_spatial_workers;
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -95,7 +96,9 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     if let Some(bytes) = page_target_bytes {
         options = options.with_page_target_bytes(bytes);
     }
-    if let Some(workers) = spatial_workers {
+    let requested_workers = spatial_workers.unwrap_or_else(|| options.spatial_workers());
+    if let Some(requested) = spatial_workers {
+        let workers = clamp_spatial_workers(requested, available_spatial_workers());
         options = options.with_spatial_workers(workers)?;
     }
     let cancellation_requested = Arc::new(AtomicBool::new(false));
@@ -144,6 +147,13 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         output.display(),
         output.with_extension("octattrs").display()
     );
+    if let Some(note) = spatial_workers_note(
+        requested_workers,
+        available_spatial_workers(),
+        report.spatial_workers_used,
+    ) {
+        eprintln!("{note}");
+    }
     if !report.omitted_dimensions.is_empty() {
         eprintln!("Not preserved: {}", report.omitted_dimensions.join(", "));
     }
@@ -173,6 +183,30 @@ fn verify(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// `--spatial-workers` above what the machine offers is lowered to it, not rejected; 0 passes
+/// through for the options to refuse.
+fn clamp_spatial_workers(requested: usize, available: usize) -> usize {
+    requested.min(available)
+}
+
+/// The single line that says why fewer workers ran than were requested; `None` when all did.
+fn spatial_workers_note(requested: usize, available: usize, used: usize) -> Option<String> {
+    if used == requested {
+        return None;
+    }
+    let mut reasons = Vec::new();
+    if requested > available {
+        reasons.push(format!("{available} cores"));
+    }
+    if used < requested.min(available) {
+        reasons.push(format!("the memory budget holds {used}"));
+    }
+    Some(format!(
+        "spatial workers: {used} (requested {requested}; {})",
+        reasons.join("; ")
+    ))
+}
+
 fn print_help() {
     eprintln!(
         "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--max-error E] [--max-memory-mib MIB] [--spatial-workers N] [--pipeline-writes]\n\
@@ -180,9 +214,39 @@ fn print_help() {
          viewer_convert verify FILE.oct reads every index page of a paged file and runs the global checks (and the companion footer when FILE.octattrs exists); exit code 0 if valid, 1 otherwise.\n\
          The output is always V8, which fixes 64000 points per block, 2 spatial divisions per axis and hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key); --format-version, --row-order, --points-per-block, --spatial-divisions and --attr-codec (attributes are LZ4 only, ADR 0060) were removed and are refused.\n\
          Defaults: maximum quantization error 0.01 in source units, estimated memory budget 512 MiB.\n\
-         --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
+         --spatial-workers runs the root subtrees on 1 to the available parallelism of this machine (a larger N is lowered to it); the memory budget can lower it further and the result is reported; the default is min(4, available parallelism).\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. EPT input and --checkpoint/--resume were removed with V8 (ADR 0061).\n\
          The converter preserves intensity, classification, returns, scan angle, user data and point source ID, plus GPS time, RGB16 and NIR when present, and reports omitted LAS dimensions."
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clamp_spatial_workers, spatial_workers_note};
+
+    #[test]
+    fn spatial_workers_above_the_machine_are_lowered_to_it() {
+        assert_eq!(clamp_spatial_workers(16, 8), 8);
+        assert_eq!(clamp_spatial_workers(8, 8), 8);
+        assert_eq!(clamp_spatial_workers(3, 8), 3);
+        assert_eq!(clamp_spatial_workers(0, 8), 0);
+    }
+
+    #[test]
+    fn the_workers_note_names_the_request_and_each_reason() {
+        assert_eq!(spatial_workers_note(4, 8, 4), None);
+        assert_eq!(
+            spatial_workers_note(16, 8, 4).as_deref(),
+            Some("spatial workers: 4 (requested 16; 8 cores; the memory budget holds 4)")
+        );
+        assert_eq!(
+            spatial_workers_note(16, 8, 8).as_deref(),
+            Some("spatial workers: 8 (requested 16; 8 cores)")
+        );
+        assert_eq!(
+            spatial_workers_note(4, 8, 2).as_deref(),
+            Some("spatial workers: 2 (requested 4; the memory budget holds 2)")
+        );
+    }
 }

@@ -346,6 +346,7 @@ fn convert(
         }
     }
     println!("spatial_workers={workers}");
+    println!("spatial_workers_used={}", report.spatial_workers_used);
     println!("rayon_pool_threads={}", rayon::current_num_threads());
     let preparation = report.block_preparation;
     println!("preparation_batch_blocks={}", preparation.worker_limit);

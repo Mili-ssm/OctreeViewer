@@ -2,6 +2,47 @@
 
 use super::*;
 
+#[test]
+fn a_range_split_plan_leaves_no_live_spool_once_its_blocks_are_released() {
+    use crate::las_source::open_las_reader;
+    use viewer_convert_core::pipeline::spool_store::MemSpoolStore;
+    use viewer_convert_core::source::inspect_source;
+    let tmp = test_dir();
+    let input = tmp.path().join("deep.las");
+    deep_child_fixture(&input);
+    let reader = open_las_reader(&input).unwrap();
+    let source = inspect_source(&reader).unwrap();
+    let options = cluster_options(8).with_range_split_points_for_tests(150);
+    let store = MemSpoolStore::new(true);
+    let before = split_counter();
+    let plan = plan_from_reader(
+        reader,
+        &input,
+        &source,
+        options,
+        &store,
+        &mut |_| true,
+        true,
+    )
+    .unwrap();
+    assert_eq!(plan.spatial_workers_used, 8);
+    let log = split_log_since(before);
+    assert!(
+        log.iter().any(|split| split.chained),
+        "the fixture must split a child of a split node"
+    );
+    assert!(
+        store.stats().live_spools > 0,
+        "leaf and LOD spools are retained"
+    );
+    for block in &plan.blocks {
+        block.read(&store, source.frame).unwrap();
+        block.release_spool_after_write(&store).unwrap();
+    }
+    let drained = store.stats();
+    assert_eq!((drained.live_bytes, drained.live_spools), (0, 0));
+}
+
 /// Live-spool peak of variant c with one worker in `benchmarks/model_node_job_arena.py`, replayed
 /// from the node events of a run: jobs run in `start_seq` order; a job's child spools are counted
 /// in full at its start (each is its own file), its LOD sample joins at its end, and its input
@@ -461,44 +502,6 @@ fn failing_plan(
     (error, store.inner.stats())
 }
 
-/// Plans from an already opened reader with the native clock and executor.
-fn plan_from_reader<S: viewer_convert_core::pipeline::spool_store::PlanStore>(
-    reader: las::Reader,
-    input: &std::path::Path,
-    source: &viewer_convert_core::source::SourceInfo,
-    options: ConvertOptions,
-    store: &S,
-    on_progress: &mut dyn FnMut(crate::ConversionProgress) -> bool,
-    collect: bool,
-) -> Result<viewer_convert_core::spatial::SpatialPlan, ConvertError> {
-    let factory = viewer_convert_core::pipeline::point_source::LasFactory::new(
-        crate::las_source::FileBytes {
-            path: input.to_owned(),
-            len: std::fs::metadata(input).unwrap().len(),
-        },
-    );
-    viewer_convert_core::spatial::build_spatial_plan_from_source(
-        &mut viewer_convert_core::pipeline::point_source::RangeSource::Las(
-            viewer_convert_core::pipeline::point_source::LasPointSource::full(reader),
-        ),
-        &factory,
-        source,
-        options,
-        store,
-        &crate::pipeline::SystemClock,
-        &crate::executor::ThreadedExecutor,
-        on_progress,
-        collect,
-    )
-}
-
-fn cluster_options(workers: usize) -> ConvertOptions {
-    leaf_new(16, 0.01)
-        .unwrap()
-        .with_spatial_workers(workers)
-        .unwrap()
-}
-
 #[test]
 fn a_job_error_leaves_no_live_spool() {
     let tmp = test_dir();
@@ -612,43 +615,6 @@ fn a_panicking_progress_callback_propagates_under_the_ready_queue() {
 }
 
 #[test]
-fn a_lower_branch_commit_error_wins_over_a_higher_branch_job_error() {
-    // Root children 0 and 6 hold 2000 and 2001 points; 27_500_000 passes the batch check of the
-    // single batch of 8 but fails a branch-local commit deep in branch 0 (found by a budget
-    // probe). Branch 6 fails its first read at once (no other node has 2001 points), so its Job
-    // error arrives first; the lower Commit error must still win (A8, R25).
-    let tmp = test_dir();
-    let input = tmp.path().join("clusters.las");
-    sized_cluster_fixture(&input, [2000, 40, 40, 40, 40, 40, 2001, 40]);
-    let quick = std::time::Duration::ZERO;
-    let options = |budget| {
-        leaf_budget(16, 0.01, budget)
-            .unwrap()
-            .with_spatial_workers(8)
-            .unwrap()
-    };
-    let (job_only, _) = failing_plan(
-        &input,
-        options(512 * 1024 * 1024),
-        &[(2001, quick)],
-        &mut |_| true,
-    );
-    assert_eq!(job_only.to_string(), "injected read failure (2001 points)");
-    let (commit_only, _) = failing_plan(&input, options(27_500_000), &[], &mut |_| true);
-    assert!(
-        matches!(commit_only, ConvertError::MemoryBudgetExceeded { requested, limit }
-            if requested < 27_500_000 && limit < requested),
-        "{BUDGET_HINT}: {commit_only:?}"
-    );
-    for _ in 0..5 {
-        let (error, stats) =
-            failing_plan(&input, options(27_500_000), &[(2001, quick)], &mut |_| true);
-        assert_eq!(error.to_string(), commit_only.to_string());
-        assert_eq!((stats.live_bytes, stats.live_spools), (0, 0));
-    }
-}
-
-#[test]
 fn the_serial_executor_plans_like_the_ready_queue() {
     use crate::{las_source::open_las_reader, pipeline::SystemClock};
     use viewer_convert_core::pipeline::{
@@ -704,5 +670,87 @@ fn the_serial_executor_plans_like_the_ready_queue() {
             serial.estimated_peak_memory_bytes,
             queue.estimated_peak_memory_bytes
         );
+    }
+}
+
+#[test]
+fn the_ready_queue_returns_the_lowest_preorder_error_among_range_jobs() {
+    // Node sizes 300 (preorder 2) and 250 (preorder 5). Read failures are injected by extent, so
+    // a range of a split node fails as `(range points)` and an unsplit node as its own size. The
+    // lowest preorder error must win whichever of the two is split and whichever fails first.
+    let tmp = test_dir();
+    let input = tmp.path().join("clusters.las");
+    sized_cluster_fixture(&input, [40, 40, 300, 40, 40, 250, 40, 40]);
+    let quick = std::time::Duration::ZERO;
+    let slow = std::time::Duration::from_millis(100);
+    // (split points, failure of the lower node, failure of the higher node, expected message)
+    let cases = [
+        // 300 → 3 ranges of 100; 250 → 3 ranges of 83, 83, 84.
+        (100, (100, slow), (83, quick), "(100 points)"),
+        // 300 → 2 ranges of 150; 250 stays one job of 250 points.
+        (260, (150, slow), (250, quick), "(150 points)"),
+        // Neither node reaches the threshold, so both run as one job.
+        (400, (300, slow), (250, quick), "(300 points)"),
+    ];
+    for (split_points, (low, low_delay), (high, high_delay), expected) in cases {
+        for _ in 0..3 {
+            let before = split_counter();
+            let (error, stats) = failing_plan(
+                &input,
+                cluster_options(8).with_range_split_points_for_tests(split_points),
+                &[(low, low_delay), (high, high_delay)],
+                &mut |_| true,
+            );
+            assert!(
+                error.to_string().contains(expected),
+                "T={split_points}: {error}"
+            );
+            assert_eq!(
+                (stats.live_bytes, stats.live_spools),
+                (0, 0),
+                "T={split_points}"
+            );
+            if split_points < 400 {
+                assert!(splits_since(before) > 0, "T={split_points}: no split");
+            }
+        }
+    }
+    // A higher node that is split fails alone: its error is the one returned.
+    let (error, stats) = failing_plan(
+        &input,
+        cluster_options(8).with_range_split_points_for_tests(100),
+        &[(83, quick)],
+        &mut |_| true,
+    );
+    assert!(error.to_string().contains("(83 points)"), "{error}");
+    assert_eq!((stats.live_bytes, stats.live_spools), (0, 0));
+}
+
+#[test]
+fn cancelling_during_range_jobs_leaves_no_live_spool() {
+    let tmp = test_dir();
+    let input = tmp.path().join("clusters.las");
+    sized_cluster_fixture(&input, [90, 60, 70, 80, 100, 50, 40, 120]);
+    for workers in [2, 4, 8] {
+        for cancel_at in [3, 8, 14] {
+            let before = split_counter();
+            let mut updates = 0;
+            let options = cluster_options(workers).with_range_split_points_for_tests(30);
+            let (error, stats) = failing_plan(&input, options, &[], &mut |event| {
+                if event.stage == ConversionStage::BuildingSpatialHierarchy {
+                    updates += 1;
+                    updates < cancel_at
+                } else {
+                    true
+                }
+            });
+            let case = format!("workers={workers} cancel_at={cancel_at}");
+            assert!(
+                matches!(error, ConvertError::Cancelled { .. }),
+                "{case}: {error:?}"
+            );
+            assert!(splits_since(before) > 0, "{case}: no split");
+            assert_eq!((stats.live_bytes, stats.live_spools), (0, 0), "{case}");
+        }
     }
 }

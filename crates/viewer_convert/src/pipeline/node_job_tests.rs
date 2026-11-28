@@ -86,6 +86,7 @@ fn job(info: &SourceInfo, bounds: SpatialBounds) -> NodeJob {
         point_count: info.point_count,
         input_is_child_spool: true,
         first_output: SpoolId(100),
+        segments: Vec::new(),
     }
 }
 

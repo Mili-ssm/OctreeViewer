@@ -80,6 +80,7 @@ impl JobContext {
 
 /// `first_output..first_output + divisions³` are reserved by the host only when the job splits
 /// (child `k` → `first_output + k`, LOD → `first_output + divisions³`); a leaf job ignores it.
+#[derive(Clone)]
 pub struct NodeJob {
     pub path: NodePath,
     pub level: u32,
@@ -88,6 +89,10 @@ pub struct NodeJob {
     pub point_count: u64,
     pub input_is_child_spool: bool,
     pub first_output: SpoolId,
+    /// When non-empty, the input is these closed spools in order (the range segments of the
+    /// parent), read in place instead of joined into `input`, which is then an unused id; a leaf
+    /// or all-equal node joins them into it.
+    pub segments: Vec<SpoolId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -96,6 +101,8 @@ pub struct ChildOutput {
     pub spool: SpoolId,
     pub point_count: u64,
     pub bounds: SpatialBounds,
+    /// See [`NodeJob::segments`]; empty when the child is joined into `spool`.
+    pub segments: Vec<SpoolId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -353,6 +360,8 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
     progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
 ) -> Result<NodeJobOutput, ConvertError> {
     let mut metrics = ctx.collect_diagnostics.then(JobMetrics::default);
+    // A child is chained only when it splits (`merge_node_ranges`), so a leaf never has segments.
+    debug_assert!(job.segments.is_empty() || ctx.splits(job.point_count, job.bounds));
     if !ctx.splits(job.point_count, job.bounds) {
         return leaf_output(ctx, job, store, Vec::new(), metrics);
     }
@@ -360,24 +369,99 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
     debug_assert_ne!(job.first_output, SpoolId::SOURCE, "{:?}", job.path);
 
     let child_count = ctx.child_count();
-    let mut children = (0..child_count)
+    let sample_error = lod_sample_error(job.bounds, ctx.sample_grid);
+    let subdivision = SpatialSubdivision::new(job.bounds, ctx.spatial_divisions)
+        .expect("converter subdivisions are validated");
+    // The whole input spool is read, so one longer than `point_count` is still a mismatch.
+    let extent = SpoolExtent {
+        offset: 0,
+        len: input_len(store, job)?,
+    };
+    let NodeScan {
+        mut children,
+        samples,
+        source_bounds,
+        scanned,
+        metrics: scan_metrics,
+    } = scan_node_extent(ctx, job, job.first_output, extent, store, clock, progress)?;
+    metrics = scan_metrics;
+    if scanned != job.point_count {
+        return Err(ConvertError::PointCountMismatch {
+            expected: job.point_count,
+            actual: scanned,
+        });
+    }
+    for child in children.iter_mut().flatten() {
+        child.finish(store)?;
+    }
+    if let Some(metrics) = metrics.as_mut() {
+        metrics.child_spool_bytes = child_payload_bytes(&children);
+    }
+
+    if all_equal(&source_bounds) {
+        if let Some(metrics) = metrics.as_mut() {
+            metrics.became_leaf_all_equal = true;
+        }
+        let release = created_spools(&children);
+        join_input_for_leaf(ctx, job, store)?;
+        return leaf_output(ctx, job, store, release, metrics);
+    }
+
+    let lod_started = start_phase(clock, &metrics);
+    let lod_spool = SpoolId(job.first_output.0 + child_count as u64);
+    let lod = write_lod(store, lod_spool, &samples, job.bounds, ctx.layout)?;
+    let sample_count = lod.count;
+    end_phase(clock, &mut metrics, lod_started, |m| &mut m.lod_write_ns);
+    if let Some(metrics) = metrics.as_mut() {
+        metrics.lod_bytes = (sample_count * ctx.layout.lod().record_bytes()) as u64;
+    }
+    Ok(NodeJobOutput {
+        path: job.path.clone(),
+        point_count: sample_count as u64,
+        geometric_error: sample_error + center_rounding_error(job.bounds, ctx.frame),
+        spacing: 0.0,
+        nn_samples: Vec::new(),
+        blocks: lod_blocks(lod_spool, &lod),
+        children: child_outputs(children, subdivision),
+        release: input_release(job),
+        metrics,
+    })
+}
+
+/// Children, samples and bounds of the records of one extent of a node's input spool.
+struct NodeScan {
+    children: Vec<Option<ChildSpool>>,
+    samples: SampleGrid,
+    source_bounds: [[f64; 2]; 3],
+    scanned: u64,
+    metrics: Option<JobMetrics>,
+}
+
+/// Reads `extent` of `job.input` into child spools `first_child + key`.
+fn scan_node_extent<S: SpoolStore, C: Clock>(
+    ctx: &JobContext,
+    job: &NodeJob,
+    first_child: SpoolId,
+    extent: SpoolExtent,
+    store: &S,
+    clock: &C,
+    progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
+) -> Result<NodeScan, ConvertError> {
+    let mut metrics = ctx.collect_diagnostics.then(JobMetrics::default);
+    let record_bytes = ctx.layout.record_bytes();
+    let mut children = (0..ctx.child_count())
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
-    let mut samples = SampleGrid::new(ctx.sample_grid, job.point_count, ctx.layout);
-    let sample_error = lod_sample_error(job.bounds, ctx.sample_grid);
+    let mut samples = SampleGrid::new(
+        ctx.sample_grid,
+        extent.len / record_bytes as u64,
+        ctx.layout,
+    );
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(job.bounds, ctx.spatial_divisions)
         .expect("converter subdivisions are validated");
     let mut scanned = 0_u64;
-    // The whole input spool is read, so one longer than `point_count` is still a mismatch.
-    let mut reader = store.reader(
-        job.input,
-        SpoolExtent {
-            offset: 0,
-            len: store.len(job.input)?,
-        },
-    )?;
-    let record_bytes = ctx.layout.record_bytes();
+    let mut reader = open_input(store, job, extent)?;
     let records_per_batch = (SPOOL_IO_BUFFER_BYTES / record_bytes).max(1);
     let mut record_buffer = vec![0; records_per_batch * record_bytes];
     loop {
@@ -412,7 +496,7 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
             let child_key = subdivision.cell_index(position);
             let child = children[child_key].get_or_insert_with(|| {
                 ChildSpool::new(
-                    SpoolId(job.first_output.0 + child_key as u64),
+                    SpoolId(first_child.0 + child_key as u64),
                     ctx.layout,
                     ctx.collect_diagnostics,
                 )
@@ -424,46 +508,275 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
             &mut m.partition_and_sample_ns
         });
     }
-    if scanned != job.point_count {
-        return Err(ConvertError::PointCountMismatch {
-            expected: job.point_count,
-            actual: scanned,
-        });
-    }
+    Ok(NodeScan {
+        children,
+        samples,
+        source_bounds,
+        scanned,
+        metrics,
+    })
+}
+
+/// One record-aligned range of a splitting node's input spool: its closed child segments
+/// (ascending key) and the values [`merge_node_ranges`] combines in range order.
+pub struct NodeRange {
+    pub segments: Vec<RangeSegment>,
+    pub samples: SampleGrid,
+    pub source_bounds: [[f64; 2]; 3],
+    pub scanned: u64,
+    pub metrics: Option<JobMetrics>,
+}
+
+/// Records of range `index` of `count` over `records` records: `[start, end)` in records.
+fn range_records(records: u64, index: usize, count: usize) -> (u64, u64) {
+    let cut = |i: u64| (u128::from(records) * u128::from(i) / count as u128) as u64;
+    (cut(index as u64), cut(index as u64 + 1))
+}
+
+/// Scans range `index` of `count` of the input of a splitting node into closed segments
+/// `first_segment + key`, like [`run_root_partition_range`] does for the root.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
+)]
+pub fn run_node_range<S: SpoolStore, C: Clock>(
+    ctx: &JobContext,
+    job: &NodeJob,
+    first_segment: SpoolId,
+    index: usize,
+    count: usize,
+    store: &S,
+    clock: &C,
+    progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
+) -> Result<NodeRange, ConvertError> {
+    let record_bytes = ctx.layout.record_bytes() as u64;
+    let total_len = input_len(store, job)?;
+    let records = total_len / record_bytes;
+    let (start, end) = range_records(records, index, count);
+    // The last range also takes any trailing partial record, so a mismatch is still reported.
+    let len = if index + 1 == count {
+        total_len - start * record_bytes
+    } else {
+        (end - start) * record_bytes
+    };
+    let extent = SpoolExtent {
+        offset: start * record_bytes,
+        len,
+    };
+    let NodeScan {
+        mut children,
+        samples,
+        source_bounds,
+        scanned,
+        mut metrics,
+    } = scan_node_extent(ctx, job, first_segment, extent, store, clock, progress)?;
     for child in children.iter_mut().flatten() {
         child.finish(store)?;
     }
     if let Some(metrics) = metrics.as_mut() {
         metrics.child_spool_bytes = child_payload_bytes(&children);
     }
+    let segments = children
+        .iter()
+        .flatten()
+        .filter(|child| child.point_count > 0)
+        .map(|child| RangeSegment {
+            key: u16::try_from(child.id.0 - first_segment.0).expect("at most 8³ children"),
+            spool: child.id,
+            point_count: child.point_count,
+        })
+        .collect();
+    Ok(NodeRange {
+        segments,
+        samples,
+        source_bounds,
+        scanned,
+        metrics,
+    })
+}
 
+/// Combines the ranges of a splitting node in range order and finishes it as `run_node_job`
+/// does after its scan. A child that will itself split keeps the segments as its chained input;
+/// any other child is joined into its spool (it holds few points by construction).
+pub fn merge_node_ranges<S: SpoolStore, C: Clock>(
+    ctx: &JobContext,
+    job: &NodeJob,
+    ranges: Vec<NodeRange>,
+    store: &S,
+    clock: &C,
+) -> Result<NodeJobOutput, ConvertError> {
+    let mut metrics = ctx.collect_diagnostics.then(JobMetrics::default);
+    let mut ranges = ranges.into_iter();
+    let first = ranges.next().expect("a split node has a range");
+    let mut samples = first.samples;
+    let mut source_bounds = first.source_bounds;
+    let mut scanned = first.scanned;
+    if let (Some(total), Some(first)) = (metrics.as_mut(), first.metrics) {
+        *total = first;
+    }
+    let mut by_key = vec![Vec::new(); ctx.child_count()];
+    let mut add_segments = |segments: Vec<RangeSegment>| {
+        for segment in segments {
+            by_key[usize::from(segment.key)].push(segment);
+        }
+    };
+    add_segments(first.segments);
+    for part in ranges {
+        samples.merge(part.samples);
+        for (merged, later) in source_bounds.iter_mut().zip(part.source_bounds) {
+            merged[0] = merged[0].min(later[0]);
+            merged[1] = merged[1].max(later[1]);
+        }
+        scanned += part.scanned;
+        if let (Some(total), Some(later)) = (metrics.as_mut(), part.metrics) {
+            total.child_spool_bytes.extend(later.child_spool_bytes);
+            total.scanned_bytes += later.scanned_bytes;
+            total.scan_read_ns += later.scan_read_ns;
+            total.partition_and_sample_ns += later.partition_and_sample_ns;
+        }
+        add_segments(part.segments);
+    }
+    if scanned != job.point_count {
+        return Err(ConvertError::PointCountMismatch {
+            expected: job.point_count,
+            actual: scanned,
+        });
+    }
     if all_equal(&source_bounds) {
         if let Some(metrics) = metrics.as_mut() {
             metrics.became_leaf_all_equal = true;
         }
-        let release = created_spools(&children);
+        let release = by_key
+            .iter()
+            .flatten()
+            .map(|segment| segment.spool)
+            .collect();
+        join_input_for_leaf(ctx, job, store)?;
         return leaf_output(ctx, job, store, release, metrics);
     }
-
+    let subdivision = SpatialSubdivision::new(job.bounds, ctx.spatial_divisions)
+        .expect("converter subdivisions are validated");
+    let mut children = Vec::new();
+    for (key, segments) in by_key.iter().enumerate() {
+        if segments.is_empty() {
+            continue;
+        }
+        let target = SpoolId(job.first_output.0 + key as u64);
+        let ids = segments
+            .iter()
+            .map(|segment| segment.spool)
+            .collect::<Vec<_>>();
+        let point_count: u64 = segments.iter().map(|segment| segment.point_count).sum();
+        let bounds = subdivision
+            .cell_bounds(key)
+            .expect("child index is in range");
+        let chain = ctx.splits(point_count, bounds);
+        if !chain {
+            join_segments(store, target, &ids, ctx.layout.record_bytes())?;
+        }
+        children.push(ChildOutput {
+            key: u16::try_from(key).expect("at most 8³ children"),
+            spool: target,
+            point_count,
+            bounds,
+            segments: if chain { ids } else { Vec::new() },
+        });
+    }
     let lod_started = start_phase(clock, &metrics);
-    let lod_spool = SpoolId(job.first_output.0 + child_count as u64);
+    let lod_spool = SpoolId(job.first_output.0 + ctx.child_count() as u64);
     let lod = write_lod(store, lod_spool, &samples, job.bounds, ctx.layout)?;
-    let sample_count = lod.count;
     end_phase(clock, &mut metrics, lod_started, |m| &mut m.lod_write_ns);
     if let Some(metrics) = metrics.as_mut() {
-        metrics.lod_bytes = (sample_count * ctx.layout.lod().record_bytes()) as u64;
+        metrics.lod_bytes = (lod.count * ctx.layout.lod().record_bytes()) as u64;
     }
     Ok(NodeJobOutput {
         path: job.path.clone(),
-        point_count: sample_count as u64,
-        geometric_error: sample_error + center_rounding_error(job.bounds, ctx.frame),
+        point_count: lod.count as u64,
+        geometric_error: lod_sample_error(job.bounds, ctx.sample_grid)
+            + center_rounding_error(job.bounds, ctx.frame),
         spacing: 0.0,
         nn_samples: Vec::new(),
         blocks: lod_blocks(lod_spool, &lod),
-        children: child_outputs(children, subdivision),
-        release: vec![job.input],
+        children,
+        release: input_release(job),
         metrics,
     })
+}
+
+/// Reads several readers one after the other.
+pub struct ChainReader<R>(std::collections::VecDeque<R>);
+
+impl<R: Read> Read for ChainReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        while let Some(front) = self.0.front_mut() {
+            let read = front.read(buf)?;
+            if read > 0 || buf.is_empty() {
+                return Ok(read);
+            }
+            self.0.pop_front();
+        }
+        Ok(0)
+    }
+}
+
+/// Bytes of the node's input, whether one spool or its segments.
+fn input_len<S: SpoolStore>(store: &S, job: &NodeJob) -> Result<u64, ConvertError> {
+    if job.segments.is_empty() {
+        return store.len(job.input);
+    }
+    job.segments
+        .iter()
+        .try_fold(0_u64, |total, id| Ok(total + store.len(*id)?))
+}
+
+/// Reader over `extent` (offsets in the concatenation of the segments).
+fn open_input<S: SpoolStore>(
+    store: &S,
+    job: &NodeJob,
+    extent: SpoolExtent,
+) -> Result<ChainReader<S::Reader>, ConvertError> {
+    let mut readers = std::collections::VecDeque::new();
+    if job.segments.is_empty() {
+        readers.push_back(store.reader(job.input, extent)?);
+        return Ok(ChainReader(readers));
+    }
+    let (mut start, end) = (0_u64, extent.offset + extent.len);
+    for id in &job.segments {
+        let len = store.len(*id)?;
+        let (from, to) = (start.max(extent.offset), (start + len).min(end));
+        if from < to {
+            readers.push_back(store.reader(
+                *id,
+                SpoolExtent {
+                    offset: from - start,
+                    len: to - from,
+                },
+            )?);
+        }
+        start += len;
+    }
+    Ok(ChainReader(readers))
+}
+
+/// Spools to release once the node is done with its input.
+fn input_release(job: &NodeJob) -> Vec<SpoolId> {
+    if job.segments.is_empty() {
+        vec![job.input]
+    } else {
+        job.segments.clone()
+    }
+}
+
+/// A leaf keeps one spool: joins the segments of a chained input into `job.input`.
+fn join_input_for_leaf<S: SpoolStore>(
+    ctx: &JobContext,
+    job: &NodeJob,
+    store: &S,
+) -> Result<(), ConvertError> {
+    if !job.segments.is_empty() {
+        join_segments(store, job.input, &job.segments, ctx.layout.record_bytes())?;
+    }
+    Ok(())
 }
 
 pub struct RootPartition {
@@ -805,6 +1118,7 @@ pub fn merge_root_ranges<S: SpoolStore>(
             bounds: subdivision
                 .cell_bounds(key)
                 .expect("child index is in range"),
+            segments: Vec::new(),
         });
     }
     Ok(RootPartition {
@@ -817,8 +1131,8 @@ pub fn merge_root_ranges<S: SpoolStore>(
 }
 
 /// Copies closed `segments` (in range order) into the new spool `target`, created with
-/// `record_bytes`, in 64 KiB chunks and deletes each right after copying it. Returns the bytes copied. Never called with an empty
-/// slice.
+/// `record_bytes`, in 64 KiB chunks and deletes each right after copying it. Returns the bytes
+/// copied. Never called with an empty slice.
 pub fn join_segments<S: SpoolStore>(
     store: &S,
     target: SpoolId,
@@ -1236,6 +1550,7 @@ fn child_outputs(
                 bounds: subdivision
                     .cell_bounds(key)
                     .expect("child index is in range"),
+                segments: Vec::new(),
             })
         })
         .collect()
@@ -1277,6 +1592,26 @@ fn end_phase<C: Clock>(
     if let (Some(metrics), Some(started)) = (metrics.as_mut(), started) {
         let target = target(metrics);
         *target = target.saturating_add(clock.elapsed_ns(started));
+    }
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::range_records;
+
+    #[test]
+    fn ranges_tile_the_records_with_uneven_sizes() {
+        for (records, count) in [(10_u64, 4_usize), (3_001, 5), (7, 8), (0, 3), (1_000, 1)] {
+            let mut next = 0;
+            for index in 0..count {
+                let (start, end) = range_records(records, index, count);
+                assert_eq!(start, next, "{records} records, range {index} of {count}");
+                assert!(end >= start);
+                next = end;
+            }
+            assert_eq!(next, records, "{records} records over {count} ranges");
+        }
+        assert_eq!(range_records(10, 1, 4), (2, 5));
     }
 }
 

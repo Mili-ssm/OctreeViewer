@@ -31,8 +31,8 @@ pub struct SerialExecutor;
 
 impl<S: PlanStore, C: Clock> BatchPlanner<S, C> for SerialExecutor {
     /// Same result as the ready queue: one branch-local builder per root child with the batch
-    /// budget, so `TooManyBlocks` is local and the first error in key order (the lowest path)
-    /// wins.
+    /// budget (shared: see `branch_memory_budget`), so `TooManyBlocks` is local and the first
+    /// error in key order (the lowest path) wins.
     fn plan_batch(
         &self,
         builder: &mut SpatialBuilder<'_, S, C, Self>,
@@ -57,10 +57,17 @@ impl<S: PlanStore, C: Clock> BatchPlanner<S, C> for SerialExecutor {
         let mut branches = Vec::with_capacity(tasks.len());
         for (task, job) in tasks.iter().zip(jobs) {
             let mut branch = BranchOutput::new(collect);
+            // The batch budget less the index of the earlier branches, as in the ready queue.
+            let used = branches
+                .iter()
+                .map(|(_, branch): &(u16, BranchOutput)| branch.index_bytes())
+                .sum::<u64>();
             builder
-                .with_branch(&mut branch, memory_budget, |branch_builder| {
-                    branch_builder.build_node(job, None)
-                })
+                .with_branch(
+                    &mut branch,
+                    memory_budget.saturating_sub(used),
+                    |branch_builder| branch_builder.build_node(job, None),
+                )
                 .map(|_| ())?;
             branches.push((task.key, branch));
         }

@@ -27,6 +27,9 @@ pub struct ConversionPlan {
     pub source_block_ids: Vec<BlockId>,
     pub omitted_dimensions: Vec<String>,
     pub estimated_peak_memory_bytes: u64,
+    /// What the block and validation stages reserve (see `SpatialPlan`).
+    pub later_stages_reserved_bytes: u64,
+    pub spatial_workers_used: usize,
 }
 
 impl ConversionPlan {
@@ -47,6 +50,8 @@ impl ConversionPlan {
             source_block_ids,
             omitted_dimensions: spatial.omitted_dimensions,
             estimated_peak_memory_bytes: spatial.estimated_peak_memory_bytes,
+            later_stages_reserved_bytes: spatial.later_stages_reserved_bytes,
+            spatial_workers_used: spatial.spatial_workers_used,
         }
     }
 }

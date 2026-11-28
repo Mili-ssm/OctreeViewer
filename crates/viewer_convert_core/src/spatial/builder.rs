@@ -1,9 +1,6 @@
 //! The builder that walks the hierarchy and commits node jobs.
 
-use std::{
-    collections::VecDeque,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use viewer_core::las::LasExtraByte;
 use viewer_core::{BlockId, NodeId, SpatialBounds};
@@ -13,7 +10,8 @@ use super::consume_rank;
 use super::executor::{BatchPlanner, RangeRunner};
 use super::geometry::{center_rounding_error, lod_sample_error};
 use super::memory::{
-    branch_memory_budget, check_memory_budget, estimate_memory, range_memory_bytes,
+    check_memory_budget, estimate_memory, memory_limited_batch, range_memory_bytes,
+    split_range_capacity,
 };
 use super::node_job::{
     BlockPlan, ChildOutput, JobContext, JobMetrics, JobProgress, NodeJob, NodeJobOutput, NodePath,
@@ -57,6 +55,11 @@ impl BranchOutput {
         }
     }
 
+    /// The planning estimate of the index this branch holds (nodes and blocks).
+    pub fn index_bytes(&self) -> u64 {
+        super::memory::index_bytes(self.node_records.len(), self.output_blocks.len())
+    }
+
     /// Nodes committed so far; the next node's branch-local id.
     pub fn node_count(&self) -> u64 {
         self.node_records.len() as u64
@@ -90,6 +93,12 @@ pub struct SpatialBuilder<'a, S: PlanStore, C: Clock, X> {
     /// Ranges the root partition used; 0 when it did not run by ranges.
     pub(super) ranges_used: usize,
     pub(super) workers_used: usize,
+    /// Test-overridable threshold of [`Self::range_split_points`].
+    pub(super) range_split_points: u64,
+    /// Most range jobs of split nodes held at once (see [`Self::split_range_capacity`]).
+    pub(super) split_ranges_peak: usize,
+    /// Estimated index of the whole plan, to keep a worker count from starving the branches.
+    pub(super) expected_index_bytes: u64,
     pub(super) spool_diagnostics: Option<SpatialSpoolDiagnostics>,
     pub(super) spatial_phases: Option<SpatialPhaseDiagnostics>,
     /// Bytes this builder (not its siblings) has written, for per-root-child accounting.
@@ -138,6 +147,41 @@ impl<'a, S: PlanStore, C: Clock, X> SpatialBuilder<'a, S, C, X> {
 
     pub fn collects_diagnostics(&self) -> bool {
         self.spool_diagnostics.is_some()
+    }
+
+    /// Threads the executor runs the current batch on: the requested count lowered by the budget.
+    pub fn batch_workers(&self) -> usize {
+        self.workers_used
+    }
+
+    /// Reserves `count` consecutive spool ids (the segments of a range-split node job).
+    pub fn reserve_spool_ids(&self, count: u64) -> SpoolId {
+        SpoolId(self.spool_ids.fetch_add(count, Ordering::Relaxed))
+    }
+
+    /// Points from which a node job is scanned by range jobs.
+    pub fn range_split_points(&self) -> u64 {
+        self.range_split_points
+    }
+
+    /// Range jobs the batch may hold at once (queued, running or waiting for their merge): what
+    /// the memory budget leaves after the batch's own reservations, in units of
+    /// [`range_memory_bytes`]. A node whose split does not fit runs unsplit.
+    pub fn split_range_capacity(&self) -> usize {
+        split_range_capacity(
+            self.memory_budget,
+            self.point_limit,
+            self.expected_index_bytes,
+            self.workers_used,
+            self.spatial_divisions,
+            self.sample_grid,
+        )
+        .map_or(0, |ranges| usize::try_from(ranges).unwrap_or(usize::MAX))
+    }
+
+    /// Records the most range jobs the batch held at once, for the peak memory estimate.
+    pub fn note_split_ranges(&mut self, outstanding: usize) {
+        self.split_ranges_peak = self.split_ranges_peak.max(outstanding);
     }
 }
 
@@ -292,6 +336,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             point_count,
             input_is_child_spool,
             first_output,
+            segments: Vec::new(),
         }
     }
 
@@ -688,8 +733,23 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         level: u32,
         children: Vec<ChildOutput>,
     ) -> Result<(), ConvertError> {
-        if level == 0 && self.parallel_workers > 1 && children.len() > 1 {
-            self.build_root_children_parallel(parent_id, children)?;
+        // The budget lowers the worker count (down to the serial plan) instead of failing.
+        let batch = (level == 0 && self.parallel_workers > 1 && !children.is_empty())
+            .then(|| {
+                memory_limited_batch(
+                    self.memory_budget,
+                    self.point_limit,
+                    self.node_records.len(),
+                    self.output_blocks.len(),
+                    self.expected_index_bytes,
+                    self.parallel_workers,
+                    self.spatial_divisions,
+                    self.sample_grid,
+                )
+            })
+            .flatten();
+        if let Some((workers, branch_budget)) = batch {
+            self.build_root_children_parallel(parent_id, children, workers, branch_budget)?;
         } else {
             for child in children {
                 let written_before = self.spool_written_local;
@@ -714,36 +774,20 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         Ok(())
     }
 
+    /// Plans every root child in one batch: the ready queue runs node jobs of all branches on
+    /// `workers` threads, with `branch_budget` for each branch.
     fn build_root_children_parallel(
         &mut self,
         parent_id: NodeId,
         tasks: Vec<ChildOutput>,
+        workers: usize,
+        branch_budget: u64,
     ) -> Result<(), ConvertError> {
-        let mut tasks = VecDeque::from(tasks);
-        while !tasks.is_empty() {
-            let batch_count = self.parallel_workers.min(tasks.len());
-            let batch = (0..batch_count)
-                .map(|_| {
-                    tasks
-                        .pop_front()
-                        .expect("batch size is bounded by queued tasks")
-                })
-                .collect::<Vec<_>>();
-            let worker_memory_budget = branch_memory_budget(
-                self.memory_budget,
-                self.point_limit,
-                self.node_records.len(),
-                self.output_blocks.len(),
-                batch_count,
-                self.spatial_divisions,
-                self.sample_grid,
-            )?;
-            self.workers_used = self.workers_used.max(batch_count);
-            let executor = self.executor;
-            let outputs = executor.plan_batch(self, batch, worker_memory_budget)?;
-            for (_, mut branch) in outputs {
-                self.append_branch(parent_id, &mut branch)?;
-            }
+        self.workers_used = self.workers_used.max(workers);
+        let executor = self.executor;
+        let outputs = executor.plan_batch(self, tasks, branch_budget)?;
+        for (_, mut branch) in outputs {
+            self.append_branch(parent_id, &mut branch)?;
         }
         Ok(())
     }
@@ -779,6 +823,9 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             root_ranges: 0,
             ranges_used: 0,
             workers_used: 1,
+            range_split_points: self.range_split_points,
+            split_ranges_peak: 0,
+            expected_index_bytes: 0,
             spool_diagnostics: branch.spool_diagnostics.take(),
             spatial_phases: branch.spatial_phases.take(),
             spool_written_local: branch.spool_written_local,

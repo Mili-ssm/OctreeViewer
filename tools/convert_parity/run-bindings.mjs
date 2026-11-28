@@ -199,6 +199,24 @@ for (const [name, value] of [["formatVersion", "v8"], ["formatVersion", "v5"], [
   report(message.includes(expected), `${name}=${value} is refused by the bindings (${message.slice(0, 70)})`);
 }
 
+// The browser keeps its cap of 8 `spatialWorkers` while the native CLI goes up to the cores: 4 is
+// accepted and gives the native bytes, 9 is refused with the cap in the message.
+{
+  const native = nativeConvert("workers-native", small);
+  const { oct, attrs } = bindingConvert("workers-4", small, { removed: { spatialWorkers: 4 } });
+  report(oct === native.oct && attrs === native.attrs, `spatialWorkers=4 is accepted and matches native (${oct.slice(0, 12)})`);
+  let message = "";
+  try {
+    bindingConvert("workers-9", small, { removed: { spatialWorkers: 9 } });
+  } catch (error) {
+    message = String(error?.message ?? error);
+  }
+  report(
+    message.includes("spatial worker count must be between 1 and 8, got 9"),
+    `spatialWorkers=9 is refused by the bindings (${message.slice(0, 70)})`,
+  );
+}
+
 // Opening a file of a retired family names it and says to reconvert (A4 of the V8 freeze). The
 // fixtures are the real header and footer of each retired writer; the async reader decides from
 // the footer it already read, so a V8 open costs no extra request.
