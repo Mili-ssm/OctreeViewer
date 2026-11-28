@@ -1,6 +1,7 @@
-//! Native wall clock; the `Clock` trait lives in the core.
+//! Native implementations of the seams the conversion core defines (the traits live in
+//! `viewer_convert_core`).
 
-pub(crate) use viewer_convert_core::pipeline::clock::Clock;
+use viewer_convert_core::pipeline::clock::Clock;
 
 pub struct SystemClock;
 
@@ -15,3 +16,8 @@ impl Clock for SystemClock {
         u64::try_from(since.elapsed().as_nanos()).unwrap_or(u64::MAX)
     }
 }
+
+#[cfg(test)]
+mod node_job_tests;
+#[cfg(test)]
+mod point_source_tests;

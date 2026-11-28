@@ -1,6 +1,6 @@
 # Temporales del conversor: spools comprimidos y escritura por subárbol
 
-Estado: en curso · 20-11-2026 · fase B hecha ([plan](../records/archive/temporales-del-conversor-fase-b.md), [PR #108](https://github.com/Mili-ssm/OctreeViewer/pull/108), [registro](../records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md): Albuera 11,1 × → 3,5 × el LAZ, salida idéntica, +24 % de tiempo); falta la fase A
+Estado: en pausa · 20-11-2026 · fase B hecha ([plan](../records/archive/temporales-del-conversor-fase-b.md), [PR #108](https://github.com/Mili-ssm/OctreeViewer/pull/108), [registro](../records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md): Albuera 11,1 × → 3,5 × el LAZ, salida idéntica, +24 % de tiempo); la fase A está aparcada por el propietario ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109), 20-11-2026; [plan](temporales-del-conversor-fase-a.md))
 
 **Objetivo:** bajar el disco temporal del CLI de **11,1 × el LAZ** (medido en Albuera) a **≤ 2 ×**
 ([RQ-06](../requirements.md#requisitos-de-calidad), [OQ-04](../requirements.md#preguntas-abiertas), #24) sin cambiar
@@ -8,6 +8,7 @@ un solo byte de la salida, para que convertir nubes de cientos de GB (ESC-1) no 
 
 **Decisión del propietario (19-11-2026):** se hacen A (escritura por subárbol de la raíz) y B (spools comprimidos);
 C (releer el LAZ por octante) queda aparcado en #106, a revisar solo si se integra sin perder mucho tiempo.
+El 20-11-2026, tras medir la fase B, el propietario aparcó también A ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)): el disco lo marca ya la salida.
 
 ## Medida de partida
 
@@ -146,7 +147,7 @@ zstd comprime algo más que LZ4, pero el crate `zstd` envuelve C y la alternativ
 ## Fuera de alcance
 
 - El tamaño de la salida (3,7 × LAZ en Albuera, sobre todo `.octattrs`): RQ-06 solo cubre temporales.
-- El conversor web y su estimación de cuota OPFS (`hybrid/estimate.rs` asume registros sin comprimir).
+- El conversor web y su estimación de cuota OPFS (`spatial/estimate.rs` asume registros sin comprimir).
 - Formatos que no sean los que hoy convierte el CLI desde LAS/LAZ; EPT no cambia.
 - C (#106) y el límite de ramas paralelas por espacio libre en disco.
 

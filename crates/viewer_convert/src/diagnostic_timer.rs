@@ -2,7 +2,7 @@
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::diagnostics::DiagnosticWindow;
+use viewer_convert_core::diagnostics::DiagnosticWindow;
 
 pub(crate) struct DiagnosticTimer {
     started: Instant,

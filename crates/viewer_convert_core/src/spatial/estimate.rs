@@ -2,12 +2,12 @@
 //! `HYBRID_POLICY_2026-10-30`, section "Estimacion previa a la conversion"). Integer
 //! arithmetic only: the conversion core forbids floats and libm.
 
-use super::store::HybridConfig;
+use super::SpoolLayout;
 use crate::error::ConvertError;
 use crate::options::ConvertOptions;
+use crate::pipeline::hybrid::HybridConfig;
 use crate::pipeline::point_source::{ByteSource, LasFactory, PointSource, SourceFactory};
 use crate::source::{SourceInfo, inspect_header};
-use crate::spatial::SpoolLayout;
 
 /// Upper bounds for one run (single worker, depth-first order, trimmed segments).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

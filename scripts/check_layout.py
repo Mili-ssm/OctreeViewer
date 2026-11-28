@@ -13,6 +13,11 @@
   edge is a deliberate change; stale entries fail.
 - `crates/viewer_core/Cargo.toml` declares no `laz` dependency: the LAS preflight
   lives in viewer_convert_core (ADR 0062), so viewer_core stays free of the decoder.
+- No `.rs` file of `crates/viewer_convert_core/src/pipeline.rs` or `pipeline/` names the
+  `spatial` module in a non-comment line (`crate::spatial`, `super::super::spatial`, or `spatial::`
+  inside a multi-line `use crate::{ ... }` group), nor a name the crate root re-exports from
+  `spatial` (`pub use spatial::…` in lib.rs): `pipeline` holds the seams with the environment
+  and `spatial` (the octree planner) depends on it, never the other way round.
 
 Rules: CONTRIBUTING.md#convenciones. Plan: docs/records/archive/reorganizacion-por-componentes.md.
 """
@@ -28,8 +33,6 @@ PATH_RE = re.compile(r'#\[path\s*=\s*"([^"]+)"\s*\]')
 
 # (file glob, target, reason)
 ALLOWED_PATHS = [
-    ("crates/viewer_convert/examples/quantized_occupancy_bench.rs",
-     "../../viewer_format/src/occupancy_codec.rs", "bench compiles the codec without a crate edge"),
     ("crates/viewer_convert/examples/real_dataset_bench.rs",
      "support/conversion_metrics.rs", "example helper shared outside the example root"),
     ("crates/viewer_wasm/src/bindings.rs",
@@ -66,6 +69,7 @@ ALLOWED_EDGES = [
     ("viewer_wasm", "viewer_core", "normal"),
     ("viewer_wasm", "viewer_format", "dev"),
     ("viewer_wasm", "viewer_format", "normal"),
+    ("viewer_wasm", "viewer_render_wgpu", "dev"),
     ("viewer_wasm", "viewer_render_wgpu", "normal"),
 ]
 
@@ -128,6 +132,33 @@ def check_policy(files, errors):
                     errors.append(f"{f}:{n}: CPU-policy file mentions `{word}`")
 
 
+PIPELINE_ROOT = "crates/viewer_convert_core/src/pipeline"
+SPATIAL_WORD = re.compile(r"\bspatial\b")
+
+
+def spatial_root_reexports():
+    """Names the crate root re-exports from `spatial` (`pub use spatial::…;`), which a pipeline
+    file could otherwise import as `crate::Name` without writing the word `spatial`."""
+    lib = os.path.join(os.path.dirname(PIPELINE_ROOT), "lib.rs")
+    with open(lib, encoding="utf-8") as fh:
+        text = fh.read()
+    names = set()
+    for stmt in re.findall(r"pub use spatial::([^;]+);", text):
+        names.update(w for w in re.findall(r"\b[A-Za-z_]\w*\b", stmt.rsplit("::{", 1)[-1]) if w != "self")
+    return names
+
+
+def check_pipeline_independent(files, errors):
+    reexports = spatial_root_reexports()
+    reexport_re = re.compile(r"\b(" + "|".join(sorted(reexports)) + r")\b") if reexports else None
+    for f in files:
+        if f != PIPELINE_ROOT + ".rs" and not f.startswith(PIPELINE_ROOT + "/"):
+            continue
+        for n, line in code_lines(f):
+            if SPATIAL_WORD.search(line) or (reexport_re and reexport_re.search(line)):
+                errors.append(f"{f}:{n}: pipeline must not depend on `spatial` (the planner builds on the seams, not the reverse)")
+
+
 def check_edges(errors):
     try:
         out = subprocess.check_output(
@@ -167,6 +198,7 @@ def main():
     check_paths(files, errors)
     check_prefixes(files, errors)
     check_policy(files, errors)
+    check_pipeline_independent(files, errors)
     check_edges(errors)
     check_viewer_core_has_no_laz(errors)
     for e in errors:

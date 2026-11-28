@@ -41,8 +41,7 @@ pub use options::ConvertOptions;
 pub use pipeline::clock::NoClock;
 pub use pipeline::hybrid::{
     HYBRID_PAGE_BYTES, HYBRID_ZONE_BYTES, HybridConfig, HybridReader, HybridSpoolStore,
-    HybridStats, PageAllocator, PageTier, RamTier, SegmentKey, SpoolEstimate, VecPageTier,
-    VecRamTier, estimate_spools, inspect_source,
+    HybridStats, PageAllocator, PageTier, RamTier, SegmentKey, VecPageTier, VecRamTier,
 };
 pub use pipeline::point_source::{ByteSource, LasFactory, MemBytes, SourceFactory};
 pub use pipeline::spool_store::{MemSpoolStore, SpoolStore};
@@ -50,6 +49,7 @@ pub use report::{ConversionProgress, ConversionReport, ConversionStage, Conversi
 pub use serial::{
     PlanSummary, SerialOutput, convert_serial, validate_output_serial, written_block_ids,
 };
+pub use spatial::estimate::{SpoolEstimate, estimate_spools, inspect_source};
 
 #[cfg(test)]
 mod range_tests;

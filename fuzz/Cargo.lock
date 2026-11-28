@@ -518,7 +518,6 @@ version = "0.1.0"
 dependencies = [
  "ctrlc",
  "las",
- "laz",
  "rayon",
  "serde",
  "thiserror",

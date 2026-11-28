@@ -198,16 +198,15 @@ fn planned_quantiles(
     serial: bool,
 ) -> Option<viewer_format::PointDistanceQuantiles> {
     use crate::{
-        las_source::{FileBytes, inspect_source, open_las_reader},
-        pipeline::{
-            clock::SystemClock,
-            point_source::{LasFactory, LasPointSource, RangeSource},
-            spool_store::MemSpoolStore,
-        },
+        las_source::{FileBytes, open_las_reader},
+        pipeline::SystemClock,
     };
-    use viewer_convert_core::{
-        pipeline::executor::SerialExecutor, spatial::build_spatial_plan_from_source,
+    use viewer_convert_core::pipeline::{
+        point_source::{LasFactory, LasPointSource, RangeSource},
+        spool_store::MemSpoolStore,
     };
+    use viewer_convert_core::source::inspect_source;
+    use viewer_convert_core::spatial::{build_spatial_plan_from_source, executor::SerialExecutor};
 
     let reader = open_las_reader(input).unwrap();
     let options = options().with_spatial_workers(workers).unwrap();

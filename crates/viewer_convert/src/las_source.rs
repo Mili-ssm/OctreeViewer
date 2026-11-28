@@ -24,24 +24,21 @@ use viewer_convert_core::{
 };
 use viewer_format::{BlockEncoder, OctreeWriter, PreparedOctreeWriter};
 
-use crate::diagnostics::DiagnosticTimer;
+use crate::diagnostic_timer::DiagnosticTimer;
 use crate::executor::ThreadedExecutor;
-use crate::pipeline::clock::SystemClock;
-use crate::pipeline::point_source::{ByteSource, LasFactory, LasPointSource, RangeSource};
-use crate::pipeline::spool_store::{FileSpoolStore, SpoolStore};
+use crate::file_spool_store::FileSpoolStore;
+use crate::pipeline::SystemClock;
 use crate::publish::{
     OutputValidation, create_temporary_pair, output_attributes_path, publish_output_pair,
 };
 use crate::workspace::Workspace;
 use crate::{ConversionDiagnostics, ConvertOptions};
-
-// The pure source helpers live in `source`; these are their old paths.
-#[allow(unused_imports, reason = "old paths of the pure source helpers")]
-pub(crate) use viewer_convert_core::source::{
-    SourceInfo, contain_decoder_panic, contain_decoder_panic_at, fill_points, inspect_source,
-    next_descriptor, omitted_dimensions, open_las_reader_from, seek_points, seek_points_at,
-    source_schema,
+use viewer_convert_core::pipeline::point_source::{
+    ByteSource, LasFactory, LasPointSource, RangeSource,
 };
+use viewer_convert_core::pipeline::spool_store::SpoolStore;
+
+use viewer_convert_core::source::{inspect_source, open_las_reader_from};
 
 /// A local file as input bytes; `len` is the length measured when the file was first opened.
 pub(crate) struct FileBytes {

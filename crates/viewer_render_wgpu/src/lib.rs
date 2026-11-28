@@ -23,8 +23,10 @@ mod refinement_tests;
 mod scene;
 #[cfg(test)]
 mod scene_digest_tests;
-#[cfg(test)]
-mod test_support;
+// Test double of the cell target shared with the `viewer_wasm` tests; off outside tests.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;
 mod voxel_grid;
 
 pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};

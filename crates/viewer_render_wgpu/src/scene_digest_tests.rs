@@ -8,13 +8,12 @@ use viewer_core::{
     PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 
-use crate::{
-    OrbitCamera, SceneBounds, ViewProjection, VoxelBuildLimits, build_voxel_scene_with_limits,
-};
+use crate::{OrbitCamera, ViewProjection, VoxelBuildLimits, build_voxel_scene_with_limits};
 
-pub(super) const ORIGIN: [f64; 3] = [1000.0, -2000.0, 50.0];
-pub(super) const SIDE: f64 = 64.0;
-pub(super) const VIEWPORT: [u32; 2] = [800, 600];
+// The importers of these fixtures read them here; they live in `test_support`, which the wasm
+// tests reach too.
+pub(super) use crate::test_support::{ORIGIN, SIDE, VIEWPORT, cameras};
+
 const TARGET_PIXELS: [f64; 3] = [2.0, 4.0, 8.0];
 
 struct Lcg(u64);
@@ -136,31 +135,6 @@ pub(super) fn fixture(semantics: HierarchySemantics) -> Fixture {
 
 pub(super) fn ids(values: &[u64]) -> Vec<NodeId> {
     values.iter().copied().map(NodeId::new).collect()
-}
-
-pub(super) fn cameras() -> Vec<(&'static str, OrbitCamera)> {
-    let bounds = SceneBounds {
-        min: [0.0; 3],
-        max: [SIDE; 3],
-    };
-    let fitted = || {
-        let mut camera = OrbitCamera::default();
-        assert!(camera.fit(bounds, VIEWPORT));
-        camera
-    };
-    let mut orbited = fitted();
-    orbited.orbit(0.2, 0.1);
-    let mut zoomed = fitted();
-    zoomed.zoom(-0.7);
-    let mut panned = fitted();
-    panned.orbit(-0.1, -0.05);
-    panned.pan(0.1, -0.05, VIEWPORT);
-    vec![
-        ("fit", fitted()),
-        ("orbit", orbited),
-        ("zoom", zoomed),
-        ("pan", panned),
-    ]
 }
 
 /// How a test turns a camera into the frustum and projected-edge functions of the build.

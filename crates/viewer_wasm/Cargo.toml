@@ -30,6 +30,7 @@ web-sys = { workspace = true, features = ["FileSystemReadWriteOptions", "FileSys
 wgpu.workspace = true
 
 [dev-dependencies]
+viewer_render_wgpu = { path = "../viewer_render_wgpu", features = ["test-support"] }
 viewer_format = { path = "../viewer_format" }
 
 [lints]

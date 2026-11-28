@@ -25,11 +25,11 @@ use viewer_format::{FormatReader, FormatReaderLimits};
 use viewer_render_wgpu::cell_lod::{
     LodView, MAX_NODE_SPAN, NodeLod, cell_lo, drawn_depth_at, edge_px, min_child_edge_px, refines,
 };
+use viewer_render_wgpu::test_support::FakeGpu;
 use viewer_render_wgpu::{
-    CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan, MASK_WORDS,
-    NODE_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, SceneBounds,
-    ViewProjection, VoxelBuildLimits, cell_cut_digest, gpu_input_digest, node_view_range,
-    representative_depth,
+    CellCutEntry, CellDriver, CutApply, FramePlan, OrbitCamera, PAGE_SLOTS, PackedLevel,
+    SceneBounds, ViewProjection, VoxelBuildLimits, cell_cut_digest, gpu_input_digest,
+    node_view_range, representative_depth,
 };
 use viewer_render_wgpu::{
     CellGrid, MAX_CELL_DEPTH, node_cell_level, representative_depth_for_spacing,
@@ -44,245 +44,6 @@ mod colour;
 mod diagnostics;
 mod real;
 mod synthetic;
-
-// ---------------------------------------------------------------------------------------------
-// Strict recording target
-// ---------------------------------------------------------------------------------------------
-
-/// A `CellTarget` that records what the driver writes and fails (as a renderer would corrupt)
-/// on the hazards of the pool protocol: a slot written while it is still owned or while the
-/// current or the previous page table reads it, a slot freed while the previous table reads it,
-/// and a table naming a slot nobody uploaded. `check_plan` also compares what the driver wrote
-/// (masks, page table) with the plan it ran. It is the strict fake of the render crate (`test_support::FakeGpu`, `cfg(test)` there and
-/// unreachable from this crate) restated over real `PackedLevel`s.
-#[derive(Default)]
-struct StrictTarget {
-    pool: bool,
-    eye: [f64; 3],
-    /// Slot -> (node, depth) of the level that owns it.
-    owner: HashMap<u32, (NodeId, u8)>,
-    /// Slots written per (node, depth), in upload order.
-    slots_of: HashMap<(NodeId, u8), Vec<u32>>,
-    masks: HashMap<u32, [u32; MASK_WORDS]>,
-    /// The page the upload put in each slot.
-    page_at: HashMap<u32, PageInfo>,
-    next_mask: u32,
-    /// Slots written since the last page table.
-    frame_writes: Vec<u32>,
-    prev_active: HashSet<u32>,
-    table: Vec<(u32, PageEntry)>,
-    page_frame: Option<PageFrame>,
-    uploads_total: usize,
-    /// Hash of the cells each slot holds (colours included), to tell recoloured pages apart.
-    page_cells: HashMap<u32, u64>,
-    /// Node records and page tables written, and the last LOD view the driver passed.
-    records_written: usize,
-    tables_written: usize,
-    lod_view: Option<LodView>,
-}
-
-impl CellTarget for StrictTarget {
-    type Error = CellPoolError;
-    fn has_pool(&self) -> bool {
-        self.pool
-    }
-    fn drop_pool(&mut self) {
-        *self = Self {
-            eye: self.eye,
-            ..Self::default()
-        };
-    }
-    fn eye(&self) -> [f64; 3] {
-        self.eye
-    }
-    fn upload_level(
-        &mut self,
-        level: &PackedLevel,
-        page_slots: &[u32],
-    ) -> Result<(), CellPoolError> {
-        self.pool = true;
-        if level.pages.len() != page_slots.len() {
-            return Err(CellPoolError::PageCountMismatch {
-                pages: level.pages.len(),
-                slots: page_slots.len(),
-            });
-        }
-        for (index, (slot, page)) in page_slots.iter().zip(&level.pages).enumerate() {
-            let cells = &level.instances[index * PAGE_SLOTS..(index + 1) * PAGE_SLOTS];
-            let hash = {
-                let mut hasher = std::hash::DefaultHasher::new();
-                for cell in cells {
-                    std::hash::Hash::hash(&cell.0, &mut hasher);
-                }
-                std::hash::Hasher::finish(&hasher)
-            };
-            // A recolour writes the page its slot already holds: the queue orders it after the
-            // draws already submitted, so it is not a hazard.
-            if self.owner.get(slot) == Some(&(level.node, level.depth)) {
-                self.page_cells.insert(*slot, hash);
-                self.uploads_total += 1;
-                continue;
-            }
-            self.page_cells.insert(*slot, hash);
-            if self.owner.contains_key(slot) {
-                return Err(CellPoolError::InvalidLevel(
-                    "slot written while still owned",
-                ));
-            }
-            self.owner.insert(*slot, (level.node, level.depth));
-            self.page_at.insert(*slot, page.clone());
-            self.slots_of
-                .entry((level.node, level.depth))
-                .or_default()
-                .push(*slot);
-            self.frame_writes.push(*slot);
-            self.uploads_total += 1;
-        }
-        Ok(())
-    }
-    fn free_pages(&mut self, page_slots: &[u32]) -> Result<(), CellPoolError> {
-        if !self.pool {
-            return Err(CellPoolError::NoPool);
-        }
-        for slot in page_slots {
-            if self.prev_active.contains(slot) {
-                return Err(CellPoolError::InvalidLevel(
-                    "slot freed while the previous table reads it",
-                ));
-            }
-            self.page_at.remove(slot);
-            if let Some(key) = self.owner.remove(slot)
-                && let Some(slots) = self.slots_of.get_mut(&key)
-            {
-                slots.retain(|owned| owned != slot);
-            }
-        }
-        Ok(())
-    }
-    fn alloc_mask_slot(&mut self) -> Result<Option<u32>, CellPoolError> {
-        self.pool = true;
-        self.next_mask += 1;
-        Ok(Some(self.next_mask - 1))
-    }
-    fn set_node_record(
-        &mut self,
-        slot: u32,
-        record: &[u32; NODE_WORDS],
-    ) -> Result<(), CellPoolError> {
-        if slot >= self.next_mask {
-            return Err(CellPoolError::MaskSlotNotAllocated(slot));
-        }
-        self.records_written += 1;
-        self.masks
-            .insert(slot, record[..MASK_WORDS].try_into().unwrap());
-        Ok(())
-    }
-    fn set_lod_view(&mut self, view: Option<LodView>) {
-        self.lod_view = view;
-    }
-    fn set_active_pages(
-        &mut self,
-        pages: &[(u32, PageEntry)],
-        frame: &PageFrame,
-    ) -> Result<(), CellPoolError> {
-        if !self.pool {
-            return Err(CellPoolError::NoPool);
-        }
-        let mut current = HashSet::new();
-        for (slot, _) in pages {
-            if !self.owner.contains_key(slot) {
-                return Err(CellPoolError::InvalidLevel(
-                    "active slot was never uploaded",
-                ));
-            }
-            if !current.insert(*slot) {
-                return Err(CellPoolError::DuplicatePageSlot(*slot));
-            }
-        }
-        if self
-            .frame_writes
-            .iter()
-            .any(|slot| current.contains(slot) || self.prev_active.contains(slot))
-        {
-            return Err(CellPoolError::InvalidLevel(
-                "slot written while the current or the previous table reads it",
-            ));
-        }
-        self.frame_writes.clear();
-        self.prev_active = current;
-        self.tables_written += 1;
-        self.table = pages.to_vec();
-        self.page_frame = Some(*frame);
-        Ok(())
-    }
-}
-
-impl StrictTarget {
-    /// What the target would show in colour: the sum over the active pages of a hash of the
-    /// page's identity and cells. Independent of the slots the pages sit in.
-    fn color_digest(&self) -> u64 {
-        self.table.iter().fold(0_u64, |acc, (slot, _)| {
-            let mut hasher = std::hash::DefaultHasher::new();
-            std::hash::Hash::hash(&format!("{:?}", self.page_at[slot]), &mut hasher);
-            std::hash::Hash::hash(&self.page_cells[slot], &mut hasher);
-            acc.wrapping_add(std::hash::Hasher::finish(&hasher))
-        })
-    }
-
-    /// The hash of the cells of every active page, by (node, depth, page of the level).
-    fn active_cells(&self) -> HashMap<(NodeId, u8, usize), u64> {
-        let active: HashSet<u32> = self.table.iter().map(|(slot, _)| *slot).collect();
-        let mut out = HashMap::new();
-        for ((node, depth), slots) in &self.slots_of {
-            for (page, slot) in slots.iter().enumerate() {
-                if active.contains(slot) {
-                    out.insert((*node, *depth, page), self.page_cells[slot]);
-                }
-            }
-        }
-        out
-    }
-
-    /// What the driver left in the target equals what the plan asked for: each active node's
-    /// mask slot holds the mask of its cut entry, and the page table lists, level by level, every
-    /// page that was uploaded for it with the entry that page computes for the plan's mask slot
-    /// and octants.
-    fn check_plan(&self, plan: &FramePlan) {
-        let mut expected: Vec<(u32, PageEntry)> = Vec::new();
-        for active in &plan.active {
-            let entry = plan
-                .entries
-                .iter()
-                .find(|entry| entry.node == active.key.node)
-                .expect("an active node is in the cut");
-            let words: [u32; MASK_WORDS] =
-                std::array::from_fn(|i| (entry.mask[i / 2] >> (32 * (i % 2))) as u32);
-            assert_eq!(
-                self.masks.get(&active.mask_slot),
-                Some(&words),
-                "mask slot {} of node {:?} differs from its cut entry",
-                active.mask_slot,
-                active.key.node
-            );
-            let frame = self.page_frame.as_ref().expect("a table was written");
-            let slots = self
-                .slots_of
-                .get(&(active.key.node, active.key.depth))
-                .unwrap_or_else(|| panic!("active level {:?} was never uploaded", active.key));
-            for slot in slots {
-                expected.push((
-                    *slot,
-                    self.page_at[slot].entry(
-                        frame,
-                        active.mask_slot,
-                        u32::from(active.octant_bits),
-                    ),
-                ));
-            }
-        }
-        assert_eq!(self.table, expected, "page table differs from the plan");
-    }
-}
 
 // ---------------------------------------------------------------------------------------------
 // Oracles
@@ -570,7 +331,7 @@ fn active_gaps_of(
 struct Harness {
     dataset: LodDataset,
     driver: CellDriver,
-    target: StrictTarget,
+    target: FakeGpu,
     stage: Option<f64>,
     dirty: bool,
     target_px: f64,
@@ -711,7 +472,7 @@ impl Harness {
         Self {
             dataset,
             driver,
-            target: StrictTarget::default(),
+            target: FakeGpu::default(),
             stage: None,
             dirty: true,
             target_px,

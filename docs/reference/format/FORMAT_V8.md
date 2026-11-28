@@ -85,7 +85,7 @@ descriptivo `sample-grid:256;leaf:64000`); semántica (`0` reemplazo; el lector 
 | Extensión | `u32` longitud | `0` o `2 + 108 × n` (Extra Bytes de LAS, [abajo](#flags-las-y-extra-bytes)) |
 
 Esquema: como máximo 256 atributos (`TooManyAttributes`, RF-27). Los cuantiles se calculan de una muestra con semilla
-fija en las hojas (`SAMPLE_SEED`, en `crates/viewer_convert_core/src/pipeline/nn_distance.rs`); las columnas LOD son `intensity` y `classification` si existen; el origen del color es
+fija en las hojas (`SAMPLE_SEED`, en `crates/viewer_convert_core/src/spatial/nn_distance.rs`); las columnas LOD son `intensity` y `classification` si existen; el origen del color es
 `rgb` de 16 bits si existe, si no `intensity` de 16 bits, si no ninguno.
 
 ### Páginas y nodos

@@ -10,13 +10,15 @@ use crate::{
     ConvertError, ConvertOptions, LasFactory, MemBytes, MemSpoolStore, NoClock, SourceFactory,
     convert_serial,
     pipeline::{
-        executor::{RangeRunner, SerialExecutor},
-        node_job::{JobContext, RangeJob, merge_root_ranges},
         point_source::PointRange,
         spool_store::{SpoolId, SpoolStore},
     },
     source::inspect_header,
-    spatial::SpoolLayout,
+    spatial::{
+        SpoolLayout,
+        executor::{RangeRunner, SerialExecutor},
+        node_job::{JobContext, RangeJob, merge_root_ranges},
+    },
 };
 
 fn lcg(seed: u64) -> impl FnMut() -> f64 {
@@ -539,7 +541,7 @@ mod spool_hints {
 
     #[test]
     fn consume_rank_covers_global_depths() {
-        use crate::pipeline::node_job::GLOBAL_MAX_INTERNAL_LEVEL;
+        use crate::spatial::node_job::GLOBAL_MAX_INTERNAL_LEVEL;
         for key in [0u16, 7, u16::MAX] {
             for depth in 1..=GLOBAL_MAX_INTERNAL_LEVEL {
                 assert!(

@@ -372,7 +372,7 @@ impl Sim {
     /// The render worker has a new driver and target (another worker).
     fn inject_driver_replaced(&mut self) {
         self.h.driver = driver_for(&self.h.dataset, self.cpu_budget);
-        self.h.target = StrictTarget::default();
+        self.h.target = FakeGpu::default();
         // The image drawn before is not a baseline for the lost samples of the cell oracle.
         self.h.cell_seen.clear();
         self.cut = None;

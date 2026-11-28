@@ -12,12 +12,12 @@ use crate::blocks::{ConversionPlan, output_writer, prepare_planned_block, write_
 use crate::error::ConvertError;
 use crate::options::ConvertOptions;
 use crate::pipeline::clock::Clock;
-use crate::pipeline::executor::SerialExecutor;
-use crate::pipeline::hybrid::inspect_source;
 use crate::pipeline::point_source::{ByteSource, LasFactory, SourceFactory};
 use crate::pipeline::spool_store::PlanStore;
 use crate::report::{ConversionProgress, ConversionStage, ConversionWorkerStats, emit_progress};
 use crate::spatial::build_spatial_plan_from_source;
+use crate::spatial::estimate::inspect_source;
+use crate::spatial::executor::SerialExecutor;
 
 /// What validating a converted pair needs to know about its plan.
 #[derive(Debug, Clone, PartialEq, Eq)]

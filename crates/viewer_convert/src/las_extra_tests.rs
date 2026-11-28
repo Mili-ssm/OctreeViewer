@@ -313,7 +313,7 @@ fn serial_core_matches_native_with_flags_and_extra_bytes() {
         let input = dir.path().join(format!("f{format_id}.las"));
         write_las(&input, format_id, 5000, Some(descriptors()), 19);
         let options = options();
-        crate::tests::assert_serial_matches_native(
+        crate::lib_tests::serial_core::assert_serial_matches_native(
             &input,
             options,
             false,

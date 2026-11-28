@@ -24,20 +24,23 @@ use std::{
 };
 
 use viewer_convert_core::{
-    pipeline::executor::{BatchPlanner, RangeRunner},
+    spatial::executor::{BatchPlanner, RangeRunner},
     spatial::{BranchOutput, OpenNodeEvent, SpatialBuilder},
 };
 use viewer_core::NodeId;
 
 use crate::ConvertError;
-use crate::pipeline::{
-    clock::{Clock, SystemClock},
-    node_job::{
+use crate::pipeline::SystemClock;
+use viewer_convert_core::{
+    pipeline::{
+        clock::Clock,
+        point_source::{PointRange, SourceFactory},
+        spool_store::{PlanStore, SpoolId},
+    },
+    spatial::node_job::{
         ChildOutput, JobContext, JobProgress, NodeJob, NodeJobOutput, NodePath, RangeJob,
         RangePartition, run_node_job, run_root_partition_range,
     },
-    point_source::{PointRange, SourceFactory},
-    spool_store::{PlanStore, SpoolId},
 };
 
 /// Plans batches on one thread per root child with a ready queue of node jobs.

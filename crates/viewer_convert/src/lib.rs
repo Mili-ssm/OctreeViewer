@@ -8,7 +8,6 @@ use las_source::convert_file_inner;
 
 mod allocator;
 mod diagnostic_timer;
-mod diagnostics;
 mod executor;
 mod file_spool_store;
 mod fs_util;
@@ -90,8 +89,7 @@ where
 }
 
 #[cfg(test)]
-#[path = "lib_tests.rs"]
-mod tests;
+mod lib_tests;
 
 #[cfg(test)]
 #[path = "global_frame_tests.rs"]
