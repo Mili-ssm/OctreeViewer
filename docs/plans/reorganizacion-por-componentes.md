@@ -1,6 +1,6 @@
 # Reorganización por componentes, bloque 1 (plan de implementación)
 
-Estado: en curso · 28-11-2026 · pedido por el propietario («procede, comienza ya con el primer bloque y después vayamos poco a poco», 28-11-2026)
+Estado: en curso · 28-11-2026 · pre-mortem hecho (enmiendas incorporadas) · pedido por el propietario («procede, comienza ya con el primer bloque y después vayamos poco a poco», 28-11-2026)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -26,9 +26,9 @@ del resumen al propietario). Fuera de este bloque, por chocar con la PR #122: ci
 - `docs/records/` es inmutable: no se edita salvo enlaces rotos; los ADR aceptados conservan los nombres antiguos.
 - Commits en inglés, Conventional Commits (`refactor:`, `docs:`, `build:`), un commit por tarea como mínimo, sin menciones a IA.
 - No ejecutar `cargo clean` ni borrar nada en `target/` (contiene datasets de prueba).
-- Puerta por tarea: `.superpowers/sdd/limpieza/gate/gate.sh run <crates>` (fmt, clippy nativo y wasm32, doc, enlaces, índices, literales de versión, tests). Antes de la tarea 1: `gate.sh baseline`.
-- Lista de tests: un movimiento cambia el camino del módulo de los tests, así que la comparación es por **número de tests y multiconjunto de nombres hoja**:
-  `diff <(awk -F'::' '{print $NF}' tests.baseline | sort) <(awk -F'::' '{print $NF}' tests.now | sort)` vacío.
+- Puerta por tarea: `.superpowers/sdd/limpieza/gate/gate.sh run <crates>` (fmt, clippy nativo y wasm32, doc, enlaces, índices, literales de versión, ningún `.rs` sin seguimiento, tests de node y Python del web host, `check_layout.py` cuando exista, tests de los crates). Referencia tomada el 28-11-2026 (`gate.sh baseline`, 1.315 tests).
+- Lista de tests: un movimiento cambia el camino del módulo de los tests, así que la puerta compara el **multiconjunto de nombres hoja** y falla (`FAIL test leaf names`) si difiere; un test perdido o duplicado para la tarea.
+- Regla de `#[path]` (rustc): un fichero cargado por `#[path]` resuelve sus `mod hijo;` como un `mod.rs` (en su propia carpeta, no en `<nombre>/`). Por eso un fichero que vaya a tener hijos se enlaza sin `#[path]`.
 
 ## Review Focus
 
@@ -59,31 +59,37 @@ del resumen al propietario). Fuera de este bloque, por chocar con la PR #122: ci
 - [ ] `gate.sh run viewer_wasm` → `GATE PASS` y lista de tests idéntica (los caminos no cambian).
 - [ ] Actualizar menciones en documentación viva (`grep -rn 'lod_cells' docs/reference docs/estado.md CONTRIBUTING.md`); commit `refactor(wasm): move lod_dataset submodules into its folder`.
 
-### Task 2: viewer_render_wgpu, subpaquete `cells/`
+### Task 2: viewer_render_wgpu, subpaquete `cells/` (movimientos)
 
-**Files:** los 24 `cell_*.rs`, `cell_pool/`, `node_cells.rs`, `node_cells_tests.rs`, `lib.rs`, `crates/viewer_wasm/src/lod_dataset/cells.rs` (usa `cell_generation`).
+**Files:** los 24 `cell_*.rs`, `cell_pool/`, `node_cells.rs`, `node_cells_tests.rs`, `lib.rs`, `gpu.rs:10`, `gpu/{cells,init,pick,render}.rs`, `test_support.rs:138,237`, `examples/{cell_pool_bench,coverage_spike}.rs` (usan `cell_lod`/`cell_bench`; siguen por el alias). `viewer_wasm` no se toca (`cell_generation` sigue reexportado en la raíz).
 
 **Interfaces:** Produces `crate::cells::{bench, codec, cull, cut, driver, lod, pages, pick, pool, range, render, node_cells}`; `lib.rs` mantiene todas sus reexportaciones actuales y añade `pub use cells::lod as cell_lod;` y `pub use cells::bench as cell_bench;`, así `viewer_render_wgpu::cell_lod::…` sigue valiendo.
 
-- [ ] Crear `src/cells.rs` (solo `mod` y comentario de una línea) y `git mv` `cell_X.rs` → `cells/X.rs`, `cell_X_tests.rs` → `cells/X_tests.rs`, `cell_pool/` → `cells/pool/`, `node_cells{,_tests}.rs` → `cells/`. Los tests GPU que cuelgan de `cell_render_tests.rs` por `#[path]` van a `cells/render_tests/{lod,cull,color,pick,driver}.rs` y se borran esos `#[path]`.
+- [ ] Crear `src/cells.rs` (solo `mod` y comentario de una línea) y `git mv` `cell_X.rs` → `cells/X.rs`, `cell_X_tests.rs` → `cells/X_tests.rs`, `cell_pool/` → `cells/pool/`, `node_cells{,_tests}.rs` → `cells/`. Los tests GPU que cuelgan de `cell_render_tests.rs` por `#[path]` van a `cells/render_tests/{lod,cull,color,pick,driver}.rs` y se borran esos `#[path]`; **`render_tests` se declara en `cells.rs` como `mod render_tests;` sin `#[path]`** (con `#[path]` sus `mod lod;`… resolverían a los `cells/lod.rs` reales). Los `include_str!("shaders/…")` (`cell_pages.rs:506`, `cell_cull.rs:220,224`, `cell_render.rs:387,390,392`) pasan a `../shaders/…`: es la única edición permitida fuera de `use`/`mod`/visibilidad.
 - [ ] Ajustar `#[path]` restantes a los nombres nuevos, `crate::cell_X` → `crate::cells::X`, y las declaraciones de `lib.rs` (incluidos los tests que hoy cuelgan de la raíz: `cell_pages_tests`, `cell_render_tests`, `node_cells_tests`, que pasan a colgar de `cells`).
 - [ ] Commit `refactor(render): group the cell modules under cells/`, tras `gate.sh run viewer_render_wgpu viewer_wasm` → `GATE PASS` y nombres hoja idénticos.
-- [ ] Segundo commit (cambio de código mínimo, hallazgo 11): `NODE_WORDS` y `MASK_WORDS` se definen en `cells/pages.rs` y `cells/render.rs` los importa de allí; `cells/lod.rs` deja de importar de `render`. Reexportación de `lib.rs` sin cambios. Gate igual.
-- [ ] Documentación viva: `inventory.md` y demás rutas `cell_*.rs` en `docs/reference`, `docs/estado.md`, `CONTRIBUTING.md`, `AGENTS.md` (ADR y registros no se tocan).
+
+### Task 2b: `NODE_WORDS` fuera de render y documentación viva
+
+- [ ] `NODE_WORDS` y `MASK_WORDS` se definen en `cells/pages.rs`; `cells/render.rs` hace `pub(crate) use super::pages::{NODE_WORDS, MASK_WORDS};` para no tocar sus otros usuarios; `cells/lod.rs` importa de `pages`. Sitios: `cell_render.rs:69,74`, `cell_lod.rs:13`, `cell_pick.rs:23`, `gpu/cells.rs:11`, `cell_render_tests.rs:14`, `lib.rs:69` (números de antes de la tarea 2). La reexportación pública de `lib.rs` apunta a `cells::pages`. Gate igual; commit `refactor(render): the cell page layout constants live in pages`.
+- [ ] Documentación viva: `inventory.md` y demás rutas `cell_*.rs` en `docs/reference`, `docs/estado.md`, `CONTRIBUTING.md`, `AGENTS.md` (ADR y registros no se tocan); `check_docs_links.py` en verde; commit `docs: point live docs at cells/`.
 
 ### Task 3: dividir `cells/pool_tests.rs` (6.172 líneas)
 
-**Files:** `crates/viewer_render_wgpu/src/cells/pool_tests.rs` → padre + `cells/pool_tests/`.
+**Files:** `crates/viewer_render_wgpu/src/cells/pool_tests.rs` → `cells/pool/tests.rs` + `cells/pool/tests/<suite>.rs`.
 
+- [ ] `git mv cells/pool_tests.rs cells/pool/tests.rs` y en `cells/pool.rs` `mod tests;` **sin `#[path]`** (regla de `#[path]` arriba); gate verde antes de dividir.
+- [ ] Probar primero `split.py --dry-run` y `cargo check -p viewer_render_wgpu --tests` con un solo submódulo.
 - [ ] Spec de `split.py` (tabla de ítems con `items.py`, nunca a mano): el padre conserva la infraestructura (`Rig` y ayudantes, ~1–1349); cada suite a un submódulo según sus encabezados `// ----` (empiezan en ~1350, 1837, 3013, 4710, 5349): nombres por el requisito que prueban (p. ej. `fallback`, `refine`, `wait`, `stepping`, `data_bound`; confirmar con los encabezados reales).
-- [ ] `fixer` solo para `use`/`pub(super)`; `moved.py` sin líneas alteradas salvo estructurales.
+- [ ] Errores de compilación: solo `use`/`pub(super)` (`agent-skills:fixer` si son muchos); `moved.py` sin líneas alteradas salvo estructurales.
+- [ ] Antes de esta tarea, comentar en la PR #88 (aparcada, toca `cell_pool*`) que su rebase deberá portar los cambios a `cells/pool/tests/`.
 - [ ] `gate.sh run viewer_render_wgpu` → `GATE PASS`, nombres hoja idénticos; commit `refactor(render): split the cell pool tests by suite`.
 
 ### Task 4: dividir `lod_dataset/cells_stream_tests.rs` (5.371 líneas)
 
 **Files:** `crates/viewer_wasm/src/lod_dataset/cells_stream_tests.rs` y sus hijos `bench`/`sim`.
 
-- [ ] Con `split.py`: la infraestructura y los oráculos (~43–1545) a `cells_stream_tests/support.rs`; los diagnósticos del plan ADR 0055 (~3071–5371, con 7 de sus 8 `#[ignore]`) a `cells_stream_tests/diagnostics.rs`; el resto queda en el padre. Los hijos (`bench`, `sim`, `sim/glue`) importan la infraestructura por nombre (`use super::support::…` o equivalente) en vez de la cadena de `super::*`, solo con cambios de `use`.
+- [ ] Con `split.py`, **la infraestructura y los oráculos (~43–1545) se quedan en el padre** (así sus campos y funciones privados siguen visibles para los hijos con `use super::*;`) y las suites salen a hijos: sintéticas (~1547–2056), color (~2429–3071), diagnósticos del plan ADR 0055 (~3072–5371, con 7 de sus 8 `#[ignore]`). Rangos a confirmar con `items.py`. Si hacen falta más de ~20 `pub(super)`, parar y replantear.
 - [ ] Mantener los nombres de los tests `#[ignore]` que citan los registros (nombre hoja idéntico).
 - [ ] `gate.sh run viewer_wasm` → `GATE PASS`, nombres hoja idénticos; commit `refactor(wasm): split the cell stream tests into support, suites and diagnostics`.
 
@@ -91,10 +97,11 @@ del resumen al propietario). Fuera de este bloque, por chocar con la PR #122: ci
 
 **Files:** `examples/web-host/` (raíz), `scripts/publish-demo.sh:49-52`, `examples/web-host/package-local.py`, `PROBES.md`, `README.md` del web host, `docs/reference/inventory.md`, tests de `examples/web-host/tests/` que importen sondas.
 
-- [ ] `git mv` a `examples/web-host/probes/`: `probe-*`, `spike-cube-pool.*`, `red-ref-server.mjs`, `pixel-metrics.mjs`, `sample-process-memory.py`, `collect-benchmarks.py`, `benchmark-metrics.mjs` si solo lo usan sondas, `run-r3-b6-matrix.sh`, `summarize-r3-b6.py`. `PROBES.md` se queda en la raíz. Un fichero que importe la app (`main.js`, workers) se queda.
+- [ ] `git mv` a `examples/web-host/probes/`: `probe-*`, `spike-cube-pool.*`, `red-ref-server.mjs`, `pixel-metrics.mjs`, `sample-process-memory.py`, `collect-benchmarks.py`, `benchmark-metrics.mjs` si solo lo usan sondas, `run-r3-b6-matrix.sh`, `summarize-r3-b6.py`. `benchmark-metrics.mjs` se queda (lo importa `main.js`); en general, un fichero que importe la app (`main.js`, workers) se queda. `PROBES.md` se queda en la raíz.
+- [ ] Rutas como texto que no son imports: `probe-cube-pool.mjs:17` (raíz del repo `"../.."` → `"../../.."`) y `:89` (`/examples/web-host/spike-cube-pool.html` → `/examples/web-host/probes/…`), `run-r3-b6-matrix.sh:35`, `tests/http-range-source.test.mjs:8` (`../red-ref-server.mjs`), `tests/test_sample_process_memory.py:8` y `tests/test_collect_benchmarks.py:8` (`parents[1]`); buscar el resto con `grep -rn 'web-host/\|\.\./\.\.' examples/web-host/probes`.
 - [ ] Ajustar imports relativos (`./viewer-api.mjs` → `../viewer-api.mjs`, `../../pkg` → `../../../pkg`) y órdenes en la documentación.
 - [ ] `publish-demo.sh`: quitar el `case` de exclusión; el glob no recursivo ya excluye `probes/`. Verificar con `bash -x` o listando: el conjunto de ficheros copiados al sitio es el mismo que antes.
-- [ ] Tests del web host (`node --test examples/web-host/tests/*.test.mjs`, `python3 -m pytest examples/web-host/tests` si existen) y una sonda de humo en navegador con Playwright (`ui-verifier`): la demo carga y una sonda movida arranca. Commit `refactor(web-host): move probes and harness into probes/`.
+- [ ] Tests del web host (`node --test examples/web-host/tests/*.test.mjs`, `python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'`, ambos ya en la puerta) y una sonda de humo en navegador con Playwright (`ui-verifier`): la demo carga y una sonda movida arranca. Commit `refactor(web-host): move probes and harness into probes/`.
 
 ### Task 6: índice propio de registros
 
@@ -103,17 +110,18 @@ del resumen al propietario). Fuera de este bloque, por chocar con la PR #122: ci
 - [ ] Mover la tabla de registros de `docs/README.md` a `docs/records/README.md` (índice vivo, no registro), agrupada por línea de trabajo con encabezados que la nombran; corregir los prefijos de los enlaces. `docs/README.md` deja una línea con el enlace y la regla en «Dónde va cada cosa».
 - [ ] `check_docs_index.py`: los ficheros de `docs/records/` se buscan en `docs/records/README.md`.
 - [ ] `python3 scripts/check_docs_index.py` y `python3 scripts/check_docs_links.py` pasan; ninguna fila perdida (contar enlaces antes y después). Commit `docs: give the records their own index`.
+- [ ] La PR #122 añade 4 filas a la tabla vieja (`CONVERSION_PARALELA_T0/T1/T2/T2_SPIKE`): comentar en #122 que, al rebasar, esas filas van a `docs/records/README.md`.
 
 ### Task 7: check de organización y convención escrita
 
 **Files:** Create `scripts/check_layout.py`; Modify `scripts/check.sh`, `CONTRIBUTING.md` («Convenciones»), `docs/reference/inventory.md` si hace falta.
 
 - [ ] `check_layout.py` (stdlib) falla si:
-  - hay un `#[path]` cuyo destino no es un hermano `*_tests.rs` ni está en una lista de permitidos escrita en el script (hoy `reference_spacing_probe.rs`, `spatial_lod_priority.rs`, `row_order_tests.rs`, los `*_tests.rs` de `viewer_convert/src/lib.rs`);
+  - hay un `#[path]` (fuera de comentarios) cuyo destino no es un hermano `*_tests.rs` ni está en una lista de permitidos escrita en el script: hoy `reference_spacing_probe.rs`, `spatial_lod_priority.rs`, `row_order_tests.rs`, `tests/common/v8_fixture.rs` y `v8_tree.rs` de `viewer_format/tests`, y los de `viewer_convert/examples/{quantized_occupancy_bench,real_dataset_bench}.rs` (si pasan de 15 entradas, replantear la regla);
   - hay un `*.rs` en la raíz de `crates/viewer_render_wgpu/src` que empieza por `cell_` o en la raíz de `crates/viewer_wasm/src` que empieza por `lod_cells`;
-  - los ficheros de política de CPU de `cells/` (`cut`, `lod`, `pool` y `pool/`, `driver`, `pages`, `codec`, `range`, `node_cells`, sin sus tests) mencionan `wgpu::`, `crate::gpu` o `cells::render`;
+  - los ficheros de política de CPU de `cells/` (`cut`, `lod`, `pool` y `pool/`, `driver`, `pages`, `codec`, `range`, `node_cells`, sin sus tests) mencionan `wgpu::`, `crate::gpu`, `cells::render` o `super::render`;
   - una arista entre crates del workspace (de `cargo metadata --offline --format-version 1 --no-deps`, dependencias normales y dev) no está en la lista de aristas permitidas del script (la actual).
 - [ ] Probarlo en rojo: introducir temporalmente cada violación y ver que falla con mensaje `fichero:línea`; luego verde. Añadir `step "layout" python3 scripts/check_layout.py` a `check.sh` y a `gate.sh`.
 - [ ] Una línea en CONTRIBUTING «Convenciones»: carpeta por componente, `x.rs` + `x/`, tests hermanos `x_tests.rs`, prefijo repetido = subcarpeta, y que lo vigila `check_layout.py`.
 - [ ] `scripts/check.sh` completo en segundo plano → todo `ok`; commit `build: check the source layout`.
-- [ ] Cierre: `Estado: completado` en este plan, moverlo a `docs/records/archive/` con enlaces corregidos, nota en `docs/estado.md`, PR a `main`.
+- [ ] Cierre: `Estado: completado` en este plan, moverlo a `docs/records/archive/` con enlaces corregidos y su fila en `docs/records/README.md`, nota en `docs/estado.md`, PR a `main`.
