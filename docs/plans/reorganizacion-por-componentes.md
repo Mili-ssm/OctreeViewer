@@ -91,9 +91,11 @@ Hecho 28-11-2026: GATE PASS, nombres hoja idénticos (1.315 tests; viewer_render
 
 **Files:** `crates/viewer_wasm/src/lod_dataset/cells_stream_tests.rs` y sus hijos `bench`/`sim`.
 
-- [ ] Con `split.py`, **la infraestructura y los oráculos (~43–1545) se quedan en el padre** (así sus campos y funciones privados siguen visibles para los hijos con `use super::*;`) y las suites salen a hijos: sintéticas (~1547–2056), color (~2429–3071), diagnósticos del plan ADR 0055 (~3072–5371, con 7 de sus 8 `#[ignore]`). Rangos a confirmar con `items.py`. Si hacen falta más de ~20 `pub(super)`, parar y replantear.
-- [ ] Mantener los nombres de los tests `#[ignore]` que citan los registros (nombre hoja idéntico).
-- [ ] `gate.sh run viewer_wasm` → `GATE PASS`, nombres hoja idénticos; commit `refactor(wasm): split the cell stream tests into support, suites and diagnostics`.
+- [x] Con `split.py`, **la infraestructura y los oráculos (~43–1545) se quedan en el padre** (así sus campos y funciones privados siguen visibles para los hijos con `use super::*;`) y las suites salen a hijos: sintéticas (~1547–2056), color (~2429–3071), diagnósticos del plan ADR 0055 (~3072–5371, con 7 de sus 8 `#[ignore]`). Rangos a confirmar con `items.py`. Si hacen falta más de ~20 `pub(super)`, parar y replantear.
+- [x] Mantener los nombres de los tests `#[ignore]` que citan los registros (nombre hoja idéntico).
+- [x] `gate.sh run viewer_wasm` → `GATE PASS`, nombres hoja idénticos; commit `refactor(wasm): split the cell stream tests into support, suites and diagnostics`.
+
+Hecho 28-11-2026: GATE PASS, nombres hoja idénticos (1315 tests), 1 `pub(super)` (`record_lag`); el padre queda en ~3.200 líneas con la infraestructura y los helpers compartidos, y salen `synthetic.rs` (381), `colour.rs` (548) y `diagnostics.rs` (1.238); los 20 `#[ignore]` de viewer_wasm se mantienen.
 
 ### Task 5: web host, sondas en `probes/`
 
