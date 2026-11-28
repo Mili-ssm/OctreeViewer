@@ -36,6 +36,7 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 | [Temporales del conversor](plans/temporales-del-conversor.md) | Bajar el disco temporal del CLI de 11 × a ≤ 2 × el LAZ (RQ-06) sin cambiar la salida: spools comprimidos (LZ4 por planos) y escritura por subárbol; fase B fusionada (#108, 3,5 ×), falta la A. | en curso |
+| [Reorganización, bloque 2b](plans/reorganizacion-bloque-2b.md) | Plan de implementación del último bloque de la reorganización por componentes: sin ciclo `pipeline`↔`spatial`, sin shims, `lib_tests.rs` dividido, un único doble de GPU y el rebase de la #122. | en curso |
 | [Temporales, fase A](plans/temporales-del-conversor-fase-a.md) | Plan de implementación de la escritura por subárbol: codificador sin jerarquía, escritor en flujo, sumidero de bloques y un hijo de la raíz cada vez. | en pausa (#109) |
 
 ## Explicación
