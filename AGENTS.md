@@ -42,7 +42,8 @@ Los documentos largos se leen por rangos: primero sus encabezados (`grep -n '^#'
   escribe con `gh`: un subagente no ve la conversación con el propietario y devuelve el hallazgo en su
   informe. Un experimento es una PR en borrador que no se fusiona sin el visto bueno del propietario
   ([reglas](CONTRIBUTING.md#issues-y-prs)).
-- **Registros inmutables**: `docs/records/` no se edita salvo enlaces rotos; la evidencia nueva va
+- **Registros inmutables**: `docs/records/` no se edita salvo enlaces rotos y su
+  [índice](docs/records/README.md) (cada registro nuevo añade su fila); la evidencia nueva va
   en un registro nuevo fechado.
 - **Cifras de benchmark** solo valen para su revisión, perfil (`perf` para medir, `release` para
   producción), navegador, dataset y equipo; no se trasladan.

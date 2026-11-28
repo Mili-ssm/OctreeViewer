@@ -73,7 +73,8 @@ Fuente única de las reglas.
 - **Literales de versión**: `FormatVersion::V<n>` solo vive en `viewer_format`; el resto usa su
   API de capacidades (`DEFAULT_OUTPUT`, `WRITABLE`, `supports_block_checkpoint()`), así añadir una
   revisión no toca otros crates. Lo vigila `scripts/check_version_literals.sh`.
-- **Registros inmutables**: lo de `docs/records/` no se edita (salvo corregir enlaces rotos);
+- **Registros inmutables**: lo de `docs/records/` no se edita (salvo corregir enlaces rotos y su
+  [índice](docs/records/README.md), donde cada registro nuevo añade su fila);
   nueva evidencia va en un registro nuevo y fechado (`format-v7-evidence.md` es histórico y ya no se amplía).
 - **Fechas** `dd-mm-aaaa`; documentación en español salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md` y `PROBES.md` (inglés).
 - **Decisiones**: las de diseño duraderas se registran en [docs/adr/](docs/adr/README.md); una aceptada se sustituye con un ADR nuevo, no se edita.
