@@ -53,10 +53,11 @@ propietario) y `quantized_occupancy_bench.rs` (experimento v6.2 cerrado; retirar
 
 **Interfaces:** Produces `viewer_convert_core::pipeline::spool_frame::*` (mismos nombres y firmas que hoy; visibilidad `pub` + `#[doc(hidden)]` en el módulo) para `FileSpoolStore` hoy y para el `HybridSpoolStore` de la tarea 3 de #122.
 
-- [ ] `git mv` y ajustar `use`; los tests del fichero se mueven con él. Sus ítems `pub(crate)` pasan a `pub` (los usa `viewer_convert`).
-- [ ] Tras el commit, comentar en la PR #122 que `spool_frame` vive ahora en `viewer_convert_core::pipeline::spool_frame` y que su tarea 3 (compresión en `HybridSpoolStore`) conviene hacerla después de rebasar sobre esta rama.
-- [ ] `cargo check -p viewer_convert_core --target wasm32-unknown-unknown --offline` y `cargo clippy` del núcleo en wasm32 sin avisos (la `clippy.toml` del núcleo no debe saltar).
-- [ ] Gate `viewer_convert_core viewer_convert` y, además, los pasos `format parity wasm32` y `convert parity wasm32` de `scripts/check.sh` (copiar sus órdenes); commit `refactor(convert): move the spool frame codec into the core`.
+- [x] `git mv` y ajustar `use`; los tests del fichero se mueven con él. Sus ítems `pub(crate)` pasan a `pub` (los usa `viewer_convert`).
+- [x] Tras el commit, comentar en la PR #122 que `spool_frame` vive ahora en `viewer_convert_core::pipeline::spool_frame` y que su tarea 3 (compresión en `HybridSpoolStore`) conviene hacerla después de rebasar sobre esta rama.
+- [x] `cargo check -p viewer_convert_core --target wasm32-unknown-unknown --offline` y `cargo clippy` del núcleo en wasm32 sin avisos (la `clippy.toml` del núcleo no debe saltar).
+- [x] Gate `viewer_convert_core viewer_convert` y, además, los pasos `format parity wasm32` y `convert parity wasm32` de `scripts/check.sh` (copiar sus órdenes); commit `refactor(convert): move the spool frame codec into the core`.
+  Hecho 28-11-2026: GATE PASS (1.315 nombres hoja), `viewer_convert_core` 81 ok, `viewer_convert` 105+9+20 ok; clippy wasm32 del núcleo limpio; paridad de formato (`cef4b24aa6655bf2`) y de conversión (3/3) iguales.
 
 ### Task 2: preflight LAS fuera de `viewer_core`
 
