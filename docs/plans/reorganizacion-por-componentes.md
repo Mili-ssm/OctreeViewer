@@ -124,12 +124,12 @@ Hecho 28-11-2026: 155 filas movidas a `docs/records/README.md` en 8 grupos (18, 
 
 **Files:** Create `scripts/check_layout.py`; Modify `scripts/check.sh`, `CONTRIBUTING.md` («Convenciones»), `docs/reference/inventory.md` si hace falta.
 
-- [ ] `check_layout.py` (stdlib) falla si:
+- [x] `check_layout.py` (stdlib) falla si:
   - hay un `#[path]` (fuera de comentarios) cuyo destino no es un hermano `*_tests.rs` ni está en una lista de permitidos escrita en el script: hoy `reference_spacing_probe.rs`, `spatial_lod_priority.rs`, `row_order_tests.rs`, `tests/common/v8_fixture.rs` y `v8_tree.rs` de `viewer_format/tests`, y los de `viewer_convert/examples/{quantized_occupancy_bench,real_dataset_bench}.rs` (si pasan de 15 entradas, replantear la regla);
   - hay un `*.rs` en la raíz de `crates/viewer_render_wgpu/src` que empieza por `cell_` o en la raíz de `crates/viewer_wasm/src` que empieza por `lod_cells`;
   - los ficheros de política de CPU de `cells/` (`cut`, `lod`, `pool` y `pool/`, `driver`, `pages`, `codec`, `range`, `node_cells`, sin sus tests) mencionan `wgpu::`, `crate::gpu`, `cells::render` o `super::render`;
   - una arista entre crates del workspace (de `cargo metadata --offline --format-version 1 --no-deps`, dependencias normales y dev) no está en la lista de aristas permitidas del script (la actual).
-- [ ] Probarlo en rojo: introducir temporalmente cada violación y ver que falla con mensaje `fichero:línea`; luego verde. Añadir `step "layout" python3 scripts/check_layout.py` a `check.sh` y a `gate.sh`.
-- [ ] Una línea en CONTRIBUTING «Convenciones»: carpeta por componente, `x.rs` + `x/`, tests hermanos `x_tests.rs`, prefijo repetido = subcarpeta, y que lo vigila `check_layout.py`.
+- [x] Probarlo en rojo: introducir temporalmente cada violación y ver que falla con mensaje `fichero:línea`; luego verde. Añadir `step "layout" python3 scripts/check_layout.py` a `check.sh` y a `gate.sh`. Hecho 28-11-2026: una violación por regla falló con `fichero:línea` y se revirtió; `check.sh` lo incluye.
+- [x] Una línea en CONTRIBUTING «Convenciones»: carpeta por componente, `x.rs` + `x/`, tests hermanos `x_tests.rs`, prefijo repetido = subcarpeta, y que lo vigila `check_layout.py`. Hecho 28-11-2026.
 - [ ] `scripts/check.sh` completo en segundo plano → todo `ok`; commit `build: check the source layout`.
 - [ ] Cierre: `Estado: completado` en este plan, moverlo a `docs/records/archive/` con enlaces corregidos y su fila en `docs/records/README.md`, nota en `docs/estado.md`, PR a `main`.
