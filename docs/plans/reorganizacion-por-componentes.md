@@ -78,12 +78,14 @@ del resumen al propietario). Fuera de este bloque, por chocar con la PR #122: ci
 
 **Files:** `crates/viewer_render_wgpu/src/cells/pool_tests.rs` → `cells/pool/tests.rs` + `cells/pool/tests/<suite>.rs`.
 
-- [ ] `git mv cells/pool_tests.rs cells/pool/tests.rs` y en `cells/pool.rs` `mod tests;` **sin `#[path]`** (regla de `#[path]` arriba); gate verde antes de dividir.
-- [ ] Probar primero `split.py --dry-run` y `cargo check -p viewer_render_wgpu --tests` con un solo submódulo.
-- [ ] Spec de `split.py` (tabla de ítems con `items.py`, nunca a mano): el padre conserva la infraestructura (`Rig` y ayudantes, ~1–1349); cada suite a un submódulo según sus encabezados `// ----` (empiezan en ~1350, 1837, 3013, 4710, 5349): nombres por el requisito que prueban (p. ej. `fallback`, `refine`, `wait`, `stepping`, `data_bound`; confirmar con los encabezados reales).
-- [ ] Errores de compilación: solo `use`/`pub(super)` (`agent-skills:fixer` si son muchos); `moved.py` sin líneas alteradas salvo estructurales.
-- [ ] Antes de esta tarea, comentar en la PR #88 (aparcada, toca `cell_pool*`) que su rebase deberá portar los cambios a `cells/pool/tests/`.
-- [ ] `gate.sh run viewer_render_wgpu` → `GATE PASS`, nombres hoja idénticos; commit `refactor(render): split the cell pool tests by suite`.
+- [x] `git mv cells/pool_tests.rs cells/pool/tests.rs` y en `cells/pool.rs` `mod tests;` **sin `#[path]`** (regla de `#[path]` arriba); gate verde antes de dividir.
+- [x] Probar primero `split.py --dry-run` y `cargo check -p viewer_render_wgpu --tests` con un solo submódulo.
+- [x] Spec de `split.py` (tabla de ítems con `items.py`, nunca a mano): el padre conserva la infraestructura (`Rig` y ayudantes, ~1–1349); cada suite a un submódulo según sus encabezados `// ----` (empiezan en ~1350, 1837, 3013, 4710, 5349): nombres por el requisito que prueban (p. ej. `fallback`, `refine`, `wait`, `stepping`, `data_bound`; confirmar con los encabezados reales).
+- [x] Errores de compilación: solo `use`/`pub(super)` (`agent-skills:fixer` si son muchos); `moved.py` sin líneas alteradas salvo estructurales.
+- [x] Antes de esta tarea, comentar en la PR #88 (aparcada, toca `cell_pool*`) que su rebase deberá portar los cambios a `cells/pool/tests/`.
+- [x] `gate.sh run viewer_render_wgpu` → `GATE PASS`, nombres hoja idénticos; commit `refactor(render): split the cell pool tests by suite`.
+
+Hecho 28-11-2026: GATE PASS, nombres hoja idénticos (1.315 tests; viewer_render_wgpu 466 pasan, 3 ignorados), `moved.py` sin líneas alteradas, 0 ediciones de visibilidad; los ayudantes usados por varias suites (y los `impl` de `Probe` y `Owner`) se quedan en `cells/pool/tests.rs`.
 
 ### Task 4: dividir `lod_dataset/cells_stream_tests.rs` (5.371 líneas)
 
