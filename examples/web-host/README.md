@@ -27,7 +27,7 @@ sample always uses the latest stable format ([ADR 0047](../../docs/adr/0047-v5-h
 
 `?url=FILE.oct` opens a file over HTTP and needs a server with **HTTP Range and CORS**; python's
 `http.server` does not support Range. Locally use
-`node examples/web-host/red-ref-server.mjs DIR --port=8780` (it also adds CORS; flags `--rtt-ms`,
+`node examples/web-host/probes/red-ref-server.mjs DIR --port=8780` (it also adds CORS; flags `--rtt-ms`,
 `--mbps`, `--ignore-range`). The V8 format opens remotely. Details in
 [Open a file over HTTP Range](#open-a-file-over-http-range). Probe procedures: [PROBES.md](PROBES.md).
 
@@ -146,7 +146,7 @@ with no frame regression, 16 gives no further gain (and more bytes on Belvedere)
 `probe-orbit-load.mjs --remote` takes `--max-gap=` and `--remote-reads=`.
 
 To measure with the RED-REF network (100 Mbit/s, 50 ms RTT), serve the repository root (for example
-`python3 -m http.server 8767`) and run `node examples/web-host/probe-remote-open.mjs DATA_DIR NAME.oct OUT.json`;
+`python3 -m http.server 8767`) and run `node examples/web-host/probes/probe-remote-open.mjs DATA_DIR NAME.oct OUT.json`;
 `red-ref-server.mjs` can also be started alone (`--ignore-range` simulates a server without Range).
 
 ## Export a local single-file viewer

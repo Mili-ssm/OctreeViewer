@@ -13,7 +13,7 @@ use std::{
 
 use crate::{
     CellColorRanges, ColorMode, InstanceRaw, OrbitCamera, RendererConfig,
-    cell_render::{cell_pool_pages, plan_device_limits},
+    cells::render::{cell_pool_pages, plan_device_limits},
 };
 
 pub(super) const MAX_FRAMEBUFFER_PIXELS: u64 = 4_194_304;

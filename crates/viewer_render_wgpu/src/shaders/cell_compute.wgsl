@@ -76,7 +76,7 @@ fn cell_dot(a: vec3<f32>, b: vec3<f32>) -> f32 {
 }
 
 // The smallest projected edge among the 8 children of the cell: see `min_child_edge_px` in
-// cell_lod.rs, whose operation order this copies.
+// cells/lod.rs, whose operation order this copies.
 fn cell_min_child_edge_px(lo: vec3<f32>, side: f32) -> f32 {
     let half = side * 0.5;
     var projected: array<vec2<f32>, 27>;

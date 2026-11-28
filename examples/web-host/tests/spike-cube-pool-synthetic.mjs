@@ -1,5 +1,5 @@
 // THROWAWAY SPIKE CODE (R3 Task 5a): writes a small synthetic case in the format of
-// examples/web-host/spike-cube-pool-format.md so the browser page can be tested without the Rust
+// examples/web-host/probes/spike-cube-pool-format.md so the browser page can be tested without the Rust
 // exporter. Usage: node examples/web-host/tests/spike-cube-pool-synthetic.mjs [OUT_DIR]
 // Three nodes (side 1, depth 0; the third behind the first), two full levels (depth 3 draws octants 0-3, depth 4 octants 4-7),
 // some cells hidden by the 8^3 mask and one empty tail slot.

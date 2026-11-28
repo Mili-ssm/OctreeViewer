@@ -2,6 +2,8 @@
 
 Browser probes and measurement procedures split from the [web-host README](README.md). They are developer tooling, not needed to run the demo.
 
+The probes, the RED-REF server and the spike live in `probes/`; commands run from the repository root and keep the `examples/web-host/probes/` prefix.
+
 ## Reproduce a cache/camera diagnostic in Firefox
 
 From the repository root, rebuild the release WASM and bindings as above, serve the repository
@@ -16,7 +18,7 @@ firefox --headless --no-remote --profile "$PWD/target/firefox-camera-probe" --re
 In another terminal (Node 22 or newer, built-in `WebSocket`, no npm dependencies):
 
 ```bash
-node examples/web-host/probe-cache-camera.mjs data/samples/fs_e432_n4002_18.oct target/cache-camera-probe
+node examples/web-host/probes/probe-cache-camera.mjs data/samples/fs_e432_n4002_18.oct target/cache-camera-probe
 ```
 
 The optional third argument changes the host URL; the fourth selects a 0.5–16 px target
@@ -36,7 +38,7 @@ Serve the repository root (with `pkg/`) on any port, pass it as `--url`, and pic
 
 ```bash
 python3 -m http.server 8791 --bind 127.0.0.1 &
-node examples/web-host/probe-orbit-load.mjs data/samples/fs_e430_n4008_18.oct target/orbit-load.json \
+node examples/web-host/probes/probe-orbit-load.mjs data/samples/fs_e430_n4008_18.oct target/orbit-load.json \
   --url=http://127.0.0.1:8791/examples/web-host/index.html \
   [--browser=chrome|firefox] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] \
   [--color=rgb|intensity|classification|attribute:COLUMN]
@@ -91,7 +93,7 @@ the repository root on a free port and run it on one file:
 
 ```bash
 PORT=8791 scripts/serve-demo.sh --no-build &
-node examples/web-host/probe-cells-parity.mjs target/render-data/belvedere-v8.oct target/cells-parity.json \
+node examples/web-host/probes/probe-cells-parity.mjs target/render-data/belvedere-v8.oct target/cells-parity.json \
   --url=http://127.0.0.1:8791/examples/web-host/index.html --rest-timeout-s=120
 ```
 
@@ -129,7 +131,7 @@ For ordered Linux parent-map captures, serve the repository on port 8767 and sta
 WebGPU-enabled Firefox BiDi instance on port 9222. Then run, from the repository root:
 
 ```bash
-node examples/web-host/probe-surface-memory.mjs target/surface-orbit-run-1 1280 720 orbit 300
+node examples/web-host/probes/probe-surface-memory.mjs target/surface-orbit-run-1 1280 720 orbit 300
 ```
 
 The command owns and closes its Firefox session. It requires Node 22+ and Python 3, refuses an
@@ -144,7 +146,7 @@ diagnostic and its CPU build counters do not report physical VRAM.
 For an intermittent parent-process PSS increase, the sampler can make one raw mapping capture:
 
 ```bash
-python3 examples/web-host/sample-process-memory.py FIREFOX_PID target/firefox-event.jsonl --interval 0.1 --seconds 1300 --root-pss-capture-mib 1024
+python3 examples/web-host/probes/sample-process-memory.py FIREFOX_PID target/firefox-event.jsonl --interval 0.1 --seconds 1300 --root-pss-capture-mib 1024
 ```
 
 The first readable root PSS sample at or above the threshold triggers one attempt to save
@@ -182,7 +184,7 @@ includes these counters under `environment.gpuStats.requestedResources` without 
 In a second terminal, attach to the PID of the dedicated Firefox parent launched above:
 
 ```bash
-python3 examples/web-host/sample-process-memory.py FIREFOX_PID target/firefox-process-memory.jsonl --interval 0.5 --seconds 1300
+python3 examples/web-host/probes/sample-process-memory.py FIREFOX_PID target/firefox-process-memory.jsonl --interval 0.5 --seconds 1300
 ```
 
 Use a fresh output path for each run. The sampler never launches or terminates the browser;
@@ -267,14 +269,14 @@ first with `scripts/build-wasm-bindings.sh` when `pkg/` is missing or stale (a f
 
 ```bash
 python3 -m http.server 8791 --bind 127.0.0.1 &                                     # app: repository root
-node examples/web-host/red-ref-server.mjs examples/web-host --port=8780 --rtt-ms=0 &  # data with Range
-# error case: node examples/web-host/red-ref-server.mjs examples/web-host --port=8781 --ignore-range
+node examples/web-host/probes/red-ref-server.mjs examples/web-host --port=8780 --rtt-ms=0 &  # data with Range
+# error case: node examples/web-host/probes/red-ref-server.mjs examples/web-host --port=8781 --ignore-range
 ```
 
 Open, in a WebGPU-capable browser (headless Chrome with Playwright works; the result is also in `window.probeResult`):
 
 ```text
-http://127.0.0.1:8791/examples/web-host/probe-api-remote.html?data=http://127.0.0.1:8780/sample-v8.oct&buildWorker=0&attributes=derived
+http://127.0.0.1:8791/examples/web-host/probes/probe-api-remote.html?data=http://127.0.0.1:8780/sample-v8.oct&buildWorker=0&attributes=derived
 ```
 
 Vary `buildWorker=0|1` and `attributes=derived|none`. The page awaits up to 60 s per wait and prints

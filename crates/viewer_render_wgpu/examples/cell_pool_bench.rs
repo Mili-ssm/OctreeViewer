@@ -232,7 +232,7 @@ impl Case {
         }
     }
 
-    /// The pool's own size estimate (`cell_pool::estimate_pages`), for the estimate-vs-exact check.
+    /// The pool's own size estimate (`cells::pool::estimate_pages`), for the estimate-vs-exact check.
     fn estimate(&self, node: NodeId, depth: u8) -> usize {
         let data = &self.nodes[&node].pool;
         let node_depth = representative_depth(&self.grid, data.bounds).saturating_sub(3);

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).parents[1] / "collect-benchmarks.py"
+MODULE_PATH = Path(__file__).parents[1] / "probes" / "collect-benchmarks.py"
 SPEC = importlib.util.spec_from_file_location("collect_benchmarks", MODULE_PATH)
 collect_benchmarks = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(collect_benchmarks)

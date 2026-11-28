@@ -12,7 +12,7 @@ tamaño mínimo del cubo en px y en longitud (m/cm/mm o el espaciado de la nube)
 El tamaño de hoja ([ADR 0051](../adr/0051-granularidad-de-hojas-configurable.md), #46) va después y no entra aquí.
 
 **Evidencia (15-11-2026, lectura de código):** las celdas se dibujan con un único `drawIndexedIndirect`; un paso de
-cómputo por instancia (`slot_state`, `cell_render.rs`) ya descarta por octante, máscara, frustum y Hi-Z; las páginas
+cómputo por instancia (`slot_state`, `cells/render.rs`) ya descarta por octante, máscara, frustum y Hi-Z; las páginas
 están relativas al ojo en f32 y empiezan en la primera celda de un tramo Morton, no en un borde alineado. La
 residencia es todo o nada por (nodo, nivel); el worker de construcción hace 2 nodos por actualización con todos sus
 niveles. El presupuesto real es el pool de 512 MiB ([ADR 0040](../adr/0040-pool-de-512-mib-y-corte-ajustado-al-pool.md)) con umbral de ajuste del 90 %; no hay
@@ -45,7 +45,7 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   `scripts/check.sh` completo.
 - [x] **2a. Selección por celda tras una opción `cellLod: octant|cell` (predeterminada `octant`)** (fusionada, PR #56; la métrica es la arista real, [registro](../records/benchmarks/R3_FASE2A_METRICA_16-11-2026.md)). D2, D3 y D5 (D8 solo si sale gratis) sobre
   niveles residentes, con el gemelo Rust, el picking y una prueba de partición en GPU (patrón de
-  `cell_render_tests.rs`): leer `visible` y comprobar una sola celda dibujada por punto, con ≥3 niveles, profundidades
+  `cells/render_tests.rs`): leer `visible` y comprobar una sola celda dibujada por punto, con ≥3 niveles, profundidades
   no contiguas, un nivel que abarca octantes con máscara, oclusión activada y desactivada, ≥1000 poses aleatorias con
   bordes de banda y ojo dentro de una celda. Contadores de GPU (instancias por profundidad, celdas por encima del
   objetivo) leídos en `perf`; la señal «en reposo» pasa a un resumen del gemelo (aplazado a la fase 2c: en la 2a sigue siendo el resumen del corte por octantes); se actualizan

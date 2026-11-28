@@ -10,7 +10,7 @@ use std::{mem::size_of, sync::mpsc};
 
 use crate::{
     CameraFrame,
-    cell_render::{CellColor, CellFrame},
+    cells::render::{CellColor, CellFrame},
 };
 
 impl SurfaceRenderer<'_> {
