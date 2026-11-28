@@ -15,7 +15,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0009](0009-transporte-web-por-blob-local.md) | El transporte web es Blob local, sin HTTP Range | Sustituida por [0023](0023-fuentes-locales-y-remotas.md) |
 | [0010](0010-migracion-a-wgpu-30-y-glam-0-34.md) | Migrar el renderer a wgpu/naga 30 y glam 0.34 | Aceptada |
 | [0011](0011-nightly-obligatorio-con-fecha-fija.md) | Rust nightly obligatorio con fecha fija | Aceptada |
-| [0012](0012-validacion-previa-de-cabeceras-las-laz.md) | Validar cabeceras LAS/LAZ antes de que las crates las parseen | Aceptada |
+| [0012](0012-validacion-previa-de-cabeceras-las-laz.md) | Validar cabeceras LAS/LAZ antes de que las crates las parseen | Aceptada (ubicación precisada por [0062](0062-el-preflight-las-vive-en-el-nucleo-de-conversion.md)) |
 | [0013](0013-modulos-experimentales-tras-feature-experimental.md) | Los módulos experimentales van tras la feature `experimental` | Aceptada |
 | [0014](0014-nucleo-de-conversion-sin-io.md) | Núcleo de conversión sin I/O compartido por CLI y navegador | Aceptada |
 | [0015](0015-pool-de-workers-sin-memoria-compartida.md) | Paralelismo de conversión web por pool de workers sin memoria compartida | Aceptada (enmendada por [0024](0024-hilos-wasm-opcionales-con-coop-coep.md)) |
@@ -65,3 +65,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0059](0059-minimo-por-defecto-desde-p5.md) | El mínimo en longitud por defecto de la demo es el p5 del fichero cuando lo trae; si no, 0,1 mm (sustituye en parte a 0054) | Aceptada |
 | [0060](0060-v8-solo-lz4.md) | La V8 comprime solo con LZ4: sin zstd en `.octattrs` tras medir v8.2-pre (cierra D3 de 0058) | Aceptada |
 | [0061](0061-ept-y-checkpoints-se-retiran-con-la-v8.md) | La entrada EPT y los checkpoints se retiran al congelar la V8 y se aplazan; RF-26 no aplica hasta entonces (precisa 0047) | Aceptada |
+| [0062](0062-el-preflight-las-vive-en-el-nucleo-de-conversion.md) | El preflight LAS vive en el núcleo de conversión, no en `viewer_core` (precisa 0012) | Aceptada |

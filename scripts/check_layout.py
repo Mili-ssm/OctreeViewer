@@ -11,6 +11,8 @@
   stays testable without a GPU.
 - Every dependency edge between workspace crates is in ALLOWED_EDGES, so a new
   edge is a deliberate change; stale entries fail.
+- `crates/viewer_core/Cargo.toml` declares no `laz` dependency: the LAS preflight
+  lives in viewer_convert_core (ADR 0062), so viewer_core stays free of the decoder.
 
 Rules: CONTRIBUTING.md#convenciones. Plan: docs/records/archive/reorganizacion-por-componentes.md.
 """
@@ -30,10 +32,8 @@ ALLOWED_PATHS = [
      "../../viewer_format/src/occupancy_codec.rs", "bench compiles the codec without a crate edge"),
     ("crates/viewer_convert/examples/real_dataset_bench.rs",
      "support/conversion_metrics.rs", "example helper shared outside the example root"),
-    ("crates/viewer_core/src/spatial.rs",
-     "spatial_lod_priority.rs", "sibling submodule of a file-sized parent"),
-    ("crates/viewer_wasm/src/bindings/mod.rs",
-     "../../tests/support/reference_spacing_probe.rs", "integration-test support reused by unit tests"),
+    ("crates/viewer_wasm/src/bindings.rs",
+     "../tests/support/reference_spacing_probe.rs", "integration-test support reused by unit tests"),
     ("crates/viewer_format/tests/*.rs",
      "common/v8_fixture.rs", "integration tests share fixtures (no tests/common/mod.rs)"),
     ("crates/viewer_format/tests/*.rs",
@@ -148,6 +148,14 @@ def check_edges(errors):
         errors.append(f"scripts/check_layout.py: stale ALLOWED_EDGES entry {e}")
 
 
+def check_viewer_core_has_no_laz(errors):
+    path = "crates/viewer_core/Cargo.toml"
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            if re.match(r'\s*laz\b', line):
+                errors.append(f"{path}:{n}: viewer_core must not depend on `laz` (the LAS preflight lives in viewer_convert_core, ADR 0062)")
+
+
 def main():
     root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
     os.chdir(root)
@@ -160,6 +168,7 @@ def main():
     check_prefixes(files, errors)
     check_policy(files, errors)
     check_edges(errors)
+    check_viewer_core_has_no_laz(errors)
     for e in errors:
         print(e)
     print(f"layout: {'ok' if not errors else f'{len(errors)} error(s)'} ({len(files)} files)")

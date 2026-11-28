@@ -1,4 +1,5 @@
-//! Global integer frame of `v7.4-pre` ([spec](../../../docs/reference/format/FORMAT_V7_PRE4.md)).
+//! Global integer frame (introduced in `v7.4-pre`, kept by V8:
+//! [spec](../../../docs/reference/format/FORMAT_V8.md#marco-global-y-retícula)).
 //!
 //! Coordinates are `i64` quanta of 2^-15 CRS units and the octree is implicit in the bits of
 //! `u = q ^ 2^63`. Node geometry is computed in integers from level and prefix; every `f64`

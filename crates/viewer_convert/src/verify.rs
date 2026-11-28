@@ -1,5 +1,6 @@
-//! `viewer_convert verify`: the global checks that opening a `v7.5-pre` file no longer makes
-//! (R5-Q3). Opening validates the metadata block and the root page; verifying reads every page.
+//! `viewer_convert verify`: the global checks that opening a V8 file no longer makes (paged index
+//! since `v7.5-pre`, R5-Q3). Opening validates the metadata block and the root page; verifying
+//! reads every page.
 
 use std::{
     fs::File,

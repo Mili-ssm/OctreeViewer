@@ -339,6 +339,7 @@ dependencies = [
  "las",
  "libfuzzer-sys",
  "viewer_convert",
+ "viewer_convert_core",
  "viewer_core",
  "viewer_format",
 ]
@@ -518,7 +519,6 @@ dependencies = [
  "ctrlc",
  "las",
  "laz",
- "lz4_flex",
  "rayon",
  "serde",
  "thiserror",
@@ -533,6 +533,7 @@ version = "0.1.0"
 dependencies = [
  "las",
  "laz",
+ "lz4_flex",
  "thiserror",
  "viewer_core",
  "viewer_format",
@@ -543,7 +544,6 @@ name = "viewer_core"
 version = "0.1.0"
 dependencies = [
  "glam",
- "laz",
  "serde",
  "thiserror",
 ]

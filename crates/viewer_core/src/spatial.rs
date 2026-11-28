@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use thiserror::Error;
 
+use crate::AttributeDescriptor;
+
 /// Identifier unique within a dataset; its value has no spatial meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId(u64);
@@ -148,65 +150,6 @@ impl SpatialFrustum {
 
     pub fn intersects(&self, bounds: &SpatialBounds) -> bool {
         self.planes.iter().all(|plane| plane.intersects(bounds))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AttributeDataType {
-    U8,
-    I8,
-    U16,
-    I16,
-    U32,
-    I32,
-    U64,
-    I64,
-    F32,
-    F64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AttributeDescriptor {
-    name: String,
-    data_type: AttributeDataType,
-    component_count: u32,
-}
-
-impl AttributeDescriptor {
-    pub fn new(
-        name: impl Into<String>,
-        data_type: AttributeDataType,
-        component_count: u32,
-    ) -> Result<Self, SpatialError> {
-        let name = name.into();
-        if name.trim().is_empty() {
-            return Err(SpatialError::EmptyAttributeName);
-        }
-        if component_count == 0 {
-            return Err(SpatialError::ZeroAttributeComponents { name });
-        }
-
-        Ok(Self {
-            name,
-            data_type,
-            component_count,
-        })
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub const fn data_type(&self) -> AttributeDataType {
-        self.data_type
-    }
-
-    pub const fn component_count(&self) -> u32 {
-        self.component_count
-    }
-
-    pub(crate) fn allocated_name_bytes(&self) -> usize {
-        self.name.capacity()
     }
 }
 
@@ -1166,7 +1109,6 @@ impl SpatialHierarchy {
 }
 
 #[cfg(test)]
-#[path = "spatial_lod_tests.rs"]
 mod lod_tests;
 
 enum SpatialQueryRegion {
@@ -1206,6 +1148,5 @@ impl<'a> Iterator for SpatialQuery<'a> {
     }
 }
 
-#[path = "spatial_lod_priority.rs"]
 mod lod_priority;
 pub use lod_priority::{DEFAULT_LOD_PRIORITY_BYTES, LodPriorityFallback, LodPriorityStats};

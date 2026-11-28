@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 use libfuzzer_sys::fuzz_target;
 use viewer_convert::{ConvertOptions, convert_file};
-use viewer_core::las::preflight_las;
+use viewer_convert_core::las_preflight::preflight_las;
 
 /// Per-process scratch file stem, preferably on tmpfs. Files are removed after every iteration
 /// because `fuzz_target!` has no teardown; nothing but two short-lived files is ever left behind.
@@ -22,7 +22,7 @@ fn scratch_stem() -> &'static Path {
     })
 }
 
-// The LAZ chunk-table check lives in `viewer_convert` (crate-private), so once the header
+// The LAZ chunk-table check runs inside `viewer_convert`'s `convert_file`, so once the header
 // preflight accepts the input the whole converter entry point runs: chunk-table check, `las`
 // reader (laz + laz-parallel) and conversion. Errors are fine; a panic, abort or allocation
 // above the libFuzzer limits after a successful preflight is a bypass.

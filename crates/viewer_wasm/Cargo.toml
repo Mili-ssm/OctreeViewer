@@ -18,7 +18,6 @@ viewer_core = { path = "../viewer_core" }
 viewer_render_wgpu = { path = "../viewer_render_wgpu" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-viewer_core = { path = "../viewer_core", features = ["laz"] }
 las.workspace = true
 viewer_convert_core = { path = "../viewer_convert_core" }
 viewer_format = { path = "../viewer_format" }

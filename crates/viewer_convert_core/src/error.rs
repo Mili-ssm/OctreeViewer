@@ -22,7 +22,7 @@ pub enum ConvertError {
         point_index: Option<u64>,
     },
     #[error("unsafe LAS/LAZ header: {0}")]
-    LasPreflight(#[from] viewer_core::las::LasPreflightError),
+    LasPreflight(#[from] crate::las_preflight::LasPreflightError),
     #[error("unsafe LAZ chunk table: {field} = {value} is outside the bound {bound}")]
     LazChunkTable {
         field: &'static str,
