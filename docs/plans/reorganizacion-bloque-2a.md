@@ -78,10 +78,12 @@ Aprobado por el propietario el 28-11-2026 ([ADR 0062](../adr/0062-el-preflight-l
 
 **Files:** `crates/viewer_core/src/spatial.rs` (1.211 líneas), `spatial_lod_priority.rs`, `spatial_lod_tests.rs`, `dataset.rs`, `lib.rs`, `scripts/check_layout.py` (`ALLOWED_PATHS`).
 
-- [ ] `AttributeDataType` y `AttributeDescriptor` (con su `impl`, ~L155–220) pasan a `dataset.rs` con `split.py`; `lib.rs` reexporta igual.
-- [ ] `spatial_lod_priority.rs` → `spatial/lod_priority.rs` y `spatial_lod_tests.rs` → `spatial/lod_tests.rs`, sin `#[path]` (los caminos de módulo no cambian); quitar la entrada `spatial_lod_priority.rs` de `ALLOWED_PATHS`.
-- [ ] `docs/reference/inventory.md:22` enlaza `spatial_lod_priority.rs`: actualizarlo en esta tarea.
-- [ ] Gate `viewer_core viewer_format viewer_convert_core`; commit `refactor(core): give spatial its folder and move the attribute schema to dataset`.
+- [x] `AttributeDataType` y `AttributeDescriptor` (con su `impl`, ~L155–220) pasan a `dataset.rs` con `split.py`; `lib.rs` reexporta igual.
+- [x] `spatial_lod_priority.rs` → `spatial/lod_priority.rs` y `spatial_lod_tests.rs` → `spatial/lod_tests.rs`, sin `#[path]` (los caminos de módulo no cambian); quitar la entrada `spatial_lod_priority.rs` de `ALLOWED_PATHS`.
+- [x] `docs/reference/inventory.md:22` enlaza `spatial_lod_priority.rs`: actualizarlo en esta tarea.
+- [x] Gate `viewer_core viewer_format viewer_convert_core`; commit `refactor(core): give spatial its folder and move the attribute schema to dataset`.
+
+Hecho 28-11-2026: `AttributeDataType`/`AttributeDescriptor` (59 líneas) movidos byte a byte a `dataset.rs` (`moved.py`: 0 líneas retipeadas); `spatial.rs` baja de 1.211 a 1.152 líneas sin `#[path]`; `lod_priority.rs` y `lod_tests.rs` bajo `spatial/`; entrada de `ALLOWED_PATHS` y `inventory.md:22` actualizados; gate `viewer_core viewer_format viewer_convert_core` PASS.
 
 ### Task 4: últimos ficheros mal situados de `viewer_wasm` (4a tests, 4b bindings: un trabajador cada una)
 
