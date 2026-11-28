@@ -46,11 +46,10 @@ fn variant_c_serial_peak(events: &[viewer_convert_core::diagnostics::NodeSpoolEv
 #[test]
 fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_phase() {
     use crate::{
-        file_spool_store::FileSpoolStore,
-        las_source::{inspect_source, open_las_reader},
-        workspace::Workspace,
+        file_spool_store::FileSpoolStore, las_source::open_las_reader, workspace::Workspace,
     };
     use viewer_convert_core::pipeline::spool_store::{MemSpoolStore, SpoolAccounting};
+    use viewer_convert_core::source::inspect_source;
 
     let tmp = test_dir();
     let input = tmp.path().join("source.las");
@@ -246,8 +245,9 @@ fn mem_plan_and_drain(
     input: &std::path::Path,
     options: ConvertOptions,
 ) -> viewer_convert_core::diagnostics::SpatialPhaseDiagnostics {
-    use crate::las_source::{inspect_source, open_las_reader};
+    use crate::las_source::open_las_reader;
     use viewer_convert_core::pipeline::spool_store::MemSpoolStore;
+    use viewer_convert_core::source::inspect_source;
     let reader = open_las_reader(input).unwrap();
     let source = inspect_source(&reader).unwrap();
     let mem = MemSpoolStore::new(true);
@@ -443,8 +443,9 @@ fn failing_plan(
     ConvertError,
     viewer_convert_core::pipeline::spool_store::MemSpoolStats,
 ) {
-    use crate::las_source::{inspect_source, open_las_reader};
+    use crate::las_source::open_las_reader;
     use viewer_convert_core::pipeline::spool_store::MemSpoolStore;
+    use viewer_convert_core::source::inspect_source;
     use viewer_convert_core::spatial::SpoolLayout;
     let reader = open_las_reader(input).unwrap();
     let source = inspect_source(&reader).unwrap();
@@ -649,14 +650,12 @@ fn a_lower_branch_commit_error_wins_over_a_higher_branch_job_error() {
 
 #[test]
 fn the_serial_executor_plans_like_the_ready_queue() {
-    use crate::{
-        las_source::{inspect_source, open_las_reader},
-        pipeline::SystemClock,
-    };
+    use crate::{las_source::open_las_reader, pipeline::SystemClock};
     use viewer_convert_core::pipeline::{
         point_source::{LasFactory, LasPointSource, MemBytes, RangeSource},
         spool_store::MemSpoolStore,
     };
+    use viewer_convert_core::source::inspect_source;
     use viewer_convert_core::spatial::{build_spatial_plan_from_source, executor::SerialExecutor};
 
     let tmp = test_dir();

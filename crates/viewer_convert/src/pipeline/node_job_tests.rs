@@ -3,8 +3,10 @@ use std::path::Path;
 use las::{Builder, Writer};
 use viewer_core::SpatialBounds;
 
-use crate::las_source::{inspect_source, open_las_reader};
+use crate::las_source::open_las_reader;
+
 use crate::pipeline::SystemClock;
+use viewer_convert_core::source::inspect_source;
 use viewer_convert_core::{
     pipeline::{
         point_source::LasPointSource,

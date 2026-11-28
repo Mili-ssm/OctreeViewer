@@ -1,8 +1,8 @@
 use crate::publish::{
     OutputValidation, output_attributes_path, output_block_ids, validate_output_pair,
-    visual_scale_for_bounds,
 };
 use std::{fs, path::PathBuf};
+use viewer_convert_core::limits::visual_scale_for_bounds;
 
 use las::{Builder, Color, Point, Writer, point::Format};
 use viewer_convert_core::options::{DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS};

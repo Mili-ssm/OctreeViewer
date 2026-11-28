@@ -38,13 +38,7 @@ use viewer_convert_core::pipeline::point_source::{
 };
 use viewer_convert_core::pipeline::spool_store::SpoolStore;
 
-// The pure source helpers live in `source`; these are their old paths.
-#[allow(unused_imports, reason = "old paths of the pure source helpers")]
-pub(crate) use viewer_convert_core::source::{
-    SourceInfo, contain_decoder_panic, contain_decoder_panic_at, fill_points, inspect_source,
-    next_descriptor, omitted_dimensions, open_las_reader_from, seek_points, seek_points_at,
-    source_schema,
-};
+use viewer_convert_core::source::{inspect_source, open_las_reader_from};
 
 /// A local file as input bytes; `len` is the length measured when the file was first opened.
 pub(crate) struct FileBytes {

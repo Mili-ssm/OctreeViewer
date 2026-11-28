@@ -3,11 +3,9 @@ use std::{fs, io::Read, path::Path};
 use las::{Builder, Writer, point::Format};
 
 use crate::file_spool_store::FileSpoolStore;
-use crate::{
-    ConvertError,
-    las_source::{inspect_source, open_las_reader},
-};
+use crate::{ConvertError, las_source::open_las_reader};
 use viewer_convert_core::options::input_batch_point_limit;
+use viewer_convert_core::source::inspect_source;
 use viewer_convert_core::{
     pipeline::{
         point_source::{LasPointSource, PointRange, PointSource},
@@ -172,8 +170,8 @@ fn out_of_bounds_point_reports_the_same_global_index_by_ranges() {
 
 #[test]
 fn decoder_panic_carries_the_global_point_index() {
-    let error =
-        crate::las_source::contain_decoder_panic_at(Some(7), || panic!("boom")).unwrap_err();
+    let error = viewer_convert_core::source::contain_decoder_panic_at(Some(7), || panic!("boom"))
+        .unwrap_err();
     assert!(matches!(
         error,
         ConvertError::LasDecoderPanicked {

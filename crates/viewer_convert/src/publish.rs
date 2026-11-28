@@ -22,10 +22,6 @@ use viewer_format::FormatReader;
 use crate::diagnostic_timer::DiagnosticTimer;
 use crate::fs_util;
 use viewer_convert_core::diagnostics::{ConversionDiagnostics, ValidationWorkerDiagnostics};
-#[allow(unused_imports, reason = "old path of the pure limit checks")]
-pub(crate) use viewer_convert_core::limits::{
-    check_reader_attribute_ranges, visual_scale_for_bounds,
-};
 
 pub(crate) static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
