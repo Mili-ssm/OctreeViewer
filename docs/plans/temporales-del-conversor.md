@@ -8,6 +8,7 @@ un solo byte de la salida, para que convertir nubes de cientos de GB (ESC-1) no 
 
 **Decisión del propietario (19-11-2026):** se hacen A (escritura por subárbol de la raíz) y B (spools comprimidos);
 C (releer el LAZ por octante) queda aparcado en #106, a revisar solo si se integra sin perder mucho tiempo.
+El 20-11-2026, tras medir la fase B, el propietario aparcó también A ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109)): el disco lo marca ya la salida.
 
 ## Medida de partida
 
