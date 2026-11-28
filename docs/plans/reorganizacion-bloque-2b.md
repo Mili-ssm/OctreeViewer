@@ -1,6 +1,6 @@
 # Reorganización por componentes, bloque 2b (plan de implementación)
 
-Estado: en curso · 28-11-2026 · pedido por el propietario («continúa hasta terminar con los refactors y la limpieza», 28-11-2026)
+Estado: en curso · 28-11-2026 · pre-mortem hecho (enmiendas incorporadas) · pedido por el propietario («continúa hasta terminar con los refactors y la limpieza», 28-11-2026)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -50,12 +50,12 @@ internos `doc(hidden)` del núcleo que usa `viewer_wasm` (ADR 0026: los crates s
 `pipeline` son las costuras con el entorno (reloj, entrada de puntos, almacén de spools, cola de ejecución nativa);
 `spatial` es el planificador del octree. Hoy `pipeline` contiene piezas del planificador y se importan en los dos sentidos.
 
-**Files:** `crates/viewer_convert_core/src/pipeline/{node_job,nn_distance,executor}.rs` → `spatial/`; `pipeline/hybrid/estimate.rs` → `spatial/estimate.rs`; `pipeline/mod.rs` → `pipeline.rs`; `pipeline/hybrid/mod.rs` → `pipeline/hybrid.rs`; `spatial.rs`, `lib.rs`, `serial.rs`; usuarios externos (`viewer_convert/src/{executor,paged_tests,lib_tests}.rs`, `viewer_convert/src/pipeline/node_job.rs`, `viewer_wasm`, `tools/`, `fuzz/`); `scripts/check_layout.py`.
+**Files:** `crates/viewer_convert_core/src/pipeline/{node_job,nn_distance,executor}.rs` → `spatial/`; `pipeline/hybrid/estimate.rs` → `spatial/estimate.rs`; `pipeline/mod.rs` → `pipeline.rs`; `pipeline/hybrid/mod.rs` → `pipeline/hybrid.rs`; `spatial.rs`, `lib.rs`, `serial.rs`; usuarios externos (`viewer_convert_core/src/range_tests.rs`, `viewer_convert/src/{executor,paged_tests,lib_tests}.rs`, `viewer_convert/src/pipeline/node_job.rs`, `viewer_wasm`, `tools/`, `fuzz/`); `scripts/check_layout.py`; rutas en `docs/reference/format/FORMAT_V8.md:88` y `docs/plans/temporales-del-conversor-fase-a.md:152`. Enmiendas del pre-mortem: `pipeline/hybrid.rs` deja de reexportar `estimate` (lo reexporta `lib.rs` desde `spatial`); `spatial.rs:44` (aserción sobre `GLOBAL_MAX_INTERNAL_LEVEL`) cambia de ruta.
 
 **Interfaces:** Produces `viewer_convert_core::spatial::{node_job, nn_distance, executor, estimate}` (los que hoy usan otros crates, `pub` + `#[doc(hidden)]`); las reexportaciones de la raíz (`estimate_spools`, `inspect_source`, `SpoolEstimate`, `NoClock`…) no cambian de nombre.
 
 - [ ] `git mv` de los cuatro ficheros y de los dos `mod.rs`; ajustar `use`, `mod` y visibilidad.
-- [ ] Regla nueva en `check_layout.py`: ningún fichero de `crates/viewer_convert_core/src/pipeline.rs` ni de `pipeline/` menciona `crate::spatial` ni `super::super::spatial` fuera de comentarios (probarla con una infracción temporal).
+- [ ] Regla nueva en `check_layout.py`: ningún fichero de `crates/viewer_convert_core/src/pipeline.rs` ni de `pipeline/` menciona `crate::spatial` ni `super::super::spatial` fuera de comentarios, también dentro de grupos `use {…}` de varias líneas (probarla con una infracción temporal).
 - [ ] Gate `viewer_convert_core viewer_convert viewer_wasm` + `format parity wasm32` + `convert parity wasm32` + `cargo check` en `fuzz/`; commit `refactor(convert): spatial planning leaves the pipeline seams`.
 
 ### Task 2: sin shims de reexportación en `viewer_convert`
@@ -84,6 +84,7 @@ Reparto orientativo por líneas actuales (el implementador lo ajusta a lo que co
 | `root_ranges.rs` | rangos de raíz y segmentos unidos (2834–2974) |
 | `pinned_output.rs` | SHA fijadas de la salida V8 (2978–3064) |
 
+- [ ] El reparto se escribe **por nombre de ítem** (`lib_tests.names.json`: ítem → fichero, en `.superpowers/sdd/limpieza/gate/`) y un script `spec_from_names.py` genera de él el spec de líneas de `split.py` con `items.py`; así la tarea 7 repite el split sobre el `lib_tests.rs` de la #122 (enmienda del pre-mortem).
 - [ ] Dividir con `split.py`; `moved.py` sin líneas reescritas salvo `use`/`mod`/visibilidad.
 - [ ] Gate `viewer_convert`; commit `refactor(convert): split the crate tests by topic`.
 
@@ -99,9 +100,12 @@ Reparto orientativo por líneas actuales (el implementador lo ajusta a lo que co
 
 **Files:** `crates/viewer_render_wgpu/{Cargo.toml,src/lib.rs,src/test_support.rs}`, `crates/viewer_wasm/{Cargo.toml,src/lod_dataset/cells_stream_tests.rs}` y sus hijos que usen `StrictTarget`; `docs/reference/inventory.md` (feature nueva).
 
+Enmiendas del pre-mortem: `FakeGpu` deduce la identidad de página de `box_max` de `fake_level` (`test_support.rs:82-109,246-251`) y fallaría con los `PackedLevel` reales de wasm, así que el doble único guarda `page_at` como `StrictTarget`; `test_support.rs` importa de `scene_digest_tests` (`cfg(test)`), que no compila con `--all-features` (las constantes y `cameras` pasan a `test_support`); el crate de render sí hereda los lints del workspace; `StrictTarget` devuelve `Err` en los riesgos (el driver recupera) y `FakeGpu` hace `panic`.
+
 **Interfaces:** Produces la feature `test-support` de `viewer_render_wgpu` (apagada por defecto) que expone `pub mod test_support` (`#[cfg(any(test, feature = "test-support"))]`, `#[doc(hidden)]`) con el doble único; `viewer_wasm` la activa solo en `[dev-dependencies]`.
 
-- [ ] El doble único es la unión de las comprobaciones de ambos (ninguna se pierde ni se relaja) y los registros que usan los tests de ambos crates; `StrictTarget` desaparece. Si unir algún punto obligara a cambiar lo que un test afirma, parar e informar.
+- [ ] **5a, spike:** convertir temporalmente los `Err` de riesgo de `StrictTarget` en `panic!` y pasar la suite de wasm. Si falla, parar e informar (riesgos latentes que la recuperación oculta); no relajar comprobaciones.
+- [ ] **5b:** el doble único es la unión de las comprobaciones de ambos (ninguna se pierde ni se relaja) y los registros que usan los tests de ambos crates; `StrictTarget` desaparece. Si unir algún punto obligara a cambiar lo que un test afirma, parar e informar.
 - [ ] `cargo tree -p viewer_wasm -e features --target wasm32-unknown-unknown` sin `test-support` fuera de los tests; clippy `--all-features` limpio.
 - [ ] Gate `viewer_render_wgpu viewer_wasm`; commit `refactor(render): one strict GPU test double behind a test-support feature`.
 
@@ -112,6 +116,8 @@ Reparto orientativo por líneas actuales (el implementador lo ajusta a lo que co
 
 ### Task 7: rebasar la PR #122 sobre `refactor/layout-2b`
 
-- [ ] En `../octree-fase-a` (con su propio `CARGO_TARGET_DIR` y `FORMAT_PARITY_REAL_INPUT`): `git rebase refactor/layout-2b`; las ediciones de #122 en ficheros movidos van a su ruta nueva y sus tests nuevos de `lib_tests.rs` al fichero del tema que les corresponde.
+- [ ] Antes: etiqueta local `pr122-pre-rebase` y lista de tests de la #122 (la `list()` de `gate.sh`, ejecutada en el worktree con su `CARGO_TARGET_DIR`) como baseline propio; `.superpowers/` no existe en el worktree (está en `.gitignore`), las herramientas se ejecutan por ruta absoluta.
+- [ ] Método (pre-mortem): aplastar la #122 en un commit sobre su base, rebasarlo sobre `refactor/layout-2b` (git sigue los renombres de la tarea 1) y resolver `lib_tests` regenerando: el `lib_tests.rs` sin dividir de la #122 con los `use` de la tarea 2, `spec_from_names.py` con sus tests nuevos asignados y `split.py`; `moved.py` para comprobarlo. La línea que la #122 añade al shim `viewer_convert/src/pipeline/node_job.rs` debe reaparecer en su nuevo sitio.
+- [ ] Criterio de aborto: si el multiconjunto de nombres hoja difiere del baseline, `git reset --hard pr122-pre-rebase` y replantear.
 - [ ] `scripts/check.sh` verde en el worktree; nombres hoja de test: los de #122 antes del rebase.
 - [ ] `git push --force-with-lease`; base de la PR #122 → `refactor/layout-2b`; comentario en la PR con lo que cambió de sitio.
