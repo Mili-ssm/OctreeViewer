@@ -101,11 +101,13 @@ Hecho 28-11-2026: GATE PASS, nombres hoja idénticos (1315 tests), 1 `pub(super)
 
 **Files:** `examples/web-host/` (raíz), `scripts/publish-demo.sh:49-52`, `examples/web-host/package-local.py`, `PROBES.md`, `README.md` del web host, `docs/reference/inventory.md`, tests de `examples/web-host/tests/` que importen sondas.
 
-- [ ] `git mv` a `examples/web-host/probes/`: `probe-*`, `spike-cube-pool.*`, `red-ref-server.mjs`, `pixel-metrics.mjs`, `sample-process-memory.py`, `collect-benchmarks.py`, `benchmark-metrics.mjs` si solo lo usan sondas, `run-r3-b6-matrix.sh`, `summarize-r3-b6.py`. `benchmark-metrics.mjs` se queda (lo importa `main.js`); en general, un fichero que importe la app (`main.js`, workers) se queda. `PROBES.md` se queda en la raíz.
-- [ ] Rutas como texto que no son imports: `probe-cube-pool.mjs:17` (raíz del repo `"../.."` → `"../../.."`) y `:89` (`/examples/web-host/spike-cube-pool.html` → `/examples/web-host/probes/…`), `run-r3-b6-matrix.sh:35`, `tests/http-range-source.test.mjs:8` (`../red-ref-server.mjs`), `tests/test_sample_process_memory.py:8` y `tests/test_collect_benchmarks.py:8` (`parents[1]`); buscar el resto con `grep -rn 'web-host/\|\.\./\.\.' examples/web-host/probes`.
-- [ ] Ajustar imports relativos (`./viewer-api.mjs` → `../viewer-api.mjs`, `../../pkg` → `../../../pkg`) y órdenes en la documentación.
-- [ ] `publish-demo.sh`: quitar el `case` de exclusión; el glob no recursivo ya excluye `probes/`. Verificar con `bash -x` o listando: el conjunto de ficheros copiados al sitio es el mismo que antes.
+- [x] `git mv` a `examples/web-host/probes/`: `probe-*`, `spike-cube-pool.*`, `red-ref-server.mjs`, `pixel-metrics.mjs`, `sample-process-memory.py`, `collect-benchmarks.py`, `benchmark-metrics.mjs` si solo lo usan sondas, `run-r3-b6-matrix.sh`, `summarize-r3-b6.py`. `benchmark-metrics.mjs` se queda (lo importa `main.js`); en general, un fichero que importe la app (`main.js`, workers) se queda. `PROBES.md` se queda en la raíz.
+- [x] Rutas como texto que no son imports: `probe-cube-pool.mjs:17` (raíz del repo `"../.."` → `"../../.."`) y `:89` (`/examples/web-host/spike-cube-pool.html` → `/examples/web-host/probes/…`), `run-r3-b6-matrix.sh:35`, `tests/http-range-source.test.mjs:8` (`../red-ref-server.mjs`), `tests/test_sample_process_memory.py:8` y `tests/test_collect_benchmarks.py:8` (`parents[1]`); buscar el resto con `grep -rn 'web-host/\|\.\./\.\.' examples/web-host/probes`.
+- [x] Ajustar imports relativos (`./viewer-api.mjs` → `../viewer-api.mjs`, `../../pkg` → `../../../pkg`) y órdenes en la documentación.
+- [x] `publish-demo.sh`: quitar el `case` de exclusión; el glob no recursivo ya excluye `probes/`. Verificar con `bash -x` o listando: el conjunto de ficheros copiados al sitio es el mismo que antes.
 - [ ] Tests del web host (`node --test examples/web-host/tests/*.test.mjs`, `python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'`, ambos ya en la puerta) y una sonda de humo en navegador con Playwright (`ui-verifier`): la demo carga y una sonda movida arranca. Commit `refactor(web-host): move probes and harness into probes/`.
+Hecho 28-11-2026: sondas, spike, servidor RED-REF y arnés movidos a `examples/web-host/probes/` (`spike-cube-pool-format.md` incluido); `publish-demo.sh` sin `case` y con el mismo conjunto publicado (14 ficheros); tests de node (269) y Python en verde; humo en navegador pendiente.
+
 
 ### Task 6: índice propio de registros
 
