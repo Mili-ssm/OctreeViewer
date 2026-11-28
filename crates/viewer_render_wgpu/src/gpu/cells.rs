@@ -5,10 +5,10 @@ use super::{SurfaceRenderer, error::GpuRendererError};
 use crate::{
     CellColorRanges, CellPoolError,
     budget::check_peak_bytes,
-    cell_driver::CellTarget,
-    cell_lod::LodView,
-    cell_pages::{PackedLevel, PageEntry, PageFrame},
-    cell_render::{CellRenderer, NODE_WORDS, PageFrameStamp, pool_resource_bytes},
+    cells::driver::CellTarget,
+    cells::lod::LodView,
+    cells::pages::{PackedLevel, PageEntry, PageFrame},
+    cells::render::{CellRenderer, NODE_WORDS, PageFrameStamp, pool_resource_bytes},
 };
 
 /// The pool is allocated alone: the CPU scene is released once the first level is uploaded, so

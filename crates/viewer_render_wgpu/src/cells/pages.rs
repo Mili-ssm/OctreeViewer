@@ -9,7 +9,9 @@
 use bytemuck::{Pod, Zeroable};
 use viewer_core::{ColorRgb, NodeId, SpatialBounds};
 
-use crate::node_cells::{CellGrid, NodeCell, NodeCellLevel, node_range, representative_depth};
+use crate::cells::node_cells::{
+    CellGrid, NodeCell, NodeCellLevel, node_range, representative_depth,
+};
 
 /// Slots per page.
 pub const PAGE_SLOTS: usize = 512;
@@ -503,4 +505,4 @@ pub fn decode_cell(
 /// WGSL twin of [`decode_cell`] for Task 7's passes. It declares the sRGB table at group 0
 /// binding 0 and expects `PageEntry` as `CellPage` and `CellInstance` as `vec4<u32>`; the includer
 /// adds the other bindings.
-pub const CELL_PAGES_WGSL: &str = include_str!("shaders/cell_pages.wgsl");
+pub const CELL_PAGES_WGSL: &str = include_str!("../shaders/cell_pages.wgsl");

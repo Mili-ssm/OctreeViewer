@@ -7,7 +7,7 @@
 //! nearer in `k` than in `kpc` is a hole: the culling was not conservative.
 
 use super::*;
-use crate::cell_cull::{
+use crate::cells::cull::{
     HiZ, HiZBuilder, MARGIN_BASE_U, MARGIN_RHO_U, RECT_SLACK, RHO_MAX, depth_error_bound_u,
     depth_margin_u, hiz_shader_sources, level_size, mip_count,
 };
@@ -413,8 +413,8 @@ fn slot_pass_stays_within_eight_storage_buffers() {
     // Per pipeline: the compute group binds seven storage buffers (instances, pages, masks, page
     // list, visible indices, draw arguments, visibility bits) and finalize adds the dispatch
     // arguments, so finalize reaches the WebGPU minimum of 8 exactly.
-    const { assert!(7 < crate::cell_render::MIN_STORAGE_BUFFERS) };
-    for (source_index, source) in crate::cell_render::shader_sources().iter().enumerate() {
+    const { assert!(7 < crate::cells::render::MIN_STORAGE_BUFFERS) };
+    for (source_index, source) in crate::cells::render::shader_sources().iter().enumerate() {
         let module = naga::front::wgsl::parse_str(source).unwrap();
         let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -1011,8 +1011,8 @@ fn depth_error_stays_within_the_derived_bound_at_worst_case_poses() {
         let (mut pool, placed) = loaded(h, &scene, false);
         let source = format!(
             "{}{}{NEAREST_CORNER_WGSL}",
-            crate::cell_pages::CELL_PAGES_WGSL,
-            crate::cell_render::COMMON_WGSL
+            crate::cells::pages::CELL_PAGES_WGSL,
+            crate::cells::render::COMMON_WGSL
         );
         let module = h.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("nearest-corner"),
@@ -1061,7 +1061,7 @@ fn depth_error_stays_within_the_derived_bound_at_worst_case_poses() {
                 .collect();
             // The size of `FrameUniform`; only the matrix is read.
             let mut frame_bytes =
-                vec![0_u8; std::mem::size_of::<crate::cell_render::FrameUniform>()];
+                vec![0_u8; std::mem::size_of::<crate::cells::render::FrameUniform>()];
             frame_bytes[..64].copy_from_slice(bytemuck::bytes_of(&matrix));
             let make = |label, contents: &[u8], usage| {
                 h.device

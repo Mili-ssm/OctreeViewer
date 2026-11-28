@@ -78,17 +78,17 @@ use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc, sync::Arc};
 use viewer_core::{NodeId, SpatialBounds};
 
 use crate::camera::VERTICAL_FOV;
-use crate::node_cells::{node_range, representative_depth_for_spacing};
+use crate::cells::node_cells::{node_range, representative_depth_for_spacing};
 
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
-    cell_cut::{
+    cells::cut::{
         FastMap, FastSet, MAX_MASK_LEVELS, PrevState, ProbeBox, STEP_WAIT_FRAMES, behind_wanted,
         cell_cut_ranged, cell_cut_with, cell_depth_range, drawn_levels, in_cell_range,
         masked_probes, octant_wanted_depth_in, octant_wanted_depth_near, octants_in_front,
         probe_region, served_depth, view_range_hi_at, view_range_lo,
     },
-    cell_range::nearest_occupied_depth,
+    cells::range::nearest_occupied_depth,
     representative_depth,
 };
 
@@ -505,7 +505,7 @@ pub fn gpu_input_digest(
             .iter()
             .filter(|level| level.key.node == entry.node)
             .map(|level| level.key.depth)
-            .filter(|d| *d >= depth && *d - depth <= crate::cell_lod::MAX_NODE_SPAN)
+            .filter(|d| *d >= depth && *d - depth <= crate::cells::lod::MAX_NODE_SPAN)
             .fold(0_u64, |bits, d| bits | 1 << (d - depth));
         feed(&entry.node.get().to_le_bytes());
         feed(&[depth]);
@@ -813,5 +813,5 @@ impl CellPool {
 }
 
 #[cfg(test)]
-#[path = "cell_pool_tests.rs"]
+#[path = "pool_tests.rs"]
 mod tests;

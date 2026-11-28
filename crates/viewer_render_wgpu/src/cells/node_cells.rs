@@ -9,7 +9,7 @@ use std::{collections::HashSet, fmt, ops::Range};
 use viewer_core::{NodeId, PointBlock, SpatialBounds};
 
 use crate::attributes::ScalarAttribute;
-use crate::cell_pages::packs_efficiently;
+use crate::cells::pages::packs_efficiently;
 
 /// Deepest absolute dyadic level representable by the grid coordinate type.
 pub const MAX_CELL_DEPTH: u8 = 63;

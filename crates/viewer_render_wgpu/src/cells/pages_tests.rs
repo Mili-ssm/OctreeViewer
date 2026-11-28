@@ -1,6 +1,6 @@
 //! Task 6: instance packing, page split, flags, frame, precision and the WGSL decode.
 
-use crate::cell_pages::{is_grid_aligned, pack_level_aligned};
+use crate::cells::pages::{is_grid_aligned, pack_level_aligned};
 use std::collections::HashSet;
 
 use glam::{DMat4, DVec3, dcamera};
@@ -11,9 +11,9 @@ use wgpu::util::DeviceExt;
 use crate::{
     CELL_PAGES_WGSL, CellGrid, CellInstance, FLAG_SPANS_OCTANTS, MAX_PAGE_EXTENT, NodeCell,
     NodeCellLevel, NodeCellSource, OrbitCamera, PAGE_HAS_CLASS, PAGE_HAS_INTENSITY, PAGE_SLOTS,
-    PackedLevel, PageEntry, PageFrame, PointNodeCellSource, decode_cell,
-    node_cells::node_range,
-    pack_level, representative_depth,
+    PackedLevel, PageEntry, PageFrame, PointNodeCellSource,
+    cells::node_cells::node_range,
+    decode_cell, pack_level, representative_depth,
     scene_digest_tests::{SIDE, fixture},
     srgb_to_linear_table,
 };
@@ -410,7 +410,7 @@ fn intensity_and_color_edge_cases() {
     let packed = pack(&level(12, cells));
     let intensities: Vec<u16> = packed.instances[..8]
         .iter()
-        .map(super::cell_pages::CellInstance::intensity)
+        .map(super::pages::CellInstance::intensity)
         .collect();
     // NaN, +-inf and a negative mean are missing; a huge finite mean clamps to 65534.
     assert_eq!(
@@ -1141,7 +1141,7 @@ fn deep_pages_far_from_the_root_corner_are_placed_exactly() {
     // Cells of 2^-6 units; cell `2^54 + k` starts at `k * 2^-6`.
     let side = 1.0 / 64.0;
     for (cells, expected) in [(3_u64, 3.0 * side), (4097, 4097.0 * side), (0, 0.0)] {
-        let page = crate::cell_pages::PageInfo {
+        let page = crate::cells::pages::PageInfo {
             node: NodeId::new(1),
             depth,
             origin: [(1 << 54) + cells, (1 << 54) - cells - 1, (1 << 54) + cells],

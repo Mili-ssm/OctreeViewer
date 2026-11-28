@@ -9,7 +9,7 @@
 use super::*;
 use std::collections::HashMap;
 
-use crate::cell_driver::{CellDriver, CellTarget, DriverConfig, NodeInput};
+use crate::cells::driver::{CellDriver, CellTarget, DriverConfig, NodeInput};
 use crate::{CellPoolError, NodeCells, PoolConfig};
 
 const ORIGIN: [f64; 3] = [1_000_003.25, 999_998.5, 1_000_010.75];
@@ -22,7 +22,7 @@ struct Target<'a> {
     eye: [f64; 3],
     /// The last record of each node slot and the last LOD view the driver gave the target.
     records: &'a mut HashMap<u32, [u32; NODE_WORDS]>,
-    view: &'a mut Option<crate::cell_lod::LodView>,
+    view: &'a mut Option<crate::cells::lod::LodView>,
 }
 
 impl CellTarget for Target<'_> {
@@ -61,7 +61,7 @@ impl CellTarget for Target<'_> {
         self.pool.set_node_record(slot, record)
     }
 
-    fn set_lod_view(&mut self, view: Option<crate::cell_lod::LodView>) {
+    fn set_lod_view(&mut self, view: Option<crate::cells::lod::LodView>) {
         *self.view = view;
         self.pool.set_lod_view(view);
     }
@@ -123,12 +123,12 @@ fn expected_instances(
     bounds: SpatialBounds,
     report: &crate::FrameReport,
     records: &HashMap<u32, [u32; NODE_WORDS]>,
-    view: &crate::cell_lod::LodView,
+    view: &crate::cells::lod::LodView,
 ) -> Vec<InstanceRaw> {
     let mut out = Vec::new();
     for active in &report.plan.active {
         let record = &records[&active.mask_slot];
-        let node = crate::cell_lod::NodeLod {
+        let node = crate::cells::lod::NodeLod {
             anchor: std::array::from_fn(|axis| f32::from_bits(record[16 + axis])),
             node_depth: record[19] as u8,
             active: u64::from(record[20]) | u64::from(record[21]) << 32,
@@ -145,10 +145,10 @@ fn expected_instances(
         for cell in &level.cells {
             // The cell relative to the node corner, and its side in the render frame.
             let rel = std::array::from_fn(|axis| {
-                let lo = crate::node_cells::node_range(world, bounds, level.depth, axis).0;
+                let lo = crate::cells::node_cells::node_range(world, bounds, level.depth, axis).0;
                 (cell.coord[axis] - lo) as u32
             });
-            if !crate::cell_lod::draws(view, &node, level.depth, rel, (side * SCALE) as f32) {
+            if !crate::cells::lod::draws(view, &node, level.depth, rel, (side * SCALE) as f32) {
                 continue;
             }
             let rgb = cell.rgb_sum.map(|c| c as u8);
@@ -327,7 +327,7 @@ impl CellTarget for LodTarget<'_> {
         self.pool.set_node_record(slot, record)
     }
 
-    fn set_lod_view(&mut self, view: Option<crate::cell_lod::LodView>) {
+    fn set_lod_view(&mut self, view: Option<crate::cells::lod::LodView>) {
         self.pool.set_lod_view(view);
     }
 

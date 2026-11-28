@@ -6,8 +6,8 @@
 
 use super::*;
 use crate::ColorMode;
-use crate::cell_driver::CellColorRanges;
-use crate::cell_render::CellColor;
+use crate::cells::driver::CellColorRanges;
+use crate::cells::render::CellColor;
 use crate::test_support::mask_record;
 
 const GRID: CellGrid = CellGrid {

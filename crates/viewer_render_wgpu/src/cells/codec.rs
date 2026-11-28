@@ -29,7 +29,7 @@ use std::fmt;
 use viewer_core::{NodeId, SpatialBounds};
 
 use crate::{
-    CellInstance, MAX_PAGE_EXTENT, PAGE_SLOTS, PackedLevel, PageInfo, cell_driver::PackedNode,
+    CellInstance, MAX_PAGE_EXTENT, PAGE_SLOTS, PackedLevel, PageInfo, cells::driver::PackedNode,
 };
 
 const MAGIC: [u8; 4] = *b"R3NC";
@@ -345,5 +345,5 @@ pub fn decode_node_levels(bytes: &[u8]) -> Result<PackedNode, CodecError> {
 }
 
 #[cfg(test)]
-#[path = "cell_codec_tests.rs"]
+#[path = "codec_tests.rs"]
 mod tests;

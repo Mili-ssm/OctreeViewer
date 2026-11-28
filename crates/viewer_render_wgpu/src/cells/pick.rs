@@ -3,7 +3,7 @@
 //! The pool lives on the GPU, so `prepare` copies the pages the ray can touch into a staging
 //! buffer and `resolve` walks their cells on the CPU with the filters of the slot pass (empty
 //! slot, octant bit, node mask; no frustum and no Hi-Z). In cell mode the drawn test is the
-//! per-cell decision of [`crate::cell_lod`] over the node records the renderer mirrors. Everything runs in the frame of the page
+//! per-cell decision of [`crate::cells::lod`] over the node records the renderer mirrors. Everything runs in the frame of the page
 //! entries, i.e. relative to the frame (eye, visual scale, coordinate origin) stored with the page
 //! table, so the f32 entries stay exact whatever the current camera does. The camera is read at
 //! `prepare`; the pool is not. The renderer's scale and origin can change after the pages were
@@ -18,9 +18,9 @@ use glam::DVec3;
 
 use std::collections::HashMap;
 
-use crate::cell_lod::{LodView, NodeLod, draws};
-use crate::cell_pages::{CellInstance, PAGE_SLOTS, PageEntry, decode_cell, srgb_to_linear_table};
-use crate::cell_render::{CellRenderer, MASK_WORDS, NODE_WORDS, PAGE_BYTES};
+use crate::cells::lod::{LodView, NodeLod, draws};
+use crate::cells::pages::{CellInstance, PAGE_SLOTS, PageEntry, decode_cell, srgb_to_linear_table};
+use crate::cells::render::{CellRenderer, MASK_WORDS, NODE_WORDS, PAGE_BYTES};
 use crate::gpu::{PICK_MAX_CANDIDATE_INSTANCES, PickHit, PickRay, ray_box_interval};
 
 /// Pages copied per pick.
@@ -57,7 +57,7 @@ pub(crate) struct LodPick {
     pub nodes: HashMap<u32, NodeLod>,
 }
 
-/// The node of a record in the layout of [`crate::cell_lod::node_record`].
+/// The node of a record in the layout of [`crate::cells::lod::node_record`].
 pub(crate) fn node_of_record(record: &[u32; NODE_WORDS]) -> NodeLod {
     NodeLod {
         anchor: std::array::from_fn(|axis| f32::from_bits(record[16 + axis])),
@@ -245,7 +245,7 @@ fn drawn_in_cell_mode(lod: &LodPick, copy: &PoolCopy, cell: &CellInstance) -> bo
     let depth = u8::try_from(depth).unwrap_or(u8::MAX);
     if origin == [u32::MAX; 3]
         || depth < node.node_depth
-        || depth - node.node_depth > crate::cell_lod::MAX_NODE_SPAN
+        || depth - node.node_depth > crate::cells::lod::MAX_NODE_SPAN
     {
         return false;
     }

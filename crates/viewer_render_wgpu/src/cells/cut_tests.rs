@@ -2543,7 +2543,7 @@ fn near_of(view: &ViewProjection) -> f64 {
 }
 
 fn clipped(view: &ViewProjection, min: [f64; 3], max: [f64; 3]) -> Option<f64> {
-    crate::cell_range::ViewFrustum::new(view)
+    crate::cells::range::ViewFrustum::new(view)
         .expect("frustum")
         .min_depth(min, max)
 }
@@ -2577,7 +2577,7 @@ fn the_clipped_depth_is_conservative_and_tight_against_a_sampled_oracle() {
             }
             view(&camera)
         };
-        let frustum = crate::cell_range::ViewFrustum::new(&view).expect("frustum");
+        let frustum = crate::cells::range::ViewFrustum::new(&view).expect("frustum");
         let eye = view_eye(&view);
         let forward = view.camera().forward();
         let (right, up) = view.camera().right_up();
@@ -2796,7 +2796,7 @@ fn a_box_beside_the_eye_is_far_in_depth_although_it_is_near_in_distance() {
 
 #[test]
 fn the_nearest_occupied_depth_is_the_least_over_the_pages_and_none_without_any_in_view() {
-    use crate::cell_range::nearest_occupied_depth;
+    use crate::cells::range::nearest_occupied_depth;
     let (view, grid) = (along_x(), huge_grid());
     let page = |origin: [u64; 3]| crate::PageInfo {
         node: NodeId::new(1),
@@ -2826,7 +2826,7 @@ fn the_nearest_occupied_depth_is_the_least_over_the_pages_and_none_without_any_i
 
 #[test]
 fn the_nearest_occupied_depth_uses_the_far_edge_of_the_tight_box() {
-    use crate::cell_range::nearest_occupied_depth;
+    use crate::cells::range::nearest_occupied_depth;
     // Looking along -x from x = 1100: the page's nearest face is its max side. `box_max` is the
     // last cell offset, so the far edge is at `origin + box_max + 1` cells.
     let (view, grid) = (posed([1100.0, 0.0, 0.0], [0.0, 0.0, 0.0]), huge_grid());

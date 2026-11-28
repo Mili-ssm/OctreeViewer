@@ -23,7 +23,7 @@ use viewer_core::{NodeId, SpatialBounds};
 
 use crate::{
     ViewProjection,
-    node_cells::{
+    cells::node_cells::{
         CellGrid, NodeCellLevel, node_range, representative_depth, representative_depth_for_spacing,
     },
 };
@@ -72,7 +72,7 @@ pub(crate) type FastSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 pub(crate) fn cell_depth_range(node_depth: u8) -> (u8, u8) {
     (
         node_depth,
-        node_depth.saturating_add(crate::cell_lod::MAX_NODE_SPAN),
+        node_depth.saturating_add(crate::cells::lod::MAX_NODE_SPAN),
     )
 }
 
@@ -1283,5 +1283,5 @@ pub fn cell_cut_digest(entries: &[CellCutEntry]) -> u64 {
 }
 
 #[cfg(test)]
-#[path = "cell_cut_tests.rs"]
+#[path = "cut_tests.rs"]
 mod tests;

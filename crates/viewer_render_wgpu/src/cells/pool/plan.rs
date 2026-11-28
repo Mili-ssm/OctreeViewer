@@ -848,7 +848,7 @@ impl CellPool {
                     active: active_bits,
                     node_depth,
                     node_lo: std::array::from_fn(|axis| {
-                        crate::node_cells::node_range(grid, bounds, node_depth, axis).0
+                        crate::cells::node_cells::node_range(grid, bounds, node_depth, axis).0
                     }),
                 };
                 match self.mask_slots.get(&id) {

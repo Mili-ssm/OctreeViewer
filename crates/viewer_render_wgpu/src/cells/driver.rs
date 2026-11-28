@@ -34,13 +34,13 @@ use std::{
 
 use viewer_core::{NodeId, SpatialBounds};
 
-use crate::cell_lod::{LodView, MAX_NODE_SPAN, NodeLod, node_record};
-use crate::cell_pages::{MISSING_INTENSITY, PAGE_HAS_INTENSITY};
+use crate::cells::lod::{LodView, MAX_NODE_SPAN, NodeLod, node_record};
+use crate::cells::pages::{MISSING_INTENSITY, PAGE_HAS_INTENSITY};
 
 use crate::{
     CellCutError, CellGrid, CellPool, CellPoolEvent, CutApply, FramePlan, LevelKey, NODE_WORDS,
     NodeCells, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, PoolConfig, PoolCounters,
-    PoolNode, ViewProjection, node_cells::anchor_tolerance, pack_level,
+    PoolNode, ViewProjection, cells::node_cells::anchor_tolerance, pack_level,
 };
 
 /// The renderer side of the driver: the pool of pages, mask slots and the page table of one
@@ -137,7 +137,7 @@ impl CellColorRanges {
                 if page.flags & PAGE_HAS_INTENSITY != 0 {
                     let words = cells
                         .iter()
-                        .map(super::cell_pages::CellInstance::intensity)
+                        .map(super::pages::CellInstance::intensity)
                         .filter(|word| *word != MISSING_INTENSITY);
                     let (lo, hi) = words.fold((u16::MAX, 0), |(lo, hi), w| (lo.min(w), hi.max(w)));
                     if lo <= hi {
@@ -173,7 +173,7 @@ pub(crate) fn octant_data_bounds(
 ) -> Option<[Option<SpatialBounds>; 8]> {
     let data = data?;
     Some(std::array::from_fn(|octant| {
-        let geometric = crate::cell_cut::octant_box(bounds, octant)?;
+        let geometric = crate::cells::cut::octant_box(bounds, octant)?;
         let min: [f64; 3] = std::array::from_fn(|a| geometric.min()[a].max(data.min()[a]));
         let max: [f64; 3] = std::array::from_fn(|a| geometric.max()[a].min(data.max()[a]));
         SpatialBounds::new(min, max).ok()
@@ -1399,5 +1399,5 @@ impl CellDriver {
 }
 
 #[cfg(test)]
-#[path = "cell_driver_tests.rs"]
+#[path = "driver_tests.rs"]
 mod tests;

@@ -678,7 +678,7 @@ fn a_cut_larger_than_the_pool_fits_coarser_levels_and_then_settles() {
     let (coarsened, overflow, needs_frame, resident) = pressure(40);
     assert!(coarsened >= 1, "the fit coarsened nothing");
     assert!(
-        resident >= 1 && u64::from(resident) <= crate::cell_pool::usable_pages(40),
+        resident >= 1 && u64::from(resident) <= crate::cells::pool::usable_pages(40),
         "{resident}"
     );
     assert_eq!(overflow, 0, "coarsened {coarsened}");
@@ -1562,7 +1562,7 @@ fn anchors_follow_the_eye() {
         let bounds = fx.nodes[node].bounds;
         let side = grid.root_side / (1_u64 << depth) as f64;
         let expected: [f32; 3] = std::array::from_fn(|axis| {
-            let lo = crate::node_cells::node_range(&grid, bounds, depth, axis).0;
+            let lo = crate::cells::node_cells::node_range(&grid, bounds, depth, axis).0;
             let corner = grid.root_min[axis] + lo as f64 * side;
             ((corner - ORIGIN[axis]) * fx.scale - moved[axis]) as f32
         });
@@ -1587,7 +1587,8 @@ fn expected_anchor(
     let grid = fx.driver.config.grid;
     let side = grid.root_side / (1_u64 << node_depth) as f64;
     std::array::from_fn(|axis| {
-        let lo = crate::node_cells::node_range(&grid, fx.nodes[&node].bounds, node_depth, axis).0;
+        let lo =
+            crate::cells::node_cells::node_range(&grid, fx.nodes[&node].bounds, node_depth, axis).0;
         let corner = grid.root_min[axis] + lo as f64 * side;
         ((corner - origin[axis]) * fx.scale - eye[axis]) as f32
     })
@@ -1711,7 +1712,7 @@ fn corner_level(fx: &Fixture, node: NodeId, depth: u8, rel: [u32; 3]) -> PackedL
     let mut level = level_of(node, depth, 1);
     for page in &mut level.pages {
         page.origin = std::array::from_fn(|axis| {
-            let lo = crate::node_cells::node_range(&grid, bounds, node_depth, axis).0;
+            let lo = crate::cells::node_cells::node_range(&grid, bounds, node_depth, axis).0;
             (lo << (depth - node_depth)) + u64::from(rel[axis])
         });
         page.rel_origin = rel;
@@ -1790,7 +1791,7 @@ fn driver_in_cell_mode_writes_records_and_uniform() {
     let view = fx.gpu.lod_views.last().copied().flatten().expect("a view");
     assert_eq!(
         view,
-        crate::cell_lod::LodView::from_camera(&cam, viewport, 4.0, 0.0)
+        crate::cells::lod::LodView::from_camera(&cam, viewport, 4.0, 0.0)
     );
     let (forward, right, up) = (cam.forward(), cam.right_up().0, cam.right_up().1);
     assert_eq!(view.forward, forward.map(|c| c as f32));

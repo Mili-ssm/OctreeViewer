@@ -10,7 +10,7 @@
 
 use crate::OrbitCamera;
 use crate::camera::VERTICAL_FOV;
-use crate::cell_render::NODE_WORDS;
+use crate::cells::render::NODE_WORDS;
 
 /// Deepest span below the node depth a cell can have: `rel` stays a `u32` and no shift reaches 32.
 pub const MAX_NODE_SPAN: u8 = 31;
@@ -311,5 +311,5 @@ pub fn drawn_depth_at(
 }
 
 #[cfg(test)]
-#[path = "cell_lod_tests.rs"]
+#[path = "lod_tests.rs"]
 mod tests;

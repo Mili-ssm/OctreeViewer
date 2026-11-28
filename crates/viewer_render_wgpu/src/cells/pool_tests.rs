@@ -1105,7 +1105,7 @@ fn a_steady_frame_calls_cell_cut_at_most_once_and_changes_invalidate_the_reuse()
 
 fn full_depths(cam: &OrbitCamera, node: &PoolNode, target: f64) -> [u8; 8] {
     std::array::from_fn(|o| {
-        crate::cell_cut::octant_wanted_depth(
+        crate::cells::cut::octant_wanted_depth(
             &view(cam),
             &grid(),
             ORIGIN,
@@ -1191,7 +1191,7 @@ fn the_hinted_search_equals_the_full_search() {
         let width = usize::from(range.1 - range.0) + 1;
         let hint = range.0 + ((next(&mut state) * width as f64) as usize % width) as u8;
         let v = view(&cam);
-        let full = crate::cell_cut::octant_wanted_depth(
+        let full = crate::cells::cut::octant_wanted_depth(
             &v,
             &grid(),
             ORIGIN,
@@ -1200,13 +1200,13 @@ fn the_hinted_search_equals_the_full_search() {
             range,
             target_px,
         );
-        let near = crate::cell_cut::octant_wanted_depth_near(
+        let near = crate::cells::cut::octant_wanted_depth_near(
             &v,
             &grid(),
             ORIGIN,
             node.bounds,
             octant,
-            crate::cell_cut::ProbeBox::Geometric,
+            crate::cells::cut::ProbeBox::Geometric,
             range,
             target_px,
             hint,
@@ -5393,7 +5393,7 @@ fn bound_from_pages(rig: &Rig, id: NodeId, view: &ViewProjection) -> Option<u8> 
             let level = rig.pool.level(rig.pool.key(id, depth))?;
             let occupied =
                 crate::nearest_occupied_depth(view, &grid(), ORIGIN, depth, &level.pages)?;
-            let (_, hi) = crate::cell_cut::node_view_range_at(
+            let (_, hi) = crate::cells::cut::node_view_range_at(
                 view,
                 &grid(),
                 ORIGIN,

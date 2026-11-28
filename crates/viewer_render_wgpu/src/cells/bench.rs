@@ -2,10 +2,10 @@
 //! thin `#[doc(hidden)]` wrapper, so a native example can time the production cell path. It adds no
 //! behaviour; every method forwards. Not a stable API.
 
-use crate::cell_driver::CellTarget;
-use crate::cell_lod::LodView;
-use crate::cell_pages::{PackedLevel, PageEntry, PageFrame};
-use crate::cell_render::{
+use crate::cells::driver::CellTarget;
+use crate::cells::lod::LodView;
+use crate::cells::pages::{PackedLevel, PageEntry, PageFrame};
+use crate::cells::render::{
     CellFrame, CellLimitMode, CellPoolError, CellRenderer, LodCounters, NODE_WORDS,
     cells_supported, plan_device_limits,
 };

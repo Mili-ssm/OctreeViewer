@@ -7,7 +7,7 @@ use viewer_core::BlockId;
 
 use crate::{
     CellColorRanges, ColorMode, GpuBudget, OrbitCamera, SceneBounds, VoxelBuildLimits,
-    cell_render::CellRenderer,
+    cells::render::CellRenderer,
 };
 
 mod blocks;

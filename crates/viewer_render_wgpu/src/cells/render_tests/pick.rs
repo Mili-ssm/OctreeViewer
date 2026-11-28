@@ -8,12 +8,12 @@ use glam::DVec3;
 
 use super::*;
 use crate::EyeFrame;
-use crate::cell_pages::FLAG_SPANS_OCTANTS;
-use crate::cell_pick::{
+use crate::cells::pages::FLAG_SPANS_OCTANTS;
+use crate::cells::pick::{
     PICK_MAX_PAGES, PoolCopy, PoolPickPlan, candidates, prepare_pool_pick, resolve_pool_pick,
     select_pages,
 };
-use crate::cell_render::PageFrameStamp;
+use crate::cells::render::PageFrameStamp;
 use crate::gpu::{
     PickCopy, PickHit, PickRay, build_pick_chunks, ray_box_interval, resolve_pick_instances,
 };
@@ -881,12 +881,12 @@ type TwinPick = (Option<(f64, usize, u8)>, Option<f64>, Option<(f64, usize)>);
 fn twin_pick(
     scene: &[super::lod::LodNodeScene],
     pool: &super::lod::LodPool,
-    lods: &[crate::cell_lod::NodeLod],
-    view: &crate::cell_lod::LodView,
+    lods: &[crate::cells::lod::NodeLod],
+    view: &crate::cells::lod::LodView,
     eye: [f64; 3],
     ray: &PickRay,
 ) -> TwinPick {
-    let table = crate::cell_pages::srgb_to_linear_table();
+    let table = crate::cells::pages::srgb_to_linear_table();
     let ray = PickRay {
         origin: ray.origin - glam::DVec3::from_array(eye),
         ..*ray
@@ -927,7 +927,7 @@ fn twin_pick(
                 if any.is_none_or(|a| (distance, global) < a) {
                     any = Some((distance, global));
                 }
-                if !crate::cell_lod::draws(view, &lods[placed.node], depth, rel, entry.side()) {
+                if !crate::cells::lod::draws(view, &lods[placed.node], depth, rel, entry.side()) {
                     continue;
                 }
                 if best.is_none_or(|b| (distance, global) < (b.0, b.1)) {
@@ -1045,7 +1045,7 @@ struct PickTarget<'a> {
     active: &'a mut HashSet<u32>,
 }
 
-impl crate::cell_driver::CellTarget for PickTarget<'_> {
+impl crate::cells::driver::CellTarget for PickTarget<'_> {
     type Error = crate::CellPoolError;
 
     fn has_pool(&self) -> bool {
@@ -1096,7 +1096,7 @@ impl crate::cell_driver::CellTarget for PickTarget<'_> {
         self.pool.set_node_record(slot, record)
     }
 
-    fn set_lod_view(&mut self, view: Option<crate::cell_lod::LodView>) {
+    fn set_lod_view(&mut self, view: Option<crate::cells::lod::LodView>) {
         self.pool.set_lod_view(view);
     }
 
@@ -1115,7 +1115,7 @@ impl crate::cell_driver::CellTarget for PickTarget<'_> {
 #[test]
 fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
     use super::lod::{LodNodeScene, random_pose};
-    use crate::cell_driver::{CellDriver, DriverConfig, NodeInput};
+    use crate::cells::driver::{CellDriver, DriverConfig, NodeInput};
     for_each_adapter(CellLimitMode::Auto, |h| {
         if !h.runs_test_pool {
             return false;
@@ -1238,7 +1238,7 @@ fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
                     let mut second: Option<f64> = None;
                     for active in &report.plan.active {
                         let record = pool.node_record(active.mask_slot);
-                        let mut node = crate::cell_pick::node_of_record(record);
+                        let mut node = crate::cells::pick::node_of_record(record);
                         node.active = emitted[&active.mask_slot];
                         let side = 1.0 / (1_u64 << active.key.depth) as f64;
                         let (id, _) = scene
@@ -1267,7 +1267,7 @@ fn pick_on_driver_records_equals_the_twin_after_retained_frames() {
                                 let rel: [u32; 3] = std::array::from_fn(|a| {
                                     (coord[a] - (lo[a] << (*depth - node.node_depth))) as u32
                                 });
-                                if !crate::cell_lod::draws(
+                                if !crate::cells::lod::draws(
                                     &lod_view,
                                     &node,
                                     *depth,

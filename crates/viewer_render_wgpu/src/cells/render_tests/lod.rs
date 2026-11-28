@@ -9,7 +9,7 @@
 //! unmasked points (see `cell_mode_draws_one_cell_per_point_on_every_adapter`).
 
 use super::*;
-use crate::cell_lod::{
+use crate::cells::lod::{
     LodView, NodeLod, cell_lo, draws, edge_px, masked_any, node_record, refines,
 };
 use crate::representative_depth;
@@ -1062,8 +1062,8 @@ fn tally_depths(
     nodes: &[LodNodeScene],
     pool: &LodPool,
     lists: &[Vec<u32>],
-) -> [u32; crate::cell_render::COUNTER_DEPTHS] {
-    let mut tally = [0; crate::cell_render::COUNTER_DEPTHS];
+) -> [u32; crate::cells::render::COUNTER_DEPTHS] {
+    let mut tally = [0; crate::cells::render::COUNTER_DEPTHS];
     for slot in lists.iter().flatten() {
         let page_slot = slot / PAGE_SLOTS as u32;
         let placed = pool

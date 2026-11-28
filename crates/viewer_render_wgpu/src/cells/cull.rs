@@ -217,11 +217,11 @@ fn cell_occluded(lo: vec3<f32>, hi: vec3<f32>) -> bool {{
     )
 }
 
-const HIZ_COPY_WGSL: &str = include_str!("shaders/cell_hiz_copy.wgsl");
+const HIZ_COPY_WGSL: &str = include_str!("../shaders/cell_hiz_copy.wgsl");
 
 // Texel (x, y) of the destination is the max of the source texels 2x..2x+1, 2y..2y+1. The last
 // texel of an axis also takes the source's odd last texel, which `size >> 1` leaves out.
-const HIZ_REDUCE_WGSL: &str = include_str!("shaders/cell_hiz_reduce.wgsl");
+const HIZ_REDUCE_WGSL: &str = include_str!("../shaders/cell_hiz_reduce.wgsl");
 
 /// WGSL sources of the Hi-Z build, for validation in tests.
 #[cfg(test)]

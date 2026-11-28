@@ -25,9 +25,9 @@ use std::{mem::size_of, num::NonZeroU64};
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::cell_cull::{HiZ, HiZBuilder, bits_bytes, clear_page_bits, occlusion_wgsl};
-use crate::cell_lod::LodView;
-use crate::cell_pages::{
+use crate::cells::cull::{HiZ, HiZBuilder, bits_bytes, clear_page_bits, occlusion_wgsl};
+use crate::cells::lod::LodView;
+use crate::cells::pages::{
     CELL_PAGES_WGSL, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table,
 };
 use crate::gpu::CUBE_INDICES;
@@ -384,12 +384,12 @@ pub(crate) struct FrameUniform {
     pub(crate) _padding_end: u32,
 }
 
-pub(crate) const COMMON_WGSL: &str = include_str!("shaders/cell_common.wgsl");
+pub(crate) const COMMON_WGSL: &str = include_str!("../shaders/cell_common.wgsl");
 
 // `PHASE` is prepended per module: 0 = plain compaction (`k`), 1 = phase 1, 2 = phase 2.
-const COMPUTE_WGSL: &str = include_str!("shaders/cell_compute.wgsl");
+const COMPUTE_WGSL: &str = include_str!("../shaders/cell_compute.wgsl");
 
-const DRAW_WGSL: &str = include_str!("shaders/cell_draw.wgsl");
+const DRAW_WGSL: &str = include_str!("../shaders/cell_draw.wgsl");
 
 /// WGSL sources of the compute passes (plain, phase 1, phase 2) and of the draw, for validation in
 /// tests.
@@ -871,7 +871,7 @@ impl CellRenderer {
         LodCounters { per_depth }
     }
 
-    /// `Some` switches the slot pass to the per-cell decision of [`crate::cell_lod`] (`lod_mode`
+    /// `Some` switches the slot pass to the per-cell decision of [`crate::cells::lod`] (`lod_mode`
     /// 1); `None` keeps the octant-bit and mask test, which draws every unmasked cell of the active
     /// pages. The driver always passes `Some` (ADR 0056); only tests and `cell_bench` draw without a
     /// view.

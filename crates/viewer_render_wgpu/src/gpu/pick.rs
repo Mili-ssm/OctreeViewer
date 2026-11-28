@@ -4,7 +4,7 @@ use super::SurfaceRenderer;
 
 use crate::{
     InstanceRaw, SceneBounds,
-    cell_pick::{PoolPick, prepare_pool_pick},
+    cells::pick::{PoolPick, prepare_pool_pick},
 };
 
 pub(super) const PICK_CHUNK_INSTANCES: usize = 256;

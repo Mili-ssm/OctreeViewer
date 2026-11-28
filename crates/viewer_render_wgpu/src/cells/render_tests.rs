@@ -11,8 +11,8 @@ use std::collections::HashSet;
 use viewer_core::{ColorRgb, NodeId, SpatialBounds};
 use wgpu::util::DeviceExt;
 
-use crate::cell_pages::{CellInstance, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table};
-use crate::cell_render::{
+use crate::cells::pages::{CellInstance, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table};
+use crate::cells::render::{
     CellFrame, CellLimitMode, CellRenderer, DEFAULT_CELL_POOL_BUDGET_BYTES, DeviceLimits,
     MASK_WORDS, MIN_POOL_PAGES, NODE_WORDS, PAGE_BYTES, POOL_BYTES, cells_supported,
     cells_supported_for, plan_device_limits, pool_pages_for_limits, pool_pages_within_budget,
@@ -30,23 +30,18 @@ const POOL_PAGES_FOR_TESTS: u32 = 64;
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 /// Task 7a: the per-cell decision of the slot pass against its Rust twin.
-#[path = "cell_lod_gpu_tests.rs"]
 mod lod;
 
 /// Task 7b2: two-phase occlusion against the compaction-only path.
-#[path = "cell_cull_tests.rs"]
 mod cull;
 
 /// Task 12: the shader colour modes of the cell shader against the CPU path's.
-#[path = "cell_color_tests.rs"]
 mod color;
 
 /// Task 8: picking on the pool against the CPU-path picking.
-#[path = "cell_pick_tests.rs"]
 mod pick;
 
 /// Task 9a2: the cell driver on a real pool, at a far coordinate origin.
-#[path = "cell_driver_gpu_tests.rs"]
 mod driver;
 
 // ---------------------------------------------------------------------------------------------
@@ -1062,9 +1057,9 @@ fn wgsl_struct_layout(name: &str) -> (Vec<(String, u32)>, u32) {
 
 #[test]
 fn frame_uniform_is_176_bytes_and_matches_the_wgsl_layout() {
-    use crate::cell_render::FrameUniform as F;
+    use crate::cells::render::FrameUniform as F;
     use core::mem::offset_of;
-    assert_eq!(size_of::<crate::cell_render::FrameUniform>(), 176);
+    assert_eq!(size_of::<crate::cells::render::FrameUniform>(), 176);
     let (members, span) = wgsl_struct_layout("CellFrame");
     assert_eq!(span, 176);
     let expected = [

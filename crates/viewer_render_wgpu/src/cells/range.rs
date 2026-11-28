@@ -7,7 +7,8 @@
 //! position divided by the visual scale; depths are along the view direction, in those units.
 
 use crate::{
-    PageInfo, ViewProjection, camera::VERTICAL_FOV, cell_cut::view_eye, node_cells::CellGrid,
+    PageInfo, ViewProjection, camera::VERTICAL_FOV, cells::cut::view_eye,
+    cells::node_cells::CellGrid,
 };
 
 /// Half-space `n . p <= c` of the eye-relative frame, `n` a unit vector.

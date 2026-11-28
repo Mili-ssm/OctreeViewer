@@ -5,7 +5,7 @@ use viewer_core::{
     NodeId, Point, PointBatch, PointBlock, SpatialBounds,
 };
 
-use crate::cell_pages::{packs_efficiently, page_count};
+use crate::cells::pages::{packs_efficiently, page_count};
 use crate::{
     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCellError, NodeCellSource,
     NodeCells, OrbitCamera, PAGE_SLOTS, PointNodeCellSource, SceneBounds, chain_keep_mask,
