@@ -167,6 +167,7 @@ Fuentes: [benchmarks/](benchmarks/) (medidas) y [archive/](archive/) (documentos
 
 | Documento | Contenido | Marca |
 | --- | --- | --- |
+| [Reorganización por componentes, bloque 1](archive/reorganizacion-por-componentes.md) | Plan cerrado (28-11-2026): render en `cells/`, wasm en `lod_dataset/`, tests gigantes divididos, sondas en `web-host/probes/`, este índice y `scripts/check_layout.py`. | histórico |
 | [V6 pre1](archive/FORMAT_V6_PRE1.md), [pre2](archive/FORMAT_V6_PRE2.md), [pre3](archive/FORMAT_V6_PRE3.md), [pre4](archive/FORMAT_V6_PRE4.md), [V4](archive/FORMAT_V4.md) | Especificaciones de formatos retirados o en retirada. | histórico |
 | [Entregas 14-10-2026](archive/DELIVERIES_2026-10-14.md) | Implementaciones y experimentos cerrados, con checks históricos. | histórico |
 | [Evaluación 24-10-2026](archive/CODE_ASSESSMENT_2026-10-24.md) | Contraste de documentación, checks y próximos pasos. | histórico |

@@ -33,7 +33,6 @@ pasa a [records/archive/](records/archive/) con sus enlaces entrantes corregidos
 | --- | --- | --- |
 | [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (19-11-2026; D3c y D4 hechos) |
 | [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050, 0052 y 0053); 2c medida; el cierre espera OQ-17 (#99). | en curso |
-| [Reorganización por componentes](plans/reorganizacion-por-componentes.md) | Bloque 1 de la revisión de arquitectura del 28-11-2026: render en `cells/`, wasm en `lod_dataset/`, tests gigantes divididos, sondas del web host en `probes/`, índice de registros y check de organización. | en curso |
 | [Fase 1: niveles a demanda](plans/fase-1-niveles-a-demanda.md) | Plan detallado de la fase 1 (#35): rango construible, peticiones de nivel entre workers y construcción a demanda. | completado salvo el p95 (#54) |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 | [Temporales del conversor](plans/temporales-del-conversor.md) | Bajar el disco temporal del CLI de 11 × a ≤ 2 × el LAZ (RQ-06) sin cambiar la salida: spools comprimidos (LZ4 por planos) y escritura por subárbol; fase B fusionada (#108, 3,5 ×), falta la A. | en curso |

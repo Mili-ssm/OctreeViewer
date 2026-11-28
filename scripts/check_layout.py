@@ -12,7 +12,7 @@
 - Every dependency edge between workspace crates is in ALLOWED_EDGES, so a new
   edge is a deliberate change; stale entries fail.
 
-Rules: CONTRIBUTING.md#convenciones. Plan: docs/plans/reorganizacion-por-componentes.md.
+Rules: CONTRIBUTING.md#convenciones. Plan: docs/records/archive/reorganizacion-por-componentes.md.
 """
 import fnmatch
 import json

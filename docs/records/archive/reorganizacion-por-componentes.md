@@ -1,6 +1,6 @@
 # Reorganización por componentes, bloque 1 (plan de implementación)
 
-Estado: en curso · 28-11-2026 · pre-mortem hecho (enmiendas incorporadas) · pedido por el propietario («procede, comienza ya con el primer bloque y después vayamos poco a poco», 28-11-2026)
+Estado: completado · 28-11-2026 · pre-mortem hecho (enmiendas incorporadas) · pedido por el propietario («procede, comienza ya con el primer bloque y después vayamos poco a poco», 28-11-2026)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -13,6 +13,8 @@ con `split.py` (copia byte a byte); a mano solo cambian líneas `use`, `mod`, `#
 visibilidad (`pub(super)`/`pub(crate)`). La API pública del crate de render no cambia.
 
 **Tech Stack:** Rust (workspace nightly), bash, Python 3 stdlib, JS (web host).
+
+**Resultado (28-11-2026):** las 7 tareas hechas; tres revisiones finales (código, scripts y web host, documentación) con sus arreglos aplicados. Siguiente bloque, tras #122: ciclo `pipeline`↔`spatial`, `lib_tests.rs`, `spool_frame` y reexportaciones de `viewer_convert`; después, preflight LAS fuera de `viewer_core` y los tests de datos reales del padre de `cells_stream_tests.rs`.
 
 **Origen:** revisión de arquitectura del 28-11-2026 (tres revisiones `architect`; hallazgos 1, 2, 3, 7, 8 y 11
 del resumen al propietario). Fuera de este bloque, por chocar con la PR #122: ciclo `pipeline`↔`spatial`,
@@ -116,7 +118,7 @@ Hecho 28-11-2026: sondas, spike, servidor RED-REF y arnés movidos a `examples/w
 - [x] Mover la tabla de registros de `docs/README.md` a `docs/records/README.md` (índice vivo, no registro), agrupada por línea de trabajo con encabezados que la nombran; corregir los prefijos de los enlaces. `docs/README.md` deja una línea con el enlace y la regla en «Dónde va cada cosa».
 - [x] `check_docs_index.py`: los ficheros de `docs/records/` se buscan en `docs/records/README.md`.
 - [x] `python3 scripts/check_docs_index.py` y `python3 scripts/check_docs_links.py` pasan; ninguna fila perdida (contar enlaces antes y después). Commit `docs: give the records their own index`.
-- [ ] La PR #122 añade 4 filas a la tabla vieja (`CONVERSION_PARALELA_T0/T1/T2/T2_SPIKE`): comentar en #122 que, al rebasar, esas filas van a `docs/records/README.md`.
+- [x] La PR #122 añade 4 filas a la tabla vieja (`CONVERSION_PARALELA_T0/T1/T2/T2_SPIKE`): comentar en #122 que, al rebasar, esas filas van a `docs/records/README.md`.
 
 Hecho 28-11-2026: 155 filas movidas a `docs/records/README.md` en 8 grupos (18, 12, 13, 8, 50, 10, 13 y 31), 170 enlaces de tabla antes y después; `check_docs_index.py` ok (falla con un fichero sin enlazar, comprobado), `check_docs_links.py` ok, tests de `scripts/tests` ok. Pendiente el comentario en #122.
 
@@ -131,5 +133,5 @@ Hecho 28-11-2026: 155 filas movidas a `docs/records/README.md` en 8 grupos (18, 
   - una arista entre crates del workspace (de `cargo metadata --offline --format-version 1 --no-deps`, dependencias normales y dev) no está en la lista de aristas permitidas del script (la actual).
 - [x] Probarlo en rojo: introducir temporalmente cada violación y ver que falla con mensaje `fichero:línea`; luego verde. Añadir `step "layout" python3 scripts/check_layout.py` a `check.sh` y a `gate.sh`. Hecho 28-11-2026: una violación por regla falló con `fichero:línea` y se revirtió; `check.sh` lo incluye.
 - [x] Una línea en CONTRIBUTING «Convenciones»: carpeta por componente, `x.rs` + `x/`, tests hermanos `x_tests.rs`, prefijo repetido = subcarpeta, y que lo vigila `check_layout.py`. Hecho 28-11-2026.
-- [ ] `scripts/check.sh` completo en segundo plano → todo `ok`; commit `build: check the source layout`.
-- [ ] Cierre: `Estado: completado` en este plan, moverlo a `docs/records/archive/` con enlaces corregidos y su fila en `docs/records/README.md`, nota en `docs/estado.md`, PR a `main`.
+- [x] `scripts/check.sh` completo en segundo plano → todo `ok`; commit `build: check the source layout`. Hecho 28-11-2026: 25/25 pasos `ok` (incluidas paridad de bloques reales, bindings y fuzz).
+- [x] Cierre: `Estado: completado` en este plan, moverlo a `docs/records/archive/` con enlaces corregidos y su fila en `docs/records/README.md`, nota en `docs/estado.md`, PR a `main`.
