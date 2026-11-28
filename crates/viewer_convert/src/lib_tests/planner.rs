@@ -115,6 +115,28 @@ fn characterize_planner_structure_for_coincident_points() {
     );
 }
 
+/// `(requested, limit)` of a rejected plan, `None` when the plan was accepted.
+fn planner_budget_outcome(
+    input: &std::path::Path,
+    dir: &std::path::Path,
+    budget: u64,
+    workers: usize,
+) -> Option<(u64, u64)> {
+    let output = dir.join(format!("budget-{budget}-{workers}.oct"));
+    let options = leaf_budget(64, 0.01, budget)
+        .unwrap()
+        .with_spatial_workers(workers)
+        .unwrap();
+    match convert_file(input, &output, options) {
+        Ok(_) => None,
+        Err(ConvertError::MemoryBudgetExceeded { requested, limit }) => {
+            assert!(!output.exists());
+            Some((requested, limit))
+        }
+        Err(other) => panic!("budget={budget} workers={workers}: unexpected {other:?}"),
+    }
+}
+
 #[test]
 fn characterize_planner_budget_outcomes_with_one_worker() {
     let tmp = test_dir();

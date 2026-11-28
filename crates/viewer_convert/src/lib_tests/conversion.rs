@@ -18,6 +18,51 @@ fn visual_scale_normalizes_bounds_without_changing_coordinates() {
     ));
 }
 
+fn spool_file_count(directory: &std::path::Path) -> usize {
+    fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                spool_file_count(&path)
+            } else {
+                usize::from(matches!(
+                    path.extension().and_then(|extension| extension.to_str()),
+                    Some("spool" | "lod")
+                ))
+            }
+        })
+        .sum()
+}
+
+fn extended_fixture(path: &std::path::Path) {
+    let mut builder = Builder::from((1, 4));
+    builder.point_format = Format::new(8).unwrap();
+    let header = builder.into_header().unwrap();
+    let mut writer = Writer::from_path(path, header).unwrap();
+    // Two points: V8 cannot convert a cloud whose bounds are a single point (issue #114).
+    for (x, gps_time, nir) in [(10.0, 123.5, 0xCAFE), (11.0, 124.5, 0xBEEF)] {
+        writer
+            .write_point(Point {
+                x,
+                y: 20.0,
+                z: 30.0,
+                intensity: 1234,
+                return_number: 2,
+                number_of_returns: 3,
+                classification: las::point::Classification::Ground,
+                scan_angle: -1.25,
+                user_data: 9,
+                point_source_id: 77,
+                gps_time: Some(gps_time),
+                color: Some(Color::new(0x1200, 0xAB00, 0xFF00)),
+                nir: Some(nir),
+                ..Point::default()
+            })
+            .unwrap();
+    }
+}
+
 #[test]
 #[ignore = "issue #114: a cloud whose bounds are a single point cannot be converted to V8"]
 fn a_single_point_converts() {

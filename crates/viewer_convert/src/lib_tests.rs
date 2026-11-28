@@ -71,51 +71,6 @@ fn coincident_fixture(path: &std::path::Path) {
     }
 }
 
-fn spool_file_count(directory: &std::path::Path) -> usize {
-    fs::read_dir(directory)
-        .unwrap()
-        .map(|entry| {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                spool_file_count(&path)
-            } else {
-                usize::from(matches!(
-                    path.extension().and_then(|extension| extension.to_str()),
-                    Some("spool" | "lod")
-                ))
-            }
-        })
-        .sum()
-}
-
-fn extended_fixture(path: &std::path::Path) {
-    let mut builder = Builder::from((1, 4));
-    builder.point_format = Format::new(8).unwrap();
-    let header = builder.into_header().unwrap();
-    let mut writer = Writer::from_path(path, header).unwrap();
-    // Two points: V8 cannot convert a cloud whose bounds are a single point (issue #114).
-    for (x, gps_time, nir) in [(10.0, 123.5, 0xCAFE), (11.0, 124.5, 0xBEEF)] {
-        writer
-            .write_point(Point {
-                x,
-                y: 20.0,
-                z: 30.0,
-                intensity: 1234,
-                return_number: 2,
-                number_of_returns: 3,
-                classification: las::point::Classification::Ground,
-                scan_angle: -1.25,
-                user_data: 9,
-                point_source_id: 77,
-                gps_time: Some(gps_time),
-                color: Some(Color::new(0x1200, 0xAB00, 0xFF00)),
-                nir: Some(nir),
-                ..Point::default()
-            })
-            .unwrap();
-    }
-}
-
 fn has_attribute(block: &viewer_core::PointBlock, name: &str) -> bool {
     block
         .attributes()
@@ -139,9 +94,6 @@ fn output_pair_bytes(output: &std::path::Path) -> (Vec<u8>, Vec<u8>) {
         fs::read(output_attributes_path(output)).unwrap(),
     )
 }
-
-// --- Characterization of the spatial planner (Task 4, stage 2) -------------------------------
-// These pin today's observable behaviour so the per-node-job refactor can prove it changed nothing.
 
 fn sha256_hex(data: &[u8]) -> String {
     const K: [u32; 64] = [
@@ -272,6 +224,9 @@ fn sha256_hex(data: &[u8]) -> String {
     hex
 }
 
+// --- Characterization of the spatial planner (Task 4, stage 2) -------------------------------
+// These pin today's observable behaviour so the per-node-job refactor can prove it changed nothing.
+
 /// One line per node in id order, plus the SHA-256 of `.oct` followed by its attributes file.
 fn planner_snapshot(output: &std::path::Path) -> (Vec<String>, String) {
     let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
@@ -340,28 +295,6 @@ fn planner_snapshot_for(
 const BUDGET_HINT: &str = "budget literals depend on the estimate_memory constants and the fixture; \
     a mismatch may mean the estimate changed, not necessarily the planner";
 
-/// `(requested, limit)` of a rejected plan, `None` when the plan was accepted.
-fn planner_budget_outcome(
-    input: &std::path::Path,
-    dir: &std::path::Path,
-    budget: u64,
-    workers: usize,
-) -> Option<(u64, u64)> {
-    let output = dir.join(format!("budget-{budget}-{workers}.oct"));
-    let options = leaf_budget(64, 0.01, budget)
-        .unwrap()
-        .with_spatial_workers(workers)
-        .unwrap();
-    match convert_file(input, &output, options) {
-        Ok(_) => None,
-        Err(ConvertError::MemoryBudgetExceeded { requested, limit }) => {
-            assert!(!output.exists());
-            Some((requested, limit))
-        }
-        Err(other) => panic!("budget={budget} workers={workers}: unexpected {other:?}"),
-    }
-}
-
 fn eight_cluster_fixture(path: &std::path::Path) {
     let header = Builder::from((1, 2)).into_header().unwrap();
     let mut writer = Writer::from_path(path, header).unwrap();
@@ -380,12 +313,8 @@ fn eight_cluster_fixture(path: &std::path::Path) {
     }
 }
 
-// --- Serial core path (`convert_serial` / `validate_output_serial`) against the native CLI path ---
-
 fn workspace_path(relative: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(relative)
 }
-
-// --- Root partition by ranges on `ThreadedExecutor` (one thread per range, files) ---
