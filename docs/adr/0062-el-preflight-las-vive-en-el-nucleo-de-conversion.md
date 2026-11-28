@@ -22,13 +22,13 @@ usar `laz`, pierde esa dependencia y su feature.
 | Opción | Por qué no |
 | --- | --- |
 | Dejarlo en `viewer_core` | El motivo de ponerlo allí ya no existe; el dominio mantiene I/O y una dependencia de formato de entrada |
-| Un crate propio de entrada LAS | Un crate más para ~900 líneas con un solo usuario |
+| Un crate propio de entrada LAS | Un crate más para ~550 líneas (más sus tests) con un solo usuario |
 
 ## Consecuencias
 - Los usuarios cambian de ruta: `viewer_convert_core/src/error.rs`, `viewer_convert/tests/las_preflight.rs` y el objetivo
   de fuzz `fuzz_las_preflight` (que pasa a depender de `viewer_convert_core`).
 - Sin cambio de comportamiento ni de mensajes de error.
-- El texto del ADR 0012 no se edita: su ruta `viewer_core::las::preflight_las` queda histórica y este ADR la precisa.
+- Del ADR 0012 solo cambia su línea de estado: su ruta `viewer_core::las::preflight_las` queda histórica y este ADR la precisa.
 
 ## Revisar si
 Otro crate que no sea de conversión (el visor, `viewer_format`) necesita validar cabeceras LAS/LAZ.
