@@ -95,7 +95,7 @@ Hecho 28-11-2026: `AttributeDataType`/`AttributeDescriptor` (59 líneas) movidos
 
 ### Task 5: comentarios obsoletos, documentación y cierre
 
-- [ ] Comentarios que nombran versiones retiradas como vigentes o rutas antiguas: `viewer_format/src/verify.rs:1`, `global_frame.rs`, `occupancy_codec.rs`, `crs.rs` (corregir solo el texto; si el código mismo es de una versión retirada, anotarlo en el informe y no tocarlo).
-- [ ] `docs/reference/inventory.md`, `docs/estado.md` y CONTRIBUTING si nombran rutas movidas; `check_docs_links.py`, `check_docs_index.py`, `check_layout.py` en verde.
+- [x] Comentarios que nombran versiones retiradas como vigentes o rutas antiguas: `viewer_format/src/verify.rs:1`, `global_frame.rs`, `occupancy_codec.rs`, `crs.rs` (corregir solo el texto; si el código mismo es de una versión retirada, anotarlo en el informe y no tocarlo).
+- [x] `docs/reference/inventory.md`, `docs/estado.md` y CONTRIBUTING si nombran rutas movidas; `check_docs_links.py`, `check_docs_index.py`, `check_layout.py` en verde.
 - [ ] `scripts/check.sh` completo → todo `ok`.
 - [ ] Cierre: `Estado: completado`, mover el plan a `docs/records/archive/` con su fila en `docs/records/README.md`, nota en `docs/estado.md`, PR con base `refactor/layout`.
