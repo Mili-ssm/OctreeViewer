@@ -1,6 +1,6 @@
 # Temporales del conversor: spools comprimidos y escritura por subárbol
 
-Estado: en curso · 20-11-2026 · fase B hecha ([plan](../records/archive/temporales-del-conversor-fase-b.md), [PR #108](https://github.com/Mili-ssm/OctreeViewer/pull/108), [registro](../records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md): Albuera 11,1 × → 3,5 × el LAZ, salida idéntica, +24 % de tiempo); falta la fase A
+Estado: en pausa · 20-11-2026 · fase B hecha ([plan](../records/archive/temporales-del-conversor-fase-b.md), [PR #108](https://github.com/Mili-ssm/OctreeViewer/pull/108), [registro](../records/benchmarks/TEMPORALES_CLI_FASE_B_20-11-2026.md): Albuera 11,1 × → 3,5 × el LAZ, salida idéntica, +24 % de tiempo); la fase A está aparcada por el propietario ([#109](https://github.com/Mili-ssm/OctreeViewer/issues/109), 20-11-2026; [plan](temporales-del-conversor-fase-a.md))
 
 **Objetivo:** bajar el disco temporal del CLI de **11,1 × el LAZ** (medido en Albuera) a **≤ 2 ×**
 ([RQ-06](../requirements.md#requisitos-de-calidad), [OQ-04](../requirements.md#preguntas-abiertas), #24) sin cambiar
