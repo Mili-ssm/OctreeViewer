@@ -44,7 +44,7 @@ del resumen al propietario). Fuera de este bloque, por chocar con la PR #122: ci
 
 **Files:** `crates/viewer_wasm/src/lod_dataset.rs` y sus 7 `lod_*` enlazados por `#[path]`.
 
-- [ ] `git mv` según la tabla y borrar los `#[path]` correspondientes (los caminos de módulo no cambian):
+- [x] `git mv` según la tabla y borrar los `#[path]` correspondientes (los caminos de módulo no cambian):
 
 | Antes (`src/`) | Después (`src/lod_dataset/`) |
 | --- | --- |
@@ -56,8 +56,8 @@ del resumen al propietario). Fuera de este bloque, por chocar con la PR #122: ci
 | `lod_cells_sim_tests.rs` | `cells_stream_tests/sim.rs` |
 | `lod_cells_glue_sim_tests.rs` | `cells_stream_tests/sim/glue.rs` |
 
-- [ ] `gate.sh run viewer_wasm` → `GATE PASS` y lista de tests idéntica (los caminos no cambian).
-- [ ] Actualizar menciones en documentación viva (`grep -rn 'lod_cells' docs/reference docs/estado.md CONTRIBUTING.md`); commit `refactor(wasm): move lod_dataset submodules into its folder`.
+- [x] `gate.sh run viewer_wasm` → `GATE PASS` y lista de tests idéntica (los caminos no cambian).
+- [x] Actualizar menciones en documentación viva (`grep -rn 'lod_cells' docs/reference docs/estado.md CONTRIBUTING.md`); commit `refactor(wasm): move lod_dataset submodules into its folder`. Hecho 28-11-2026: GATE PASS, 1.315 nombres hoja idénticos, `viewer_wasm` 182 ok.
 
 ### Task 2: viewer_render_wgpu, subpaquete `cells/` (movimientos)
 
