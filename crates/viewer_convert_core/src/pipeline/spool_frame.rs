@@ -7,8 +7,8 @@
 use std::cell::RefCell;
 use std::io;
 
-pub(crate) const FRAME_HEADER_BYTES: usize = 8;
-pub(crate) const MAX_FRAME_RECORDS: usize = 8192;
+pub const FRAME_HEADER_BYTES: usize = 8;
+pub const MAX_FRAME_RECORDS: usize = 8192;
 const RAW_FLAG: u32 = 1 << 31;
 
 thread_local! {
@@ -17,14 +17,14 @@ thread_local! {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct FrameHeader {
+pub struct FrameHeader {
     pub logical_len: u32,
     pub stored_len: u32,
     pub raw: bool,
 }
 
 impl FrameHeader {
-    pub(crate) fn parse(bytes: [u8; FRAME_HEADER_BYTES]) -> Self {
+    pub fn parse(bytes: [u8; FRAME_HEADER_BYTES]) -> Self {
         let logical_len = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let stored = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         Self {
@@ -63,7 +63,7 @@ fn transpose(src: &[u8], dst: &mut [u8], record_bytes: usize, to_planes: bool) {
 
 /// Appends header and payload to `out`. `records.len()` must be a multiple of `record_bytes` and at
 /// most `MAX_FRAME_RECORDS` records. Allocates only by growing `out` (plus a per-thread scratch).
-pub(crate) fn encode_frame(records: &[u8], record_bytes: usize, out: &mut Vec<u8>) {
+pub fn encode_frame(records: &[u8], record_bytes: usize, out: &mut Vec<u8>) {
     assert!(record_bytes > 0 && records.len().is_multiple_of(record_bytes));
     assert!(records.len() / record_bytes <= MAX_FRAME_RECORDS);
     let logical_len = u32::try_from(records.len()).expect("frame fits u32 by the record limit");
@@ -92,7 +92,7 @@ pub(crate) fn encode_frame(records: &[u8], record_bytes: usize, out: &mut Vec<u8
 
 /// Replaces `out` with the original records; on error `out` is left empty. The header is
 /// untrusted: every length is validated.
-pub(crate) fn decode_frame(
+pub fn decode_frame(
     header: FrameHeader,
     payload: &[u8],
     record_bytes: usize,

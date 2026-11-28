@@ -19,7 +19,7 @@ use viewer_convert_core::pipeline::spool_store::{
     SpoolStore, entry_in, lifecycle_error, lock,
 };
 
-use crate::spool_frame::{
+use viewer_convert_core::pipeline::spool_frame::{
     FRAME_HEADER_BYTES, FrameHeader, MAX_FRAME_RECORDS, decode_frame, encode_frame,
 };
 

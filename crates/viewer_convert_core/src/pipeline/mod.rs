@@ -7,4 +7,5 @@ pub mod laz_chunks;
 pub mod nn_distance;
 pub mod node_job;
 pub mod point_source;
+pub mod spool_frame;
 pub mod spool_store;
