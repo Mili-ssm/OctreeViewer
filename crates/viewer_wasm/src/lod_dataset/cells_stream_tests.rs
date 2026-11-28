@@ -3138,7 +3138,7 @@ fn settled_sample_pose(pose: &str) -> (Harness, ViewProjection) {
 /// `gpu_input_digest` of the settled cut at each demo pose, golden. It hashes what
 /// the GPU receives per node (active-depth bits, mask, node depth), not the per-octant fields of
 /// the entries, so it must not change while those fields are replaced by node-level ones. The
-/// cut goldens of `cell_cut_tests.rs` are pure cuts without a pool, so they emit no active bits:
+/// cut goldens of `cells/cut_tests.rs` are pure cuts without a pool, so they emit no active bits:
 /// these poses stand in for them.
 const GPU_INPUT_GOLDEN: &[(&str, u64)] = &[
     ("P1", 0x2f2f_4f1a_b372_490e),
@@ -3643,7 +3643,7 @@ fn twin_rows(h: &Harness, view: &ViewProjection, lattice_px: usize) -> Vec<NodeR
 }
 
 /// `ceil(min(points, 8^(depth - node_depth)) / 512)` pages, at least one: the formula of the
-/// pool's `estimate_pages` (`cell_pool/residency.rs`, private), restated.
+/// pool's `estimate_pages` (`cells/pool/residency.rs`, private), restated.
 fn estimate_pages_like_the_pool(points: u64, depth: u8, node_depth: u8) -> usize {
     let gap = u32::from(depth.saturating_sub(node_depth));
     let cells = if gap >= 21 {
@@ -3910,7 +3910,7 @@ struct DataBound {
     resident_pages: usize,
 }
 
-/// `ViewSpan::on_axis` (`cell_cut.rs`, private) restated: the first buildable depth whose
+/// `ViewSpan::on_axis` (`cells/cut.rs`, private) restated: the first buildable depth whose
 /// smallest child, for a cell on the view axis with its nearest face at view depth `near`
 /// (dataset units, eye-relative frame), projects below `target_px`, capped.
 #[expect(

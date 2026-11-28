@@ -166,7 +166,7 @@ const RHO_MAX: f32 = {RHO_MAX:e};
 const RECT_SLACK: f32 = {RECT_SLACK:e};
 
 // True only if every pixel the box [lo, hi] can touch already holds something nearer than its
-// nearest corner (see the module documentation of `cell_cull.rs`).
+// nearest corner (see the module documentation of `cells/cull.rs`).
 fn cell_occluded(lo: vec3<f32>, hi: vec3<f32>) -> bool {{
     var nearest = 3.0e38;
     var rho = 0.0;

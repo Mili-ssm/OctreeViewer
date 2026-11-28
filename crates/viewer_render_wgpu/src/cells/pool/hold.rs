@@ -460,7 +460,7 @@ pub(super) type Run = (u8, u8);
 /// depth, not the nominal one) capped by what the view wants (`wish`). It may take over iff
 /// `run.1 >= min(finest of before, wish)`. The two judges, this and the per-octant rule
 /// (`eval_refine_hold`, deleted by plan task 11), are not ordered; what guarantees the gate is
-/// the twin-judged tables of `cell_pool_tests` (see `ZOOM_OUT_PARTS`).
+/// the twin-judged tables of `cells::pool` tests (see `ZOOM_OUT_PARTS`).
 ///
 /// `before` empty (nothing drew there) releases the node. An empty run (`None`: nothing
 /// drawable resident) also returns `true`: the caller decides it, and holds the node, because

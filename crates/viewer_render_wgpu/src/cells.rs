@@ -2,7 +2,7 @@
 
 pub mod bench;
 pub(crate) mod codec;
-pub(crate) mod cull;
+mod cull;
 pub(crate) mod cut;
 pub(crate) mod driver;
 pub mod lod;

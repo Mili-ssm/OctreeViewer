@@ -49,6 +49,7 @@ pub use cells::pages::{
     MISSING_INTENSITY, PAGE_HAS_CLASS, PAGE_HAS_INTENSITY, PAGE_SLOTS, PackedLevel, PageEntry,
     PageFrame, PageInfo, decode_cell, pack_level, srgb_to_linear_table,
 };
+pub use cells::pages::{MASK_WORDS, NODE_WORDS};
 pub use cells::pool::{
     ActiveLevel, CellPool, CellPoolEvent, CutApply, DEFAULT_POOL_PAGES,
     DEFAULT_UPLOAD_BUDGET_BYTES, FramePlan, HIGH_PERCENT, LOW_PERCENT, LevelKey, MaskUpdate,
@@ -56,7 +57,7 @@ pub use cells::pool::{
     usable_pages,
 };
 pub use cells::range::{nearest_occupied_depth, nearest_occupied_page};
-pub use cells::render::{CellLimitMode, CellPoolError, LodCounters, MASK_WORDS, NODE_WORDS};
+pub use cells::render::{CellLimitMode, CellPoolError, LodCounters};
 pub use frame_timer::GpuFrameStats;
 pub use gpu::{
     BlockUploadStats, DeviceLoss, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer,

@@ -120,7 +120,7 @@ pub struct CellCutEntry {
     /// farthest along the view (ADR 0054 rule). `None` for a node with no
     /// visible octant and for one with no buildable depth inside its span.
     pub range: Option<(u8, u8)>,
-    /// Node-level fields of plan task 10 (`cell_pool/run.rs`), computed by the pool next to the
+    /// Node-level fields of plan task 10 (`cells/pool/run.rs`), computed by the pool next to the
     /// per-octant ones; presence readers use the anchor (`claims`): the anchor depth, its target, the single active
     /// run, whether the node is staged and the depth that extends the run. `None`/`false` out of
     /// the pool.
@@ -390,7 +390,7 @@ pub(crate) fn behind_wanted(depths: [u8; 8], (behind, front): (u8, u8)) -> [u8; 
 /// that once a depth stops refining every finer one does too (its children are half as large at
 /// about the same distance). It then costs 2 probes when the answer has not moved, instead of one
 /// per coarser depth, and returns the same depth whenever that holds. The
-/// `the_hinted_search_equals_the_full_search` test (`cell_pool_tests.rs`) found no difference in
+/// `the_hinted_search_equals_the_full_search` test (`cells/pool_tests.rs`) found no difference in
 /// 79 993 random poses. A `hint` outside the range falls back to the full search.
 #[expect(
     clippy::too_many_arguments,

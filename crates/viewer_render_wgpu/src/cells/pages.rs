@@ -27,6 +27,13 @@ pub const PAGE_HAS_CLASS: u32 = 2;
 pub const MISSING_INTENSITY: u16 = u16::MAX;
 /// Largest stored intensity; `MISSING_INTENSITY` is reserved.
 pub const MAX_INTENSITY: u16 = u16::MAX - 1;
+/// `u32` words of the mask of one node (8 x 8 x 8 bits): words `0..MASK_WORDS` of its record.
+pub const MASK_WORDS: usize = 16;
+/// `u32` words of a node record, the per-slot layout of the `masks` buffer (E8): `0..16` the mask;
+/// `16..19` the node corner (f32 bits, eye-relative, scaled units); `19` the node depth; `20..22`
+/// the active depths (low, high); `22..24` the 4^3 mip (low, high); `24` the 2^3 mip in bits
+/// `0..8` and the 1^3 mip at bit 8; `25..32` zero. `cells::lod::node_record` builds it.
+pub const NODE_WORDS: usize = 32;
 
 /// One cell: `[x | y << 16, z | flags << 16, rgba8 sRGB, intensity | class << 16]`.
 #[repr(C)]

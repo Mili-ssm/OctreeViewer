@@ -143,7 +143,7 @@ pub enum NodeCellError {
     /// depth exceeds it (ADR 0032: an error, never a silent merge).
     AbsoluteDepthExceeded,
     /// A requested level that needs far more pages than its cells would fill packed tight (see
-    /// `cell_pages::packs_efficiently`): packing it would allocate a page per cell. Like
+    /// `cells::pages::packs_efficiently`): packing it would allocate a page per cell. Like
     /// `AbsoluteDepthExceeded`, it makes the depth unservable.
     TooSparseToPage,
 }
