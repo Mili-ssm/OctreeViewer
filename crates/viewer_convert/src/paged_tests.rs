@@ -199,11 +199,11 @@ fn planned_quantiles(
 ) -> Option<viewer_format::PointDistanceQuantiles> {
     use crate::{
         las_source::{FileBytes, inspect_source, open_las_reader},
-        pipeline::{
-            clock::SystemClock,
-            point_source::{LasFactory, LasPointSource, RangeSource},
-            spool_store::MemSpoolStore,
-        },
+        pipeline::SystemClock,
+    };
+    use viewer_convert_core::pipeline::{
+        point_source::{LasFactory, LasPointSource, RangeSource},
+        spool_store::MemSpoolStore,
     };
     use viewer_convert_core::spatial::{build_spatial_plan_from_source, executor::SerialExecutor};
 

@@ -1871,7 +1871,7 @@ fn sha256_matches_the_two_block_vector() {
 /// dies at its end. Leaf spools and LOD samples stay live until the block phase. A node that
 /// became a leaf (all points equal) deletes its scratch children at its end. Pure leaves are no
 /// jobs.
-fn variant_c_serial_peak(events: &[crate::diagnostics::NodeSpoolEvent]) -> u64 {
+fn variant_c_serial_peak(events: &[viewer_convert_core::diagnostics::NodeSpoolEvent]) -> u64 {
     let mut jobs = events
         .iter()
         .filter(|e| !e.is_leaf || e.became_leaf_all_equal)
@@ -1909,10 +1909,11 @@ fn variant_c_serial_peak(events: &[crate::diagnostics::NodeSpoolEvent]) -> u64 {
 #[test]
 fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_phase() {
     use crate::{
+        file_spool_store::FileSpoolStore,
         las_source::{inspect_source, open_las_reader},
-        pipeline::spool_store::{FileSpoolStore, MemSpoolStore, SpoolAccounting},
         workspace::Workspace,
     };
+    use viewer_convert_core::pipeline::spool_store::{MemSpoolStore, SpoolAccounting};
 
     let tmp = test_dir();
     let input = tmp.path().join("source.las");
@@ -2107,11 +2108,9 @@ fn node_jobs_commit_coincident_nodes_and_blocks_in_preorder() {
 fn mem_plan_and_drain(
     input: &std::path::Path,
     options: ConvertOptions,
-) -> crate::diagnostics::SpatialPhaseDiagnostics {
-    use crate::{
-        las_source::{inspect_source, open_las_reader},
-        pipeline::spool_store::MemSpoolStore,
-    };
+) -> viewer_convert_core::diagnostics::SpatialPhaseDiagnostics {
+    use crate::las_source::{inspect_source, open_las_reader};
+    use viewer_convert_core::pipeline::spool_store::MemSpoolStore;
     let reader = open_las_reader(input).unwrap();
     let source = inspect_source(&reader).unwrap();
     let mem = MemSpoolStore::new(true);
@@ -2205,37 +2204,43 @@ fn a_child_with_all_points_equal_becomes_a_leaf() {
 /// A `MemSpoolStore` whose `reader` fails once for each listed point count (after its delay), so
 /// a job error lands on the node whose input spool holds that many records.
 struct FailingStore {
-    inner: crate::pipeline::spool_store::MemSpoolStore,
+    inner: viewer_convert_core::pipeline::spool_store::MemSpoolStore,
     record_bytes: u64,
     failures: std::sync::Mutex<Vec<(u64, std::time::Duration)>>,
 }
 
-impl crate::pipeline::spool_store::SpoolStore for FailingStore {
+impl viewer_convert_core::pipeline::spool_store::SpoolStore for FailingStore {
     type Reader = std::io::Cursor<Vec<u8>>;
     fn create(
         &self,
-        id: crate::pipeline::spool_store::SpoolId,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
         record_bytes: usize,
     ) -> Result<(), ConvertError> {
         self.inner.create(id, record_bytes)
     }
     fn append(
         &self,
-        id: crate::pipeline::spool_store::SpoolId,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
         bytes: &[u8],
     ) -> Result<(), ConvertError> {
         self.inner.append(id, bytes)
     }
-    fn close(&self, id: crate::pipeline::spool_store::SpoolId) -> Result<(), ConvertError> {
+    fn close(
+        &self,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+    ) -> Result<(), ConvertError> {
         self.inner.close(id)
     }
-    fn len(&self, id: crate::pipeline::spool_store::SpoolId) -> Result<u64, ConvertError> {
+    fn len(
+        &self,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+    ) -> Result<u64, ConvertError> {
         self.inner.len(id)
     }
     fn reader(
         &self,
-        id: crate::pipeline::spool_store::SpoolId,
-        extent: crate::pipeline::spool_store::SpoolExtent,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+        extent: viewer_convert_core::pipeline::spool_store::SpoolExtent,
     ) -> Result<Self::Reader, ConvertError> {
         let failure = {
             let mut failures = self.failures.lock().unwrap();
@@ -2252,16 +2257,19 @@ impl crate::pipeline::spool_store::SpoolStore for FailingStore {
         }
         self.inner.reader(id, extent)
     }
-    fn delete(&self, id: crate::pipeline::spool_store::SpoolId) -> Result<(), ConvertError> {
+    fn delete(
+        &self,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+    ) -> Result<(), ConvertError> {
         self.inner.delete(id)
     }
 }
 
-impl crate::pipeline::spool_store::SpoolAccounting for FailingStore {
+impl viewer_convert_core::pipeline::spool_store::SpoolAccounting for FailingStore {
     fn next_event_seq(&self) -> Option<u64> {
         self.inner.next_event_seq()
     }
-    fn ledger_totals(&self) -> Option<crate::pipeline::spool_store::LedgerTotals> {
+    fn ledger_totals(&self) -> Option<viewer_convert_core::pipeline::spool_store::LedgerTotals> {
         self.inner.ledger_totals()
     }
 }
@@ -2294,11 +2302,12 @@ fn failing_plan(
     options: ConvertOptions,
     failures: &[(u64, std::time::Duration)],
     on_progress: &mut dyn FnMut(super::ConversionProgress) -> bool,
-) -> (ConvertError, crate::pipeline::spool_store::MemSpoolStats) {
-    use crate::{
-        las_source::{inspect_source, open_las_reader},
-        pipeline::spool_store::MemSpoolStore,
-    };
+) -> (
+    ConvertError,
+    viewer_convert_core::pipeline::spool_store::MemSpoolStats,
+) {
+    use crate::las_source::{inspect_source, open_las_reader};
+    use viewer_convert_core::pipeline::spool_store::MemSpoolStore;
     use viewer_convert_core::spatial::SpoolLayout;
     let reader = open_las_reader(input).unwrap();
     let source = inspect_source(&reader).unwrap();
@@ -2315,7 +2324,7 @@ fn failing_plan(
 }
 
 /// Plans from an already opened reader with the native clock and executor.
-fn plan_from_reader<S: crate::pipeline::spool_store::PlanStore>(
+fn plan_from_reader<S: viewer_convert_core::pipeline::spool_store::PlanStore>(
     reader: las::Reader,
     input: &std::path::Path,
     source: &viewer_convert_core::source::SourceInfo,
@@ -2324,19 +2333,21 @@ fn plan_from_reader<S: crate::pipeline::spool_store::PlanStore>(
     on_progress: &mut dyn FnMut(super::ConversionProgress) -> bool,
     collect: bool,
 ) -> Result<viewer_convert_core::spatial::SpatialPlan, ConvertError> {
-    let factory = crate::pipeline::point_source::LasFactory::new(crate::las_source::FileBytes {
-        path: input.to_owned(),
-        len: std::fs::metadata(input).unwrap().len(),
-    });
+    let factory = viewer_convert_core::pipeline::point_source::LasFactory::new(
+        crate::las_source::FileBytes {
+            path: input.to_owned(),
+            len: std::fs::metadata(input).unwrap().len(),
+        },
+    );
     viewer_convert_core::spatial::build_spatial_plan_from_source(
-        &mut crate::pipeline::point_source::RangeSource::Las(
-            crate::pipeline::point_source::LasPointSource::full(reader),
+        &mut viewer_convert_core::pipeline::point_source::RangeSource::Las(
+            viewer_convert_core::pipeline::point_source::LasPointSource::full(reader),
         ),
         &factory,
         source,
         options,
         store,
-        &crate::pipeline::clock::SystemClock,
+        &crate::pipeline::SystemClock,
         &crate::executor::ThreadedExecutor,
         on_progress,
         collect,
@@ -2503,11 +2514,11 @@ fn a_lower_branch_commit_error_wins_over_a_higher_branch_job_error() {
 fn the_serial_executor_plans_like_the_ready_queue() {
     use crate::{
         las_source::{inspect_source, open_las_reader},
-        pipeline::{
-            clock::SystemClock,
-            point_source::{LasFactory, LasPointSource, MemBytes, RangeSource},
-            spool_store::MemSpoolStore,
-        },
+        pipeline::SystemClock,
+    };
+    use viewer_convert_core::pipeline::{
+        point_source::{LasFactory, LasPointSource, MemBytes, RangeSource},
+        spool_store::MemSpoolStore,
     };
     use viewer_convert_core::spatial::{build_spatial_plan_from_source, executor::SerialExecutor};
 
@@ -2926,8 +2937,8 @@ fn threaded_root_ranges_report_a_corrupt_laz_chunk_like_the_default_scan() {
 
 #[test]
 fn joined_segments_read_back_identically() {
-    use crate::pipeline::spool_store::{SpoolExtent, SpoolId, SpoolStore};
     use std::io::Read;
+    use viewer_convert_core::pipeline::spool_store::{SpoolExtent, SpoolId, SpoolStore};
     use viewer_convert_core::spatial::node_job::join_segments;
 
     const RECORD: usize = 42;
