@@ -15,7 +15,8 @@
   lives in viewer_convert_core (ADR 0062), so viewer_core stays free of the decoder.
 - No `.rs` file of `crates/viewer_convert_core/src/pipeline.rs` or `pipeline/` names the
   `spatial` module in a non-comment line (`crate::spatial`, `super::super::spatial`, or `spatial::`
-  inside a multi-line `use crate::{ ... }` group): `pipeline` holds the seams with the environment
+  inside a multi-line `use crate::{ ... }` group), nor a name the crate root re-exports from
+  `spatial` (`pub use spatial::…` in lib.rs): `pipeline` holds the seams with the environment
   and `spatial` (the octree planner) depends on it, never the other way round.
 
 Rules: CONTRIBUTING.md#convenciones. Plan: docs/records/archive/reorganizacion-por-componentes.md.

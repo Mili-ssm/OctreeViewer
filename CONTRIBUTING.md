@@ -78,7 +78,7 @@ Fuente única de las reglas.
   nueva evidencia va en un registro nuevo y fechado (`format-v7-evidence.md` es histórico y ya no se amplía).
 - **Organización por componente**: fichero padre `x.rs` + carpeta `x/` (no `x/mod.rs` en código nuevo); tests en hermanos `x_tests.rs`
   con `#[path]`; un prefijo repetido en una carpeta plana pide una subcarpeta. `scripts/check_layout.py` vigila los `#[path]`,
-  los prefijos ya retirados, que la política de CPU de `cells/` no use la GPU y las aristas entre crates.
+  los prefijos ya retirados, que la política de CPU de `cells/` no use la GPU, que `pipeline` del núcleo de conversión no dependa de `spatial` y las aristas entre crates.
 - **Fechas** `dd-mm-aaaa`; documentación en español salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md` y `PROBES.md` (inglés).
 - **Decisiones**: las de diseño duraderas se registran en [docs/adr/](docs/adr/README.md); una aceptada se sustituye con un ADR nuevo, no se edita.
 - **Un hecho, un documento**: el resto enlaza; dónde va cada tipo de documento, en el
