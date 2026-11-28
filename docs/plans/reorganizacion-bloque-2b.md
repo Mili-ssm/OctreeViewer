@@ -106,10 +106,13 @@ Enmiendas del pre-mortem: `FakeGpu` deduce la identidad de página de `box_max` 
 
 **Interfaces:** Produces la feature `test-support` de `viewer_render_wgpu` (apagada por defecto) que expone `pub mod test_support` (`#[cfg(any(test, feature = "test-support"))]`, `#[doc(hidden)]`) con el doble único; `viewer_wasm` la activa solo en `[dev-dependencies]`.
 
-- [ ] **5a, spike:** convertir temporalmente los `Err` de riesgo de `StrictTarget` en `panic!` y pasar la suite de wasm. Si falla, parar e informar (riesgos latentes que la recuperación oculta); no relajar comprobaciones.
-- [ ] **5b:** el doble único es la unión de las comprobaciones de ambos (ninguna se pierde ni se relaja) y los registros que usan los tests de ambos crates; `StrictTarget` desaparece. Si unir algún punto obligara a cambiar lo que un test afirma, parar e informar.
-- [ ] `cargo tree -p viewer_wasm -e features --target wasm32-unknown-unknown` sin `test-support` fuera de los tests; clippy `--all-features` limpio.
-- [ ] Gate `viewer_render_wgpu viewer_wasm`; commit `refactor(render): one strict GPU test double behind a test-support feature`.
+- [x] **5a, spike:** convertir temporalmente los `Err` de riesgo de `StrictTarget` en `panic!` y pasar la suite de wasm. Si falla, parar e informar (riesgos latentes que la recuperación oculta); no relajar comprobaciones.
+  Hecho 28-11-2026: spike con los riesgos como `panic!`, 182 passed (informe `.superpowers/sdd/limpieza/reports/2b-task5a.md`).
+- [x] **5b:** el doble único es la unión de las comprobaciones de ambos (ninguna se pierde ni se relaja) y los registros que usan los tests de ambos crates; `StrictTarget` desaparece. Si unir algún punto obligara a cambiar lo que un test afirma, parar e informar.
+  Hecho 28-11-2026 (`c6d52d2`): `FakeGpu` único (`test_support`, feature `test-support`); la identidad de página sale del `PageInfo` guardado por slot (`fake_entry_target` desaparece); `StrictTarget` borrado; wasm 182 passed/20 ignored, render 466/3.
+- [x] `cargo tree -p viewer_wasm -e features --target wasm32-unknown-unknown` sin `test-support` fuera de los tests; clippy `--all-features` limpio.
+- [x] Gate `viewer_render_wgpu viewer_wasm`; commit `refactor(render): one strict GPU test double behind a test-support feature`.
+  Hecho 28-11-2026: clippy (nativo, `--all-features`, wasm32), tests de ambos crates, `check_layout.py` (arista `viewer_wasm -> viewer_render_wgpu (dev)` añadida a `ALLOWED_EDGES`) y `cargo fmt` ok; `cargo tree` sin `test-support` fuera de `[dev-dependencies]`.
 
 ### Task 6: documentación y cierre
 
