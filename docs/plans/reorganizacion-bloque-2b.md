@@ -65,8 +65,9 @@ internos `doc(hidden)` del núcleo que usa `viewer_wasm` (ADR 0026: los crates s
 
 **Interfaces:** Produces `crate::pipeline` como el módulo de implementaciones nativas de las costuras: `pipeline.rs` con `SystemClock` (y nada que solo reexporte); los tests que hoy viven en los shims `pipeline/node_job.rs` y `pipeline/point_source.rs` pasan a hermanos `pipeline/node_job_tests.rs` y `pipeline/point_source_tests.rs` (o `pipeline_tests.rs` si es más simple) sin cambiar sus nombres hoja. Los usuarios importan las rutas del núcleo (`viewer_convert_core::…`), `crate::file_spool_store::FileSpoolStore` y `crate::diagnostic_timer::DiagnosticTimer` directamente.
 
-- [ ] Quitar cada `pub(crate) use …::*` y `diagnostics.rs`; reescribir los `use` de sus usuarios.
-- [ ] Gate `viewer_convert` + `convert parity wasm32`; commit `refactor(convert): import the core seams directly instead of re-export shims`.
+- [x] Quitar cada `pub(crate) use …::*` y `diagnostics.rs`; reescribir los `use` de sus usuarios.
+- [x] Gate `viewer_convert` + `convert parity wasm32`; commit `refactor(convert): import the core seams directly instead of re-export shims`.
+  Hecho 28-11-2026 (`bc910cd`): gate PASS y paridad wasm32 ok; los tests de los shims pasan a `pipeline/{node_job,point_source}_tests.rs` (una firma se reajusta por rustfmt al quitar un nivel de sangría).
 
 ### Task 3: dividir `viewer_convert/src/lib_tests.rs` por tema
 
