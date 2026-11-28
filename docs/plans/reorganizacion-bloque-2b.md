@@ -86,9 +86,9 @@ Reparto orientativo por líneas actuales (el implementador lo ajusta a lo que co
 | `root_ranges.rs` | rangos de raíz y segmentos unidos (2834–2974) |
 | `pinned_output.rs` | SHA fijadas de la salida V8 (2978–3064) |
 
-- [ ] El reparto se escribe **por nombre de ítem** (`lib_tests.names.json`: ítem → fichero, en `.superpowers/sdd/limpieza/gate/`) y un script `spec_from_names.py` genera de él el spec de líneas de `split.py` con `items.py`; así la tarea 7 repite el split sobre el `lib_tests.rs` de la #122 (enmienda del pre-mortem).
-- [ ] Dividir con `split.py`; `moved.py` sin líneas reescritas salvo `use`/`mod`/visibilidad.
-- [ ] Gate `viewer_convert`; commit `refactor(convert): split the crate tests by topic`.
+- [x] El reparto se escribe **por nombre de ítem** (`lib_tests.names.json`: ítem → fichero, en `.superpowers/sdd/limpieza/gate/`) y un script `spec_from_names.py` genera de él el spec de líneas de `split.py` con `items.py`; así la tarea 7 repite el split sobre el `lib_tests.rs` de la #122 (enmienda del pre-mortem).
+- [x] Dividir con `split.py`; `moved.py` sin líneas reescritas salvo `use`/`mod`/visibilidad.
+- [x] Gate `viewer_convert`; commit `refactor(convert): split the crate tests by topic`.
 
 ### Task 4: retirar `quantized_occupancy_bench.rs`
 
