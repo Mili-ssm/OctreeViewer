@@ -265,13 +265,13 @@ impl CellTarget for FakeGpu {
         level: &PackedLevel,
         page_slots: &[u32],
     ) -> Result<(), CellPoolError> {
-        // The first upload creates the pool, but a failed one drops it again.
-        if level.pages.len() != page_slots.len() {
-            return Err(CellPoolError::PageCountMismatch {
-                pages: level.pages.len(),
-                slots: page_slots.len(),
-            });
-        }
+        // One slot per page is the driver's contract, so a mismatch is a hazard, not a lifecycle
+        // error the driver may recover from.
+        assert_eq!(
+            level.pages.len(),
+            page_slots.len(),
+            "one slot per uploaded page"
+        );
         self.has_pool = true;
         let key = LevelKey {
             session: 0,
@@ -290,9 +290,11 @@ impl CellTarget for FakeGpu {
             };
             self.page_cells.insert(*slot, hash);
             self.uploads_total += 1;
-            // A recolour rewrites the page its slot already holds: the queue orders the write
-            // after the draws already submitted, so it is not a hazard.
-            if self.owner.get(slot).map(|(owner, _)| owner) == Some(&key) {
+            // A recolour rewrites the page its slot already holds (same level, same page): the
+            // queue orders the write after the draws already submitted, so it is not a hazard.
+            if self.owner.get(slot).map(|(owner, _)| owner) == Some(&key)
+                && self.page_at.get(slot) == Some(info)
+            {
                 self.rewrites += 1;
                 continue;
             }
