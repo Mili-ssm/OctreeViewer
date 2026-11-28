@@ -1,5 +1,6 @@
-//! Task 7a pass criteria: residency is all-or-nothing, uploads are spread over frames, the fit
-//! coarsens the farthest nodes first and settles, and no page is rewritten while it can be read.
+//! Cell pool tests. This file holds the shared `Rig` and helpers, the task 7a pass criteria (residency is
+//! all-or-nothing, uploads are spread over frames, the fit coarsens the farthest nodes first and settles,
+//! no page is rewritten while it can be read) and some R3-Q18/R3-Q20 cases; the other suites live in `tests/`.
 
 use std::collections::{HashMap, HashSet};
 

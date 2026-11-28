@@ -115,7 +115,7 @@ def is_policy_file(f):
     rel = f[len(CELLS):]
     if rel.endswith("_tests.rs") or rel == "pool/tests.rs" or rel.startswith("pool/tests/"):
         return False
-    return rel[:-3] in tuple(f"{s}" for s in POLICY_STEMS) or rel.startswith("pool/")
+    return rel[:-3] in POLICY_STEMS or rel.startswith("pool/")
 
 
 def check_policy(files, errors):
@@ -129,8 +129,12 @@ def check_policy(files, errors):
 
 
 def check_edges(errors):
-    out = subprocess.check_output(
-        ["cargo", "metadata", "--offline", "--format-version", "1", "--no-deps"], text=True)
+    try:
+        out = subprocess.check_output(
+            ["cargo", "metadata", "--offline", "--format-version", "1", "--no-deps"], text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        errors.append(f"Cargo.toml: crate edges not checked: `cargo metadata` failed ({exc})")
+        return
     packages = json.loads(out)["packages"]
     names = {p["name"] for p in packages}
     edges = {
@@ -147,8 +151,10 @@ def check_edges(errors):
 def main():
     root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
     os.chdir(root)
-    files = [f for f in subprocess.check_output(["git", "ls-files", "*.rs"], text=True).split()
-             if os.path.exists(f)]
+    # Untracked files count too, so a stray new file fails before it is staged.
+    listed = subprocess.check_output(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.rs"], text=True).split()
+    files = sorted({f for f in listed if os.path.exists(f)})
     errors = []
     check_paths(files, errors)
     check_prefixes(files, errors)

@@ -1,4 +1,5 @@
-//! R3-Q20: nodes without a level wait outside the cut.
+//! R3-Q20: nodes without a level wait outside the cut; also the cases built on the same scenes
+//! (R3-Q21 zoom-out, cap drop, continuity, D5 and the cell-mode range).
 
 use super::*;
 

@@ -1,4 +1,5 @@
-//! ADR 0055 plan, tasks 5 and 7a: the data bound of the node range and the wish capped at it.
+//! ADR 0055 plan, tasks 5 and 7a: the data bound of the node range and the wish capped at it;
+//! also the R3-Q21 gate under a fit cap and plan task 10b.
 
 use super::*;
 

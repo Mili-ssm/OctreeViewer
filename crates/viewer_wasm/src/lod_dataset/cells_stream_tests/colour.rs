@@ -1,4 +1,4 @@
-//! Colour generations (R3-Q33).
+//! Colour generations (R3-Q33), plus the far-pose and p4 border probes that shared their section.
 
 use super::*;
 
