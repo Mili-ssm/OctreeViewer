@@ -544,3 +544,154 @@ fn p4_border_levels_under() -> (std::collections::BTreeMap<u8, usize>, Option<(u
         .and_then(|j| h.last_levels[j].2);
     (histogram, node_14)
 }
+
+/// Deliverable A: why `node_far_depth` answers what it does for the nodes `ids`: the far corner,
+/// then at that corner and at the centre of the 8|14 border on the ground, per depth, the px of
+/// the cell and of its smallest child as the probe measures them (`OctantProbe::at_anchor`,
+/// restated: the type is crate-private) and as the twin measures the lattice cell actually there.
+fn far_diagnosis(h: &Harness, view: &ViewProjection, ids: &[u64]) {
+    let ctx = h.cell_ctx.as_ref().expect("cell mode context");
+    let grid = h.dataset.cell_grid();
+    let hierarchy = h.dataset.metadata.hierarchy();
+    let camera = view.camera();
+    let scale = ctx.scale;
+    let eye_rel = camera.position().map(|v| v / scale);
+    let forward = unit(std::array::from_fn(|a| {
+        camera.target()[a] - camera.position()[a]
+    }));
+    let data = hierarchy.stats().data_bounds;
+    let target = f64::from(ctx.lod.target_px);
+    println!(
+        "-- far diagnosis: forward {forward:.4?} eye (relative, dataset units) {eye_rel:.3?} \
+         origin {:?} target_px {target} min_side {} (scaled)",
+        ctx.origin, ctx.lod.min_side
+    );
+    for id in ids {
+        let Some(node) = h.cell_nodes.iter().find(|n| n.id.get() == *id) else {
+            println!("node {id}: not in the cut");
+            continue;
+        };
+        let j = h.cell_nodes.iter().position(|n| n.id == node.id).unwrap();
+        let bounds = hierarchy.node(node.id).unwrap().bounds();
+        let rep = representative_depth(&grid, bounds);
+        let resident: Vec<u8> = (rep.saturating_sub(3)..=rep + 20)
+            .filter(|d| {
+                h.driver
+                    .pool()
+                    .is_resident(h.driver.pool().key(node.id, *d))
+            })
+            .collect();
+        let is_leaf = hierarchy.is_leaf(node.id) && !hierarchy.is_unloaded(node.id);
+        let rmin: [f64; 3] = std::array::from_fn(|a| bounds.min()[a] - ctx.origin[a]);
+        let rmax: [f64; 3] = std::array::from_fn(|a| bounds.max()[a] - ctx.origin[a]);
+        let corner: [f64; 3] =
+            std::array::from_fn(|a| if forward[a] > 0.0 { rmax[a] } else { rmin[a] });
+        let corner_depth: f64 = (0..3).map(|a| (corner[a] - eye_rel[a]) * forward[a]).sum();
+        // The centre of the border between nodes 8 and 14 (y = 32) on the ground (z = 0).
+        let border = [
+            f64::midpoint(rmin[0], rmax[0]),
+            32.0 - ctx.origin[1],
+            0.0 - ctx.origin[2],
+        ];
+        println!(
+            "node {id}: node_depth {} rep {rep} leaf {is_leaf} buildable.0 {rep} (derived: rep; the \
+             pool does not expose it; buildable.1 not exposed, resident {resident:?}) range {:?} \
+             wanted {:?}",
+            node.lod.node_depth, h.last_levels[j].2, h.last_entries[j].1
+        );
+        let rel_of =
+            |p: [f64; 3]| -> [f64; 3] { std::array::from_fn(|a| p[a] * scale - ctx.eye[a]) };
+        let screen = |rel: [f64; 3]| {
+            let dot = |v: [f32; 3]| (0..3).map(|a| rel[a] * f64::from(v[a])).sum::<f64>();
+            let d = dot(ctx.lod.forward);
+            [
+                ctx.viewport[0] * 0.5 + dot(ctx.lod.right) * f64::from(ctx.lod.focal) / d,
+                ctx.viewport[1] * 0.5 - dot(ctx.lod.up) * f64::from(ctx.lod.focal) / d,
+            ]
+        };
+        for (name, anchor) in [
+            ("far corner", corner),
+            ("border centre on the ground", border),
+        ] {
+            let in_data = (0..3).all(|a| {
+                let p = anchor[a] + ctx.origin[a];
+                p >= data.min()[a] && p <= data.max()[a]
+            });
+            let rel = rel_of(anchor);
+            println!(
+                "  anchor {name}: relative {anchor:.3?} view depth {:.3} in data bounds {in_data} \
+                 on screen {} screen px {:.0?}",
+                (0..3)
+                    .map(|a| rel[a] * f64::from(ctx.lod.forward[a]))
+                    .sum::<f64>(),
+                ctx.on_screen(rel),
+                screen(rel)
+            );
+            // The lattice cell actually there: the point nudged inside the node box.
+            let inside: [f64; 3] = std::array::from_fn(|a| {
+                let eps = (rmax[a] - rmin[a]) * 1e-6;
+                anchor[a].clamp(rmin[a] + eps, rmax[a] - eps)
+            });
+            let inside_rel = rel_of(inside);
+            let mut far = None;
+            for depth in rep..=rep + 8 {
+                let (cell, child, _) = probe_cell(view, grid.root_side, rmin, rmax, anchor, depth);
+                let meets = child < target;
+                if meets && far.is_none() {
+                    far = Some(depth);
+                }
+                let level = depth - node.lod.node_depth;
+                let cells = (1_u64 << level) as f64;
+                let side = node.side / cells;
+                let cell_idx: [u32; 3] = std::array::from_fn(|a| {
+                    ((inside_rel[a] - node.lo[a]) / side)
+                        .floor()
+                        .clamp(0.0, cells - 1.0) as u32
+                });
+                let lo = cell_lo(&node.lod, cell_idx, side as f32);
+                println!(
+                    "    depth {depth:>2}: probe cell {cell:7.2} px, smallest child {child:7.2} px \
+                     (meets = child < target: {meets}) | twin lattice cell {:7.2} px, smallest \
+                     child {:7.2} px, refines {}",
+                    edge_px(&ctx.lod, lo, side as f32),
+                    min_child_edge_px(&ctx.lod, lo, side as f32),
+                    refines(&ctx.lod, lo, side as f32)
+                );
+            }
+            println!("    first depth that meets (linear search of node_far_depth): {far:?}");
+        }
+        // Sweep along the node's border at y = 32 (its face towards the eye side) from the far
+        // corner to the other end, on the ground: view depth, screen position and the smallest
+        // child of the depths `rep + 4 ..= rep + 6` as the probe measures it.
+        println!(
+            "  sweep along x at y = 32, z = 0 (probe, depths {}..={}):",
+            rep + 4,
+            rep + 6
+        );
+        for step in 0..=8 {
+            let x = rmin[0] + (rmax[0] - rmin[0]) * f64::from(step) / 8.0;
+            let anchor = [x, 32.0 - ctx.origin[1], 0.0 - ctx.origin[2]];
+            let rel = rel_of(anchor);
+            let children: Vec<String> = (rep + 4..=rep + 6)
+                .map(|d| {
+                    format!(
+                        "d{d} {:.2}",
+                        probe_cell(view, grid.root_side, rmin, rmax, anchor, d).1
+                    )
+                })
+                .collect();
+            println!(
+                "    x {x:6.2}: view depth {:.3} screen x {:6.0} on screen {:5} child px {children:?}",
+                (0..3)
+                    .map(|a| rel[a] * f64::from(ctx.lod.forward[a]))
+                    .sum::<f64>(),
+                screen(rel)[0],
+                ctx.on_screen(rel)
+            );
+        }
+        println!(
+            "  far corner view depth {corner_depth:.3} (eye plane crossed: {})",
+            corner_depth <= 0.0
+        );
+    }
+}
