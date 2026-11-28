@@ -10,8 +10,8 @@ license.workspace = true
 las.workspace = true
 # Same version as the lock via `las`; decodes the chunk table before `las` does.
 laz = { version = "0.13", default-features = false }
-thiserror.workspace = true
 lz4_flex = "0.14"
+thiserror.workspace = true
 viewer_core = { path = "../viewer_core" }
 viewer_format = { path = "../viewer_format" }
 

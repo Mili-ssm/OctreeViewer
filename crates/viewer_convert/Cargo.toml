@@ -12,8 +12,6 @@ path = "src/main.rs"
 [dependencies]
 ctrlc.workspace = true
 las = { workspace = true, features = ["laz-parallel"] }
-# Same version as the lock via `las`; used only to decode the chunk table before `las` does.
-laz = "0.13"
 rayon.workspace = true
 serde.workspace = true
 thiserror.workspace = true
@@ -22,6 +20,8 @@ viewer_convert_core = { path = "../viewer_convert_core" }
 viewer_format = { path = "../viewer_format" }
 
 [dev-dependencies]
+# Same version as the lock via `las`; the preflight tests build LAZ chunk tables with it.
+laz = "0.13"
 serde_json.workspace = true
 tempfile = "3"
 viewer_render_wgpu = { path = "../viewer_render_wgpu" }

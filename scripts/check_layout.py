@@ -148,7 +148,7 @@ def check_edges(errors):
         errors.append(f"scripts/check_layout.py: stale ALLOWED_EDGES entry {e}")
 
 
-def check_core_has_no_laz(errors):
+def check_viewer_core_has_no_laz(errors):
     path = "crates/viewer_core/Cargo.toml"
     with open(path, encoding="utf-8") as fh:
         for n, line in enumerate(fh, 1):
@@ -168,7 +168,7 @@ def main():
     check_prefixes(files, errors)
     check_policy(files, errors)
     check_edges(errors)
-    check_core_has_no_laz(errors)
+    check_viewer_core_has_no_laz(errors)
     for e in errors:
         print(e)
     print(f"layout: {'ok' if not errors else f'{len(errors)} error(s)'} ({len(files)} files)")
