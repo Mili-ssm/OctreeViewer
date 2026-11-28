@@ -67,11 +67,12 @@ Aprobado por el propietario el 28-11-2026 ([ADR 0062](../adr/0062-el-preflight-l
 
 **Interfaces:** Produces `viewer_convert_core::las_preflight` (módulo `pub` + `#[doc(hidden)]`) con `LasPreflightError`, `preflight_las`, `preflight_las_layout`, `check_laz_chunk_table`, `check_layered_chunk`, `check_chunk_bytes`, `LazChunkTableLayout`, `LayeredChunks`, `MAX_LAZ_CHUNK_BYTES` y sus tests. `viewer_core::las` conserva lo que usan otros crates que no son de conversión (`las/extra.rs`, que `viewer_format` usa por `LasExtraByte`, y cualquier ítem como `visual_scale_for_bounds`, `checked_visual_scale`, `las_attribute_schema` o `TARGET_RENDER_EXTENT` que use `viewer_format`, `viewer_render_wgpu` o `viewer_wasm`; comprobar con `git grep` cada uno).
 
-- [ ] Tabla de ítems de `las.rs` con su lista de usuarios por crate (en el informe); se mueven solo los que solo usan `viewer_convert_core`, `viewer_convert`, `fuzz/` y tests.
-- [ ] Mover con `split.py` (o, si sale el fichero entero, `git mv` + quitar lo que se queda) a `viewer_convert_core/src/las_preflight.rs` (+ `las_preflight_tests.rs` si los tests eran `mod tests`). Si `viewer_core` ya no usa `laz`, quitar la feature y la dependencia, y quitar `features = ["laz"]` del núcleo.
-- [ ] Prueba de aptitud: `! cargo tree -p viewer_core -e normal --offline | grep -q '^.*laz'` si la feature se fue; añadirla a `check_layout.py` como una arista prohibida o un paso de `check.sh` (lo más simple).
-- [ ] Fuzz: `cargo check` en `fuzz/` (orden del paso `fuzz check` de `check.sh`); corregir el comentario obsoleto de `fuzz_las_preflight.rs:25`.
-- [ ] Gate `viewer_core viewer_convert_core viewer_convert` + las dos paridades; commit `refactor(core): move the LAS preflight into the conversion core`.
+- [x] Tabla de ítems de `las.rs` con su lista de usuarios por crate (en el informe); se mueven solo los que solo usan `viewer_convert_core`, `viewer_convert`, `fuzz/` y tests.
+- [x] Mover con `split.py` (o, si sale el fichero entero, `git mv` + quitar lo que se queda) a `viewer_convert_core/src/las_preflight.rs` (+ `las_preflight_tests.rs` si los tests eran `mod tests`). Si `viewer_core` ya no usa `laz`, quitar la feature y la dependencia, y quitar `features = ["laz"]` del núcleo.
+- [x] Prueba de aptitud: `! cargo tree -p viewer_core -e normal --offline | grep -q '^.*laz'` si la feature se fue; añadirla a `check_layout.py` como una arista prohibida o un paso de `check.sh` (lo más simple).
+- [x] Fuzz: `cargo check` en `fuzz/` (orden del paso `fuzz check` de `check.sh`); corregir el comentario obsoleto de `fuzz_las_preflight.rs:25`.
+- [x] Gate `viewer_core viewer_convert_core viewer_convert` + las dos paridades; commit `refactor(core): move the LAS preflight into the conversion core`.
+  Hecho 28-11-2026: GATE PASS (1.315 nombres hoja), `viewer_core` 42+10+2+7+13+4+9+10+14+7 ok, `viewer_convert_core` 101 ok, `viewer_convert` 105+9+21 ok; `moved.py` sin líneas reescritas (solo `use`/`mod`/atributos y el test de ficheros, movido a `viewer_convert/tests/las_preflight.rs`); `fuzz fmt` y `fuzz check` ok; paridad de formato (`cef4b24aa6655bf2`) y de conversión (autzen, small, synthetic) iguales; `cargo tree -p viewer_core` sin `laz` (0) y regla nueva en `check_layout.py` (probada con una infracción temporal).
 
 ### Task 3: `viewer_core::spatial` en carpeta
 
