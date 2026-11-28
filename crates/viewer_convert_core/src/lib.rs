@@ -16,6 +16,8 @@ pub mod diagnostics;
 #[doc(hidden)]
 pub mod error;
 #[doc(hidden)]
+pub mod las_preflight;
+#[doc(hidden)]
 pub mod limits;
 #[doc(hidden)]
 pub mod options;

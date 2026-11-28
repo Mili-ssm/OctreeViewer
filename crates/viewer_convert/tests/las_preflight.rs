@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use las::{Builder, LazParallelism, Point, Reader, Writer, WriterOptions, point::Format};
-use viewer_core::las::{LasPreflightError, preflight_las};
+use viewer_convert_core::las_preflight::{LasPreflightError, preflight_las};
 
 fn write_laz(version: (u8, u8), format: u8, chunk_size: Option<u32>, points: usize) -> Vec<u8> {
     let mut builder = Builder::from(version);
@@ -159,7 +159,7 @@ fn huge_fixed_chunk_size_is_rejected_by_header_preflight() {
     let len = bytes.len() as u64;
     assert!(matches!(
         preflight_las(&mut Cursor::new(&bytes), len),
-        Err(viewer_core::las::LasPreflightError::ChunkTooLarge { .. })
+        Err(viewer_convert_core::las_preflight::LasPreflightError::ChunkTooLarge { .. })
     ));
     assert!(matches!(
         convert_bytes(&bytes),
@@ -177,7 +177,7 @@ fn variable_chunk_trusting_forged_header_count_is_rejected() {
     assert!(matches!(
         convert_bytes(&bytes),
         Err(ConvertError::LasPreflight(
-            viewer_core::las::LasPreflightError::ChunkTooLarge { .. }
+            viewer_convert_core::las_preflight::LasPreflightError::ChunkTooLarge { .. }
         ))
     ));
 }
@@ -348,10 +348,10 @@ fn open_sequential(bytes: Vec<u8>) {
 fn shared_check(bytes: &[u8]) -> Result<(), LasPreflightError> {
     let len = bytes.len() as u64;
     let mut cursor = Cursor::new(bytes);
-    let layout = viewer_core::las::preflight_las_layout(&mut cursor, len)
+    let layout = viewer_convert_core::las_preflight::preflight_las_layout(&mut cursor, len)
         .expect("header preflight alone accepts it")
         .expect("compressed with a chunk table");
-    viewer_core::las::check_laz_chunk_table(&mut cursor, layout)
+    viewer_convert_core::las_preflight::check_laz_chunk_table(&mut cursor, layout)
 }
 
 #[test]
@@ -391,4 +391,20 @@ fn layered_chunks_holding_fewer_points_than_declared_are_rejected_by_preflight()
         preflight_las(&mut Cursor::new(&bytes), len),
         Err(LasPreflightError::Truncated(_))
     ));
+}
+
+#[test]
+fn sample_las_files_pass() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/samples");
+    let mut seen = 0;
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "las" || e == "laz") {
+            let mut file = std::fs::File::open(&path).unwrap();
+            let len = file.metadata().unwrap().len();
+            preflight_las(&mut file, len).unwrap();
+            seen += 1;
+        }
+    }
+    assert!(seen >= 2);
 }

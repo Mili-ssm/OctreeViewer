@@ -11,6 +11,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 viewer_convert = { path = "../crates/viewer_convert" }
+viewer_convert_core = { path = "../crates/viewer_convert_core" }
 viewer_core = { path = "../crates/viewer_core" }
 viewer_format = { path = "../crates/viewer_format" }
 las = { version = "0.11.1", default-features = false, features = ["laz", "laz-parallel"] }

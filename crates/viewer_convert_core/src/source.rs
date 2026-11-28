@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use las::Reader;
 use viewer_core::las::{
-    LasExtraByte, LasPreflightError, LasSchemaSpec, LazChunkTableLayout, las_attribute_schema_for,
-    parse_extra_byte_descriptors, validate_extra_bytes,
+    LasExtraByte, LasSchemaSpec, las_attribute_schema_for, parse_extra_byte_descriptors,
+    validate_extra_bytes,
 };
 use viewer_core::{AttributeDescriptor, CoordinateFrame, SpatialBounds};
 
@@ -16,6 +16,7 @@ use viewer_format::{
 };
 
 use crate::error::ConvertError;
+use crate::las_preflight::{self, LasPreflightError, LazChunkTableLayout, preflight_las_layout};
 use crate::options::ConvertOptions;
 
 pub struct SourceInfo {
@@ -171,7 +172,7 @@ pub fn open_las_reader_from<R: Read + Seek + Send + Sync + 'static>(
     mut input: R,
     len: u64,
 ) -> Result<Reader, ConvertError> {
-    if let Some(layout) = viewer_core::las::preflight_las_layout(&mut input, len)? {
+    if let Some(layout) = preflight_las_layout(&mut input, len)? {
         check_laz_chunk_table(&mut input, layout)?;
         input.seek(SeekFrom::Start(0))?;
     }
@@ -236,7 +237,7 @@ fn check_laz_chunk_table<R: Read + Seek>(
     file: &mut R,
     layout: LazChunkTableLayout,
 ) -> Result<(), ConvertError> {
-    match contain_decoder_panic(|| viewer_core::las::check_laz_chunk_table(file, layout))? {
+    match contain_decoder_panic(|| las_preflight::check_laz_chunk_table(file, layout))? {
         Err(LasPreflightError::LazChunkTable {
             field,
             value,
