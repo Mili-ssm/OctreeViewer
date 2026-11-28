@@ -134,12 +134,26 @@ PIPELINE_ROOT = "crates/viewer_convert_core/src/pipeline"
 SPATIAL_WORD = re.compile(r"\bspatial\b")
 
 
+def spatial_root_reexports():
+    """Names the crate root re-exports from `spatial` (`pub use spatial::…;`), which a pipeline
+    file could otherwise import as `crate::Name` without writing the word `spatial`."""
+    lib = os.path.join(os.path.dirname(PIPELINE_ROOT), "lib.rs")
+    with open(lib, encoding="utf-8") as fh:
+        text = fh.read()
+    names = set()
+    for stmt in re.findall(r"pub use spatial::([^;]+);", text):
+        names.update(w for w in re.findall(r"\b[A-Za-z_]\w*\b", stmt.rsplit("::{", 1)[-1]) if w != "self")
+    return names
+
+
 def check_pipeline_independent(files, errors):
+    reexports = spatial_root_reexports()
+    reexport_re = re.compile(r"\b(" + "|".join(sorted(reexports)) + r")\b") if reexports else None
     for f in files:
         if f != PIPELINE_ROOT + ".rs" and not f.startswith(PIPELINE_ROOT + "/"):
             continue
         for n, line in code_lines(f):
-            if SPATIAL_WORD.search(line):
+            if SPATIAL_WORD.search(line) or (reexport_re and reexport_re.search(line)):
                 errors.append(f"{f}:{n}: pipeline must not depend on `spatial` (the planner builds on the seams, not the reverse)")
 
 
