@@ -1,6 +1,6 @@
 # Reorganización por componentes, bloque 2a (plan de implementación)
 
-Estado: en curso · 28-11-2026 · pedido por el propietario («avanza con el siguiente bloque», 28-11-2026)
+Estado: en curso · 28-11-2026 · pre-mortem hecho (enmiendas incorporadas) · pedido por el propietario («avanza con el siguiente bloque», 28-11-2026)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -10,7 +10,7 @@ crate de dominio, `viewer_core::spatial` en carpeta y los últimos ficheros mal 
 
 **Architecture:** movimientos de código entre módulos y crates con `git mv` o con `split.py`
 (copia byte a byte); a mano solo `use`, `mod`, `#[path]`, reexportaciones, visibilidad
-(`pub(crate)`/`pub(super)`, o `pub` solo donde un ítem cambia de crate y ya era `pub`),
+(`pub(crate)`/`pub(super)`, o `pub` donde un ítem cambia de crate y el crate de origen lo usaba),
 dependencias en `Cargo.toml` y comentarios que nombran rutas.
 
 **Tech Stack:** Rust (workspace nightly), Python 3 stdlib.
@@ -53,11 +53,14 @@ propietario) y `quantized_occupancy_bench.rs` (experimento v6.2 cerrado; retirar
 
 **Interfaces:** Produces `viewer_convert_core::pipeline::spool_frame::*` (mismos nombres y firmas que hoy; visibilidad `pub` + `#[doc(hidden)]` en el módulo) para `FileSpoolStore` hoy y para el `HybridSpoolStore` de la tarea 3 de #122.
 
-- [ ] `git mv` y ajustar `use`; los tests del fichero se mueven con él.
+- [ ] `git mv` y ajustar `use`; los tests del fichero se mueven con él. Sus ítems `pub(crate)` pasan a `pub` (los usa `viewer_convert`).
+- [ ] Tras el commit, comentar en la PR #122 que `spool_frame` vive ahora en `viewer_convert_core::pipeline::spool_frame` y que su tarea 3 (compresión en `HybridSpoolStore`) conviene hacerla después de rebasar sobre esta rama.
 - [ ] `cargo check -p viewer_convert_core --target wasm32-unknown-unknown --offline` y `cargo clippy` del núcleo en wasm32 sin avisos (la `clippy.toml` del núcleo no debe saltar).
 - [ ] Gate `viewer_convert_core viewer_convert` y, además, los pasos `format parity wasm32` y `convert parity wasm32` de `scripts/check.sh` (copiar sus órdenes); commit `refactor(convert): move the spool frame codec into the core`.
 
-### Task 2: preflight LAS fuera de `viewer_core`
+### Task 2: preflight LAS fuera de `viewer_core` — **en espera de decisión del propietario**
+
+El [ADR 0012](../adr/0012-validacion-previa-de-cabeceras-las-laz.md) (aceptado) fija `viewer_core::las::preflight_las` en su decisión: moverlo necesita un ADR nuevo y el visto bueno del propietario (AGENTS.md, «No reabrir decisiones»). Si se aprueba, se aplican además las enmiendas del pre-mortem: el test `sample_las_files_pass` (`las.rs:685-697`, usa `std::fs`) va a `viewer_convert/tests/las_preflight.rs`, no al núcleo; se quedan en `viewer_core` `TARGET_RENDER_EXTENT`, `las_attribute_schema`, `visual_scale_for_bounds` y `checked_visual_scale` (sus usuarios son ficheros de #122); Files añade `viewer_convert/Cargo.toml:21`, `viewer_wasm/Cargo.toml:21`, `fuzz/Cargo.toml` (+`viewer_convert_core`) y `fuzz/Cargo.lock`; se borra el `#[cfg(feature = "laz")]` de `las.rs:308`; `fuzz check` es obligatorio; se divide en mover y quitar la feature.
 
 **Files:** `crates/viewer_core/src/las.rs` (1.049 líneas), `viewer_core/Cargo.toml` (feature `laz`), `viewer_convert_core/src/{lib.rs,error.rs,source.rs}`, `viewer_convert_core/Cargo.toml`, `viewer_convert/tests/las_preflight.rs`, `viewer_convert/src/las_extra_tests.rs:165` (solo si su función se mueve), `fuzz/fuzz_targets/fuzz_las_preflight.rs`, `docs/reference/inventory.md`.
 
@@ -75,14 +78,15 @@ propietario) y `quantized_occupancy_bench.rs` (experimento v6.2 cerrado; retirar
 
 - [ ] `AttributeDataType` y `AttributeDescriptor` (con su `impl`, ~L155–220) pasan a `dataset.rs` con `split.py`; `lib.rs` reexporta igual.
 - [ ] `spatial_lod_priority.rs` → `spatial/lod_priority.rs` y `spatial_lod_tests.rs` → `spatial/lod_tests.rs`, sin `#[path]` (los caminos de módulo no cambian); quitar la entrada `spatial_lod_priority.rs` de `ALLOWED_PATHS`.
+- [ ] `docs/reference/inventory.md:22` enlaza `spatial_lod_priority.rs`: actualizarlo en esta tarea.
 - [ ] Gate `viewer_core viewer_format viewer_convert_core`; commit `refactor(core): give spatial its folder and move the attribute schema to dataset`.
 
-### Task 4: últimos ficheros mal situados de `viewer_wasm`
+### Task 4: últimos ficheros mal situados de `viewer_wasm` (4a tests, 4b bindings: un trabajador cada una)
 
 **Files:** `crates/viewer_wasm/src/lod_dataset/cells_stream_tests.rs` (3.266 líneas) y `cells_stream_tests/{colour,real}.rs`; `crates/viewer_wasm/src/bindings/mod.rs` → `bindings.rs`, `lod_request_scheduler.rs` → `bindings/scheduler.rs`, `lib.rs:18,57`; `scripts/check_layout.py` (`ALLOWED_PATHS` nombra `bindings/mod.rs`).
 
-- [ ] Con `split.py`: los 4 tests de datos reales de la sección «Real data» (~L2056–2425 antes del bloque 1; hoy cerca de la L1685) a `cells_stream_tests/real.rs`; los ayudantes que usan `bench`, `sim` o `glue` (`open_real*`) se quedan en el padre. `far_diagnosis` (solo lo usa `colour.rs:372`) pasa a `colour.rs`. Corregir el banner «belvedere v7.5» si el dataset es V8 (el nombre del fichero lo dice).
-- [ ] `git mv bindings/mod.rs bindings.rs` (el `#[path = "../../tests/support/reference_spacing_probe.rs"]` cambia a `../tests/support/…` porque el directorio base pasa a `src/`; comprobar) y `lod_request_scheduler.rs` → `bindings/scheduler.rs` declarado en `bindings.rs`; `lib.rs` mantiene `pub use … WasmBlockRequestScheduler` desde su nueva ruta. Solo compila en wasm32: `cargo clippy -p viewer_wasm --target wasm32-unknown-unknown` sin avisos.
+- [ ] Con `split.py`: **4a**: los 4 tests de datos reales (L1844–2053 de hoy) a `cells_stream_tests/real.rs`; se quedan en el padre `struct Real`, `impl Real`, `real_path`, `mod bench; mod sim;` y `open_real*` (L1690–1843), que usan `bench`, `sim` y `glue`. `far_diagnosis` (solo lo usa `colour.rs:372`) pasa a `colour.rs`. Corregir el banner «belvedere v7.5» si el dataset es V8 (el nombre del fichero lo dice).
+- [ ] **4b**: `git mv bindings/mod.rs bindings.rs` (el `#[path = "../../tests/support/reference_spacing_probe.rs"]` cambia a `../tests/support/…` porque el directorio base pasa a `src/`; comprobar) y `lod_request_scheduler.rs` → `bindings/scheduler.rs` declarado en `bindings.rs`; `lib.rs` mantiene `pub use … WasmBlockRequestScheduler` desde su nueva ruta. Solo compila en wasm32: `cargo clippy -p viewer_wasm --target wasm32-unknown-unknown` sin avisos y, como el probe está tras una feature que ninguna puerta compila, `cargo check -p viewer_wasm --target wasm32-unknown-unknown --features test-reference-spacing --offline`. Actualizar la entrada de `ALLOWED_PATHS` (fichero y destino) y `docs/reference/inventory.md:27` (enlaza `bindings/mod.rs`).
 - [ ] Gate `viewer_wasm`; además el paso `convert parity bindings` de `check.sh` si `wasm-bindgen` coincide con el lock; commit `refactor(wasm): move the real-data stream tests and the scheduler binding`.
 
 ### Task 5: comentarios obsoletos, documentación y cierre
