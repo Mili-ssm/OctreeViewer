@@ -1,4 +1,5 @@
-//! v6.2-pre physical geometry stream: six-byte nodes in contiguous depth arrays.
+//! Occupancy geometry codec (V8 compact occupancy; introduced as the v6.2-pre physical geometry
+//! stream): six-byte nodes in contiguous depth arrays.
 use crate::{FormatError, QuantizedOccupancy};
 
 const NODE_BYTES: usize = 6;

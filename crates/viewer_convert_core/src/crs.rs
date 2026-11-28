@@ -1,4 +1,5 @@
-//! CRS identity and raw bytes from the LAS projection records (`v7.4-pre`, RF-02, RF-24).
+//! CRS identity and raw bytes from the LAS projection records (introduced in `v7.4-pre`, kept by V8;
+//! RF-02, RF-24).
 //!
 //! Identity is authority plus code: the WKT1 root `AUTHORITY`, else GeoKey 3072 (projected) then
 //! 2048 (geographic). A file with neither is local.
