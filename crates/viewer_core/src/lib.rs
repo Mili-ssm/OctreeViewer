@@ -26,8 +26,8 @@ pub use block_cache::{
 #[cfg(feature = "experimental")]
 pub use categorical_attribute::{CategoricalAttribute, CategoricalAttributeError};
 pub use dataset::{
-    AttributeColumn, AttributeValues, DatasetError, DatasetMetadata, DatasetSource, PointBlock,
-    ResidentBlockSource,
+    AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, DatasetError,
+    DatasetMetadata, DatasetSource, PointBlock, ResidentBlockSource,
 };
 pub use geometry::{
     Aabb, ColorRgb, CoordinateFrame, CoordinateFrameError, Point, PointBatch, VoxelCoord,
@@ -48,10 +48,10 @@ pub use scheduler::{
     ScheduledBlockRequest, SchedulerError, ViewUpdate,
 };
 pub use spatial::{
-    AttributeDataType, AttributeDescriptor, BlockId, DEFAULT_LOD_PRIORITY_BYTES, FrustumPlane,
-    HierarchySemantics, LodPriorityFallback, LodPriorityStats, LodSelection, LodSelectionConfig,
-    LodSelectionError, NodeId, SpatialBounds, SpatialError, SpatialFrustum, SpatialHierarchy,
-    SpatialNode, SpatialQuery, SpatialStats, SpatialSubdivision, reference_spacing,
+    BlockId, DEFAULT_LOD_PRIORITY_BYTES, FrustumPlane, HierarchySemantics, LodPriorityFallback,
+    LodPriorityStats, LodSelection, LodSelectionConfig, LodSelectionError, NodeId, SpatialBounds,
+    SpatialError, SpatialFrustum, SpatialHierarchy, SpatialNode, SpatialQuery, SpatialStats,
+    SpatialSubdivision, reference_spacing,
 };
 pub use visibility::{VisibilityQuery, VisibleVoxel, VisibleVoxelBatch};
 pub use voxel_store::{

@@ -1,8 +1,65 @@
 use thiserror::Error;
 
-use crate::{
-    AttributeDataType, AttributeDescriptor, BlockId, CoordinateFrame, PointBatch, SpatialHierarchy,
-};
+use crate::{BlockId, CoordinateFrame, PointBatch, SpatialError, SpatialHierarchy};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttributeDataType {
+    U8,
+    I8,
+    U16,
+    I16,
+    U32,
+    I32,
+    U64,
+    I64,
+    F32,
+    F64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeDescriptor {
+    name: String,
+    data_type: AttributeDataType,
+    component_count: u32,
+}
+
+impl AttributeDescriptor {
+    pub fn new(
+        name: impl Into<String>,
+        data_type: AttributeDataType,
+        component_count: u32,
+    ) -> Result<Self, SpatialError> {
+        let name = name.into();
+        if name.trim().is_empty() {
+            return Err(SpatialError::EmptyAttributeName);
+        }
+        if component_count == 0 {
+            return Err(SpatialError::ZeroAttributeComponents { name });
+        }
+
+        Ok(Self {
+            name,
+            data_type,
+            component_count,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn data_type(&self) -> AttributeDataType {
+        self.data_type
+    }
+
+    pub const fn component_count(&self) -> u32 {
+        self.component_count
+    }
+
+    pub(crate) fn allocated_name_bytes(&self) -> usize {
+        self.name.capacity()
+    }
+}
 
 /// Dataset information shared by readers and consumers of spatial blocks.
 #[derive(Debug, Clone, PartialEq)]

@@ -412,7 +412,7 @@ mod tests {
         .unwrap();
         let names: Vec<_> = schema
             .iter()
-            .map(crate::spatial::AttributeDescriptor::name)
+            .map(crate::AttributeDescriptor::name)
             .collect();
         assert_eq!(
             &names[7..],

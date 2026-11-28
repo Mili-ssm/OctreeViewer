@@ -32,8 +32,6 @@ ALLOWED_PATHS = [
      "../../viewer_format/src/occupancy_codec.rs", "bench compiles the codec without a crate edge"),
     ("crates/viewer_convert/examples/real_dataset_bench.rs",
      "support/conversion_metrics.rs", "example helper shared outside the example root"),
-    ("crates/viewer_core/src/spatial.rs",
-     "spatial_lod_priority.rs", "sibling submodule of a file-sized parent"),
     ("crates/viewer_wasm/src/bindings/mod.rs",
      "../../tests/support/reference_spacing_probe.rs", "integration-test support reused by unit tests"),
     ("crates/viewer_format/tests/*.rs",
