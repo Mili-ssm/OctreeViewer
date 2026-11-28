@@ -10,7 +10,7 @@ Estado: Aceptada · Fecha: 28-11-2026 · Decide: propietario · Precisa la ubica
   único usuario en producción (`viewer_convert_core/src/source.rs`).
 - `viewer_core` se declara sin I/O (`lib.rs:2-3`), pero el preflight lee con `Read + Seek` y obliga a `viewer_core` a
   depender de `laz` (feature `laz`).
-- Revisión de arquitectura del 28-11-2026, hallazgo F5 ([plan](../plans/reorganizacion-bloque-2a.md), tarea 2).
+- Revisión de arquitectura del 28-11-2026, hallazgo F5 ([plan](../records/archive/reorganizacion-bloque-2a.md), tarea 2).
 
 ## Decisión
 El propietario (28-11-2026): **el preflight LAS (validación de cabecera, tabla de chunks LAZ y sus errores) vive en

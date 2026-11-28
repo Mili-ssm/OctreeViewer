@@ -167,6 +167,7 @@ Fuentes: [benchmarks/](benchmarks/) (medidas) y [archive/](archive/) (documentos
 
 | Documento | Contenido | Marca |
 | --- | --- | --- |
+| [Reorganización, bloque 2a](archive/reorganizacion-bloque-2a.md) | Plan cerrado (28-11-2026): `spool_frame` y el preflight LAS al núcleo de conversión ([ADR 0062](../adr/0062-el-preflight-las-vive-en-el-nucleo-de-conversion.md)), `viewer_core` sin `laz`, `spatial/` en carpeta, `bindings.rs` y tests de datos reales en `viewer_wasm`. | histórico |
 | [Reorganización por componentes, bloque 1](archive/reorganizacion-por-componentes.md) | Plan cerrado (28-11-2026): render en `cells/`, wasm en `lod_dataset/`, tests gigantes divididos, sondas en `web-host/probes/`, este índice y `scripts/check_layout.py`. | histórico |
 | [V6 pre1](archive/FORMAT_V6_PRE1.md), [pre2](archive/FORMAT_V6_PRE2.md), [pre3](archive/FORMAT_V6_PRE3.md), [pre4](archive/FORMAT_V6_PRE4.md), [V4](archive/FORMAT_V4.md) | Especificaciones de formatos retirados o en retirada. | histórico |
 | [Entregas 14-10-2026](archive/DELIVERIES_2026-10-14.md) | Implementaciones y experimentos cerrados, con checks históricos. | histórico |

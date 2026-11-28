@@ -1,6 +1,6 @@
 # Reorganización por componentes, bloque 2a (plan de implementación)
 
-Estado: en curso · 28-11-2026 · pre-mortem hecho (enmiendas incorporadas) · pedido por el propietario («avanza con el siguiente bloque», 28-11-2026)
+Estado: completado · 28-11-2026 · pre-mortem hecho (enmiendas incorporadas) · pedido por el propietario («avanza con el siguiente bloque», 28-11-2026)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -15,9 +15,11 @@ dependencias en `Cargo.toml` y comentarios que nombran rutas.
 
 **Tech Stack:** Rust (workspace nightly), Python 3 stdlib.
 
+**Resultado (28-11-2026):** tareas 1–5 hechas; `check.sh` 25/25; dos revisiones finales (código; documentación y proceso) con sus arreglos aplicados. Pendiente: el bloque 2b, después de la PR #122.
+
 **Origen:** revisión de arquitectura del 28-11-2026 (hallazgos F4, F5 y F7 de la revisión de crates y F7
 de la de render/wasm) y la revisión final del bloque 1
-([plan cerrado](../records/archive/reorganizacion-por-componentes.md)). Rama `refactor/layout-2a`, apilada
+([plan cerrado](reorganizacion-por-componentes.md)). Rama `refactor/layout-2a`, apilada
 sobre `refactor/layout` (PR #123).
 
 **Fuera de este bloque (bloque 2b, después de la PR #122, que cambia esos ficheros):** el ciclo
@@ -61,7 +63,7 @@ propietario) y `quantized_occupancy_bench.rs` (experimento v6.2 cerrado; retirar
 
 ### Task 2: preflight LAS fuera de `viewer_core`
 
-Aprobado por el propietario el 28-11-2026 ([ADR 0062](../adr/0062-el-preflight-las-vive-en-el-nucleo-de-conversion.md), que precisa la ubicación del ADR 0012). Enmiendas del pre-mortem: el test `sample_las_files_pass` (`las.rs:685-697`, usa `std::fs`) va a `viewer_convert/tests/las_preflight.rs`, no al núcleo; se quedan en `viewer_core` `TARGET_RENDER_EXTENT`, `las_attribute_schema`, `visual_scale_for_bounds` y `checked_visual_scale` (sus usuarios son ficheros de #122); Files añade `viewer_convert/Cargo.toml:21`, `viewer_wasm/Cargo.toml:21`, `fuzz/Cargo.toml` (+`viewer_convert_core`) y `fuzz/Cargo.lock`; se borra el `#[cfg(feature = "laz")]` de `las.rs:308`; `fuzz check` es obligatorio; se divide en mover y quitar la feature.
+Aprobado por el propietario el 28-11-2026 ([ADR 0062](../../adr/0062-el-preflight-las-vive-en-el-nucleo-de-conversion.md), que precisa la ubicación del ADR 0012). Enmiendas del pre-mortem: el test `sample_las_files_pass` (`las.rs:685-697`, usa `std::fs`) va a `viewer_convert/tests/las_preflight.rs`, no al núcleo; se quedan en `viewer_core` `TARGET_RENDER_EXTENT`, `las_attribute_schema`, `visual_scale_for_bounds` y `checked_visual_scale` (sus usuarios son ficheros de #122); Files añade `viewer_convert/Cargo.toml:21`, `viewer_wasm/Cargo.toml:21`, `fuzz/Cargo.toml` (+`viewer_convert_core`) y `fuzz/Cargo.lock`; se borra el `#[cfg(feature = "laz")]` de `las.rs:308`; `fuzz check` es obligatorio; se divide en mover y quitar la feature.
 
 **Files:** `crates/viewer_core/src/las.rs` (1.049 líneas), `viewer_core/Cargo.toml` (feature `laz`), `viewer_convert_core/src/{lib.rs,error.rs,source.rs}`, `viewer_convert_core/Cargo.toml`, `viewer_convert/tests/las_preflight.rs`, `viewer_convert/src/las_extra_tests.rs:165` (solo si su función se mueve), `fuzz/fuzz_targets/fuzz_las_preflight.rs`, `docs/reference/inventory.md`.
 
@@ -98,4 +100,4 @@ Hecho 28-11-2026: `AttributeDataType`/`AttributeDescriptor` (59 líneas) movidos
 - [x] Comentarios que nombran versiones retiradas como vigentes o rutas antiguas: `viewer_format/src/verify.rs:1`, `global_frame.rs`, `occupancy_codec.rs`, `crs.rs` (corregir solo el texto; si el código mismo es de una versión retirada, anotarlo en el informe y no tocarlo).
 - [x] `docs/reference/inventory.md`, `docs/estado.md` y CONTRIBUTING si nombran rutas movidas; `check_docs_links.py`, `check_docs_index.py`, `check_layout.py` en verde.
 - [x] `scripts/check.sh` completo → todo `ok` (28-11-2026: 25/25 pasos, paridades y fuzz incluidos).
-- [ ] Cierre: `Estado: completado`, mover el plan a `docs/records/archive/` con su fila en `docs/records/README.md`, nota en `docs/estado.md`, PR con base `refactor/layout`.
+- [x] Cierre: `Estado: completado`, mover el plan a `docs/records/archive/` con su fila en `docs/records/README.md`, nota en `docs/estado.md`, PR con base `refactor/layout`.
