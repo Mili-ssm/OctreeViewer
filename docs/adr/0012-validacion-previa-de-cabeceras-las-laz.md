@@ -1,6 +1,6 @@
 # 0012 Validar cabeceras LAS/LAZ antes de que las crates las parseen
 
-Estado: Aceptada · Fecha: 28-10-2026
+Estado: Aceptada · Fecha: 28-10-2026 · Ubicación precisada por [0062](0062-el-preflight-las-vive-en-el-nucleo-de-conversion.md)
 
 ## Contexto
 Las crates `las`/`laz` reservan memoria según tamaños declarados en la cabecera; la diferencia de fuentes de `las` 0.11.1 a 0.11.2 (28-10-2026) es formato y un `use std::f64` eliminado, así que esas reservas no están corregidas upstream y el desbordamiento en debug de `raw/header.rs:359` no cambia en 0.11.2; además un archivo hostil puede forzar reservas de GiB. El descompresor paralelo de `laz` 0.13.0 (feature `laz-parallel` de `viewer_convert`) reserva según `point_count` y `byte_count` de la tabla, decodificados como i32 con signo extendido a u64: un conteo de chunks válido no basta.
