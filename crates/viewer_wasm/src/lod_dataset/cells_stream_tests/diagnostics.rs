@@ -478,8 +478,6 @@ fn the_node_hi_contains_what_the_twin_wants_within_one_level() {
     assert_no_violations(&range_violations(&["P1", "P2", "P3", "P4", "P5"], false));
 }
 
-// ---- OQ-16: fine end of the node range bounded by the nearest occupied cell -----------------
-
 // ---- Task 5a: cheaper sources of the nearest occupied view depth (no wiring) -----------------
 
 /// Per-source tallies of the comparison with the reference and with `twin_data_max`.
