@@ -146,7 +146,7 @@ zstd comprime algo más que LZ4, pero el crate `zstd` envuelve C y la alternativ
 ## Fuera de alcance
 
 - El tamaño de la salida (3,7 × LAZ en Albuera, sobre todo `.octattrs`): RQ-06 solo cubre temporales.
-- El conversor web y su estimación de cuota OPFS (`hybrid/estimate.rs` asume registros sin comprimir).
+- El conversor web y su estimación de cuota OPFS (`spatial/estimate.rs` asume registros sin comprimir).
 - Formatos que no sean los que hoy convierte el CLI desde LAS/LAZ; EPT no cambia.
 - C (#106) y el límite de ramas paralelas por espacio libre en disco.
 

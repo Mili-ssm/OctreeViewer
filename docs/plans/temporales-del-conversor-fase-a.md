@@ -149,7 +149,7 @@ tests siguen con «planificar y luego escribir» (`CollectSink`).
 
 **Files:**
 - Modify: `crates/viewer_convert_core/src/spatial/builder.rs:684-898`, `crates/viewer_convert_core/src/spatial/memory.rs`,
-  `crates/viewer_convert_core/src/pipeline/executor.rs:36-68`, `crates/viewer_convert/src/executor.rs`,
+  `crates/viewer_convert_core/src/spatial/executor.rs:36-68`, `crates/viewer_convert/src/executor.rs`,
   `crates/viewer_convert/src/lib_tests.rs` (literales de presupuesto con W ≥ 2: `:1904-1929`, `:1949-1998`,
   `:2665-2700`; precedencia de errores `:2596-2630`)
 

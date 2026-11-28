@@ -24,7 +24,7 @@ use std::{
 };
 
 use viewer_convert_core::{
-    pipeline::executor::{BatchPlanner, RangeRunner},
+    spatial::executor::{BatchPlanner, RangeRunner},
     spatial::{BranchOutput, OpenNodeEvent, SpatialBuilder},
 };
 use viewer_core::NodeId;

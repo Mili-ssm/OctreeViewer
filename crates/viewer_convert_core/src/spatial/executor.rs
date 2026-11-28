@@ -2,16 +2,16 @@
 //! shell) or in order on the calling thread ([`SerialExecutor`]), which is also the oracle of the
 //! queue.
 
+use super::node_job::{
+    ChildOutput, JobProgress, NodePath, RangeJob, RangePartition, run_root_partition_range,
+};
+use super::{BranchOutput, SpatialBuilder};
 use crate::ConvertError;
 use crate::pipeline::{
     clock::Clock,
-    node_job::{
-        ChildOutput, JobProgress, NodePath, RangeJob, RangePartition, run_root_partition_range,
-    },
     point_source::{PointRange, SourceFactory},
     spool_store::{PlanStore, SpoolId},
 };
-use crate::spatial::{BranchOutput, SpatialBuilder};
 
 pub trait BatchPlanner<S: PlanStore, C: Clock> {
     /// Plans the subtrees of one batch of root children and returns their branches in key order,

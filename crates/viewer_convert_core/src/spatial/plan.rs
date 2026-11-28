@@ -7,6 +7,7 @@ use viewer_format::FormatMetadata;
 
 use super::block::PlannedBlock;
 use super::builder::SpatialBuilder;
+use super::executor::{BatchPlanner, RangeRunner};
 use super::geometry::quanta;
 use super::memory::{
     SPATIAL_WORKER_OVERHEAD_BYTES, check_memory_budget, child_spool_buffer_bytes, estimate_memory,
@@ -16,7 +17,6 @@ use super::spool::SpoolLayout;
 use crate::diagnostics::{SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::pipeline::{
     clock::Clock,
-    executor::{BatchPlanner, RangeRunner},
     point_source::SourceFactory,
     spool_store::{PlanStore, SpoolId, SpoolStore},
 };
@@ -164,7 +164,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         on_progress,
         source_point_count: source.point_count,
         collect_distance_quantiles: true,
-        nn_sample_threshold: crate::pipeline::nn_distance::sample_threshold(source.point_count),
+        nn_sample_threshold: super::nn_distance::sample_threshold(source.point_count),
         parallel_workers: options.spatial_workers(),
         root_ranges: options.root_partition_ranges(),
         ranges_used: 0,
@@ -332,7 +332,7 @@ fn distance_quantiles(
         .into_iter()
         .flat_map(|node| node.nn_samples.iter().copied())
         .collect();
-    let [p1, p5, p50] = crate::pipeline::nn_distance::quantiles_from_samples(pooled);
+    let [p1, p5, p50] = super::nn_distance::quantiles_from_samples(pooled);
     Ok(viewer_format::PointDistanceQuantiles::new(p1, p5, p50)?)
 }
 

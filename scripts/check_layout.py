@@ -13,6 +13,10 @@
   edge is a deliberate change; stale entries fail.
 - `crates/viewer_core/Cargo.toml` declares no `laz` dependency: the LAS preflight
   lives in viewer_convert_core (ADR 0062), so viewer_core stays free of the decoder.
+- No `.rs` file of `crates/viewer_convert_core/src/pipeline.rs` or `pipeline/` names the
+  `spatial` module in a non-comment line (`crate::spatial`, `super::super::spatial`, or `spatial::`
+  inside a multi-line `use crate::{ ... }` group): `pipeline` holds the seams with the environment
+  and `spatial` (the octree planner) depends on it, never the other way round.
 
 Rules: CONTRIBUTING.md#convenciones. Plan: docs/records/archive/reorganizacion-por-componentes.md.
 """
@@ -126,6 +130,19 @@ def check_policy(files, errors):
                     errors.append(f"{f}:{n}: CPU-policy file mentions `{word}`")
 
 
+PIPELINE_ROOT = "crates/viewer_convert_core/src/pipeline"
+SPATIAL_WORD = re.compile(r"\bspatial\b")
+
+
+def check_pipeline_independent(files, errors):
+    for f in files:
+        if f != PIPELINE_ROOT + ".rs" and not f.startswith(PIPELINE_ROOT + "/"):
+            continue
+        for n, line in code_lines(f):
+            if SPATIAL_WORD.search(line):
+                errors.append(f"{f}:{n}: pipeline must not depend on `spatial` (the planner builds on the seams, not the reverse)")
+
+
 def check_edges(errors):
     try:
         out = subprocess.check_output(
@@ -165,6 +182,7 @@ def main():
     check_paths(files, errors)
     check_prefixes(files, errors)
     check_policy(files, errors)
+    check_pipeline_independent(files, errors)
     check_edges(errors)
     check_viewer_core_has_no_laz(errors)
     for e in errors:

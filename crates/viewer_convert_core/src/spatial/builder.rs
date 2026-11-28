@@ -10,9 +10,15 @@ use viewer_core::{BlockId, NodeId, SpatialBounds};
 
 use super::block::PlannedBlock;
 use super::consume_rank;
+use super::executor::{BatchPlanner, RangeRunner};
 use super::geometry::{center_rounding_error, lod_sample_error};
 use super::memory::{
     branch_memory_budget, check_memory_budget, estimate_memory, range_memory_bytes,
+};
+use super::node_job::{
+    BlockPlan, ChildOutput, JobContext, JobMetrics, JobProgress, NodeJob, NodeJobOutput, NodePath,
+    RangeJob, RootPartition, lod_blocks, merge_root_ranges, run_node_job, run_root_partition,
+    spool_source, write_lod,
 };
 use super::plan::NodeRecord;
 use super::source_points::emit_source_progress;
@@ -21,12 +27,6 @@ use crate::ConvertError;
 use crate::diagnostics::{NodeSpoolEvent, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::pipeline::{
     clock::Clock,
-    executor::{BatchPlanner, RangeRunner},
-    node_job::{
-        BlockPlan, ChildOutput, JobContext, JobMetrics, JobProgress, NodeJob, NodeJobOutput,
-        NodePath, RangeJob, RootPartition, lod_blocks, merge_root_ranges, run_node_job,
-        run_root_partition, spool_source, write_lod,
-    },
     point_source::{PointRange, SourceFactory},
     spool_store::{PlanStore, SpoolId},
 };

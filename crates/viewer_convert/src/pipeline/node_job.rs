@@ -1,6 +1,6 @@
 //! Moved to `viewer_convert_core`; re-exported under the old path.
 
-pub(crate) use viewer_convert_core::pipeline::node_job::*;
+pub(crate) use viewer_convert_core::spatial::node_job::*;
 
 #[cfg(test)]
 mod tests {

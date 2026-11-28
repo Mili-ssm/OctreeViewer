@@ -1,7 +1,15 @@
 mod block;
 mod builder;
+#[doc(hidden)]
+pub mod estimate;
+#[doc(hidden)]
+pub mod executor;
 mod geometry;
 mod memory;
+#[doc(hidden)]
+pub mod nn_distance;
+#[doc(hidden)]
+pub mod node_job;
 mod plan;
 mod sample;
 mod source_points;
@@ -41,7 +49,7 @@ pub const MAX_SPATIAL_DEPTH: u32 = 32;
 /// `GLOBAL_MAX_INTERNAL_LEVEL`, deeper than the legacy `MAX_SPATIAL_DEPTH`; the headroom keeps
 /// `(MAX_CONSUME_DEPTH + 1) << 16` inside `u32`.
 pub const MAX_CONSUME_DEPTH: u32 = 64;
-const _: () = assert!(MAX_CONSUME_DEPTH > crate::pipeline::node_job::GLOBAL_MAX_INTERNAL_LEVEL);
+const _: () = assert!(MAX_CONSUME_DEPTH > node_job::GLOBAL_MAX_INTERNAL_LEVEL);
 const _: () = assert!(MAX_CONSUME_DEPTH > MAX_SPATIAL_DEPTH);
 
 /// Consume-order rank of the child spool `key` at `depth` (>= 1). The depth-first planner

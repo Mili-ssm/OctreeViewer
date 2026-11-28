@@ -2509,9 +2509,7 @@ fn the_serial_executor_plans_like_the_ready_queue() {
             spool_store::MemSpoolStore,
         },
     };
-    use viewer_convert_core::{
-        pipeline::executor::SerialExecutor, spatial::build_spatial_plan_from_source,
-    };
+    use viewer_convert_core::spatial::{build_spatial_plan_from_source, executor::SerialExecutor};
 
     let tmp = test_dir();
     let input = tmp.path().join("clusters.las");
@@ -2930,7 +2928,7 @@ fn threaded_root_ranges_report_a_corrupt_laz_chunk_like_the_default_scan() {
 fn joined_segments_read_back_identically() {
     use crate::pipeline::spool_store::{SpoolExtent, SpoolId, SpoolStore};
     use std::io::Read;
-    use viewer_convert_core::pipeline::node_job::join_segments;
+    use viewer_convert_core::spatial::node_job::join_segments;
 
     const RECORD: usize = 42;
     let dir = test_dir();

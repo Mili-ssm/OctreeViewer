@@ -10,18 +10,18 @@ use viewer_core::{CoordinateFrame, SpatialBounds, SpatialSubdivision};
 
 use super::nn_distance::{MortonOrder, nearest_distance_samples};
 use super::{
-    clock::Clock,
-    point_source::{PointRange, PointSource},
-    spool_store::{SPOOL_IO_BUFFER_BYTES, SpoolExtent, SpoolId, SpoolStore},
-};
-use crate::ConvertError;
-use crate::source::SourceInfo;
-use crate::spatial::{
     ChildSpool, GlobalCellFrame, MAX_SPOOL_RECORD_BYTES as MAX_RECORD_BYTES, NearestRecords,
     SampleAccumulator, SpoolLayout, SpoolPoint, StoreWriter, center_rounding_error,
     decode_position, global_level, lod_sample_error, read_records, visit_source_points,
     voxel_center_global, write_point, write_source_points,
 };
+use crate::ConvertError;
+use crate::pipeline::{
+    clock::Clock,
+    point_source::{PointRange, PointSource},
+    spool_store::{SPOOL_IO_BUFFER_BYTES, SpoolExtent, SpoolId, SpoolStore},
+};
+use crate::source::SourceInfo;
 
 /// Nodes at an absolute level below this are larger than one block (2^32 quanta).
 const GLOBAL_BLOCK_LEVEL: u32 = 32;
