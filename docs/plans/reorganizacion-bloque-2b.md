@@ -57,7 +57,7 @@ internos `doc(hidden)` del núcleo que usa `viewer_wasm` (ADR 0026: los crates s
 - [x] `git mv` de los cuatro ficheros y de los dos `mod.rs`; ajustar `use`, `mod` y visibilidad.
 - [x] Regla nueva en `check_layout.py`: ningún fichero de `crates/viewer_convert_core/src/pipeline.rs` ni de `pipeline/` menciona `crate::spatial` ni `super::super::spatial` fuera de comentarios, también dentro de grupos `use {…}` de varias líneas (probarla con una infracción temporal).
 - [x] Gate `viewer_convert_core viewer_convert viewer_wasm` + `format parity wasm32` + `convert parity wasm32` + `cargo check` en `fuzz/`; commit `refactor(convert): spatial planning leaves the pipeline seams`.
-  Hecho 28-11-2026 (`51f0990`): `GATE PASS` (`viewer_convert_core viewer_convert viewer_wasm`; `docs index` exigía enlazar este plan en `docs/README.md`, se comprobó con la fila temporal y queda para la tarea 6), `format parity wasm32` y `convert parity wasm32` ok, `cargo check` en `fuzz/` ok.
+  Hecho 28-11-2026 (`51f0990`): `GATE PASS` (`viewer_convert_core viewer_convert viewer_wasm`; `docs index` exigía enlazar este plan en `docs/README.md`, se comprobó con la fila temporal y queda para la tarea 6), `format parity wasm32` y `convert parity wasm32` ok, `cargo check` en `fuzz/` ok; la regla nueva falló con tres infracciones temporales (`use` de una línea, grupo `use {…}` de varias líneas, `super::super::spatial`). Tras la revisión: la regla también detecta los nombres que `lib.rs` reexporta de `spatial` (`431761c`) y `estimate` queda `pub(crate)` (solo se usa por esas reexportaciones).
 
 ### Task 2: sin shims de reexportación en `viewer_convert`
 
@@ -89,6 +89,7 @@ Reparto orientativo por líneas actuales (el implementador lo ajusta a lo que co
 - [x] El reparto se escribe **por nombre de ítem** (`lib_tests.names.json`: ítem → fichero, en `.superpowers/sdd/limpieza/gate/`) y un script `spec_from_names.py` genera de él el spec de líneas de `split.py` con `items.py`; así la tarea 7 repite el split sobre el `lib_tests.rs` de la #122 (enmienda del pre-mortem).
 - [x] Dividir con `split.py`; `moved.py` sin líneas reescritas salvo `use`/`mod`/visibilidad.
 - [x] Gate `viewer_convert`; commit `refactor(convert): split the crate tests by topic`.
+  Hecho 28-11-2026 (`07c2cae`, `4a3dac0`): `GATE PASS` (1.315 nombres hoja); `lib_tests.rs` 3.064 → ~390 líneas más 8 ficheros por tema (93–709 líneas); `moved.py` solo `use`/`mod`/docs. La revisión encontró que `items.py` alargaba un `const` de varias líneas hasta el ítem siguiente: corregido, `spec_from_names.py` falla ahora si un rango contiene otro ítem, y tres ayudas de un solo tema pasaron a su fichero. Los dos últimos shims (`las_source.rs`, `publish.rs`) se quitaron en `1656bd1`.
 
 ### Task 4: retirar `quantized_occupancy_bench.rs`
 
@@ -112,7 +113,7 @@ Enmiendas del pre-mortem: `FakeGpu` deduce la identidad de página de `box_max` 
   Hecho 28-11-2026 (`c6d52d2`): `FakeGpu` único (`test_support`, feature `test-support`); la identidad de página sale del `PageInfo` guardado por slot (`fake_entry_target` desaparece); `StrictTarget` borrado; wasm 182 passed/20 ignored, render 466/3.
 - [x] `cargo tree -p viewer_wasm -e features --target wasm32-unknown-unknown` sin `test-support` fuera de los tests; clippy `--all-features` limpio.
 - [x] Gate `viewer_render_wgpu viewer_wasm`; commit `refactor(render): one strict GPU test double behind a test-support feature`.
-  Hecho 28-11-2026: clippy (nativo, `--all-features`, wasm32), tests de ambos crates, `check_layout.py` (arista `viewer_wasm -> viewer_render_wgpu (dev)` añadida a `ALLOWED_EDGES`) y `cargo fmt` ok; `cargo tree` sin `test-support` fuera de `[dev-dependencies]`.
+  Hecho 28-11-2026: clippy (nativo, `--all-features`, wasm32), tests de ambos crates, `check_layout.py` (arista `viewer_wasm -> viewer_render_wgpu (dev)` añadida a `ALLOWED_EDGES`) y `cargo fmt` ok; `cargo tree` sin `test-support` fuera de `[dev-dependencies]`. Tras la revisión (`e9f1a10`): la excepción de recoloreado exige el mismo nivel y la misma página (como el `FakeGpu` anterior) y un número de slots distinto del de páginas es un `panic` (era `assert` en render); render 466/3 y wasm 182/20 de nuevo en verde. `alloc_mask_slot` sin pool devuelve `NoPool` porque así lo hace `SurfaceRenderer`.
 
 ### Task 6: documentación y cierre
 

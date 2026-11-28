@@ -1,7 +1,6 @@
 mod block;
 mod builder;
-#[doc(hidden)]
-pub mod estimate;
+pub(crate) mod estimate;
 #[doc(hidden)]
 pub mod executor;
 mod geometry;
