@@ -14,8 +14,6 @@ mod lod_driver;
 #[cfg(target_arch = "wasm32")]
 mod lod_metadata;
 mod lod_pages;
-#[cfg(target_arch = "wasm32")]
-mod lod_request_scheduler;
 #[cfg(any(target_arch = "wasm32", test))]
 mod lod_session;
 #[cfg(any(target_arch = "wasm32", test))]
@@ -50,8 +48,8 @@ pub use async_format_reader::{
     WasmAsyncReadCancelToken, WasmPageGraft,
 };
 #[cfg(target_arch = "wasm32")]
+pub use bindings::WasmBlockRequestScheduler;
+#[cfg(target_arch = "wasm32")]
 pub use bindings::{WasmSceneBuilder, WasmVoxelViewer};
 #[cfg(target_arch = "wasm32")]
 pub use core_convert::WasmCoreConverter;
-#[cfg(target_arch = "wasm32")]
-pub use lod_request_scheduler::WasmBlockRequestScheduler;

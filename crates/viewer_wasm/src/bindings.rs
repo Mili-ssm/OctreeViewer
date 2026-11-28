@@ -25,9 +25,11 @@ mod js_stats;
 mod lod;
 mod points;
 #[cfg(feature = "test-reference-spacing")]
-#[path = "../../tests/support/reference_spacing_probe.rs"]
+#[path = "../tests/support/reference_spacing_probe.rs"]
 mod reference_spacing_probe;
 mod render;
+mod scheduler;
+pub use scheduler::WasmBlockRequestScheduler;
 
 #[wasm_bindgen]
 pub struct WasmVoxelViewer {
