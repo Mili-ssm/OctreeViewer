@@ -71,7 +71,7 @@ escritor experimental `OQ09_MORTON=best`), `explore/oq09-viewer-sort`, `explore/
 ## Fase B: terminar R3 ([plan](../records/archive/render-r3-cubos-en-gpu.md))
 
 - [x] B1. Tarea 11 medida: estadísticas `cutApply` y `cellsForgottenTotal`, probe
-  `probe-cells-smoke.mjs` y [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md) (`97c52f8`,
+  `probes/probe-cells-smoke.mjs` y [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md) (`97c52f8`,
   `80a44bd`). Se asienta a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido (R3-Q27).
 - [x] B1c. Bucle de olvido de Majadas a 1 px: corregido en tres capas, residencia por celdas
   ([ADR 0038](../adr/0038-residencia-por-celdas.md)), hijos en curso protegidos y contados en el ajuste

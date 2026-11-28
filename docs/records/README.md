@@ -1,6 +1,6 @@
 # Índice de registros
 
-Los registros guardan medidas, spikes, evaluaciones y documentos retirados. Son inmutables: la evidencia nueva va en un registro nuevo fechado (`NOMBRE_dd-mm-aaaa.md`). Este índice es el único fichero de `docs/records/` que se edita; cada registro nuevo añade aquí su fila. Las cifras de benchmark pertenecen a la revisión, perfil y equipo con que se midieron.
+Medidas, spikes, evaluaciones y documentos retirados. Los registros son inmutables y este índice es el único fichero de `docs/records/` que se edita ([reglas](../../CONTRIBUTING.md#convenciones); nombres de fichero en [«Dónde va cada cosa»](../README.md#dónde-va-cada-cosa)). Las cifras de benchmark pertenecen a la revisión, perfil y equipo con que se midieron.
 
 Fuentes: [benchmarks/](benchmarks/) (medidas) y [archive/](archive/) (documentos retirados y planes cerrados).
 

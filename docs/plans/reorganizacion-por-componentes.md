@@ -26,7 +26,7 @@ del resumen al propietario). Fuera de este bloque, por chocar con la PR #122: ci
 - `docs/records/` es inmutable: no se edita salvo enlaces rotos; los ADR aceptados conservan los nombres antiguos.
 - Commits en inglés, Conventional Commits (`refactor:`, `docs:`, `build:`), un commit por tarea como mínimo, sin menciones a IA.
 - No ejecutar `cargo clean` ni borrar nada en `target/` (contiene datasets de prueba).
-- Puerta por tarea: `.superpowers/sdd/limpieza/gate/gate.sh run <crates>` (fmt, clippy nativo y wasm32, doc, enlaces, índices, literales de versión, ningún `.rs` sin seguimiento, tests de node y Python del web host, `check_layout.py` cuando exista, tests de los crates). Referencia tomada el 28-11-2026 (`gate.sh baseline`, 1.315 tests).
+- Puerta por tarea: `.superpowers/sdd/limpieza/gate/gate.sh run <crates>` (fmt, clippy nativo y wasm32, doc, enlaces, índices, literales de versión, ningún `.rs` sin seguimiento, tests de node y Python del web host, `check_layout.py`, tests de los crates). Referencia tomada el 28-11-2026 (`gate.sh baseline`, 1.315 tests).
 - Lista de tests: un movimiento cambia el camino del módulo de los tests, así que la puerta compara el **multiconjunto de nombres hoja** y falla (`FAIL test leaf names`) si difiere; un test perdido o duplicado para la tarea.
 - Regla de `#[path]` (rustc): un fichero cargado por `#[path]` resuelve sus `mod hijo;` como un `mod.rs` (en su propia carpeta, no en `<nombre>/`). Por eso un fichero que vaya a tener hijos se enlaza sin `#[path]`.
 
@@ -106,7 +106,7 @@ Hecho 28-11-2026: GATE PASS, nombres hoja idénticos (1315 tests), 1 `pub(super)
 - [x] Ajustar imports relativos (`./viewer-api.mjs` → `../viewer-api.mjs`, `../../pkg` → `../../../pkg`) y órdenes en la documentación.
 - [x] `publish-demo.sh`: quitar el `case` de exclusión; el glob no recursivo ya excluye `probes/`. Verificar con `bash -x` o listando: el conjunto de ficheros copiados al sitio es el mismo que antes.
 - [x] Tests del web host (`node --test examples/web-host/tests/*.test.mjs`, `python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'`, ambos ya en la puerta) y una sonda de humo en navegador con Playwright (`ui-verifier`): la demo carga y una sonda movida arranca. Commit `refactor(web-host): move probes and harness into probes/`.
-Hecho 28-11-2026: sondas, spike, servidor RED-REF y arnés movidos a `examples/web-host/probes/` (`spike-cube-pool-format.md` incluido); `publish-demo.sh` sin `case` y con el mismo conjunto publicado (14 ficheros); tests de node (269) y Python en verde; humo en navegador pendiente.
+Hecho 28-11-2026: sondas, spike, servidor RED-REF y arnés movidos a `examples/web-host/probes/` (`spike-cube-pool-format.md` incluido); `publish-demo.sh` sin `case` y con el mismo conjunto publicado (14 ficheros); tests de node (269) y Python en verde.
   Playwright (`ui-verifier`, 28-11-2026): demo con la muestra integrada en 1280×800 y 390×844 sin errores ni 404 de módulos; `probes/probe-api-remote.html` con `probeResult` correcto.
 
 ### Task 6: índice propio de registros
