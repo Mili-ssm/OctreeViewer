@@ -28,8 +28,6 @@ PATH_RE = re.compile(r'#\[path\s*=\s*"([^"]+)"\s*\]')
 
 # (file glob, target, reason)
 ALLOWED_PATHS = [
-    ("crates/viewer_convert/examples/quantized_occupancy_bench.rs",
-     "../../viewer_format/src/occupancy_codec.rs", "bench compiles the codec without a crate edge"),
     ("crates/viewer_convert/examples/real_dataset_bench.rs",
      "support/conversion_metrics.rs", "example helper shared outside the example root"),
     ("crates/viewer_wasm/src/bindings.rs",
