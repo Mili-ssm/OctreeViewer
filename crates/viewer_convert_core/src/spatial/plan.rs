@@ -1,6 +1,6 @@
 //! Building the spatial plan of a conversion.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use viewer_core::{BlockId, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode};
 use viewer_format::FormatMetadata;
@@ -10,14 +10,14 @@ use super::builder::SpatialBuilder;
 use super::executor::{BatchPlanner, RangeRunner};
 use super::geometry::quanta;
 use super::memory::{
-    SPATIAL_WORKER_OVERHEAD_BYTES, check_memory_budget, child_spool_buffer_bytes, estimate_memory,
-    range_memory_bytes,
+    check_memory_budget, estimate_memory, expected_index_bytes, peak_memory_bytes,
+    range_memory_bytes, split_peak_memory_bytes,
 };
 use super::spool::SpoolLayout;
 use crate::diagnostics::{SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::pipeline::{
     clock::Clock,
-    point_source::SourceFactory,
+    point_source::{PointRange, SourceFactory},
     spool_store::{PlanStore, SpoolId, SpoolStore},
 };
 use crate::report::ConversionProgress;
@@ -28,7 +28,13 @@ pub struct SpatialPlan {
     pub metadata: FormatMetadata,
     pub blocks: Vec<PlannedBlock>,
     pub point_count: u64,
+    /// True spatial-stage peak, including the transient split ranges. Reported only.
     pub estimated_peak_memory_bytes: u64,
+    /// Memory the block and validation stages reserve: the peak without the split ranges, which
+    /// are freed before those stages start.
+    pub later_stages_reserved_bytes: u64,
+    /// Threads the spatial hierarchy ran on: the requested count, lowered by the memory budget.
+    pub spatial_workers_used: usize,
     pub omitted_dimensions: Vec<String>,
     pub spool_diagnostics: Option<SpatialSpoolDiagnostics>,
     pub spatial_phases: Option<SpatialPhaseDiagnostics>,
@@ -36,6 +42,12 @@ pub struct SpatialPlan {
 
 /// Plans from `first`, a source positioned at the start of the points; `factory` reopens the
 /// input when the root has to be read again.
+///
+/// A parallel hierarchy (`spatial_workers > 1`) that ends in `MemoryBudgetExceeded` is discarded
+/// and planned again with one worker, which is what makes a higher worker count never fail where
+/// one worker passes, whatever the index turns out to be. The output is the same by design; the
+/// plan reports one worker. The retry reads the input again from `factory` and reports progress
+/// from the start; the store's byte ledger (diagnostics only) still counts the failed attempt.
 #[expect(
     clippy::too_many_arguments,
     reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
@@ -57,7 +69,11 @@ where
     F: SourceFactory,
     X: BatchPlanner<S, C> + RangeRunner<S, C, F>,
 {
-    build_spatial_plan_inner(
+    // Ids are never reused; 0 is `SpoolId::SOURCE`. The counter is host state, not store I/O,
+    // and the retry continues it, since the store rejects a used id.
+    let spool_ids = AtomicU64::new(1);
+    let ran_parallel = AtomicBool::new(false);
+    let result = build_spatial_plan_inner(
         source,
         options,
         store,
@@ -66,10 +82,38 @@ where
         |builder, bounds| builder.build_root_from_source(first, factory, source, bounds),
         on_progress,
         collect_spool_diagnostics,
+        &spool_ids,
+        &ran_parallel,
+    );
+    if !matches!(result, Err(ConvertError::MemoryBudgetExceeded { .. }))
+        || !ran_parallel.load(Ordering::Relaxed)
+    {
+        return result;
+    }
+    let mut serial = options;
+    serial.spatial_workers = 1;
+    build_spatial_plan_inner(
+        source,
+        serial,
+        store,
+        clock,
+        executor,
+        |builder, bounds| {
+            let mut reopened = factory.open(PointRange {
+                start: 0,
+                end: source.point_count,
+            })?;
+            builder.build_root_from_source(&mut reopened, factory, source, bounds)
+        },
+        on_progress,
+        collect_spool_diagnostics,
+        &spool_ids,
+        &AtomicBool::new(false),
     )
 }
 
-/// `build_root` plans the root node into the builder.
+/// One attempt. `build_root` plans the root node into the builder; `ran_parallel` is set when
+/// the hierarchy ran on more than one worker, whether or not the attempt succeeded.
 #[expect(
     clippy::too_many_arguments,
     reason = "distinct inputs of one planning step; bundling them would add a single-use struct"
@@ -83,6 +127,8 @@ fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     build_root: impl FnOnce(&mut SpatialBuilder<'_, S, C, X>, SpatialBounds) -> Result<(), ConvertError>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
+    spool_ids: &AtomicU64,
+    ran_parallel: &AtomicBool,
 ) -> Result<SpatialPlan, ConvertError> {
     let point_limit =
         crate::options::input_batch_point_limit(options.points_per_block(), source.record_length);
@@ -96,8 +142,6 @@ fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         )?,
         options.max_memory_budget_bytes(),
     )?;
-    // Ids are never reused; 0 is `SpoolId::SOURCE`. The counter is host state, not store I/O.
-    let spool_ids = AtomicU64::new(1);
     let result = plan_spatial(
         source,
         options,
@@ -108,7 +152,8 @@ fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         on_progress,
         collect_spool_diagnostics,
         point_limit,
-        &spool_ids,
+        spool_ids,
+        ran_parallel,
     );
     if result.is_err() {
         discard_spools(store, spool_ids.load(Ordering::Relaxed));
@@ -141,6 +186,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     collect_spool_diagnostics: bool,
     point_limit: u64,
     spool_ids: &AtomicU64,
+    ran_parallel: &AtomicBool,
 ) -> Result<SpatialPlan, ConvertError> {
     let root_bounds = source.global.bounds()?;
     let mut builder = SpatialBuilder {
@@ -169,6 +215,9 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         root_ranges: options.root_partition_ranges(),
         ranges_used: 0,
         workers_used: 1,
+        range_split_points: options.range_split_points(),
+        split_ranges_peak: 0,
+        expected_index_bytes: expected_index_bytes(source.point_count, options.points_per_block()),
         spool_diagnostics: collect_spool_diagnostics.then(|| SpatialSpoolDiagnostics {
             ..SpatialSpoolDiagnostics::default()
         }),
@@ -176,7 +225,9 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         spool_written_local: 0,
         node_events: Vec::new(),
     };
-    build_root(&mut builder, root_bounds)?;
+    let built = build_root(&mut builder, root_bounds);
+    ran_parallel.store(builder.workers_used > 1, Ordering::Relaxed);
+    built?;
 
     if let (Some(phases), Some(totals)) = (builder.spatial_phases.as_mut(), store.ledger_totals()) {
         phases.spool_bytes_written = totals.written;
@@ -185,23 +236,14 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         phases.node_spool_events.sort_by_key(|event| event.node_id);
     }
 
-    let estimated_peak_memory_bytes = estimate_memory(
+    let estimated_peak_memory_bytes = peak_memory_bytes(
         point_limit,
         builder.node_records.len(),
         builder.output_blocks.len(),
+        builder.workers_used,
         options.spatial_divisions(),
         options.sample_grid(),
-    )?
-    .checked_add(
-        (builder.workers_used.saturating_sub(1) as u64)
-            .checked_mul(
-                SPATIAL_WORKER_OVERHEAD_BYTES
-                    .checked_add(child_spool_buffer_bytes(options.spatial_divisions())?)
-                    .ok_or(ConvertError::SizeOverflow)?,
-            )
-            .ok_or(ConvertError::SizeOverflow)?,
-    )
-    .ok_or(ConvertError::SizeOverflow)?;
+    )?;
     check_memory_budget(
         estimated_peak_memory_bytes,
         options.max_memory_budget_bytes(),
@@ -226,6 +268,24 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         )
         .ok_or(ConvertError::SizeOverflow)?;
         estimated_peak_memory_bytes.max(ranged)
+    } else {
+        estimated_peak_memory_bytes
+    };
+    let later_stages_reserved_bytes = estimated_peak_memory_bytes;
+    // Range jobs of split nodes were admitted against the budget (`split_range_capacity`) from the
+    // expected index size. This fold pairs their peak with the final real index, so it can exceed
+    // the budget; it is reported, not checked: a check here sends Majadas to the one-worker
+    // fallback at the default budget (T2 record).
+    let estimated_peak_memory_bytes = if builder.split_ranges_peak > 0 {
+        estimated_peak_memory_bytes.max(split_peak_memory_bytes(
+            point_limit,
+            builder.node_records.len(),
+            builder.output_blocks.len(),
+            builder.workers_used,
+            builder.split_ranges_peak,
+            options.spatial_divisions(),
+            options.sample_grid(),
+        )?)
     } else {
         estimated_peak_memory_bytes
     };
@@ -279,6 +339,8 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         blocks: builder.output_blocks,
         point_count: source.point_count,
         estimated_peak_memory_bytes,
+        later_stages_reserved_bytes,
+        spatial_workers_used: builder.workers_used,
         omitted_dimensions: source.omitted_dimensions(),
         spool_diagnostics: builder.spool_diagnostics,
         spatial_phases: builder.spatial_phases,

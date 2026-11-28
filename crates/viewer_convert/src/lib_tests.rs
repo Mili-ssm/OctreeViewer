@@ -313,8 +313,106 @@ fn eight_cluster_fixture(path: &std::path::Path) {
     }
 }
 
+/// Plans from an already opened reader with the native clock and executor.
+fn plan_from_reader<S: viewer_convert_core::pipeline::spool_store::PlanStore>(
+    reader: las::Reader,
+    input: &std::path::Path,
+    source: &viewer_convert_core::source::SourceInfo,
+    options: ConvertOptions,
+    store: &S,
+    on_progress: &mut dyn FnMut(super::ConversionProgress) -> bool,
+    collect: bool,
+) -> Result<viewer_convert_core::spatial::SpatialPlan, ConvertError> {
+    let factory = viewer_convert_core::pipeline::point_source::LasFactory::new(
+        crate::las_source::FileBytes {
+            path: input.to_owned(),
+            len: std::fs::metadata(input).unwrap().len(),
+        },
+    );
+    viewer_convert_core::spatial::build_spatial_plan_from_source(
+        &mut viewer_convert_core::pipeline::point_source::RangeSource::Las(
+            viewer_convert_core::pipeline::point_source::LasPointSource::full(reader),
+        ),
+        &factory,
+        source,
+        options,
+        store,
+        &crate::pipeline::SystemClock,
+        &crate::executor::ThreadedExecutor,
+        on_progress,
+        collect,
+    )
+}
+
+fn cluster_options(workers: usize) -> ConvertOptions {
+    leaf_new(16, 0.01)
+        .unwrap()
+        .with_spatial_workers(workers)
+        .unwrap()
+}
+
 fn workspace_path(relative: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(relative)
+}
+
+/// Seven small corner clusters plus, in the eighth corner, a cluster of pseudo-random points
+/// that splits over several levels: the root has 8 occupied children and one deep subtree.
+fn deep_child_fixture(path: &std::path::Path) {
+    let header = Builder::from((1, 2)).into_header().unwrap();
+    let mut writer = Writer::from_path(path, header).unwrap();
+    let corner = |cluster: usize, bit: usize| if cluster & bit == 0 { 10.0 } else { 90.0 };
+    for cluster in 0..7usize {
+        for index in 0..40usize {
+            let jitter = index as f64 * 0.01;
+            writer
+                .write_point(Point {
+                    x: corner(cluster, 1) + jitter,
+                    y: corner(cluster, 2) + jitter,
+                    z: corner(cluster, 4) + jitter,
+                    ..Point::default()
+                })
+                .unwrap();
+        }
+    }
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut next = || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) as f64 / f64::from(1_u32 << 31) * 30.0
+    };
+    for _ in 0..3_000 {
+        writer
+            .write_point(Point {
+                x: 70.0 + next(),
+                y: 70.0 + next(),
+                z: 70.0 + next(),
+                ..Point::default()
+            })
+            .unwrap();
+    }
+}
+
+fn read_pair(output: &std::path::Path) -> (Vec<u8>, Vec<u8>) {
+    (
+        fs::read(output).unwrap(),
+        fs::read(output_attributes_path(output)).unwrap(),
+    )
+}
+
+/// Splits taken by the batches this thread planned since `split_counter` returned `before`.
+/// A discarded parallel attempt (one-worker fallback) would count too; a run that reports more
+/// than one worker used kept its parallel attempt, so only then do these describe the kept run.
+fn split_log_since(before: usize) -> Vec<crate::executor::SplitRecord> {
+    crate::executor::SPLIT_LOG.with(|log| log.borrow()[before..].to_vec())
+}
+
+fn splits_since(before: usize) -> u64 {
+    split_log_since(before).len() as u64
+}
+
+fn split_counter() -> usize {
+    crate::executor::SPLIT_LOG.with(|log| log.borrow().len())
 }

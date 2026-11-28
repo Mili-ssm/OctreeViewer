@@ -51,6 +51,8 @@ pub struct ConversionReport {
     pub block_count: u64,
     pub output_bytes: u64,
     pub estimated_peak_memory_bytes: u64,
+    /// Spatial-hierarchy threads actually used: the requested count lowered by the memory budget.
+    pub spatial_workers_used: usize,
     pub omitted_dimensions: Vec<String>,
     pub block_preparation: ConversionWorkerStats,
     pub output_validation: ConversionWorkerStats,

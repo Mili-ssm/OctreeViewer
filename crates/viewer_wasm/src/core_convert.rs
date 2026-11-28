@@ -52,6 +52,19 @@ fn number(options: &JsValue, key: &str) -> Result<Option<f64>, JsValue> {
         .ok_or_else(|| JsValue::from_str(&format!("option {key} must be a non-negative number")))
 }
 
+/// The browser keeps its own cap on `spatialWorkers`, below the core's: every worker holds its own
+/// spools in a tab's memory (3.44 GiB of PSS with one, in M3b). The error is the core's text for 8.
+const MAX_BROWSER_SPATIAL_WORKERS: usize = 8;
+
+fn browser_spatial_workers(workers: usize) -> Result<usize, String> {
+    if !(1..=MAX_BROWSER_SPATIAL_WORKERS).contains(&workers) {
+        return Err(format!(
+            "spatial worker count must be between 1 and {MAX_BROWSER_SPATIAL_WORKERS}, got {workers}"
+        ));
+    }
+    Ok(workers)
+}
+
 /// Options V8 fixes: passing any of them is an error, never ignored.
 const REMOVED_OPTIONS: [&str; 5] = [
     "formatVersion",
@@ -88,7 +101,10 @@ fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
     let mut converted = ConvertOptions::with_memory_budget(max_error, memory).map_err(invalid)?;
     if let Some(workers) = number(options, "spatialWorkers")? {
         converted = converted
-            .with_spatial_workers(workers as usize)
+            .with_spatial_workers(
+                browser_spatial_workers(workers as usize)
+                    .map_err(|text| JsValue::from_str(&text))?,
+            )
             .map_err(invalid)?;
     }
     Ok(converted)
@@ -300,5 +316,21 @@ fn stage_name(stage: ConversionStage) -> &'static str {
         ConversionStage::ValidatingOutput => "validating",
         ConversionStage::PublishingOutput => "publishing",
         ConversionStage::Complete => "complete",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::browser_spatial_workers;
+
+    #[test]
+    fn the_browser_keeps_its_cap_of_eight_workers() {
+        assert_eq!(browser_spatial_workers(4), Ok(4));
+        assert!(browser_spatial_workers(0).is_err());
+        assert_eq!(browser_spatial_workers(8), Ok(8));
+        assert_eq!(
+            browser_spatial_workers(9).unwrap_err(),
+            "spatial worker count must be between 1 and 8, got 9"
+        );
     }
 }

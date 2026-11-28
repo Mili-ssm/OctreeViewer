@@ -223,6 +223,43 @@ fn spool_diagnostics_account_written_and_live_bytes() {
 }
 
 #[test]
+fn spool_diagnostics_count_the_segments_of_range_split_nodes() {
+    let tmp = test_dir();
+    let input = tmp.path().join("deep.las");
+    deep_child_fixture(&input);
+    let totals = |workers: usize, split: u64| {
+        let output = tmp.path().join(format!("segments-{workers}-{split}.oct"));
+        let options = cluster_options(workers)
+            .with_root_partition_ranges(0)
+            .unwrap()
+            .with_range_split_points_for_tests(split);
+        let before = split_counter();
+        let (_, diagnostics) =
+            convert_file_with_diagnostics(&input, &output, options, |_| true).unwrap();
+        let spools = diagnostics.spatial_spools.unwrap();
+        let phases = diagnostics.spatial_phases.unwrap();
+        (spools, phases, splits_since(before))
+    };
+    let (serial_spools, serial, no_splits) = totals(1, 150);
+    assert_eq!(no_splits, 0);
+    let (spools, phases, splits) = totals(4, 150);
+    assert!(splits > 0, "no node was range-split");
+    // The segments the ranges write are the node's child payload, counted once: the categories
+    // do not change with the split.
+    assert!(spools.child_payload_written_bytes > 0);
+    assert_eq!(serial_spools, spools);
+    // The ledger also counts the copy that joins the segments of a child that is not split
+    // again, which no category holds, so the written total grows past the categories.
+    let categories = spools.source_payload_written_bytes
+        + spools.child_payload_written_bytes
+        + spools.lod_payload_written_bytes;
+    assert_eq!(serial.spool_bytes_written, categories);
+    assert!(phases.spool_bytes_written > categories);
+    assert!(phases.peak_live_spool_bytes > 0);
+    assert!(phases.peak_live_spool_bytes < phases.spool_bytes_written);
+}
+
+#[test]
 fn node_spool_events_match_child_spool_totals() {
     let tmp = test_dir();
     let dir = tmp.path().to_owned();

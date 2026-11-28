@@ -259,7 +259,7 @@ pub(crate) fn convert_file_inner(
         attributes_length,
         requested_workers: options.spatial_workers(),
         memory_budget_bytes: options.max_memory_budget_bytes(),
-        reserved_memory_bytes: plan.estimated_peak_memory_bytes,
+        reserved_memory_bytes: plan.later_stages_reserved_bytes,
     };
     let (output_bytes, output_validation) = publish_output_pair(
         &temporary_path,
@@ -283,6 +283,7 @@ pub(crate) fn convert_file_inner(
         block_count: plan.block_count,
         output_bytes,
         estimated_peak_memory_bytes: plan.estimated_peak_memory_bytes,
+        spatial_workers_used: plan.spatial_workers_used,
         omitted_dimensions: plan.omitted_dimensions,
         block_preparation,
         output_validation,
@@ -350,7 +351,7 @@ where
         .checked_mul(ESTIMATED_WORKING_BYTES_PER_POINT)
         .and_then(|bytes| bytes.checked_add(1024 * 1024))
         .ok_or(ConvertError::SizeOverflow)?;
-    let available_memory = memory_budget_bytes.saturating_sub(plan.estimated_peak_memory_bytes);
+    let available_memory = memory_budget_bytes.saturating_sub(plan.later_stages_reserved_bytes);
     let memory_limited_workers = 1_usize
         .saturating_add(usize::try_from(available_memory / bytes_per_worker).unwrap_or(usize::MAX));
     // A rendezvous hand-off retains at most the batch being written and one

@@ -55,11 +55,15 @@ fn bounded_spatial_workers_preserve_the_serial_output() {
     assert_eq!(parallel.point_count, serial.point_count);
     assert_eq!(parallel.block_count, serial.block_count);
     assert_eq!(parallel.output_bytes, serial.output_bytes);
-    assert_eq!(
-        parallel.estimated_peak_memory_bytes,
-        // Worker overhead plus the 8 child spool buffers (32 KiB) of V8's two divisions; the V5
-        // value was 2 MiB (re-pinned for V8 in D4 Task 5c).
-        serial.estimated_peak_memory_bytes + 1024 * 1024 + 8 * 32 * 1024
+    // Two workers reserve their overhead (1 MiB each) and the extra worker's 8 child spool
+    // buffers (32 KiB each), and the index is held twice for the append copy: one more index,
+    // between its blocks' share and two nodes per block (see `peak_memory_bytes`).
+    let fixed = 2 * 1024 * 1024 + 8 * 32 * 1024;
+    let index = parallel.estimated_peak_memory_bytes - serial.estimated_peak_memory_bytes - fixed;
+    assert!(
+        (serial.block_count * 512..=serial.block_count * (512 + 2 * 256)).contains(&index),
+        "extra index {index} for {} blocks",
+        serial.block_count
     );
     assert_eq!(
         fs::read(&serial_output).unwrap(),
@@ -341,8 +345,8 @@ fn parallel_worker_limits_are_validated_and_budget_is_respected() {
         Err(ConvertError::InvalidSpatialWorkerCount(0))
     ));
     assert!(matches!(
-        ConvertOptions::default().with_spatial_workers(9),
-        Err(ConvertError::InvalidSpatialWorkerCount(9))
+        ConvertOptions::default().with_spatial_workers(MAX_SPATIAL_WORKERS + 1),
+        Err(ConvertError::InvalidSpatialWorkerCount(count)) if count == MAX_SPATIAL_WORKERS + 1
     ));
     assert_eq!(
         ConvertOptions::default()
@@ -351,12 +355,20 @@ fn parallel_worker_limits_are_validated_and_budget_is_respected() {
             .spatial_workers(),
         MAX_SPATIAL_WORKERS
     );
+    // A budget that cannot hold two workers lowers the count instead of failing the plan.
+    let report = convert_file(&input, &output, options).unwrap();
+    assert_eq!(report.spatial_workers_used, 1);
+    // Only one worker not fitting is an error.
+    let hopeless = leaf_budget(10, 0.01, 1)
+        .unwrap()
+        .with_spatial_workers(2)
+        .unwrap();
+    let rejected = dir.join("rejected.oct");
     assert!(matches!(
-        convert_file(&input, &output, options),
+        convert_file(&input, &rejected, hopeless),
         Err(ConvertError::MemoryBudgetExceeded { .. })
     ));
-    assert!(!output.exists());
-    assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+    assert!(!rejected.exists());
 }
 
 #[test]
@@ -396,4 +408,278 @@ fn cancellation_during_parallel_spatial_planning_does_not_publish_output() {
     assert_eq!(hierarchy_updates, 12);
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+}
+
+#[test]
+fn output_bytes_do_not_depend_on_the_worker_count_with_a_deep_child() {
+    let tmp = test_dir();
+    let input = tmp.path().join("deep.las");
+    deep_child_fixture(&input);
+    let mut expected = None;
+    for workers in [1, 2, 4, 8, 16] {
+        let output = tmp.path().join(format!("deep-{workers}.oct"));
+        let report = convert_file(&input, &output, cluster_options(workers)).unwrap();
+        assert_eq!(report.spatial_workers_used, workers, "workers={workers}");
+        let bytes = read_pair(&output);
+        assert_eq!(
+            *expected.get_or_insert_with(|| bytes.clone()),
+            bytes,
+            "workers={workers}"
+        );
+    }
+}
+
+/// A store that holds every spool read for 40 ms (a job lasts at least that long, so jobs queued
+/// behind it overlap with it) and records how many reads are inside at once. A plan reads spools
+/// only in node jobs, so the peak is the number of node jobs that really ran together.
+struct OverlapStore {
+    inner: viewer_convert_core::pipeline::spool_store::MemSpoolStore,
+    active: std::sync::atomic::AtomicUsize,
+    peak: std::sync::atomic::AtomicUsize,
+}
+
+impl viewer_convert_core::pipeline::spool_store::SpoolStore for OverlapStore {
+    type Reader = std::io::Cursor<Vec<u8>>;
+    fn create(
+        &self,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+        record_bytes: usize,
+    ) -> Result<(), ConvertError> {
+        self.inner.create(id, record_bytes)
+    }
+    fn append(
+        &self,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+        bytes: &[u8],
+    ) -> Result<(), ConvertError> {
+        self.inner.append(id, bytes)
+    }
+    fn close(
+        &self,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+    ) -> Result<(), ConvertError> {
+        self.inner.close(id)
+    }
+    fn len(
+        &self,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+    ) -> Result<u64, ConvertError> {
+        self.inner.len(id)
+    }
+    fn reader(
+        &self,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+        extent: viewer_convert_core::pipeline::spool_store::SpoolExtent,
+    ) -> Result<Self::Reader, ConvertError> {
+        use std::sync::atomic::Ordering::SeqCst;
+        let now = self.active.fetch_add(1, SeqCst) + 1;
+        self.peak.fetch_max(now, SeqCst);
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        self.active.fetch_sub(1, SeqCst);
+        self.inner.reader(id, extent)
+    }
+    fn delete(
+        &self,
+        id: viewer_convert_core::pipeline::spool_store::SpoolId,
+    ) -> Result<(), ConvertError> {
+        self.inner.delete(id)
+    }
+}
+
+impl viewer_convert_core::pipeline::spool_store::SpoolAccounting for OverlapStore {
+    fn next_event_seq(&self) -> Option<u64> {
+        self.inner.next_event_seq()
+    }
+    fn ledger_totals(&self) -> Option<viewer_convert_core::pipeline::spool_store::LedgerTotals> {
+        self.inner.ledger_totals()
+    }
+}
+
+#[test]
+fn hierarchy_jobs_run_on_more_threads_than_the_root_has_children() {
+    use crate::las_source::open_las_reader;
+    use viewer_convert_core::pipeline::spool_store::MemSpoolStore;
+    use viewer_convert_core::source::inspect_source;
+    let tmp = test_dir();
+    let input = tmp.path().join("deep.las");
+    deep_child_fixture(&input);
+    let plan_with = |workers: usize| {
+        let reader = open_las_reader(&input).unwrap();
+        let source = inspect_source(&reader).unwrap();
+        let store = OverlapStore {
+            inner: MemSpoolStore::new(false),
+            active: 0.into(),
+            peak: 0.into(),
+        };
+        let plan = plan_from_reader(
+            reader,
+            &input,
+            &source,
+            cluster_options(workers),
+            &store,
+            &mut |_| true,
+            false,
+        )
+        .unwrap();
+        assert_eq!(plan.spatial_workers_used, workers);
+        (plan, store.peak.load(std::sync::atomic::Ordering::SeqCst))
+    };
+    // The batch has one job per occupied root child at first; it is the plan that says how many.
+    let (serial, _) = plan_with(1);
+    let occupied_root_children = serial
+        .metadata
+        .dataset()
+        .hierarchy()
+        .child_ids(NodeId::new(0))
+        .len();
+    assert!(occupied_root_children > 1);
+    let (_, peak) = plan_with(4);
+    assert!(peak <= 4, "{peak} jobs overlapped on 4 workers");
+    let (_, peak) = plan_with(16);
+    assert!(
+        peak > occupied_root_children,
+        "{peak} jobs overlapped; the root has {occupied_root_children} children"
+    );
+}
+
+#[test]
+fn a_budget_that_cannot_hold_every_worker_lowers_the_effective_worker_count() {
+    let tmp = test_dir();
+    let input = tmp.path().join("deep.las");
+    deep_child_fixture(&input);
+    let serial_output = tmp.path().join("serial.oct");
+    // One root range, so the serial peak is the plan's own and a budget equal to it is tight.
+    let one_range = |options: ConvertOptions| options.with_root_partition_ranges(1).unwrap();
+    let serial = convert_file(&input, &serial_output, one_range(cluster_options(1))).unwrap();
+    let expected = read_pair(&serial_output);
+    // Exactly the serial peak leaves no room for a second worker. Each extra worker needs 1 MiB
+    // plus its 256 KiB of child spool buffers, so 9 MiB holds some but not all 16.
+    for (extra_mib, workers) in [(0, 1..=1), (9, 2..=15)] {
+        let budget = serial.estimated_peak_memory_bytes + extra_mib * 1024 * 1024;
+        let output = tmp.path().join(format!("tight-{extra_mib}.oct"));
+        let options = leaf_budget(16, 0.01, budget)
+            .unwrap()
+            .with_spatial_workers(16)
+            .unwrap();
+        let report = convert_file(&input, &output, one_range(options))
+            .unwrap_or_else(|error| panic!("extra={extra_mib} MiB: {error:?}"));
+        assert!(
+            workers.contains(&report.spatial_workers_used),
+            "extra={extra_mib} MiB: {} workers",
+            report.spatial_workers_used
+        );
+        assert_eq!(read_pair(&output), expected, "extra={extra_mib} MiB");
+    }
+}
+
+/// Opens (counting) what `LasFactory` opens: a plan that reads the input again was retried.
+struct CountingFactory<'a> {
+    inner: viewer_convert_core::pipeline::point_source::LasFactory<crate::las_source::FileBytes>,
+    opens: &'a std::sync::atomic::AtomicUsize,
+}
+
+impl viewer_convert_core::pipeline::point_source::SourceFactory for CountingFactory<'_> {
+    type Source = <viewer_convert_core::pipeline::point_source::LasFactory<
+        crate::las_source::FileBytes,
+    > as viewer_convert_core::pipeline::point_source::SourceFactory>::Source;
+    fn split(
+        &self,
+        parts: usize,
+        batch: u64,
+    ) -> Result<Vec<viewer_convert_core::pipeline::point_source::PointRange>, ConvertError> {
+        self.inner.split(parts, batch)
+    }
+    fn open(
+        &self,
+        range: viewer_convert_core::pipeline::point_source::PointRange,
+    ) -> Result<Self::Source, ConvertError> {
+        self.opens.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.inner.open(range)
+    }
+}
+
+/// Plans `input` with one root range (so only a retry reads it again) and returns the result
+/// with the number of times the input was reopened.
+fn plan_counting_reopens(
+    input: &std::path::Path,
+    options: ConvertOptions,
+) -> (
+    Result<viewer_convert_core::spatial::SpatialPlan, ConvertError>,
+    usize,
+) {
+    use crate::las_source::open_las_reader;
+    use viewer_convert_core::pipeline::spool_store::MemSpoolStore;
+    use viewer_convert_core::source::inspect_source;
+    let reader = open_las_reader(input).unwrap();
+    let source = inspect_source(&reader).unwrap();
+    let opens = std::sync::atomic::AtomicUsize::new(0);
+    let factory = CountingFactory {
+        inner: viewer_convert_core::pipeline::point_source::LasFactory::new(
+            crate::las_source::FileBytes {
+                path: input.to_owned(),
+                len: std::fs::metadata(input).unwrap().len(),
+            },
+        ),
+        opens: &opens,
+    };
+    let result = viewer_convert_core::spatial::build_spatial_plan_from_source(
+        &mut viewer_convert_core::pipeline::point_source::RangeSource::Las(
+            viewer_convert_core::pipeline::point_source::LasPointSource::full(reader),
+        ),
+        &factory,
+        &source,
+        options.with_root_partition_ranges(0).unwrap(),
+        &MemSpoolStore::new(false),
+        &crate::pipeline::SystemClock,
+        &crate::executor::ThreadedExecutor,
+        &mut |_| true,
+        false,
+    );
+    (result, opens.load(std::sync::atomic::Ordering::SeqCst))
+}
+
+/// A batch that outgrows its share of a budget one worker would pass is planned again with one
+/// worker: same plan, one worker reported.
+#[test]
+fn a_batch_over_the_budget_falls_back_to_one_worker() {
+    let tmp = test_dir();
+    let input = tmp.path().join("deep.las");
+    deep_child_fixture(&input);
+    let serial = plan_counting_reopens(&input, cluster_options(1)).0.unwrap();
+    let mut retried = 0;
+    // Above the serial peak (in 16 KiB steps) some budgets admit a batch that then overflows;
+    // measured: steps 142-172 of this fixture, so a coarser scan across them finds some.
+    for step in (100..260u64).step_by(8) {
+        let budget = serial.estimated_peak_memory_bytes + step * 16 * 1024;
+        let options = leaf_budget(16, 0.01, budget)
+            .unwrap()
+            .with_spatial_workers(4)
+            .unwrap();
+        let (plan, reopens) = plan_counting_reopens(&input, options);
+        let plan = plan.unwrap_or_else(|error| panic!("budget {budget}: {error:?}"));
+        if reopens > 0 {
+            retried += 1;
+            assert_eq!(plan.spatial_workers_used, 1, "budget {budget}");
+            assert_eq!(plan.blocks.len(), serial.blocks.len(), "budget {budget}");
+            assert_eq!(plan.metadata, serial.metadata, "budget {budget}");
+        }
+    }
+    assert!(retried > 0, "no budget made the batch overflow");
+}
+
+#[test]
+fn spatial_worker_caps_are_a_sanity_bound_and_zero_is_rejected() {
+    assert_eq!(
+        ConvertOptions::default()
+            .with_spatial_workers(16)
+            .unwrap()
+            .spatial_workers(),
+        16
+    );
+    for invalid in [0, MAX_SPATIAL_WORKERS + 1] {
+        assert!(matches!(
+            ConvertOptions::default().with_spatial_workers(invalid),
+            Err(ConvertError::InvalidSpatialWorkerCount(count)) if count == invalid
+        ));
+    }
 }

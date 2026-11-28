@@ -1,0 +1,1 @@
+spike_split nodes=376 ranges=1523 join_ms=236702 merge_ms=276378 range_sum_ms=398389 range_crit_ms=74730 split_points=1048576

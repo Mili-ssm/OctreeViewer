@@ -1,11 +1,13 @@
-//! `ThreadedExecutor`: ready-queue scheduler (the only native one) for one virtual batch of root children.
+//! `ThreadedExecutor`: ready-queue scheduler (the only native one) for one virtual batch of root
+//! children.
 //!
-//! The batch has as many threads as root children (`min(W, k)`, as the old per-branch threads did) and
-//! they take the ready node job with the lowest [`NodePath`]. Only jobs under this batch are
-//! dispatched (no lookahead, R16). When a job finishes, the host deletes its `release`, queues its
-//! children and keeps the output until a preorder cursor commits it into the branch-local builder
-//! of its root child; `append_branch` then merges the branches in root-child order, so node and
-//! block ids, budget checks and `TooManyBlocks` match the serial plan.
+//! The batch has `W` threads (the requested count lowered by the memory budget), however many
+//! root children it has, and they take the ready node job with the lowest [`NodePath`]. Only jobs
+//! under this batch are dispatched (no lookahead, R16). When a job finishes, the host deletes its
+//! `release`, queues its children and keeps the output until a preorder cursor commits it into
+//! the branch-local builder of its root child; `append_branch` then merges the branches in
+//! root-child order, so node and block ids, budget checks and `TooManyBlocks` match the serial
+//! plan.
 //!
 //! Errors are ordered by `(NodePath, Phase)` and the lowest wins (A8, R25): once one is known, no
 //! job above it is dispatched and running ones above it abort, while lower jobs and commits go on.
@@ -15,7 +17,7 @@ use std::{
     collections::BTreeMap,
     io,
     sync::{
-        Condvar, Mutex, MutexGuard, PoisonError,
+        Arc, Condvar, Mutex, MutexGuard, PoisonError,
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc,
     },
@@ -38,13 +40,91 @@ use viewer_convert_core::{
         spool_store::{PlanStore, SpoolId},
     },
     spatial::node_job::{
-        ChildOutput, JobContext, JobProgress, NodeJob, NodeJobOutput, NodePath, RangeJob,
-        RangePartition, run_node_job, run_root_partition_range,
+        ChildOutput, JobContext, JobProgress, NodeJob, NodeJobOutput, NodePath, NodeRange,
+        RangeJob, RangePartition, merge_node_ranges, run_node_job, run_node_range,
+        run_root_partition_range,
     },
 };
 
-/// Plans batches on one thread per root child with a ready queue of node jobs.
+/// Plans the batch of all root children on `W` threads with a ready queue of node jobs.
 pub(crate) struct ThreadedExecutor;
+
+#[cfg(test)]
+thread_local! {
+    /// Splits this thread's batches have queued, so a test can assert that a split happened, how
+    /// many ranges it took and whether its input was chained from a split parent.
+    pub(crate) static SPLIT_LOG: std::cell::RefCell<Vec<SplitRecord>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// One split taken by `enqueue`, for tests.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SplitRecord {
+    pub(crate) ranges: usize,
+    pub(crate) points: u64,
+    /// Ranges wanted before the memory budget lowered them.
+    pub(crate) requested: usize,
+    /// The node is a child of a split node: its input arrives as chained segments.
+    pub(crate) chained: bool,
+}
+
+/// One unit of the ready queue; `(path, 0)` for a node or merge, `(path, index)` for a range.
+enum Work {
+    Node(NodeJob),
+    Range {
+        job: Arc<NodeJob>,
+        index: usize,
+        count: usize,
+        first_segment: SpoolId,
+    },
+    Merge {
+        job: Arc<NodeJob>,
+        ranges: Vec<NodeRange>,
+        start_seq: Option<u64>,
+        started: Instant,
+        elapsed_ns: u64,
+    },
+}
+
+impl Work {
+    fn key(&self) -> (NodePath, u32) {
+        match self {
+            Self::Node(job) => (job.path.clone(), 0),
+            Self::Range { job, index, .. } => (job.path.clone(), *index as u32),
+            Self::Merge { job, .. } => (job.path.clone(), 0),
+        }
+    }
+
+    fn path(&self) -> &NodePath {
+        match self {
+            Self::Node(job) => &job.path,
+            Self::Range { job, .. } | Self::Merge { job, .. } => &job.path,
+        }
+    }
+}
+
+/// A range job as the host receives it.
+struct RangeFinished {
+    job: Arc<NodeJob>,
+    index: usize,
+    start_seq: Option<u64>,
+    started: Instant,
+    elapsed_ns: u64,
+    result: Result<NodeRange, ConvertError>,
+}
+
+/// Ranges of one split node still running.
+struct SplitState {
+    job: Arc<NodeJob>,
+    results: Vec<Option<NodeRange>>,
+    remaining: usize,
+    failed: bool,
+    start_seq: Option<u64>,
+    started: Option<Instant>,
+    /// Longest range: the node's critical-path time, stored as the event's `elapsed_ns`.
+    elapsed_ns: u64,
+}
 
 type Builder<'a, 'b, S> = &'a mut SpatialBuilder<'b, S, SystemClock, ThreadedExecutor>;
 
@@ -62,6 +142,8 @@ struct Finished {
     started: Instant,
     /// Job work only, so a node event does not count the wait for the cursor.
     elapsed_ns: u64,
+    /// Range jobs the node was split into (0 when it ran as one job), released with its merge.
+    split_ranges: usize,
     result: Result<NodeJobOutput, ConvertError>,
 }
 
@@ -77,6 +159,7 @@ struct Done {
 enum Message {
     Progress(JobProgress),
     Finished(Box<Finished>),
+    RangeFinished(Box<RangeFinished>),
 }
 
 enum CursorEntry {
@@ -123,7 +206,7 @@ impl Outcome {
 
 #[derive(Default)]
 struct QueueState {
-    jobs: BTreeMap<NodePath, NodeJob>,
+    jobs: BTreeMap<(NodePath, u32), Work>,
     closed: bool,
     /// Running jobs above this path abort at their next heartbeat.
     abort_above: Option<NodePath>,
@@ -141,20 +224,20 @@ impl ReadyJobs {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn push(&self, job: NodeJob) {
-        self.lock().jobs.insert(job.path.clone(), job);
+    fn push(&self, work: Work) {
+        self.lock().jobs.insert(work.key(), work);
         self.ready.notify_one();
     }
 
     /// The ready job with the lowest path; `None` once the queue is closed.
-    fn next(&self) -> Option<NodeJob> {
+    fn next(&self) -> Option<Work> {
         let mut state = self.lock();
         loop {
             if state.closed {
                 return None;
             }
-            if let Some((_, job)) = state.jobs.pop_first() {
-                return Some(job);
+            if let Some((_, work)) = state.jobs.pop_first() {
+                return Some(work);
             }
             state = self
                 .ready
@@ -177,7 +260,7 @@ impl ReadyJobs {
             state.jobs.clear();
         } else if let Some((first, ..)) = &outcome.first {
             state.abort_above = Some(first.clone());
-            drop(state.jobs.split_off(first));
+            drop(state.jobs.split_off(&(first.clone(), 0)));
         }
         before - state.jobs.len()
     }
@@ -210,11 +293,12 @@ fn work<S: PlanStore>(
     sender: mpsc::Sender<Message>,
 ) {
     let _close = CloseOnDrop(queue);
-    while let Some(job) = queue.next() {
+    while let Some(work) = queue.next() {
+        let path = work.path().clone();
         let start_seq = store.next_event_seq();
         let started = SystemClock.now();
-        let result = run_node_job(ctx, &job, store, &SystemClock, &mut |progress| {
-            if queue.aborts(&job.path) {
+        let mut report = |progress| {
+            if queue.aborts(&path) {
                 return Err(ConvertError::Cancelled {
                     points_processed: 0,
                 });
@@ -224,15 +308,65 @@ fn work<S: PlanStore>(
                 .map_err(|_| ConvertError::Cancelled {
                     points_processed: 0,
                 })
-        });
-        let finished = Finished {
-            job,
-            start_seq,
-            started,
-            elapsed_ns: SystemClock.elapsed_ns(started),
-            result,
         };
-        if sender.send(Message::Finished(Box::new(finished))).is_err() {
+        let message = match work {
+            Work::Node(job) => {
+                let result = run_node_job(ctx, &job, store, &SystemClock, &mut report);
+                Message::Finished(Box::new(Finished {
+                    job,
+                    start_seq,
+                    started,
+                    elapsed_ns: SystemClock.elapsed_ns(started),
+                    split_ranges: 0,
+                    result,
+                }))
+            }
+            Work::Range {
+                job,
+                index,
+                count,
+                first_segment,
+            } => {
+                let result = run_node_range(
+                    ctx,
+                    &job,
+                    first_segment,
+                    index,
+                    count,
+                    store,
+                    &SystemClock,
+                    &mut report,
+                );
+                Message::RangeFinished(Box::new(RangeFinished {
+                    job,
+                    index,
+                    start_seq,
+                    started,
+                    elapsed_ns: SystemClock.elapsed_ns(started),
+                    result,
+                }))
+            }
+            Work::Merge {
+                job,
+                ranges,
+                start_seq,
+                started,
+                elapsed_ns,
+            } => {
+                let merge_started = SystemClock.now();
+                let split_ranges = ranges.len();
+                let result = merge_node_ranges(ctx, &job, ranges, store, &SystemClock);
+                Message::Finished(Box::new(Finished {
+                    job: (*job).clone(),
+                    start_seq,
+                    started,
+                    elapsed_ns: elapsed_ns + SystemClock.elapsed_ns(merge_started),
+                    split_ranges,
+                    result,
+                }))
+            }
+        };
+        if sender.send(message).is_err() {
             return;
         }
     }
@@ -248,15 +382,134 @@ struct Batch<'q> {
     cursor: Vec<CursorEntry>,
     branches: BTreeMap<u16, BranchOutput>,
     memory_budget: u64,
+    threads: usize,
+    child_count: u64,
+    /// Points from which a node job is split into range jobs.
+    split_points: u64,
+    /// Range jobs the memory budget lets the batch hold at once, and how many it holds now:
+    /// queued, running, or finished and waiting for the merge of their node.
+    split_capacity: usize,
+    split_outstanding: usize,
+    splits: BTreeMap<NodePath, SplitState>,
 }
 
 impl Batch<'_> {
-    fn enqueue(&mut self, job: NodeJob) {
-        if self.outcome.admits(&job.path) {
-            self.pending += 1;
-            self.queue.push(job);
+    /// The budget of branch `key`: the batch budget less the index the other branches already
+    /// hold. Commits run on the host in turn, so the sum over branches never exceeds the batch
+    /// budget, however the nodes divide among them.
+    fn budget_for(&self, key: u16) -> u64 {
+        let others = self
+            .branches
+            .iter()
+            .filter(|(other, _)| **other != key)
+            .map(|(_, branch)| branch.index_bytes())
+            .sum::<u64>();
+        self.memory_budget.saturating_sub(others)
+    }
+}
+
+/// Queues `job`; a splitting one with many points becomes `K = min(W, ceil(points / T))` range
+/// jobs whose merge is queued when the last range finishes. `K` is lowered to what the memory
+/// budget still holds (`split_capacity`), down to no split.
+fn enqueue<S: PlanStore>(builder: Builder<'_, '_, S>, batch: &mut Batch<'_>, job: NodeJob) {
+    if !batch.outcome.admits(&job.path) {
+        return;
+    }
+    let splits = job.first_output != SpoolId::SOURCE;
+    let requested = if splits && batch.threads > 1 && job.point_count >= batch.split_points {
+        usize::try_from(job.point_count.div_ceil(batch.split_points))
+            .unwrap_or(usize::MAX)
+            .min(batch.threads)
+    } else {
+        1
+    };
+    let count = requested.min(batch.split_capacity.saturating_sub(batch.split_outstanding));
+    if count < 2 {
+        batch.pending += 1;
+        batch.queue.push(Work::Node(job));
+        return;
+    }
+    batch.split_outstanding += count;
+    builder.note_split_ranges(batch.split_outstanding);
+    let first = builder.reserve_spool_ids(count as u64 * batch.child_count);
+    #[cfg(test)]
+    SPLIT_LOG.with(|log| {
+        log.borrow_mut().push(SplitRecord {
+            ranges: count,
+            points: job.point_count,
+            requested,
+            chained: !job.segments.is_empty(),
+        });
+    });
+    let job = Arc::new(job);
+    batch.splits.insert(
+        job.path.clone(),
+        SplitState {
+            job: Arc::clone(&job),
+            results: (0..count).map(|_| None).collect(),
+            remaining: count,
+            failed: false,
+            start_seq: None,
+            started: None,
+            elapsed_ns: 0,
+        },
+    );
+    for index in 0..count {
+        batch.pending += 1;
+        batch.queue.push(Work::Range {
+            job: Arc::clone(&job),
+            index,
+            count,
+            first_segment: SpoolId(first.0 + index as u64 * batch.child_count),
+        });
+    }
+}
+
+/// Collects one finished range; when it is the last, queues the merge.
+fn finish_range(batch: &mut Batch<'_>, finished: RangeFinished) {
+    let path = finished.job.path.clone();
+    let Some(state) = batch.splits.get_mut(&path) else {
+        return;
+    };
+    state.remaining -= 1;
+    state.elapsed_ns = state.elapsed_ns.max(finished.elapsed_ns);
+    if finished.index == 0 {
+        state.start_seq = finished.start_seq;
+    }
+    state.started = Some(
+        state
+            .started
+            .map_or(finished.started, |s| s.min(finished.started)),
+    );
+    match finished.result {
+        Ok(range) => state.results[finished.index] = Some(range),
+        Err(ConvertError::Cancelled { .. }) => state.failed = true,
+        Err(error) => {
+            state.failed = true;
+            batch.outcome.record(&path, Phase::Job, error);
         }
     }
+    if state.remaining > 0 {
+        return;
+    }
+    let state = batch.splits.remove(&path).expect("present above");
+    if state.failed || !batch.outcome.admits(&path) {
+        // The results are dropped here; their segments stay for the failed plan's discard.
+        batch.split_outstanding -= state.results.len();
+        return;
+    }
+    batch.pending += 1;
+    batch.queue.push(Work::Merge {
+        job: state.job,
+        ranges: state
+            .results
+            .into_iter()
+            .map(|range| range.expect("every range finished"))
+            .collect(),
+        start_seq: state.start_seq,
+        started: state.started.expect("a range finished"),
+        elapsed_ns: state.elapsed_ns,
+    });
 }
 
 impl<S: PlanStore> BatchPlanner<S, SystemClock> for ThreadedExecutor {
@@ -267,7 +520,7 @@ impl<S: PlanStore> BatchPlanner<S, SystemClock> for ThreadedExecutor {
         memory_budget: u64,
     ) -> Result<Vec<(u16, BranchOutput)>, ConvertError> {
         let collect = builder.collects_diagnostics();
-        let threads = tasks.len();
+        let threads = builder.batch_workers();
         let queue = ReadyJobs::default();
         let mut batch = Batch {
             queue: &queue,
@@ -277,6 +530,12 @@ impl<S: PlanStore> BatchPlanner<S, SystemClock> for ThreadedExecutor {
             cursor: Vec::new(),
             branches: BTreeMap::new(),
             memory_budget,
+            threads,
+            child_count: usize::from(builder.job_context().spatial_divisions).pow(3) as u64,
+            split_points: builder.range_split_points(),
+            split_capacity: builder.split_range_capacity(),
+            split_outstanding: 0,
+            splits: BTreeMap::new(),
         };
         for task in tasks.iter().rev() {
             batch.cursor.push(CursorEntry::Node {
@@ -294,7 +553,7 @@ impl<S: PlanStore> BatchPlanner<S, SystemClock> for ThreadedExecutor {
                 task.point_count,
                 true,
             );
-            batch.enqueue(job);
+            enqueue(builder, &mut batch, job);
         }
 
         let ctx = builder.job_context();
@@ -320,6 +579,10 @@ impl<S: PlanStore> BatchPlanner<S, SystemClock> for ThreadedExecutor {
                                 .record(&NodePath(Vec::new()), Phase::Job, error);
                         }
                     }
+                    Ok(Message::RangeFinished(finished)) => {
+                        batch.pending -= 1;
+                        finish_range(&mut batch, *finished);
+                    }
                     Ok(Message::Finished(finished)) => {
                         batch.pending -= 1;
                         finish_ready_job(builder, &mut batch, *finished);
@@ -340,6 +603,7 @@ impl<S: PlanStore> BatchPlanner<S, SystemClock> for ThreadedExecutor {
             return Err(error);
         }
         debug_assert!(batch.cursor.is_empty() && batch.outputs.is_empty());
+        debug_assert!(batch.splits.is_empty() && batch.split_outstanding == 0);
         Ok(batch.branches.into_iter().collect())
     }
 }
@@ -350,6 +614,7 @@ fn finish_ready_job<S: PlanStore>(
     finished: Finished,
 ) {
     let path = finished.job.path.clone();
+    batch.split_outstanding -= finished.split_ranges;
     let output = match finished.result {
         Ok(output) => output,
         // Only a job aborted by `restrict` is cancelled; a user cancel is already recorded.
@@ -372,7 +637,7 @@ fn finish_ready_job<S: PlanStore>(
         return;
     }
     for child in &output.children {
-        let job = builder.node_job(
+        let mut job = builder.node_job(
             path.child(child.key),
             finished.job.level + 1,
             child.bounds,
@@ -380,7 +645,8 @@ fn finish_ready_job<S: PlanStore>(
             child.point_count,
             true,
         );
-        batch.enqueue(job);
+        job.segments.clone_from(&child.segments);
+        enqueue(builder, batch, job);
     }
     batch.outputs.insert(
         path,
@@ -404,8 +670,9 @@ fn advance_cursor<S: PlanStore>(builder: Builder<'_, '_, S>, batch: &mut Batch<'
                 let Some(CursorEntry::Exit { key, open }) = batch.cursor.pop() else {
                     unreachable!()
                 };
+                let budget = batch.budget_for(key);
                 let branch = batch.branches.get_mut(&key).expect("one branch per key");
-                builder.with_branch(branch, batch.memory_budget, |builder| {
+                builder.with_branch(branch, budget, |builder| {
                     builder.finish_node_event(open);
                 });
             }
@@ -418,6 +685,7 @@ fn advance_cursor<S: PlanStore>(builder: Builder<'_, '_, S>, batch: &mut Batch<'
                 };
                 let done = batch.outputs.remove(&path).expect("checked above");
                 let key = path.0[0];
+                let budget = batch.budget_for(key);
                 let branch = batch.branches.get_mut(&key).expect("one branch per key");
                 let Done {
                     job,
@@ -436,7 +704,7 @@ fn advance_cursor<S: PlanStore>(builder: Builder<'_, '_, S>, batch: &mut Batch<'
                         started,
                     )
                 });
-                let committed = builder.with_branch(branch, batch.memory_budget, |builder| {
+                let committed = builder.with_branch(branch, budget, |builder| {
                     builder.commit_job(&job, output, parent, &mut open)
                 });
                 if let Some(open) = open.as_mut() {

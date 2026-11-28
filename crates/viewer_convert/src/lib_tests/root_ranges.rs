@@ -143,3 +143,95 @@ fn joined_segments_read_back_identically() {
         .unwrap();
     assert_eq!(out, expected);
 }
+
+/// A cluster of pseudo-random points written in ascending x, so each range of a range-split
+/// node holds only some of its children (a child with no points in a range), among small ones.
+fn ordered_cluster_fixture(path: &std::path::Path) {
+    let header = Builder::from((1, 2)).into_header().unwrap();
+    let mut writer = Writer::from_path(path, header).unwrap();
+    let mut state = 0x2545_F491_4F6C_DD1D_u64;
+    let mut next = || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) as f64 / f64::from(1_u32 << 31) * 30.0
+    };
+    let mut cluster = (0..3_001)
+        .map(|_| (70.0 + next(), 70.0 + next(), 70.0 + next()))
+        .collect::<Vec<_>>();
+    cluster.sort_by(|a, b| a.0.total_cmp(&b.0));
+    for corner in 0..7_u32 {
+        let base = |bit: u32| if corner & bit == 0 { 10.0 } else { 90.0 };
+        for index in 0..40_u32 {
+            let jitter = f64::from(index) * 0.01;
+            writer
+                .write_point(Point {
+                    x: base(1) + jitter,
+                    y: base(2) + jitter,
+                    z: base(4) + jitter,
+                    ..Point::default()
+                })
+                .unwrap();
+        }
+    }
+    for (x, y, z) in cluster {
+        writer
+            .write_point(Point {
+                x,
+                y,
+                z,
+                ..Point::default()
+            })
+            .unwrap();
+    }
+}
+
+#[test]
+fn range_split_nodes_keep_the_output_bytes_for_every_worker_count() {
+    let tmp = test_dir();
+    let deep = tmp.path().join("deep.las");
+    deep_child_fixture(&deep);
+    let ordered = tmp.path().join("ordered.las");
+    ordered_cluster_fixture(&ordered);
+    // Ranges of uneven size are asserted below (`points % ranges != 0`); the ordered cluster is
+    // meant to leave children with no points in some ranges, which is not asserted.
+    // `T = 700` splits the dominant subtree's nodes.
+    let mut uneven = false;
+    for (input, name) in [(&deep, "deep"), (&ordered, "ordered")] {
+        let expected = {
+            let output = tmp.path().join(format!("{name}-serial.oct"));
+            convert_file(input, &output, cluster_options(1)).unwrap();
+            read_pair(&output)
+        };
+        for split_points in [150, 700] {
+            for workers in [1, 2, 4, 8, 16] {
+                let output = tmp
+                    .path()
+                    .join(format!("{name}-{split_points}-{workers}.oct"));
+                let options =
+                    cluster_options(workers).with_range_split_points_for_tests(split_points);
+                let before = split_counter();
+                let report = convert_file(input, &output, options).unwrap();
+                let case = format!("{name} T={split_points} workers={workers}");
+                assert_eq!(report.spatial_workers_used, workers, "{case}");
+                let log = split_log_since(before);
+                if workers == 1 {
+                    assert!(log.is_empty(), "{case}: one worker never splits");
+                } else {
+                    assert!(!log.is_empty(), "{case}: no node was range-split");
+                    uneven |= log
+                        .iter()
+                        .any(|split| split.points % split.ranges as u64 != 0);
+                    if name == "deep" && split_points == 150 {
+                        assert!(
+                            log.iter().any(|split| split.chained),
+                            "{case}: no split node was the child of a split node"
+                        );
+                    }
+                }
+                assert_eq!(read_pair(&output), expected, "{case}");
+            }
+        }
+    }
+    assert!(uneven, "every split divided its points evenly");
+}

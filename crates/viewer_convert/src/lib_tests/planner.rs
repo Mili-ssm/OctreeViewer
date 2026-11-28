@@ -115,23 +115,23 @@ fn characterize_planner_structure_for_coincident_points() {
     );
 }
 
-/// `(requested, limit)` of a rejected plan, `None` when the plan was accepted.
+/// The spatial workers used by an accepted plan, or `(requested, limit)` of a rejected one.
 fn planner_budget_outcome(
     input: &std::path::Path,
     dir: &std::path::Path,
     budget: u64,
     workers: usize,
-) -> Option<(u64, u64)> {
+) -> Result<usize, (u64, u64)> {
     let output = dir.join(format!("budget-{budget}-{workers}.oct"));
     let options = leaf_budget(64, 0.01, budget)
         .unwrap()
         .with_spatial_workers(workers)
         .unwrap();
     match convert_file(input, &output, options) {
-        Ok(_) => None,
+        Ok(report) => Ok(report.spatial_workers_used),
         Err(ConvertError::MemoryBudgetExceeded { requested, limit }) => {
             assert!(!output.exists());
-            Some((requested, limit))
+            Err((requested, limit))
         }
         Err(other) => panic!("budget={budget} workers={workers}: unexpected {other:?}"),
     }
@@ -156,96 +156,60 @@ fn characterize_planner_budget_outcomes_with_one_worker() {
     ];
     for (budget, expected) in cases {
         assert_eq!(
-            planner_budget_outcome(&input, tmp.path(), budget, 1),
+            planner_budget_outcome(&input, tmp.path(), budget, 1).err(),
             expected,
             "{BUDGET_HINT} budget={budget}"
         );
     }
 }
 
+/// A budget rejects the same plans whatever the worker count: the budget lowers the effective
+/// count, down to the serial plan, instead of failing a plan that one worker would complete.
 #[test]
-fn characterize_planner_budget_outcomes_with_two_workers() {
+fn planner_budget_outcomes_do_not_depend_on_the_worker_count() {
     let tmp = test_dir();
-    let input = tmp.path().join("source.las");
-    fixture(&input, false, true, 4_000);
-    // Thresholds re-pinned for V8 in D4 Task 5c. The V8 root has 2 children, so two workers
-    // form a single batch. 17_199_104..=18_182_720 fail the batch budget (`requested` is the
-    // batch reservation); 19_737_087 fails a branch-local check, whose error wins over the batch
-    // one; 19_737_088 is the smallest budget that is accepted.
-    let cases = [
-        (1, Some((17_182_720, 1))),
-        (17_182_719, Some((17_182_720, 17_182_719))),
-        (17_182_720, Some((17_183_232, 17_182_720))),
-        (17_199_104, Some((19_543_552, 17_199_104))),
-        (18_182_720, Some((19_543_552, 18_182_720))),
-        (19_637_088, Some((17_206_272, 17_206_104))),
-        (19_737_087, Some((17_231_104, 17_231_103))),
-        (19_737_088, None),
-        (19_737_089, None),
+    let dense = tmp.path().join("source.las");
+    fixture(&dense, false, true, 4_000);
+    let clusters_tmp = test_dir();
+    let clusters = clusters_tmp.path().join("clusters.las");
+    eight_cluster_fixture(&clusters);
+    // Budgets around the W=1 thresholds of each fixture (17_278_720 for `dense`, 17_242_720 or
+    // less for `clusters`) and above where several workers would fit.
+    let budgets = [
+        1, 17_182_720, 17_199_104, 17_230_000, 17_278_719, 17_278_720, 17_500_000, 18_182_720,
+        19_637_088, 19_737_088, 20_937_216, 24_000_000,
     ];
-    for (budget, expected) in cases {
-        assert_eq!(
-            planner_budget_outcome(&input, tmp.path(), budget, 2),
-            expected,
-            "{BUDGET_HINT} budget={budget}"
-        );
+    let mut parallel_runs = 0;
+    for (input, dir) in [(&dense, tmp.path()), (&clusters, clusters_tmp.path())] {
+        for budget in budgets {
+            let serial = planner_budget_outcome(input, dir, budget, 1);
+            for workers in [2, 3, 4, 8, 16] {
+                let outcome = planner_budget_outcome(input, dir, budget, workers);
+                // Same verdict as one worker, and the same bytes when it converts.
+                assert_eq!(
+                    outcome.is_ok(),
+                    serial.is_ok(),
+                    "{BUDGET_HINT} budget={budget} workers={workers} input={input:?}"
+                );
+                if let (Ok(used), Ok(_)) = (outcome, serial) {
+                    assert!(used <= workers);
+                    parallel_runs += usize::from(used > 1);
+                    assert_eq!(
+                        read_pair(&dir.join(format!("budget-{budget}-{workers}.oct"))),
+                        read_pair(&dir.join(format!("budget-{budget}-1.oct"))),
+                        "budget={budget} workers={workers} input={input:?}"
+                    );
+                } else {
+                    assert_eq!(outcome, serial, "budget={budget} workers={workers}");
+                }
+            }
+        }
     }
-}
-
-#[test]
-fn characterize_planner_budget_outcomes_with_three_and_four_workers() {
-    let tmp = test_dir();
-    let input = tmp.path().join("source.las");
-    fixture(&input, false, true, 4_000);
-    // Thresholds re-pinned for V8 in D4 Task 5c. The V8 root has 2 children, so 3 and 4 workers
-    // are still a single batch and share the thresholds of 2 workers.
-    let cases = [
-        (3, 17_199_104, Some((19_543_552, 17_199_104))),
-        (3, 19_637_088, Some((17_206_272, 17_206_104))),
-        (3, 19_737_087, Some((17_231_104, 17_231_103))),
-        (3, 19_737_088, None),
-        (4, 17_199_104, Some((19_543_552, 17_199_104))),
-        (4, 19_637_088, Some((17_206_272, 17_206_104))),
-        (4, 19_737_087, Some((17_231_104, 17_231_103))),
-        (4, 19_737_088, None),
-    ];
-    for (workers, budget, expected) in cases {
-        assert_eq!(
-            planner_budget_outcome(&input, tmp.path(), budget, workers),
-            expected,
-            "{BUDGET_HINT} budget={budget} workers={workers}"
-        );
-    }
-}
-
-#[test]
-fn characterize_later_batches_never_fail_the_batch_budget() {
-    // A later batch could only fail its own batch check (`branch_memory_budget` with the
-    // committed counts) in a window where batch 1 passes its batch check and its branch-local
-    // checks. A dense probe (step 64, run before V8) of the 4000-point fixture above the batch-1 threshold at
-    // W=2 and W=3 found no such window: below the accept threshold batch 1 fails a
-    // branch-local check, at or above it everything passes. The 8-cluster fixture (8 root
-    // children: 4 batches at W=2, 3 at W=3) shows the same shape at a coarse step on V8.
-    let tmp = test_dir();
-    let input = tmp.path().join("clusters.las");
-    eight_cluster_fixture(&input);
-    // Thresholds re-pinned for V8 in D4 Task 5c (binary search on V8 output): accept at 19_654_144
-    // (2 workers) and 20_937_216 (3 workers).
-    let cases = [
-        (2, 19_554_144, Some((17_185_536, 17_185_368))),
-        (2, 19_654_143, Some((17_189_632, 17_189_631))),
-        (2, 19_654_144, None),
-        (3, 20_837_216, Some((20_854_272, 20_837_216))),
-        (3, 20_936_216, Some((17_189_632, 17_189_465))),
-        (3, 20_937_216, None),
-    ];
-    for (workers, budget, expected) in cases {
-        assert_eq!(
-            planner_budget_outcome(&input, tmp.path(), budget, workers),
-            expected,
-            "{BUDGET_HINT} budget={budget} workers={workers}"
-        );
-    }
+    // A generous budget really runs the batch: the test would pass with one worker always.
+    assert!(
+        parallel_runs > 0,
+        "no accepted plan used more than one worker"
+    );
 }
 
 fn convert_error_at(
@@ -319,5 +283,122 @@ fn sha256_matches_the_two_block_vector() {
     assert_eq!(
         sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
         "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+    );
+}
+
+#[test]
+fn later_stages_reserve_the_same_memory_with_or_without_split_ranges() {
+    // The split ranges are freed before the block and validation stages start, so those stages
+    // must size their workers as if the nodes had not been split.
+    let tmp = test_dir();
+    let input = tmp.path().join("deep.las");
+    deep_child_fixture(&input);
+    let mut compared = 0;
+    for budget in (17..=40_u64).map(|mib| mib * 1024 * 1024 + 300_000) {
+        let run = |split: u64| {
+            let output = tmp.path().join(format!("later-{budget}-{split}.oct"));
+            let options = leaf_budget(16, 0.01, budget)
+                .unwrap()
+                .with_spatial_workers(8)
+                .unwrap()
+                .with_range_split_points_for_tests(split);
+            let before = split_counter();
+            let result = convert_file(&input, &output, options);
+            (result, splits_since(before))
+        };
+        let (Ok(plain), 0) = run(u64::MAX) else {
+            continue;
+        };
+        let (split, splits) = run(150);
+        let split = split.unwrap_or_else(|error| panic!("budget={budget}: {error:?}"));
+        if splits == 0
+            || split.spatial_workers_used <= 1
+            || split.spatial_workers_used != plain.spatial_workers_used
+        {
+            continue;
+        }
+        compared += 1;
+        assert_eq!(
+            split.block_preparation.worker_limit, plain.block_preparation.worker_limit,
+            "budget={budget}: block workers"
+        );
+        assert_eq!(
+            split.output_validation.worker_limit, plain.output_validation.worker_limit,
+            "budget={budget}: validation workers"
+        );
+        assert!(split.estimated_peak_memory_bytes >= plain.estimated_peak_memory_bytes);
+    }
+    assert!(
+        compared > 0,
+        "no budget split a node and kept the parallel run"
+    );
+}
+
+#[test]
+fn a_tight_budget_lowers_the_split_instead_of_failing() {
+    let tmp = test_dir();
+    let input = tmp.path().join("deep.las");
+    deep_child_fixture(&input);
+    let mut lowered_somewhere = false;
+    // From the smallest budget one worker passes, up to one that holds every split.
+    for budget in [
+        2_u64 * 1024 * 1024,
+        17_300_000,
+        17_600_000,
+        18_000_000,
+        18_800_000,
+        20_000_000,
+        24_000_000,
+        // Parallel and split, with a node's ranges lowered by the budget.
+        30_000_000,
+        31_000_000,
+        31_500_000,
+        32_500_000,
+        64_000_000,
+    ] {
+        let run = |workers: usize, split: u64| {
+            let output = tmp
+                .path()
+                .join(format!("budget-{budget}-{workers}-{split}.oct"));
+            let options = leaf_budget(16, 0.01, budget)
+                .unwrap()
+                .with_spatial_workers(workers)
+                .unwrap()
+                .with_range_split_points_for_tests(split);
+            let before = split_counter();
+            let result = convert_file(&input, &output, options);
+            (
+                result.map(|report| (report, read_pair(&output))),
+                split_log_since(before),
+            )
+        };
+        let (serial, _) = run(1, 150);
+        let Ok((_, expected)) = serial else {
+            continue;
+        };
+        let (split, log) = run(8, 150);
+        let (report, bytes) = split.unwrap_or_else(|error| panic!("budget={budget}: {error:?}"));
+        assert_eq!(bytes, expected, "budget={budget}");
+        // Without splits the estimate is checked against the budget. With them the reported peak
+        // pairs the admitted ranges with the final real index (admission used the expected one),
+        // so it may exceed the budget; only the kept parallel run may do so.
+        assert!(
+            report.estimated_peak_memory_bytes <= budget
+                || (report.spatial_workers_used > 1 && !log.is_empty()),
+            "budget={budget}: peak {} workers {}",
+            report.estimated_peak_memory_bytes,
+            report.spatial_workers_used
+        );
+        // Only a run that kept its parallel attempt (more than one worker) has a log of its own;
+        // a one-worker fallback also counts the splits of the discarded attempt.
+        if report.spatial_workers_used > 1 {
+            lowered_somewhere |= log
+                .iter()
+                .any(|split| (2..split.requested).contains(&split.ranges));
+        }
+    }
+    assert!(
+        lowered_somewhere,
+        "no budget kept the parallel run with a split lowered to 2 <= K < requested"
     );
 }
