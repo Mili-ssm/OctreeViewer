@@ -12,7 +12,7 @@ las.workspace = true
 laz = { version = "0.13", default-features = false }
 thiserror.workspace = true
 lz4_flex = "0.14"
-viewer_core = { path = "../viewer_core", features = ["laz"] }
+viewer_core = { path = "../viewer_core" }
 viewer_format = { path = "../viewer_format" }
 
 [lints]
