@@ -187,7 +187,7 @@ fn synthetic_build_cap_defers_without_waiting_for_the_camera() {
     // target), so one update has several nodes to build and the cap defers the rest.
     let mut capped = free;
     capped.driver = driver_for(&capped.dataset, u64::MAX);
-    capped.target = StrictTarget::default();
+    capped.target = FakeGpu::default();
     capped.dataset.pool_reset();
     capped.dataset.driver_replaced();
     capped.camera_moved();

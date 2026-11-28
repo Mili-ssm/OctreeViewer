@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 readme = "README.md"
 
+[features]
+# The strict GPU test double (`test_support`), for the tests of other crates.
+test-support = []
+
 [dependencies]
 bytemuck.workspace = true
 glam.workspace = true

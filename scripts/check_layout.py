@@ -68,6 +68,7 @@ ALLOWED_EDGES = [
     ("viewer_wasm", "viewer_core", "normal"),
     ("viewer_wasm", "viewer_format", "dev"),
     ("viewer_wasm", "viewer_format", "normal"),
+    ("viewer_wasm", "viewer_render_wgpu", "dev"),
     ("viewer_wasm", "viewer_render_wgpu", "normal"),
 ]
 

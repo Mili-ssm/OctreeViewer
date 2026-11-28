@@ -273,12 +273,12 @@ impl GlueSim {
                     moves += 1;
                 }
                 if inject.pool_reset_at == Some(moves) && iteration == 1 {
-                    self.h.target.drop_pool_for_test();
+                    self.h.target.lose_pool();
                     self.builder.mark_dirty();
                 }
                 if inject.driver_replaced_at == Some(moves) && iteration == 3 {
                     self.viewer = self.new_viewer();
-                    self.h.target = StrictTarget::default();
+                    self.h.target = FakeGpu::default();
                     self.to_render.clear();
                     self.inflight = CellMessages::default();
                     self.inflight_levels = None;
@@ -289,13 +289,6 @@ impl GlueSim {
             }
         }
         self.settle(views.last().unwrap(), max_iterations)
-    }
-}
-
-impl StrictTarget {
-    fn drop_pool_for_test(&mut self) {
-        use viewer_render_wgpu::CellTarget;
-        self.drop_pool();
     }
 }
 
@@ -422,9 +415,9 @@ fn a_burst_of_node_cells_is_applied_over_several_frames_in_order() {
         u64::MAX,
     );
     let mut viewer = ViewerCells::new(config, 1);
-    let mut target = StrictTarget {
+    let mut target = FakeGpu {
         eye: view.camera().position(),
-        ..StrictTarget::default()
+        ..FakeGpu::default()
     };
     for (generation, _, bytes) in &nodes {
         viewer.push_node(*generation, bytes.clone()).unwrap();
@@ -491,7 +484,7 @@ fn the_in_process_glue_reaches_the_in_process_digest() {
     let (expected, _) = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
     let mut h = synthetic_harness(1 << 20, 2.0);
     let mut cells = InProcessCells::new(&h.dataset, h.config);
-    let mut target = StrictTarget::default();
+    let mut target = FakeGpu::default();
     let mut rest = None;
     for (i, view) in views.iter().enumerate() {
         cells.mark_dirty();
@@ -546,7 +539,7 @@ fn in_process_drawn_depths(max_level_builds: usize) -> (u8, usize, u64) {
         h.dataset.coordinate_origin(),
         WASM_CPU_BUDGET_BYTES,
     ));
-    let mut target = StrictTarget::default();
+    let mut target = FakeGpu::default();
     let (mut stage_pixels, mut dirty) = (None, true);
     let mut last = None;
     for (i, view) in views.iter().enumerate() {
@@ -614,7 +607,7 @@ struct Pair {
     h: Harness,
     builder: BuilderCells,
     viewer: ViewerCells,
-    target: StrictTarget,
+    target: FakeGpu,
     view: ViewProjection,
     target_px: f64,
     /// Every (node, depth) the builder shipped through the level path, in order.
@@ -637,9 +630,9 @@ impl Pair {
             h.dataset.coordinate_origin(),
             u64::MAX,
         );
-        let target = StrictTarget {
+        let target = FakeGpu {
             eye: view.camera().position(),
-            ..StrictTarget::default()
+            ..FakeGpu::default()
         };
         Self {
             builder: BuilderCells::new(h.config),
@@ -1542,16 +1535,16 @@ fn a_new_viewer_applies_the_default_length_minimum() {
     let mut cells = InProcessCells::new(&h.dataset, h.config);
     assert_eq!(
         cells
-            .stats(&h.dataset, &StrictTarget::default())
+            .stats(&h.dataset, &FakeGpu::default())
             .continuity_min_side,
         Some(DEFAULT_MIN_SIDE)
     );
     // Without any setContinuity call, an update keeps it.
     let mut h = h;
     let view = synth_orbit().remove(0);
-    let mut target = StrictTarget {
+    let mut target = FakeGpu {
         eye: view.camera().position(),
-        ..StrictTarget::default()
+        ..FakeGpu::default()
     };
     let (blocks, pages) = (&mut h.blocks, &mut h.pages);
     cells
@@ -1645,7 +1638,7 @@ fn length_off_and_continuity_off_is_no_minimum_for_the_driver() {
     );
     viewer.set_continuity(off).unwrap();
     assert_eq!(viewer.driver().pool().min_side(), None);
-    let stats = viewer.stats(&StrictTarget::default());
+    let stats = viewer.stats(&FakeGpu::default());
     assert_eq!(stats.continuity_min_side, None);
     assert_eq!(stats.min_length, 0.0);
     // The default comes back with `None`.
@@ -1653,7 +1646,7 @@ fn length_off_and_continuity_off_is_no_minimum_for_the_driver() {
         .set_continuity(off.with_min_length(None).unwrap())
         .unwrap();
     assert_eq!(viewer.driver().pool().min_side(), Some(1e-4));
-    assert_eq!(viewer.stats(&StrictTarget::default()).min_length, 1e-4);
+    assert_eq!(viewer.stats(&FakeGpu::default()).min_length, 1e-4);
 }
 
 #[test]
@@ -1677,9 +1670,9 @@ fn the_length_minimum_survives_continuity_changes_and_a_new_in_process_update() 
     let mut cells = InProcessCells::new(&h.dataset, h.config);
     cells.set_continuity(set, None).unwrap();
     let view = synth_orbit().remove(0);
-    let mut target = StrictTarget {
+    let mut target = FakeGpu {
         eye: view.camera().position(),
-        ..StrictTarget::default()
+        ..FakeGpu::default()
     };
     let (blocks, pages) = (&mut h.blocks, &mut h.pages);
     cells

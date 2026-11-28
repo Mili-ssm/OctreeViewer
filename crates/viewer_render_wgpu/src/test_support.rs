@@ -1,29 +1,58 @@
-//! Shared fixtures of the cell pool and driver tests: the cameras, node layouts, the strict fake
-//! GPU that fails on any hazard, and the hole oracle.
+//! Shared fixtures of the cell pool and driver tests (here and in `viewer_wasm`, through the
+//! `test-support` feature): the cameras, node layouts, the one strict fake GPU that fails on any
+//! protocol hazard, and the hole oracle.
 
 use std::collections::{HashMap, HashSet};
 
 use viewer_core::{NodeId, SpatialBounds};
 
-use crate::scene_digest_tests::{ORIGIN, SIDE, VIEWPORT, cameras};
 use crate::{
     CellGrid, CellInstance, CellPool, CellPoolError, CellTarget, FramePlan, LevelKey, NODE_WORDS,
-    OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, PoolNode, ViewProjection,
-    VoxelBuildLimits,
+    OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, PoolNode, SceneBounds,
+    ViewProjection, VoxelBuildLimits,
 };
 
-pub(crate) fn view(camera: &OrbitCamera) -> ViewProjection {
+pub const ORIGIN: [f64; 3] = [1000.0, -2000.0, 50.0];
+pub const SIDE: f64 = 64.0;
+pub const VIEWPORT: [u32; 2] = [800, 600];
+
+pub fn cameras() -> Vec<(&'static str, OrbitCamera)> {
+    let bounds = SceneBounds {
+        min: [0.0; 3],
+        max: [SIDE; 3],
+    };
+    let fitted = || {
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(bounds, VIEWPORT));
+        camera
+    };
+    let mut orbited = fitted();
+    orbited.orbit(0.2, 0.1);
+    let mut zoomed = fitted();
+    zoomed.zoom(-0.7);
+    let mut panned = fitted();
+    panned.orbit(-0.1, -0.05);
+    panned.pan(0.1, -0.05, VIEWPORT);
+    vec![
+        ("fit", fitted()),
+        ("orbit", orbited),
+        ("zoom", zoomed),
+        ("pan", panned),
+    ]
+}
+
+pub fn view(camera: &OrbitCamera) -> ViewProjection {
     ViewProjection::new(*camera, VIEWPORT, 1.0, VoxelBuildLimits::default())
 }
 
-pub(crate) fn grid() -> CellGrid {
+pub fn grid() -> CellGrid {
     CellGrid {
         root_min: ORIGIN,
         root_side: SIDE,
     }
 }
 
-pub(crate) fn camera(name: &str) -> OrbitCamera {
+pub fn camera(name: &str) -> OrbitCamera {
     cameras()
         .into_iter()
         .find(|(n, _)| *n == name)
@@ -31,13 +60,13 @@ pub(crate) fn camera(name: &str) -> OrbitCamera {
         .1
 }
 
-pub(crate) fn cube(min: [f64; 3], side: f64) -> SpatialBounds {
+pub fn cube(min: [f64; 3], side: f64) -> SpatialBounds {
     SpatialBounds::new(min, min.map(|v| v + side)).unwrap()
 }
 
 /// The eight children of the root (ids 2..=9) with stored depths 4..=7. With 2000 points a level
 /// has 1 page at depth 4 and 4 pages deeper, which is exactly the pool's estimate.
-pub(crate) fn octant_nodes() -> HashMap<NodeId, PoolNode> {
+pub fn octant_nodes() -> HashMap<NodeId, PoolNode> {
     let half = SIDE / 2.0;
     (0..8)
         .map(|index| {
@@ -57,12 +86,12 @@ pub(crate) fn octant_nodes() -> HashMap<NodeId, PoolNode> {
         .collect()
 }
 
-pub(crate) const CHILDREN: [u64; 8] = [2, 3, 4, 5, 6, 7, 8, 9];
+pub const CHILDREN: [u64; 8] = [2, 3, 4, 5, 6, 7, 8, 9];
 
 /// A level of empty pages at the grid corner. Each page names itself in `box_max` (page index,
 /// depth, node), which `PageInfo::entry` copies to words 6 and 7 of its entry, so the fake GPU can
 /// tell which page a table entry points at.
-pub(crate) fn fake_level(key: LevelKey, pages: usize) -> PackedLevel {
+pub fn fake_level(key: LevelKey, pages: usize) -> PackedLevel {
     PackedLevel {
         node: key.node,
         depth: key.depth,
@@ -82,69 +111,137 @@ pub(crate) fn fake_level(key: LevelKey, pages: usize) -> PackedLevel {
     }
 }
 
-/// The (level, page) a fake entry names (see `fake_level`).
-fn fake_entry_target(entry: &PageEntry) -> (LevelKey, usize) {
-    let (word6, word7) = (entry.0[6], entry.0[7]);
-    (
-        LevelKey {
-            session: 0,
-            node: NodeId::new(u64::from(word7 & 0xffff)),
-            depth: (word6 >> 16) as u8,
-            color_gen: 0,
-        },
-        (word6 & 0xffff) as usize,
-    )
-}
-
 /// A node record holding `mask` and nothing else (anchor, depth and mips zero).
-pub(crate) fn mask_record(mask: &[u32; crate::MASK_WORDS]) -> [u32; NODE_WORDS] {
+pub fn mask_record(mask: &[u32; crate::MASK_WORDS]) -> [u32; NODE_WORDS] {
     let mut record = [0; NODE_WORDS];
     record[..crate::MASK_WORDS].copy_from_slice(mask);
     record
 }
 
-/// Executes plans like the GPU would and fails on any hazard: a page written while the current or
-/// the previous frame can read it, a write over a page that is still owned, or an active level
-/// whose pages are not all uploaded.
+/// Executes plans like the GPU would and panics on any hazard of the pool protocol: a slot written
+/// while it is still owned or while the current or the previous page table reads it, a slot freed
+/// while the previous table reads it, a table naming a slot nobody uploaded or one that holds
+/// another page than its entry, a duplicate table slot, and a node record for a mask slot nobody
+/// allocated. Lifecycle conditions a live renderer reports (no pool, a page count that does not
+/// match the slots) are `Err`s.
 #[derive(Default)]
-pub(crate) struct FakeGpu {
-    pub(crate) owner: HashMap<u32, (LevelKey, usize)>,
-    pub(crate) slot_of: HashMap<(LevelKey, usize), u32>,
-    pub(crate) total: HashMap<LevelKey, usize>,
-    pub(crate) prev_active: HashSet<u32>,
-    pub(crate) masks: HashMap<u32, [u64; 8]>,
+pub struct FakeGpu {
+    /// The slot owner. `apply` keys it by the plan's level and page; the `CellTarget` side by the
+    /// uploaded level (session and colour generation zero) and the page's order in `slots_of`.
+    pub owner: HashMap<u32, (LevelKey, usize)>,
+    pub slot_of: HashMap<(LevelKey, usize), u32>,
+    pub total: HashMap<LevelKey, usize>,
+    pub prev_active: HashSet<u32>,
+    pub masks: HashMap<u32, [u64; 8]>,
     // The `CellTarget` side, used by the driver tests: it mirrors a `SurfaceRenderer`, which has
     // no pool before the first upload and fails every other call without one.
-    pub(crate) has_pool: bool,
-    pub(crate) eye: [f64; 3],
+    pub has_pool: bool,
+    pub eye: [f64; 3],
     /// Slots written since the last page table; they must not be in it or in the previous one.
-    pub(crate) frame_writes: Vec<u32>,
+    pub frame_writes: Vec<u32>,
     /// The last record written to each mask slot.
-    pub(crate) mask_words: HashMap<u32, [u32; NODE_WORDS]>,
+    pub mask_words: HashMap<u32, [u32; NODE_WORDS]>,
     /// Every record write, in order.
-    pub(crate) record_writes: Vec<(u32, [u32; NODE_WORDS])>,
-    pub(crate) next_mask: u32,
+    pub record_writes: Vec<(u32, [u32; NODE_WORDS])>,
+    pub next_mask: u32,
     /// The next `set_node_record` fails once. The fake keeps its state (slots, masks) as a live
     /// renderer would, until `drop_pool`.
-    pub(crate) fail_next_mask: bool,
+    pub fail_next_mask: bool,
     /// Pages rewritten in place over the same page (recolours).
-    pub(crate) rewrites: usize,
+    pub rewrites: usize,
+    /// Page writes, rewrites included.
+    pub uploads_total: usize,
+    /// The page the upload put in each slot.
+    pub page_at: HashMap<u32, PageInfo>,
+    /// Slots written per level, in upload order.
+    pub slots_of: HashMap<(NodeId, u8), Vec<u32>>,
+    /// Hash of the cells each slot holds (colours included), to tell recoloured pages apart.
+    pub page_cells: HashMap<u32, u64>,
     /// The last page table and the frame it came with.
-    pub(crate) table: Vec<(u32, PageEntry)>,
-    pub(crate) page_frame: Option<PageFrame>,
+    pub table: Vec<(u32, PageEntry)>,
+    pub page_frame: Option<PageFrame>,
+    /// Page tables written.
+    pub tables_written: usize,
     /// The ranges of the last frame's cut (`CellTarget::set_color_ranges`).
-    pub(crate) color_ranges: Option<crate::CellColorRanges>,
+    pub color_ranges: Option<crate::CellColorRanges>,
     /// The view of every frame that reached the target (`CellTarget::set_lod_view`).
-    pub(crate) lod_views: Vec<Option<crate::cells::lod::LodView>>,
+    pub lod_views: Vec<Option<crate::cells::lod::LodView>>,
 }
 
 impl FakeGpu {
     /// The renderer dropped its pool (or the device was lost): every slot and mask is gone.
-    pub(crate) fn lose_pool(&mut self) {
+    pub fn lose_pool(&mut self) {
         *self = Self {
             eye: self.eye,
             ..Self::default()
         };
+    }
+
+    /// What the target would show in colour: the sum over the active pages of a hash of the
+    /// page's identity and cells. Independent of the slots the pages sit in.
+    pub fn color_digest(&self) -> u64 {
+        self.table.iter().fold(0_u64, |acc, (slot, _)| {
+            let mut hasher = std::hash::DefaultHasher::new();
+            std::hash::Hash::hash(&format!("{:?}", self.page_at[slot]), &mut hasher);
+            std::hash::Hash::hash(&self.page_cells[slot], &mut hasher);
+            acc.wrapping_add(std::hash::Hasher::finish(&hasher))
+        })
+    }
+
+    /// The hash of the cells of every active page, by (node, depth, page of the level).
+    pub fn active_cells(&self) -> HashMap<(NodeId, u8, usize), u64> {
+        let active: HashSet<u32> = self.table.iter().map(|(slot, _)| *slot).collect();
+        let mut out = HashMap::new();
+        for ((node, depth), slots) in &self.slots_of {
+            for (page, slot) in slots.iter().enumerate() {
+                if active.contains(slot) {
+                    out.insert((*node, *depth, page), self.page_cells[slot]);
+                }
+            }
+        }
+        out
+    }
+
+    /// What the driver left in the target equals what the plan asked for: each active node's
+    /// mask slot holds the mask of its cut entry, and the page table lists, level by level, every
+    /// page that was uploaded for it with the entry that page computes for the plan's mask slot
+    /// and octants.
+    pub fn check_plan(&self, plan: &FramePlan) {
+        let mut expected: Vec<(u32, PageEntry)> = Vec::new();
+        for active in &plan.active {
+            let entry = plan
+                .entries
+                .iter()
+                .find(|entry| entry.node == active.key.node)
+                .expect("an active node is in the cut");
+            let words: [u32; crate::MASK_WORDS] =
+                std::array::from_fn(|i| (entry.mask[i / 2] >> (32 * (i % 2))) as u32);
+            assert_eq!(
+                self.mask_words
+                    .get(&active.mask_slot)
+                    .map(|record| &record[..crate::MASK_WORDS]),
+                Some(&words[..]),
+                "mask slot {} of node {:?} differs from its cut entry",
+                active.mask_slot,
+                active.key.node
+            );
+            let frame = self.page_frame.as_ref().expect("a table was written");
+            let slots = self
+                .slots_of
+                .get(&(active.key.node, active.key.depth))
+                .unwrap_or_else(|| panic!("active level {:?} was never uploaded", active.key));
+            for slot in slots {
+                expected.push((
+                    *slot,
+                    self.page_at[slot].entry(
+                        frame,
+                        active.mask_slot,
+                        u32::from(active.octant_bits),
+                    ),
+                ));
+            }
+        }
+        assert_eq!(self.table, expected, "page table differs from the plan");
     }
 }
 
@@ -168,25 +265,42 @@ impl CellTarget for FakeGpu {
         level: &PackedLevel,
         page_slots: &[u32],
     ) -> Result<(), CellPoolError> {
+        // The first upload creates the pool, but a failed one drops it again.
+        if level.pages.len() != page_slots.len() {
+            return Err(CellPoolError::PageCountMismatch {
+                pages: level.pages.len(),
+                slots: page_slots.len(),
+            });
+        }
         self.has_pool = true;
-        assert_eq!(level.pages.len(), page_slots.len());
         let key = LevelKey {
             session: 0,
             node: level.node,
             depth: level.depth,
             color_gen: 0,
         };
-        for (info, slot) in level.pages.iter().zip(page_slots) {
-            let page = usize::from(info.box_max[0]);
+        for (index, (slot, info)) in page_slots.iter().zip(&level.pages).enumerate() {
+            let cells = &level.instances[index * PAGE_SLOTS..(index + 1) * PAGE_SLOTS];
+            let hash = {
+                let mut hasher = std::hash::DefaultHasher::new();
+                for cell in cells {
+                    std::hash::Hash::hash(&cell.0, &mut hasher);
+                }
+                std::hash::Hasher::finish(&hasher)
+            };
+            self.page_cells.insert(*slot, hash);
+            self.uploads_total += 1;
             // A recolour rewrites the page its slot already holds: the queue orders the write
             // after the draws already submitted, so it is not a hazard.
-            if self.owner.get(slot) == Some(&(key, page)) {
+            if self.owner.get(slot).map(|(owner, _)| owner) == Some(&key) {
                 self.rewrites += 1;
                 continue;
             }
             assert!(!self.owner.contains_key(slot), "slot {slot} is still owned");
-            // A part of a level carries its own pages: the index is the one `fake_level` wrote.
-            self.owner.insert(*slot, (key, page));
+            let slots = self.slots_of.entry((level.node, level.depth)).or_default();
+            self.owner.insert(*slot, (key, slots.len()));
+            slots.push(*slot);
+            self.page_at.insert(*slot, info.clone());
             self.frame_writes.push(*slot);
         }
         Ok(())
@@ -197,7 +311,16 @@ impl CellTarget for FakeGpu {
             return Err(CellPoolError::NoPool);
         }
         for slot in page_slots {
-            self.owner.remove(slot);
+            assert!(
+                !self.prev_active.contains(slot),
+                "slot {slot} is freed while the previous table reads it"
+            );
+            self.page_at.remove(slot);
+            if let Some((key, _)) = self.owner.remove(slot)
+                && let Some(slots) = self.slots_of.get_mut(&(key.node, key.depth))
+            {
+                slots.retain(|owned| owned != slot);
+            }
         }
         Ok(())
     }
@@ -248,12 +371,13 @@ impl CellTarget for FakeGpu {
         }
         let mut current = HashSet::new();
         for (slot, entry) in pages {
-            let owned = self.owner.get(slot);
-            assert!(owned.is_some(), "slot {slot} is active but not uploaded");
-            // The entry must describe the page that lives in its slot.
+            let page = self.page_at.get(slot);
+            assert!(page.is_some(), "slot {slot} is active but not uploaded");
+            // The entry must describe the page that lives in its slot: words 6.. (box, flags,
+            // relative origin, depth) come from the page alone.
             assert_eq!(
-                owned.copied(),
-                Some(fake_entry_target(entry)),
+                entry.0[6..],
+                page.unwrap().entry(frame, 0, 0).0[6..],
                 "slot {slot} holds another page than its table entry"
             );
             assert!(current.insert(*slot), "slot {slot} is active twice");
@@ -266,6 +390,7 @@ impl CellTarget for FakeGpu {
         }
         self.frame_writes.clear();
         self.prev_active = current;
+        self.tables_written += 1;
         self.table = pages.to_vec();
         self.page_frame = Some(*frame);
         Ok(())
@@ -273,7 +398,7 @@ impl CellTarget for FakeGpu {
 }
 
 impl FakeGpu {
-    pub(crate) fn apply(&mut self, plan: &FramePlan, pool: &CellPool) {
+    pub fn apply(&mut self, plan: &FramePlan, pool: &CellPool) {
         for slot in &plan.page_frees {
             if let Some((key, page)) = self.owner.remove(slot) {
                 self.slot_of.remove(&(key, page));
@@ -325,7 +450,7 @@ impl FakeGpu {
     }
 
     /// Levels with some pages uploaded but not all.
-    pub(crate) fn partial(&self) -> Vec<LevelKey> {
+    pub fn partial(&self) -> Vec<LevelKey> {
         let mut written: HashMap<LevelKey, usize> = HashMap::new();
         for (key, _) in self.owner.values() {
             *written.entry(*key).or_default() += 1;
@@ -338,17 +463,13 @@ impl FakeGpu {
     }
 }
 
-pub(crate) fn side_of(bounds: SpatialBounds) -> f64 {
+pub fn side_of(bounds: SpatialBounds) -> f64 {
     bounds.max()[0] - bounds.min()[0]
 }
 
 /// The eight children of `parent`, with ids from `first_id`, in the order of the octants of
 /// `octant_nodes`.
-pub(crate) fn octants_of(
-    parent: &PoolNode,
-    first_id: u64,
-    stored: &[u8],
-) -> Vec<(NodeId, PoolNode)> {
+pub fn octants_of(parent: &PoolNode, first_id: u64, stored: &[u8]) -> Vec<(NodeId, PoolNode)> {
     let half = side_of(parent.bounds) / 2.0;
     (0..8)
         .map(|index| {
@@ -370,7 +491,7 @@ pub(crate) fn octants_of(
 }
 
 /// Nodes 2 and 3 (regions A and B), each with eight children: 10..=17 under 2, 20..=27 under 3.
-pub(crate) fn two_regions() -> HashMap<NodeId, PoolNode> {
+pub fn two_regions() -> HashMap<NodeId, PoolNode> {
     let mut nodes = octant_nodes();
     nodes.retain(|id, _| id.get() <= 3);
     for (parent, first) in [(2, 10), (3, 20)] {
@@ -380,14 +501,18 @@ pub(crate) fn two_regions() -> HashMap<NodeId, PoolNode> {
     nodes
 }
 
-pub(crate) fn region_children(first: u64) -> Vec<u64> {
+pub fn region_children(first: u64) -> Vec<u64> {
     (first..first + 8).collect()
 }
 
 /// No hole in the plan: every unhidden octant of every entry is drawn by a resident level of its
 /// own, or lies under an ancestor entry of the cut that draws there and does not hide it
 /// (geometry computed here, from the bounds).
-pub(crate) fn assert_no_holes(plan: &FramePlan, nodes: &HashMap<NodeId, PoolNode>) {
+#[allow(
+    clippy::implicit_hasher,
+    reason = "test oracle over the std map the fixtures build"
+)]
+pub fn assert_no_holes(plan: &FramePlan, nodes: &HashMap<NodeId, PoolNode>) {
     let drawn_by = |node: NodeId, octant: usize| {
         plan.active
             .iter()
