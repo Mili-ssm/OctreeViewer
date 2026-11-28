@@ -1,6 +1,6 @@
 # Reorganización por componentes, bloque 2b (plan de implementación)
 
-Estado: en curso · 28-11-2026 · pre-mortem hecho (enmiendas incorporadas) · pedido por el propietario («continúa hasta terminar con los refactors y la limpieza», 28-11-2026)
+Estado: completado · 28-11-2026 · pre-mortem hecho (enmiendas incorporadas) · pedido por el propietario («continúa hasta terminar con los refactors y la limpieza», 28-11-2026)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -15,8 +15,10 @@ test (fusiona dos dobles); su criterio es no perder ninguna comprobación.
 
 **Tech Stack:** Rust (workspace nightly), Python 3 stdlib.
 
+**Resultado (28-11-2026):** tareas 1–7 hechas; `check.sh` 25/25 en `refactor/layout-2b` ([PR #125](https://github.com/Mili-ssm/OctreeViewer/pull/125)) y en la #122 rebasada encima; revisión por tarea y tres revisiones finales (documentación, cohesión entre tareas y el rebase), con sus arreglos aplicados.
+
 **Origen:** revisión de arquitectura del 28-11-2026; queda fuera del bloque 2a
-([plan cerrado](../records/archive/reorganizacion-bloque-2a.md)). Rama `refactor/layout-2b`, apilada sobre
+([plan cerrado](reorganizacion-bloque-2a.md)). Rama `refactor/layout-2b`, apilada sobre
 `refactor/layout-2a` (PR #124).
 
 **Decisiones del propietario (28-11-2026):** hacer el 2b ahora y que la sesión principal rebase después la
@@ -117,13 +119,15 @@ Enmiendas del pre-mortem: `FakeGpu` deduce la identidad de página de `box_max` 
 
 ### Task 6: documentación y cierre
 
-- [ ] `docs/reference/inventory.md`, `docs/estado.md`, docstring de `check_layout.py`; fila del plan en `docs/records/README.md` al archivarlo en `docs/records/archive/`.
-- [ ] `scripts/check.sh` 25/25 (en segundo plano); revisiones finales; PR con base `refactor/layout-2a`.
+- [x] `docs/reference/inventory.md`, `docs/estado.md`, docstring de `check_layout.py`; fila del plan en `docs/records/README.md` al archivarlo en `docs/records/archive/`.
+- [x] `scripts/check.sh` 25/25 (en segundo plano); revisiones finales; PR con base `refactor/layout-2a`.
+  Hecho 28-11-2026: `357be39`, `20b3970` y este cierre; `check.sh` 25/25; [PR #125](https://github.com/Mili-ssm/OctreeViewer/pull/125).
 
 ### Task 7: rebasar la PR #122 sobre `refactor/layout-2b`
 
-- [ ] Antes: etiqueta local `pr122-pre-rebase` y lista de tests de la #122 (la `list()` de `gate.sh`, ejecutada en el worktree con su `CARGO_TARGET_DIR`) como baseline propio; `.superpowers/` no existe en el worktree (está en `.gitignore`), las herramientas se ejecutan por ruta absoluta.
-- [ ] Método (pre-mortem): aplastar la #122 en un commit sobre su base, rebasarlo sobre `refactor/layout-2b` (git sigue los renombres de la tarea 1) y resolver `lib_tests` regenerando: el `lib_tests.rs` sin dividir de la #122 con los `use` de la tarea 2, `spec_from_names.py` con sus tests nuevos asignados y `split.py`; `moved.py` para comprobarlo. La línea que la #122 añade al shim `viewer_convert/src/pipeline/node_job.rs` (que la tarea 2 borró) debe reaparecer en `pipeline/node_job_tests.rs` o en el `use` que la sustituya.
-- [ ] Criterio de aborto: si el multiconjunto de nombres hoja difiere del baseline, `git reset --hard pr122-pre-rebase` y replantear.
-- [ ] `scripts/check.sh` verde en el worktree; nombres hoja de test: los de #122 antes del rebase.
-- [ ] `git push --force-with-lease`; base de la PR #122 → `refactor/layout-2b`; comentario en la PR con lo que cambió de sitio.
+- [x] Antes: etiqueta local `pr122-pre-rebase` y lista de tests de la #122 (la `list()` de `gate.sh`, ejecutada en el worktree con su `CARGO_TARGET_DIR`) como baseline propio; `.superpowers/` no existe en el worktree (está en `.gitignore`), las herramientas se ejecutan por ruta absoluta.
+- [x] Método (pre-mortem): aplastar la #122 en un commit sobre su base, rebasarlo sobre `refactor/layout-2b` (git sigue los renombres de la tarea 1) y resolver `lib_tests` regenerando: el `lib_tests.rs` sin dividir de la #122 con los `use` de la tarea 2, `spec_from_names.py` con sus tests nuevos asignados y `split.py`; `moved.py` para comprobarlo. La línea que la #122 añade al shim `viewer_convert/src/pipeline/node_job.rs` (que la tarea 2 borró) debe reaparecer en `pipeline/node_job_tests.rs` o en el `use` que la sustituya.
+- [x] Criterio de aborto: si el multiconjunto de nombres hoja difiere del baseline, `git reset --hard pr122-pre-rebase` y replantear.
+- [x] `scripts/check.sh` verde en el worktree; nombres hoja de test: los de #122 antes del rebase.
+- [x] `git push --force-with-lease`; base de la PR #122 → `refactor/layout-2b`; comentario en la PR con lo que cambió de sitio.
+  Hecho 28-11-2026: la #122 queda en un commit (`fa04fd8`) sobre `refactor/layout-2b`, con la etiqueta local `pr122-pre-rebase` en `e3323c7`; 1.330 nombres hoja iguales antes y después; `check.sh` 25/25 en su worktree; una revisión comparó su diff con el original (cuerpos de test y código iguales salvo rutas). Push con `--force-with-lease`, base cambiada y comentario en la PR. Los tests nuevos van a `diagnostics`, `spool_lifecycle`, `planner`, `workers` y `root_ranges`.
