@@ -390,7 +390,7 @@ pub(crate) fn behind_wanted(depths: [u8; 8], (behind, front): (u8, u8)) -> [u8; 
 /// that once a depth stops refining every finer one does too (its children are half as large at
 /// about the same distance). It then costs 2 probes when the answer has not moved, instead of one
 /// per coarser depth, and returns the same depth whenever that holds. The
-/// `the_hinted_search_equals_the_full_search` test (`cells/pool_tests.rs`) found no difference in
+/// `the_hinted_search_equals_the_full_search` test (`cells/pool/tests/`) found no difference in
 /// 79 993 random poses. A `hint` outside the range falls back to the full search.
 #[expect(
     clippy::too_many_arguments,

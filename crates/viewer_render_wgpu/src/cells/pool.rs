@@ -813,5 +813,4 @@ impl CellPool {
 }
 
 #[cfg(test)]
-#[path = "pool_tests.rs"]
 mod tests;
