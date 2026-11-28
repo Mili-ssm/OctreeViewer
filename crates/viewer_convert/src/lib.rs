@@ -89,8 +89,7 @@ where
 }
 
 #[cfg(test)]
-#[path = "lib_tests.rs"]
-mod tests;
+mod lib_tests;
 
 #[cfg(test)]
 #[path = "global_frame_tests.rs"]
