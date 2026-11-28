@@ -1353,7 +1353,7 @@ mod refine;
 mod stepping;
 mod wait;
 
-// R3-Q19: local fallback, coarse to fine and reset.
+// Helpers shared with the R3-Q19 suite (`tests/fallback.rs`).
 
 fn has_entry(plan: &FramePlan, node: u64) -> bool {
     plan.entries.iter().any(|e| e.node == NodeId::new(node))
@@ -1364,7 +1364,7 @@ fn coarse_resident(rig: &Rig, node: u64) -> bool {
     rig.pool.is_resident(rig.pool.key(NodeId::new(node), depth))
 }
 
-// R3-Q21: the image only refines.
+// Helpers shared with the R3-Q21 suite (`tests/refine.rs`).
 
 fn sample_points(bounds: SpatialBounds) -> Vec<[f64; 3]> {
     let mut points = Vec::new();
@@ -1672,7 +1672,7 @@ fn twin_releases(after: &Owner, wish: u8, samples: &[(Owner, [f64; 3])]) -> Resu
 
 const FARS: [Far; 2] = [Far::Wide, Far::Near];
 
-// R3-Q20: nodes without a level wait outside the cut.
+// Helpers shared with the R3-Q20 suite (`tests/wait.rs`).
 
 /// Region A's children drew at 4 px and node 2 (their parent) was never loaded; the tests then
 /// zoom out to the cut `{2}`.
@@ -1749,8 +1749,7 @@ fn active_depths(plan: &FramePlan, rig: &Rig, node: u64) -> Vec<u8> {
     depths
 }
 
-// ADR 0053: stepping through pruned residents, timeouts and hops. `Rig::step` checks every frame
-// against the stepping oracle, so these scenarios only pin down when the hops happen.
+// Fixtures shared with the ADR 0053 stepping suite (`tests/stepping.rs`).
 
 /// Root 1 (stored 2..=14) with its eight children 2..=9 (stored 5..=14). Only depths 2..=11 of
 /// the root are resident, so its active range stops at 11 and stays there once it leaves the cut.
