@@ -714,7 +714,7 @@ fn an_update_whose_cut_has_a_gap_above_the_mask_fails() {
     );
 }
 
-/// Root (1) with two unloaded anchors 2 and 3, as in `lod_dataset_tests::paged_dataset`.
+/// Root (1) with two unloaded anchors 2 and 3, as in `lod_dataset::tests::paged_dataset`.
 fn paged_cell_dataset(budget: usize) -> LodDataset {
     let node = |id: u64, parent: Option<u64>, level: u32, min: f64, max: f64| {
         SpatialNode::new(

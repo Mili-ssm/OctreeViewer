@@ -2086,10 +2086,8 @@ fn real_path(name: &str) -> Option<std::path::PathBuf> {
     }
 }
 
-#[path = "lod_cells_bench_tests.rs"]
 mod bench;
 
-#[path = "lod_cells_sim_tests.rs"]
 mod sim;
 
 fn open_real(name: &str, target_px: f64, page_budget: usize) -> Option<Real> {

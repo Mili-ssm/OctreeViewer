@@ -15,7 +15,6 @@ use viewer_render_wgpu::{
     VoxelBuildMemoryStats, VoxelScene, VoxelSceneBuildError, build_voxel_scene_with_limits,
 };
 
-#[path = "lod_cells.rs"]
 mod cells;
 pub use cells::{
     CellDraw, CellPlanStats, CellUpdate, CellUpdateConfig, CellUpdateStats, CutRestProbe,
@@ -80,7 +79,7 @@ pub struct LodDataset {
     page_budget_exhausted: bool,
     /// The format has the global integer frame (`v7.4-pre`, `v7.5-pre`), which the cell path needs.
     global_frame: bool,
-    /// Cells-mode bookkeeping, see `lod_cells.rs`.
+    /// Cells-mode bookkeeping, see `lod_dataset/cells.rs`.
     cells: cells::CellState,
 }
 
@@ -1501,13 +1500,10 @@ fn priority_precedes(candidate: (BlockId, f64), current: (BlockId, f64)) -> bool
 }
 
 #[cfg(test)]
-#[path = "lod_dataset_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "lod_cells_tests.rs"]
 mod cells_tests;
 
 #[cfg(test)]
-#[path = "lod_cells_stream_tests.rs"]
 mod cells_stream_tests;
